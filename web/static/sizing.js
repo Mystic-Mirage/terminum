@@ -164,6 +164,8 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
     }
     if (!mouseOn(e)) return;
     e.preventDefault();                           // no text selection: the drag is the program's
+    // and it ends a browser (Shift) selection, as a press does: the keys go back on the release (input.js)
+    if (String(getSelection())) getSelection().removeAllRanges();
     const at = cellAt(e.clientX, e.clientY);
     held = { button: BUTTON[e.button], ...at, y0: at?.y };   // y0: the press's row, as moves change y
     report("press", at, held.button, e);
@@ -187,13 +189,15 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
     if (b === 0 && y0 !== undefined && at) released = { at: performance.now(), y: Math.min(y0, at.y) };
   });
   // What the program copied of its own selection after that release (terminumd's 2 s, and the
-  // way back): the selection's buttons by its upper row, with its text (AC-06). Only text on the
-  // screen: a program that writes the clipboard on its own (a hostile file it shows) gets nothing.
+  // way back): the selection's buttons by its upper row, with its text (AC-06). Only text whose
+  // every line is on the screen (a program leaves out what it draws unselectable, Claude Code's ⏺
+  // and ⎿); a program that writes the clipboard on its own (a hostile file it shows) gets nothing.
   const bare = (t) => t.replace(/\s+/g, "");   // a row's txt: its text without render.js's U+FE0E/F
   function onCopied(m) {
     const row = released && view.screen[released.y]?.el, text = String(m.text ?? "");
     if (m.sid !== sid() || !row?.isConnected || performance.now() - released.at > COPIED_WAIT) return;
-    if (!bare(view.screen.filter(Boolean).map((r) => r.txt).join("")).includes(bare(text))) return;
+    const shown = bare(view.screen.filter(Boolean).map((r) => r.txt).join(""));
+    if (bare(text).length > shown.length || !text.split("\n").every((l) => shown.includes(bare(l)))) return;   // at most the screen's work
     copied({ text, row });
   }
   term.addEventListener("contextmenu", (e) => { if (mouseOn(e)) e.preventDefault(); });

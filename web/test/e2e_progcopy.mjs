@@ -12,6 +12,8 @@ const LAYOUT = [group("main", [item(SID, "Claude Code", { agent: "claude", shell
 const TEXT = ["  Messages: 3.3k tokens (0.3%)", "  Free space: 931.7k (93.2%)", "  Autocompact buffer: 33k tokens", "> /context", "", "  Opus 5.5",
   ...Array.from({ length: 14 }, (_, i) => `  row ${i + 6}`), "  Skills: 4.9k tokens (0.5%)", "  Memory files: 1.1k tokens", "  Custom agents: 73 tokens"];
 
+TEXT.splice(8, 3, "⏺ The tests pass now.", "  ⎿  first line of the output", "     second line goes here");   // Claude Code's unselectable marks
+
 export async function webProgCopy(browser, name) {
   runningIn(`${name} 1400×900`);
   const f = await openPage(browser, { device: WIDE, layout: LAYOUT });
@@ -52,7 +54,8 @@ export async function webProgCopy(browser, name) {
   check(`AC-06 (${name}) a drag still goes to the program (press, moves, release)`, mice() - n >= 3, String(mice() - n));
   check(`AC-06 (${name}) what the program copied after the release shows Copy, [+] and Ask, no browser selection`,
     shown.copy && shown.add && shown.ask && shown.sel === "", JSON.stringify(shown));
-  for (let i = 0; i < 8; i++) { frame(); await pause(page, 120); }
+  const frames = async (k) => { for (let i = 0; i < k; i++) { frame(); await pause(page, 120); } };
+  await frames(8);
   const kept = await buttons();
   check(`AC-06 (${name}) the buttons stay while the program redraws (1 s of frames)`, kept.copy && kept.add && kept.ask, JSON.stringify(kept));
   await page.click("#markadd");
@@ -92,6 +95,18 @@ export async function webProgCopy(browser, name) {
   await pause(page, 200);
   check(`AC-06 (${name}) a copy 3 s after the last release shows nothing`, !(await buttons()).add);
 
+  // Claude Code leaves out of its copy what it draws unselectable (⏺, ⎿): line by line on the screen
+  await drag([2, 8], [12, 10]);
+  f.say({ t: "copied", sid: SID, text: "The tests pass now.\nfirst line of the output\nsecond line" });
+  await pause(page, 200);
+  check(`AC-06 (${name}) a copy without the program's unselectable ⏺ and ⎿ shows the buttons`, (await buttons()).add);
+  await page.keyboard.press("Escape");
+  await drag([2, 8], [12, 10]);
+  f.say({ t: "copied", sid: SID, text: "The tests pass now.\nrm -rf ~/work" });
+  await pause(page, 200);
+  check(`AC-06 (${name}) a copy with a line that is not on the screen shows nothing`, !(await buttons()).add);
+  await page.keyboard.press("Escape");
+
   // Shift: the browser's own selection, from the press, in every browser
   await page.click("#filter");
   await page.mouse.click((await cell(4, 3)).x, (await cell(4, 3)).y);   // the terminal has the keys: the caret in its field
@@ -103,6 +118,20 @@ export async function webProgCopy(browser, name) {
   const sh = await buttons();
   check(`AC-06 (${name}) Shift and a drag select from the press in the browser, nothing sent, the buttons shown`,
     sh.sel.replace(/\s+/g, " ").startsWith("Messages: 3.3k") && sh.sel.includes("Free") && mice() === n && sh.add && sh.ask, JSON.stringify({ sel: sh.sel, sentMice: mice() - n }));
+  // the next press goes to the program and ends that selection: the keys come back, the copy is the program's
+  n = mice();
+  await drag([2, 20], [12, 21]);
+  f.say({ t: "copied", sid: SID, text: "Skills: 4.9k tokens (0.5%)\n  Memory files" });
+  await pause(page, 300);
+  const after = await page.evaluate(() => ({ sel: String(getSelection()), keys: document.activeElement?.id }));
+  check(`AC-06 (${name}) a press after a Shift selection goes to the program and ends it; the keyboard field has the keys again`,
+    mice() - n >= 2 && after.sel === "" && after.keys === "kbd", JSON.stringify({ ...after, sentMice: mice() - n }));
+  await frames(4);
+  await page.click("#markadd");
+  await pause(page, 300);
+  const held = await page.evaluate(() => document.getElementById("markbox").textContent);
+  check(`AC-06 (${name}) then [+] holds the program's copy, never the old Shift selection`, held.includes("Memory files") && !held.includes("Free space"), held.replace(/\s+/g, " ").slice(0, 160));
+  await page.keyboard.press("Escape");
   check(`AC-06 (${name}) no page errors`, !f.errors.length, f.errors.join(" | "));
   await f.close();
   runningIn(name);

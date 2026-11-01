@@ -39,7 +39,15 @@ export async function liveSplit(page, { tmux, work }) {
   const panes = () => tmux("list-panes", "-a", "-F", "#{pane_id} #{window_id} #{pane_current_path}").split("\n").filter(Boolean).map((l) => l.split(" "));
   const [pane, win] = panes().find((p) => p[2] === work) ?? [];
   const of = (fmt) => tmux("display", "-p", "-t", pane, fmt);
-  const before = of("#{window_width}");
+  // the width the page sized the window to once it holds still (a pane just shown is still being
+  // sized under load: a width read mid-way changed by itself, 56 → 87, before the split did anything)
+  let before = of("#{window_width}");
+  for (let still = 0, t = 0; still < 5 && t < 50; t++) {
+    await page.waitForTimeout(100);
+    const now = of("#{window_width}");
+    still = now === before ? still + 1 : 0;
+    before = now;
+  }
   tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane);
   const mate = panes().find((p) => p[1] === win && p[0] !== pane)?.[0];
   tmux("send-keys", "-t", pane, "clear; seq -s ' ' 1000 1040", "Enter");   // the command itself is short: only its output is LINE

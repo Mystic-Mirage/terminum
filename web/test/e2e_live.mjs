@@ -160,9 +160,10 @@ async function wide(browser, name) {
   });
   const files = await (await page.$("#files")).contentFrame();
   await files.click("#new-file");
-  await files.waitForSelector("#tree input", { timeout: 3000 }).catch(() => {});
-  await page.keyboard.type(`fresh-${name}.txt`);                // the folder is shared by both browsers
-  await page.keyboard.press("Enter");
+  // typed into the name's field once it is there (under load it came after 3 s, and the name went elsewhere)
+  const named = await files.waitForSelector("#tree input", { timeout: 10000 });
+  await named.type(`fresh-${name}.txt`);                        // the folder is shared by both browsers
+  await named.press("Enter");
   await within("AC-70 a new file opens in View, where a click opens files, not under the tree", async () => {
     await page.waitForSelector("#filewin:not([hidden])", { timeout: 5000 });
     const view = await (await page.$("#file")).contentFrame();

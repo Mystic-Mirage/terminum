@@ -35,7 +35,13 @@ export function proofOf(secret, n) {
   return crypto.createHmac("sha256", key).update(`tm-hello-v1:${n}`).digest("hex");
 }
 
-/** Opens the page. secret: what the fake server knows (its proof; "unknown_signin": none, it
+/** The page's credential for boot b: "<id>.<HMAC(HMAC(secret, "tm-proof-key"), "tm-cred-v1:" + b)>". */
+export function credentialOf(secret, b) {
+  const key = crypto.createHmac("sha256", secret).update("tm-proof-key").digest();
+  return `${crypto.createHash("sha256").update(secret).digest("hex").slice(0, 16)}.${crypto.createHmac("sha256", key).update(`tm-cred-v1:${b}`).digest("hex")}`;
+}
+
+/** Opens the page. secret: what the fake server knows (its proof and credential; "unknown_signin": none, it
  *  answers 404 unknown_signin); stored: a sign-in already in the origin's storage; auth:
  *  /auth/check's answer (204, or {login}); login(body): /auth/login's answer as [status, json];
  *  hook(msg, say): every message the page sends; onSub(msg, say): answers a "sub" in place of the
@@ -46,11 +52,14 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
   const context = await browser.newContext({ reducedMotion: "reduce", ...device });
   const page = await context.newPage();
   const errors = [], sent = [], requests = [], sockets = [];
+  // this fake terminumd's boot (a restart draws another: restart) and the credential it accepts
+  let boot = crypto.randomBytes(32).toString("hex");
+  const knows = (t) => typeof secret === "string" && t === credentialOf(secret, boot);
   page.on("pageerror", (e) => errors.push(String(e)));
   if (stored) await page.addInitScript((s) => { if (!sessionStorage.getItem("seeded")) { localStorage.setItem("tm.session", s); sessionStorage.setItem("seeded", "1"); } }, stored);
   await page.route(`${ORIGIN}/**`, (route) => {
     const req = route.request(), u = new URL(req.url()), p = u.pathname;
-    requests.push({ path: p, query: u.search, headers: req.headers() });
+    requests.push({ path: p, query: u.search, headers: req.headers(), body: req.postData() ?? "" });
     if (p === "/auth/check") {
       const a = typeof auth === "function" ? auth() : auth;
       return typeof a === "number" ? route.fulfill({ status: a, body: "" })
@@ -63,8 +72,11 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     if (p === "/api/hello") {
       const n = u.searchParams.get("n");
       if (secret === "unknown_signin") return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "unknown_signin" }) });
-      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ proof: secret ? proofOf(secret, n) : "0".repeat(64) }) });
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({ proof: secret ? proofOf(secret, n) : "0".repeat(64), boot }) });
     }
+    // a request with a credential of another boot is refused, as terminumd does (401)
+    const sign = req.headers()["x-tm-session"];
+    if (sign && !knows(sign)) return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "bad_session" }) });
     if (p === "/custom.css") return route.fulfill({ contentType: "text/css", body: typeof css === "function" ? css() : css });
     if (p.startsWith("/fb/")) return route.fulfill({ status: 404, body: "" });
     const f = path.join(STATIC, p === "/" ? "index.html" : path.normalize(p));
@@ -76,8 +88,8 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
   let say = () => {};
   await page.routeWebSocket(`${ORIGIN.replace("http", "ws")}/ws`, (ws) => {
     sockets.push({ protocols: ws.protocols(), close: () => ws.close() });
-    // a server that knows a secret refuses a socket without it, as terminumd does (401)
-    if (typeof secret === "string" && secret !== "unknown_signin" && ws.protocols()[1] !== secret) return void ws.close();
+    // a server that knows a secret refuses a socket without its credential, as terminumd does (401)
+    if (typeof secret === "string" && secret !== "unknown_signin" && !knows(ws.protocols()[1])) return void ws.close();
     say = (m) => ws.send(JSON.stringify(m));
     ws.onMessage((m) => {
       const msg = JSON.parse(String(m));
@@ -94,7 +106,7 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     say({ t: "layout", groups: layout });
   });
   await page.goto(ORIGIN + url);
-  return { page, context, sent, requests, sockets, errors, say: (m) => say(m), close: () => context.close() };
+  return { page, context, sent, requests, sockets, errors, credential: () => credentialOf(secret, boot), restart: () => { boot = crypto.randomBytes(32).toString("hex"); }, say: (m) => say(m), close: () => context.close() };
 }
 
 /** Presses a floating button; on a phone a folded one once ⟨…⟩ unfolds the column (fold.js, AC-18). */

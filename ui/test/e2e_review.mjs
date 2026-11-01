@@ -107,10 +107,12 @@ try {
     await page.focus("#tree"); await page.keyboard.press("Home");
     await page.waitForFunction(() => document.querySelector('.row[data-i="0"]')?.classList.contains("sel"));
     await page.keyboard.press("Shift+End");
-    await page.waitForFunction(async ({ secret, key }) => {
-      const r = await fetch(`/fb/api/workspace?key=${encodeURIComponent(key)}`, { headers: { "X-TM-Session": secret } });
-      return (await r.json()).selected.length === 1205;
-    }, { secret: SECRET, key: wsKey("review-end") }, { timeout: 10000 });
+    // asked from here: a browser may not sign in with the secret, only the panel's credential (AC-09)
+    for (const end = Date.now() + 10000; ; await new Promise((r) => setTimeout(r, 100))) {
+      const r = await fetch(`${base}/fb/api/workspace?key=${encodeURIComponent(wsKey("review-end"))}`, { headers: { "X-TM-Session": SECRET } });
+      if ((await r.json()).selected.length === 1205) break;
+      if (Date.now() > end) throw new Error("the selection did not reach 1205 rows in 10 s");
+    }
   });
   await test("a late old page cannot rewind a refreshed listing", async () => {
     const host = "paged.example", started = deferred(), release = deferred();

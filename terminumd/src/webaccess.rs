@@ -176,10 +176,16 @@ fn current(app: &Shared, auth: &Arc<WebAuth>) -> bool {
     app.web.auth.lock().as_ref().is_some_and(|now| Arc::ptr_eq(now, auth))
 }
 
-/// `POST /auth/logout`: this browser's sign-in ends (the one it presents, if any).
+/// `POST /auth/logout`: this browser's sign-in ends (the one it presents, if any). A credential
+/// of another boot (an upgrade under the page) is 401 bad_session, which the page proves again
+/// and sends once more, so the sign-in it meant ends instead of living on unseen.
 pub async fn logout(State(app): State<Shared>, headers: HeaderMap) -> Response {
     let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
     if let Some(secret) = crate::auth::checks::signin_secret(header) {
+        if !app.signins.check(&secret, false) {
+            let d = crate::auth::checks::Denial::new(401, "bad_session", "Missing or expired sign-in");
+            return (StatusCode::UNAUTHORIZED, Json(d.body())).into_response();
+        }
         let a = app.clone();
         if let Ok(Err(e)) = crate::http::blocking(move || a.signins.revoke(&secret)).await {
             tracing::warn!(event = "signout.unsaved", error = %e);

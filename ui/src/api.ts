@@ -37,33 +37,40 @@ async function hmac(key: BufferSource, text: string): Promise<Uint8Array<ArrayBu
  *  only on 127.0.0.1, a secure context, so crypto.subtle is there. */
 const proof = async (secret: string, n: string) => hex(await hmac(await hmac(utf8(secret), "tm-proof-key"), `tm-hello-v1:${n}`));
 
-/** terminumd proved, since the last time it was out of reach, that it knows the sign-in: only
- *  then does the secret go out. While terminumd is not running another program may hold its
- *  port; it cannot answer the proof, so it never sees the secret (AC 09). */
-let proven: Promise<void> | null = null;
+/** terminumd proved, since the last time it was out of reach, that it knows the sign-in:
+ *  requests then carry a credential for its boot (signin.rs), never the secret. While terminumd
+ *  is not running another program may hold its port; it cannot answer the proof, and a
+ *  credential it gets is for a boot no terminumd will have again (AC 09). */
+let proven: Promise<string | null> | null = null;
+let token: string | null = null;
+/** The sign-in header of credential `cred` (proveServer's answer). */
+const signin = (cred: string | null): Record<string, string> => (cred ? { "X-TM-Session": cred } : {});
 let refusal = "";  // why the last proof failed, as the user is told
-export function proveServer(): Promise<void> {
-  if (!SECRET) return Promise.resolve();
+/** The credential of the current proof (null: no sign-in here). */
+export function proveServer(): Promise<string | null> {
+  if (!SECRET) return Promise.resolve(null);
   if (!proven) {
     const secret = SECRET;
     const n = hex(crypto.getRandomValues(new Uint8Array(16)));
-    const mine: Promise<void> = crypto.subtle.digest("SHA-256", utf8(secret)).then(async (digest) => {
+    const mine: Promise<string | null> = crypto.subtle.digest("SHA-256", utf8(secret)).then(async (digest) => {
       const id = hex(digest).slice(0, 16);
       const res = await fetch(`/api/hello?n=${n}&id=${id}`, { cache: "no-store" });  // a network error: not reachable
       const body = await res.json().catch(() => null);
       if (res.status === 404 && body?.error === "unknown_signin") throw new ApiError(401, "signed_out", "Signed out: run terminum open", body);
-      if (!res.ok || body?.proof !== await proof(secret, n)) {
-        throw new ApiError(401, "unproven", "terminumd does not prove it knows this page's sign-in, or another program holds its port", body);
-      }
+      const unproven = () => new ApiError(401, "unproven", "terminumd does not prove it knows this page's sign-in, or another program holds its port", body);
+      if (!res.ok || body?.proof !== await proof(secret, n) || !/^[0-9a-f]{64}$/.test(body?.boot ?? "")) throw unproven();
+      const cred = `${id}.${hex(await hmac(await hmac(utf8(secret), "tm-proof-key"), `tm-cred-v1:${body.boot}`))}`;
+      if (proven === mine) token = cred;
       SERVER_APPS = body.apps !== false;
+      return cred;
     });
     mine.catch((e) => { if (e instanceof ApiError) refusal = e.message; if (proven === mine) forgetProof(); });
     proven = mine;
   }
   return proven;
 }
-/** terminumd went out of reach: prove it again before the secret goes out. */
-export function forgetProof() { proven = null; }
+/** terminumd went out of reach: prove it again, and make a new credential, before a request goes out. */
+export function forgetProof() { proven = null; token = null; }
 /** Why the last proof failed, as the user is told. */
 export const proofRefusal = () => refusal;
 /** Names this panel in workspace events, so it can ignore the echo of its own writes. */
@@ -122,13 +129,20 @@ export async function api<T>(method: string, path: string, opts: { query?: Query
   for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined) qs.set(k, String(v));
   const url = BASE + path + (qs.size ? `?${qs}` : "");
   const host = opts.host === undefined ? scope : opts.host;
-  const headers: Record<string, string> = { ...(SECRET ? { "X-TM-Session": SECRET } : {}), "X-TM-Client": CLIENT, ...(host ? { "X-TM-Host": host } : {}), ...opts.headers };
+  const headers: Record<string, string> = { "X-TM-Client": CLIENT, ...(host ? { "X-TM-Host": host } : {}), ...opts.headers };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
   let res: Response;
-  for (let waited = 0, step = 250; ; waited += step, step *= 2) {
+  for (let waited = 0, step = 250, renewed = false; ; waited += step, step *= 2) {
     try {
-      await proveServer();
-      res = await fetch(url, { method, headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body) });
+      const mine = proveServer(), cred = await mine;
+      res = await fetch(url, { method, headers: { ...headers, ...signin(cred) }, body: opts.body === undefined ? undefined : JSON.stringify(opts.body) });
+      // a terminumd of another boot (an upgrade, a restart) refused it before any handler ran: proved
+      // again (unless another request did meanwhile), sent once more
+      if (res.status === 401 && cred && !renewed && (await res.clone().json().catch(() => null))?.error === "bad_session") {
+        renewed = true;
+        if (proven === mine) forgetProof();
+        continue;
+      }
       break;
     } catch (e) {
       if (e instanceof ApiError) throw e;  // not proven: the secret is never sent, nor retried
@@ -176,8 +190,8 @@ export const rawBytes = async (path: string) => (await raw(path)).arrayBuffer();
 /** A MIDI file's bytes rendered by terminumd with the user's SoundFont (AC-64): a WAV's blob:
  *  address (the caller revokes it) and the bank's name; an error as terminumd says it. */
 export async function midiWav(bytes: ArrayBuffer, signal?: AbortSignal): Promise<{ url: string; font: string }> {
-  await proveServer();
-  const res = await fetch("/api/midi", { method: "POST", body: bytes, signal, headers: { "Content-Type": "audio/midi", ...(SECRET ? { "X-TM-Session": SECRET } : {}) } });
+  const cred = await proveServer();
+  const res = await fetch("/api/midi", { method: "POST", body: bytes, signal, headers: { "Content-Type": "audio/midi", ...signin(cred) } });
   if (!res.ok) { const body = await res.json().catch(() => null); throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body); }
   return { url: URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "audio/wav" })), font: res.headers.get("x-tm-soundfont") ?? "" };
 }
@@ -189,8 +203,8 @@ export const UPLOAD_MAX = 100 << 20;
  *  `both`: under the next free number when the name is taken (else refused: "exists"). */
 export async function uploadFile(dir: string, name: string, file: Blob, both: boolean, host: string | null): Promise<{ path: string }> {
   const qs = new URLSearchParams({ dir, name, ...(both ? { both: "true" } : {}) });
-  await proveServer();
-  const headers = { "Content-Type": file.type || "application/octet-stream", "X-TM-Client": CLIENT, ...(SECRET ? { "X-TM-Session": SECRET } : {}), ...(host ? { "X-TM-Host": host } : {}) };
+  const cred = await proveServer();
+  const headers = { "Content-Type": file.type || "application/octet-stream", "X-TM-Client": CLIENT, ...signin(cred), ...(host ? { "X-TM-Host": host } : {}) };
   const res = await fetch(`${BASE}/api/fs/upload?${qs}`, { method: "POST", body: file, headers }).catch(() => null);
   if (!res) throw new ApiError(0, "network", "terminumd not reachable (restarting?)", null);
   if (res.status === 413) throw new ApiError(413, "too_large", "Larger than the 100 MB an upload may be", null);
@@ -202,8 +216,8 @@ export async function uploadFile(dir: string, name: string, file: Blob, both: bo
 /** A file's raw answer, fetched with the sign-in; an error as terminumd says it. */
 async function raw(path: string): Promise<Response> {
   const url = rawUrl(path);            // the host shown now, not after the proof (a pane switched meanwhile)
-  await proveServer();
-  const res = await fetch(url, { headers: SECRET ? { "X-TM-Session": SECRET } : {} });
+  const cred = await proveServer();
+  const res = await fetch(url, { headers: signin(cred) });
   if (res.ok) return res;
   const body = await res.json().catch(() => null);
   throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body);
@@ -258,8 +272,8 @@ export function hydrateRaw(root: ParentNode) {
   }
 }
 export const socketUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${BASE}/api/ws`;
-/** The event socket's subprotocols carry the sign-in: ["tm", secret] (none with a cookie). */
-export const socketProtocols = () => (SECRET ? ["tm", SECRET] : undefined);
+/** The event socket's subprotocols carry the sign-in: ["tm", credential] (call after proveServer). */
+export const socketProtocols = () => (token ? ["tm", token] : undefined);
 
 /** Run an API call; on failure show its message and resolve to undefined. */
 export const apiOrToast = <T>(...args: Parameters<typeof api<T>>) => api<T>(...args).catch((e: Error) => { toast(e.message); return undefined; });

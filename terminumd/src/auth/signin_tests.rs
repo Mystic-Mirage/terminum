@@ -16,8 +16,8 @@ fn a_sign_in_outlives_a_restart_and_the_file_holds_no_secret() {
     let secret = Signins::load(&dir).create("password").unwrap();
     assert_eq!(secret.len(), 64, "256 random bits");
     let again = Signins::load(&dir);
-    assert!(again.check(&secret), "a restarted terminumd knows it");
-    assert!(!again.check(&secret[..63]) && !again.check("") && !again.check(&format!("{secret}0")));
+    assert!(again.check(&secret, false), "a restarted terminumd knows it");
+    assert!(!again.check(&secret[..63], false) && !again.check("", false) && !again.check(&format!("{secret}0"), false));
     let path = dir.join(FILE);
     assert_eq!(fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
     let raw = fs::read_to_string(&path).unwrap();
@@ -27,7 +27,7 @@ fn a_sign_in_outlives_a_restart_and_the_file_holds_no_secret() {
     assert_eq!(item["sha256"], sha256_hex(secret.as_bytes()));
     assert_eq!(item["by"], "password");
     for field in ["sha256", "id", "proof_key"] {
-        assert!(!again.check(item[field].as_str().unwrap()), "{field} from the file is not a sign-in");
+        assert!(!again.check(item[field].as_str().unwrap(), false), "{field} from the file is not a sign-in");
     }
     fs::remove_dir_all(&dir).ok();
 }
@@ -40,9 +40,9 @@ fn at_most_20_sign_ins_the_oldest_dropped() {
     let first = s.create_at("a", now - 100).unwrap();
     let second = s.create_at("b", now - 99).unwrap();
     let rest: Vec<String> = (0..MAX_SIGNINS - 1).map(|_| s.create_at("c", now).unwrap()).collect();
-    assert!(!s.check(&first), "the oldest went");
-    assert!(s.check(&second));
-    assert!(rest.iter().all(|r| s.check(r)), "made in the same second, none of the new ones is dropped");
+    assert!(!s.check(&first, false), "the oldest went");
+    assert!(s.check(&second, false));
+    assert!(rest.iter().all(|r| s.check(r, false)), "made in the same second, none of the new ones is dropped");
     assert_eq!(s.count(), MAX_SIGNINS);
     assert_eq!(Signins::load(&dir).count(), MAX_SIGNINS);
     fs::remove_dir_all(&dir).ok();
@@ -54,8 +54,8 @@ fn a_sign_in_lasts_30_days() {
     let s = Signins::load(&dir);
     let now = store::unix_now();
     let secret = s.create_at("x", now - SIGNIN_TTL_S - 1).unwrap();
-    assert!(!s.check(&secret));
-    assert!(s.check_at(&secret, now - SIGNIN_TTL_S));
+    assert!(!s.check(&secret, false));
+    assert!(s.check_at(&secret, false, now - SIGNIN_TTL_S));
     assert_eq!(Signins::load(&dir).count(), 0, "expired ones are not loaded");
     let id = signin_id(&secret);
     assert_eq!(s.hello(&id, NONCE).unwrap_err().code, "unknown_signin", "nor proved");
@@ -69,9 +69,9 @@ fn signout_revokes_every_sign_in_also_after_a_restart() {
     let a = s.create("a").unwrap();
     let b = s.create("b").unwrap();
     s.revoke_all().unwrap();
-    assert!(!s.check(&a) && !s.check(&b));
+    assert!(!s.check(&a, false) && !s.check(&b, false));
     let again = Signins::load(&dir);
-    assert!(!again.check(&a) && again.count() == 0);
+    assert!(!again.check(&a, false) && again.count() == 0);
     fs::remove_dir_all(&dir).ok();
 }
 
@@ -81,9 +81,9 @@ fn a_page_that_signs_out_takes_only_its_own_sign_in() {
     let s = Signins::load(&dir);
     let (a, b) = (s.create("password").unwrap(), s.create("password").unwrap());
     s.revoke(&a).unwrap();
-    assert!(!s.check(&a) && s.check(&b));
+    assert!(!s.check(&a, false) && s.check(&b, false));
     let again = Signins::load(&dir);
-    assert!(!again.check(&a) && again.check(&b), "also after a restart");
+    assert!(!again.check(&a, false) && again.check(&b, false), "also after a restart");
     s.revoke("not one of them").unwrap();
     assert_eq!(s.count(), 1);
     fs::remove_dir_all(&dir).ok();
@@ -96,7 +96,7 @@ fn the_sign_ins_of_0_5_0_are_all_dropped() {
     let old = Signins::load(&dir).create("terminum open").unwrap();
     fs::rename(dir.join(FILE), dir.join(OLD_FILE)).unwrap();
     let s = Signins::load(&dir);
-    assert!(!s.check(&old) && s.count() == 0);
+    assert!(!s.check(&old, false) && s.count() == 0);
     assert!(!dir.join(OLD_FILE).exists(), "removed");
     fs::remove_dir_all(&dir).ok();
 }
@@ -112,7 +112,7 @@ fn a_broken_file_is_set_aside_and_terminumd_starts_without_sign_ins() {
         assert!(!path.exists(), "{raw}");
         assert_eq!(fs::read_to_string(store::backup_path(&path)).unwrap(), raw);
         let secret = s.create("again").unwrap();
-        assert!(Signins::load(&dir).check(&secret), "{raw}: works again");
+        assert!(Signins::load(&dir).check(&secret, false), "{raw}: works again");
         fs::remove_file(&path).unwrap();
     }
     // a well-formed file with a malformed item keeps the others
@@ -122,7 +122,7 @@ fn a_broken_file_is_set_aside_and_terminumd_starts_without_sign_ins() {
     v["items"].as_array_mut().unwrap().push(json!({"sha256": "zz", "id": "x", "proof_key": "y", "expires": u64::MAX, "by": ""}));
     fs::write(&path, v.to_string()).unwrap();
     let s = Signins::load(&dir);
-    assert!(s.check(&secret) && s.count() == 1);
+    assert!(s.check(&secret, false) && s.count() == 1);
     fs::remove_dir_all(&dir).ok();
 }
 
@@ -148,9 +148,9 @@ fn the_page_and_terminumd_compute_the_same_proof() {
     let s = Signins::load(&dir);
     let secret = s.create("x").unwrap();
     let n = random_hex::<16>();
-    assert_eq!(s.hello(&signin_id(&secret), &n).unwrap(), proof(&proof_key(&secret), &n));
-    assert_eq!(s.hello(&signin_id(&secret).to_uppercase(), &n).unwrap(), proof(&proof_key(&secret), &n));
-    assert_ne!(s.hello(&signin_id(&secret), &random_hex::<16>()).unwrap(), proof(&proof_key(&secret), &n), "a fresh nonce, a fresh answer");
+    assert_eq!(s.hello(&signin_id(&secret), &n).unwrap().0, proof(&proof_key(&secret), &n));
+    assert_eq!(s.hello(&signin_id(&secret).to_uppercase(), &n).unwrap().0, proof(&proof_key(&secret), &n));
+    assert_ne!(s.hello(&signin_id(&secret), &random_hex::<16>()).unwrap().0, proof(&proof_key(&secret), &n), "a fresh nonce, a fresh answer");
     fs::remove_dir_all(&dir).ok();
 }
 

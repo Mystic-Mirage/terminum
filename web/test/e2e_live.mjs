@@ -128,6 +128,17 @@ async function wide(browser, name) {
   await signIn(page);
   check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/" && !new URL(page.url()).search);
   check("AC-09 the sign-in is kept in the origin's storage", await page.evaluate(() => /^[0-9a-f]{64}$/.test(localStorage.getItem("tm.session") ?? "")));
+  // a page that sent its secret would be refused at once, not leak it unseen (the browser sends Sec-Fetch-Site)
+  // (an XMLHttpRequest: signin.js puts the credential on every fetch)
+  const bySecret = await page.evaluate(async () => {
+    const s = localStorage.getItem("tm.session");
+    const r = await new Promise((done) => { const x = new XMLHttpRequest(); x.open("GET", "/fb/api/prefs"); x.setRequestHeader("X-TM-Session", s); x.onloadend = () => done(x.status); x.send(); });
+    const ws = await new Promise((done) => { const w = new WebSocket(`ws://${location.host}/ws`, ["tm", s]); w.onopen = () => { w.close(); done("open"); }; w.onerror = w.onclose = () => done("refused"); });
+    return { r, ws };
+  });
+  // Chromium sends no Sec-Fetch-Site on a WebSocket's upgrade, WebKit does (that the page never puts the secret there: e2e_signin.mjs)
+  check(`AC-09 terminumd refuses the secret itself from the browser: a request with it 401${name === "webkit" ? ", a WebSocket with it never opens" : ""}`,
+    bySecret.r === 401 && (name !== "webkit" || bySecret.ws === "refused"), JSON.stringify(bySecret));
   check("AC-01 the list shows the session main", (await page.textContent("#sessions")).includes("main"));
   await within("AC-02 the shown pane's screen is drawn", () => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3, null, { timeout: 5000 }));
   await page.keyboard.type(`cd ${WORK} && echo live-$((6*7))`);

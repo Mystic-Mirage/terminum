@@ -38,8 +38,8 @@ async function typedInto(page, { tmux, work }, data) {
   await page.waitForSelector(`#sessions .item[data-id$=":${pane}"]`, { timeout: 5000 }).catch(() => {});
   const id = await page.evaluate((pane) => document.querySelector(`#sessions .item[data-id$=":${pane}"]`)?.dataset.id, pane);
   // as the page sends it (boxnav.js stepKeys, ask.js), on a socket of its own
-  await page.evaluate(([id, data]) => new Promise((done) => {
-    const ws = new WebSocket(`ws://${location.host}/ws`, ["tm", localStorage.getItem("tm.session")]);
+  await page.evaluate(([id, data]) => new Promise(async (done) => {
+    const ws = new WebSocket(`ws://${location.host}/ws`, await import("/signin.js").then((m) => m.protocols()));
     ws.onopen = () => { ws.send(JSON.stringify({ t: "sub", id })); setTimeout(() => { ws.send(JSON.stringify({ t: "in", data })); setTimeout(() => { ws.close(); done(); }, 300); }, 500); };
     ws.onerror = () => done();
   }), [id, data]);

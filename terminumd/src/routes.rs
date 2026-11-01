@@ -81,7 +81,10 @@ pub fn agent(app: Shared) -> Router {
 fn signed_in(app: &Shared, req: &Request) -> bool {
     let h = req.headers();
     let header = |n: &str| h.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    checks::signin_secret(header).is_some_and(|s| app.signins.check(&s))
+    // a browser sends Sec-Fetch-Site (Node's fetch sends only Sec-Fetch-Mode): it may present
+    // only a credential, never the secret (AC-09)
+    let browser = h.contains_key("sec-fetch-site");
+    checks::signin_secret(header).is_some_and(|s| app.signins.check(&s, browser))
 }
 
 async fn guard(State(app): State<Shared>, mut req: Request, next: Next) -> Response {
@@ -171,13 +174,18 @@ struct Hello {
     id: String,
 }
 
-/// `GET /api/hello?n=&id=` (no sign-in): the server proves it holds the page's sign-in.
+/// `GET /api/hello?n=&id=` (no sign-in): the server proves it holds the page's sign-in, and
+/// says its boot, which the page's credential is made with (auth/signin.rs).
 async fn hello(State(app): State<Shared>, Query(q): Query<Hello>) -> Response {
     match app.signins.hello(&q.id, &q.n) {
         // `apps`: Finder and default apps exist here (macOS), told to a known sign-in only
-        Ok(proof) => Json(json!({"proof": proof, "apps": cfg!(target_os = "macos")})).into_response(),
-        Err(d) => (StatusCode::from_u16(d.status).unwrap_or(StatusCode::BAD_REQUEST), Json(d.body())).into_response(),
+        Ok((proof, boot)) => Json(json!({"proof": proof, "boot": boot, "apps": cfg!(target_os = "macos")})).into_response(),
+        Err(d) => denied(d),
     }
+}
+
+fn denied(d: checks::Denial) -> Response {
+    (StatusCode::from_u16(d.status).unwrap_or(StatusCode::BAD_REQUEST), Json(d.body())).into_response()
 }
 
 async fn settings(State(app): State<Shared>) -> Json<serde_json::Value> {

@@ -341,6 +341,9 @@ try {
   await page.evaluate(() => { window.__after = 1; });
   await page.waitForTimeout(2500);
   check("AC-16 one reload per build (a page that still differs does not loop)", (await page.evaluate(() => window.__after)) === 1);
+  // what the panel signs its requests with: a credential for terminumd's boot, never the secret
+  const creds = new Set();
+  page.on("request", (r) => { const c = r.headers()["x-tm-session"]; if (c) creds.add(c); });
   await stopServer(); await bringBack(); await page.reload(); await page.waitForSelector(row("src"));
 
   // AC 09 another program on the port while terminumd is away: it never sees the sign-in,
@@ -364,6 +367,11 @@ try {
     await new Promise((r) => { squatter.close(r); squatter.closeAllConnections(); });
     await bringBack();
     check(`AC 09 a program on the port${forge ? " forging the proof" : ""} never gets the sign-in`, seen.length > 0 && !seen.some((x) => x.includes(SECRET)), `${seen.length} requests`);
+    // had one of the panel's requests reached it before the panel noticed, it would hold a credential: the next terminumd refuses it
+    const old = [...creds];
+    const refused = await Promise.all(old.map((c) => fetch(`${base}/fb/api/ls?path=${encodeURIComponent(SB)}`, { headers: { "X-TM-Session": c } }).then((r) => r.status)));
+    check("AC 09 … the panel's credentials so far are for a boot that is gone: the new terminumd refuses every one; none is the secret",
+      old.length > 0 && refused.every((st) => st === 401) && old.every((c) => c.includes(".") && !c.includes(SECRET)), JSON.stringify({ n: old.length, refused }));
     await within("AC 09 … and the panel is back on terminumd", (ms) => page.waitForSelector("#dot:not(.off):not(.wait)", { timeout: ms }), 8000);
   }
   check("AC 09 … with the unsaved edit", (await page.textContent(".cm-content")).includes("# kept through a squatter"));

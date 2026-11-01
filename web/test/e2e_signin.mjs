@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-09 checks of the page's sign-in against a fake terminumd (fake.mjs): the password form
-// gets a sign-in that goes into the origin's storage; every request carries it as
-// X-TM-Session (an image too: fetched, shown from a blob:), the WebSocket as its subprotocol, but only after the
-// server proved it knows it; a server that cannot prove it never sees it; a signed-out page
+// gets a sign-in that goes into the origin's storage and never out again: once the server proved
+// it knows it, the page makes a credential for its boot, which every request carries as
+// X-TM-Session (an image too: fetched, shown from a blob:), the WebSocket as its subprotocol; a
+// new terminumd (another boot) is proved again; a server that cannot prove itself gets nothing;
+// a signed-out page
 // drops its sign-in and shows the form; while no password is set the form says how to set one.
 
 import crypto from "node:crypto";
@@ -10,7 +12,10 @@ import { check } from "./check.mjs";
 import { drawn, openPage, pause } from "./fake.mjs";
 
 const SECRET = "a".repeat(32) + "0123456789abcdef".repeat(2);
-const carries = (r) => r.headers["x-tm-session"] === SECRET || r.query.includes(SECRET);
+/** A request that gives the secret away (it never goes out after /auth/login's answer). */
+const leaks = (r) => r.headers["x-tm-session"] === SECRET || r.query.includes(SECRET) || r.body.includes(SECRET) || (r.headers["sec-websocket-protocol"] ?? "").includes(SECRET);
+/** A request signed in with a credential. */
+const carries = (r) => !!r.headers["x-tm-session"];
 const said = (page) => page.evaluate(() => document.getElementById("loginerr").textContent);
 
 export async function webSignin(browser) {
@@ -47,11 +52,27 @@ export async function webSignin(browser) {
   check("AC-09 sign-in: the server proves itself first (/api/hello with a 32-hex nonce and the sign-in's id)",
     !!hello && /^[0-9a-f]{32}$/.test(q.get("n")) && q.get("id") === crypto.createHash("sha256").update(SECRET).digest("hex").slice(0, 16)
       && f.requests.indexOf(hello) < first, JSON.stringify({ hello, first }));
-  check("AC-09 sign-in: requests carry X-TM-Session, the WebSocket the subprotocols tm and the secret, an image the header (never ?t=)",
-    f.requests.some((r) => r.path === "/fb/api/state" && r.headers["x-tm-session"] === SECRET)
-      && JSON.stringify(f.sockets.at(-1)?.protocols) === JSON.stringify(["tm", SECRET])
-      && img?.headers["x-tm-session"] === SECRET && img.query === "?path=%2Ftmp%2Fa.png" && !f.requests.some((r) => r.query.includes(SECRET)),
+  const token = f.credential();
+  check("AC-09 sign-in: requests carry the credential for the server's boot as X-TM-Session, the WebSocket the subprotocols tm and it, an image the header (never ?t=); the secret never goes out",
+    f.requests.some((r) => r.path === "/fb/api/state" && r.headers["x-tm-session"] === token)
+      && JSON.stringify(f.sockets.at(-1)?.protocols) === JSON.stringify(["tm", token])
+      && img?.headers["x-tm-session"] === token && img.query === "?path=%2Ftmp%2Fa.png" && !f.requests.some(leaks) && !f.requests.some((r) => r.query.includes(token)),
     JSON.stringify({ protocols: f.sockets.at(-1)?.protocols, img }));
+
+  // a new terminumd (an upgrade, a restart) draws another boot: the page proves it again and sends the request once more
+  f.restart();
+  const hellos = f.requests.filter((r) => r.path === "/api/hello").length;
+  const status = await f.page.evaluate(() => fetch("/fb/api/state").then((r) => r.status, (e) => String(e)));
+  const tries = f.requests.filter((r) => r.path === "/fb/api/state").slice(-2);
+  check("AC-09 sign-in: a credential of another boot (401 bad_session): proved again, a new credential, the request sent once more; no form",
+    status === 404 && f.requests.filter((r) => r.path === "/api/hello").length === hellos + 1 && tries.length === 2
+      && tries[0].headers["x-tm-session"] === token && tries[1].headers["x-tm-session"] === f.credential() && token !== f.credential()
+      && await f.page.isHidden("#login") && !f.requests.some(leaks), JSON.stringify({ status, tries: tries.map((r) => r.headers["x-tm-session"]?.slice(0, 8)) }));
+  // several requests in flight when it restarts: each is proved again and sent once more, none is "signed out"
+  f.restart();
+  const many = await f.page.evaluate(() => Promise.all([1, 2, 3, 4, 5].map((i) => fetch(`/fb/api/state?i=${i}`).then((r) => r.status, (e) => String(e)))));
+  check("AC-09 sign-in: 5 requests in flight across a restart all go through again (no 401 left, no form)",
+    many.every((st) => st === 404) && await f.page.isHidden("#login") && !f.requests.some(leaks), JSON.stringify(many));
 
   // custom.css as last fetched is applied at once at the next load (it came after the connection), and goes with the sign-in (AC-19)
   await f.page.waitForFunction(() => localStorage.getItem("tm.customcss")?.includes("kept"), null, { timeout: 3000 }).catch(() => {});
@@ -69,7 +90,7 @@ export async function webSignin(browser) {
   const out = f.requests.find((r) => r.path === "/auth/logout");
   const left = await f.page.evaluate(() => [localStorage.getItem("tm.session"), localStorage.getItem("tm.customcss")]);
   check("AC-09 sign-in: Sign out tells terminumd which sign-in ends, forgets it (custom.css's copy with it) and shows the form",
-    out?.headers["x-tm-session"] === SECRET && left[0] === null && left[1] === null && await f.page.isVisible("#login"), JSON.stringify({ out: !!out, left }));
+    out?.headers["x-tm-session"] === f.credential() && left[0] === null && left[1] === null && await f.page.isVisible("#login"), JSON.stringify({ out: !!out, left }));
   check("AC-09 sign-in: no page errors", !f.errors.length, f.errors.join(" | "));
   await f.close();
 
@@ -101,7 +122,7 @@ export async function webSignin(browser) {
   const why = await evil.page.evaluate(() => document.getElementById("status").textContent);
   const evilImg = await evil.page.evaluate(() => import("/signin.js").then((m) => m.blobUrl("/fb/api/raw?path=%2Ftmp%2Fa.png")));
   check("AC-09 sign-in: a server that cannot prove itself never sees the secret: no header, no image fetched with it, no WebSocket; the page says why",
-    !evil.requests.some(carries) && !evil.requests.some((r) => r.query.includes(SECRET)) && evil.sockets.length === 0 && !evilImg.url && !!evilImg.error && why === "terminum's server could not prove itself"
+    !evil.requests.some(leaks) && !evil.requests.some(carries) && evil.sockets.length === 0 && !evilImg.url && !!evilImg.error && why === "terminum's server could not prove itself"
       && evil.requests.filter((r) => r.path === "/api/hello").length >= 2, JSON.stringify({ why, sockets: evil.sockets.length, asked: evil.requests.map((r) => r.path) }));
   await evil.close();
 
@@ -112,7 +133,7 @@ export async function webSignin(browser) {
   await pause(unknown.page, 2500);
   const was = await unknown.page.evaluate(() => localStorage.getItem("tm.session"));
   check("AC-09 sign-in: a sign-in /api/hello does not know (404 unknown_signin) is dropped once: the form, nothing sent, nothing retried",
-    await said(unknown.page) === "Signed out: sign in again." && was === null && !unknown.requests.some(carries) && unknown.sockets.length === 0
+    await said(unknown.page) === "Signed out: sign in again." && was === null && !unknown.requests.some(leaks) && !unknown.requests.some(carries) && unknown.sockets.length === 0
       && unknown.requests.length === asked, JSON.stringify({ was, more: unknown.requests.slice(asked).map((r) => r.path) }));
   await unknown.close();
 }

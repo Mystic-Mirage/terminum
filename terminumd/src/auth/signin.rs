@@ -15,11 +15,21 @@
 //! The secret is 64 lowercase hex characters, keyed as their UTF-8 bytes. An unknown `id` is
 //! 404 `unknown_signin`, with no proof.
 //!
+//! - beside it, `{"boot"}`: 256 random bits this process drew when it started.
+//!
+//! The credential: after the proof the page sends `<id>.<hex(HMAC-SHA256(proof_key's 32 bytes,
+//! "tm-cred-v1:" + boot))>` as X-TM-Session (and in the WebSocket's subprotocols), never the
+//! secret. A program that takes the port once terminumd let it go gets a credential for a boot
+//! that is gone: the next terminumd draws another, so it never accepts it. The secret itself is
+//! refused from a browser that sends Sec-Fetch-Site (Chrome, Firefox, Safari 16.4 and later on
+//! fetch; on a WebSocket's upgrade WebKit does, Chromium not), so a page that sent it fails loud instead of leaking it unnoticed; a script or test
+//! (none sends it; Node's fetch sends only Sec-Fetch-Mode) may still use it.
+//!
 //! Only a terminumd that issued that sign-in holds its proof key, so another program cannot
 //! answer, and the nonce (fresh per ask) keeps an old answer from being replayed. The fixed
-//! prefix keeps the proof key from signing anything else. Reading the file gives neither the
-//! secret (SHA-256 and HMAC do not invert) nor a sign-in: `check` wants the secret, whose
-//! SHA-256 is stored; whoever reads the 0600 file is this user already.
+//! prefixes keep the proof key from signing anything else. Reading the file gives not the
+//! secret (SHA-256 and HMAC do not invert) but the proof key, which makes a credential: whoever
+//! reads the 0600 file is this user already, who can read the browser's storage too.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -58,6 +68,12 @@ pub fn proof(proof_key: &str, nonce: &str) -> String {
     hex(&hmac_sha256(&key, format!("tm-hello-v1:{nonce}").as_bytes()))
 }
 
+/// The credential of the sign-in whose proof key is `proof_key` in the process of `boot`.
+pub fn credential(proof_key: &str, boot: &str) -> String {
+    let key = unhex(proof_key).unwrap_or_default();
+    hex(&hmac_sha256(&key, format!("tm-cred-v1:{boot}").as_bytes()))
+}
+
 /// A nonce is 16 to 128 hex digits.
 pub fn valid_nonce(n: &str) -> bool {
     (16..=128).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_hexdigit())
@@ -84,14 +100,15 @@ impl Item {
     }
 }
 
-/// The sign-ins, in memory and in `<app dir>/signins.json`. `create`, `revoke` and
-/// `revoke_all` write the file (blocking: an async caller runs them off its workers); `check`
-/// and `hello` read memory only, never waiting for a write (`writer` serializes the writes;
-/// `items` is held only to read or swap).
+/// The sign-ins, in memory and in `<app dir>/signins.json`, and this process's boot.
+/// `create`, `revoke` and `revoke_all` write the file (blocking: an async caller runs them off
+/// its workers); `check` and `hello` read memory only, never waiting for a write (`writer`
+/// serializes the writes; `items` is held only to read or swap).
 pub struct Signins {
     path: PathBuf,
     items: Mutex<Vec<Item>>,
     writer: Mutex<()>,
+    boot: String,
 }
 
 impl Signins {
@@ -112,7 +129,7 @@ impl Signins {
         let now = store::unix_now();
         let mut items: Vec<Item> = items.unwrap_or_default().into_iter().filter(|i| i.well_formed() && i.expires > now).collect();
         keep_newest(&mut items, MAX_SIGNINS);
-        Signins { path, items: Mutex::new(items), writer: Mutex::new(()) }
+        Signins { path, items: Mutex::new(items), writer: Mutex::new(()), boot: random_hex::<32>() }
     }
 
     /// A new sign-in made by `by`: its secret (256 random bits, hex), which only the page keeps.
@@ -139,24 +156,39 @@ impl Signins {
         Ok(secret)
     }
 
-    /// The secret is a live sign-in's.
-    pub fn check(&self, secret: &str) -> bool {
-        self.check_at(secret, store::unix_now())
+    /// The credential is a live sign-in's: its credential for this boot, or (`browser`: false
+    /// only) its secret.
+    pub fn check(&self, credential: &str, browser: bool) -> bool {
+        self.check_at(credential, browser, store::unix_now())
     }
 
-    fn check_at(&self, secret: &str, now: u64) -> bool {
-        if secret.is_empty() {
+    fn check_at(&self, credential: &str, browser: bool, now: u64) -> bool {
+        if credential.is_empty() || (browser && !credential.contains('.')) {
             return false;
         }
-        let digest = sha256_hex(secret.as_bytes());
+        let digest = self.signin_of(credential);
         // every item compared, so the time says nothing of which one matched
         self.items.lock().iter().fold(false, |found, i| found | (same(&i.sha256, &digest) && i.expires > now))
     }
 
-    /// The page signs out: its sign-in goes, in memory at once and in the file. Err: the
-    /// file still holds it, and so does memory.
-    pub fn revoke(&self, secret: &str) -> io::Result<()> {
-        let digest = sha256_hex(secret.as_bytes());
+    /// The SHA-256 of the sign-in a credential presents: an `<id>.<mac>`'s when its MAC is
+    /// right for this boot, else the presented secret's own.
+    fn signin_of(&self, credential: &str) -> String {
+        if let Some((id, mac)) = credential.split_once('.') {
+            let items = self.items.lock();
+            let item = items.iter().find(|i| same(&i.id, &id.to_ascii_lowercase()));
+            return match item {
+                Some(i) if same(&self::credential(&i.proof_key, &self.boot), &mac.to_ascii_lowercase()) => i.sha256.clone(),
+                _ => String::new(),
+            };
+        }
+        sha256_hex(credential.as_bytes())
+    }
+
+    /// The page signs out: the sign-in it presents (its credential or secret) goes, in memory at
+    /// once and in the file. Err: the file still holds it, and so does memory.
+    pub fn revoke(&self, credential: &str) -> io::Result<()> {
+        let digest = self.signin_of(credential);
         let _writing = self.writer.lock();
         let next: Vec<Item> = self.items.lock().iter().filter(|i| !same(&i.sha256, &digest)).cloned().collect();
         self.save(&next)?;
@@ -178,8 +210,9 @@ impl Signins {
         self.items.lock().iter().filter(|i| i.expires > now).count()
     }
 
-    /// `GET /api/hello?n=<nonce>&id=<id>` (no sign-in): the proof for the sign-in named `id`.
-    pub fn hello(&self, id: &str, nonce: &str) -> Result<String, Denial> {
+    /// `GET /api/hello?n=<nonce>&id=<id>` (no sign-in): the proof for the sign-in named `id`,
+    /// and this process's boot, which its credential is made with.
+    pub fn hello(&self, id: &str, nonce: &str) -> Result<(String, String), Denial> {
         if !valid_nonce(nonce) {
             return Err(Denial::new(400, "bad_nonce", "n must be 16 to 128 hex digits"));
         }
@@ -189,7 +222,7 @@ impl Signins {
         let now = store::unix_now();
         let items = self.items.lock();
         let key = items.iter().find(|i| same(&i.id, &id.to_ascii_lowercase()) && i.expires > now).map(|i| i.proof_key.clone());
-        key.map(|k| proof(&k, nonce))
+        key.map(|k| (proof(&k, nonce), self.boot.clone()))
             .ok_or_else(|| Denial::new(404, "unknown_signin", "Signed out: sign in again"))
     }
 
@@ -208,3 +241,7 @@ fn keep_newest(items: &mut Vec<Item>, max: usize) {
 #[cfg(test)]
 #[path = "signin_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "credential_tests.rs"]
+mod credential_tests;

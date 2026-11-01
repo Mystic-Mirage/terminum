@@ -54,7 +54,7 @@ async fn serve(app: Shared, secret: String, mut rx: Receiver<Event>, ws: WebSock
             }
             _ = ping.tick() => {
                 // an agent's socket comes with its token (agent_guard), not a sign-in
-                if !app.cfg.agent && !app.signins.check(&secret) {
+                if !app.cfg.agent && !app.signins.check(&secret, false) {
                     send(&mut tx, Message::Close(None)).await;
                     return;
                 }

@@ -7,20 +7,43 @@
 #     by TM_PRIVATE_PATTERNS (one regular expression a line, kept outside the repository), so
 #     this script holds none of it. The copyright holder's name and email may appear in
 #     LICENSE-COMMERCIAL.md, CONTRIBUTING.md, README.md, Cargo.toml and package.json.
-#     Findings name the file, line and kind, never the text found.
+#     Findings name the file, line and kind, never the text found. TM_PRIVATE_PATTERNS
+#     defaults to ~/.config/terminum/private-patterns (other machines' and the tailnet's
+#     names); how many patterns were read is said, so an empty list shows.
 #  2. With TM_PORT and TM_APP_DIR of a private terminumd (never the live one): its refusals.
+#
+#   bash scripts/security_check.sh                  both parts
+#   bash scripts/security_check.sh --message FILE   part 1 on one file (a commit message:
+#                                                   scripts/hooks/commit-msg)
+#   bash scripts/security_check.sh --staged         part 1 on what is staged, as staged
+#                                                   (scripts/hooks/pre-commit)
 set -uo pipefail
+message="" staged=""
+case "${1:-}" in
+  --message) message=$(cd "$(dirname "${2:?--message FILE}")" && pwd)/$(basename "$2") || exit 2 ;;
+  --staged) staged=1 ;;
+esac
 cd "$(dirname "$0")/.." || exit 1
 fail=0
+default_patterns="${XDG_CONFIG_HOME:-$HOME/.config}/terminum/private-patterns"
+if [ -z "${TM_PRIVATE_PATTERNS:-}" ] && [ -f "$default_patterns" ]; then export TM_PRIVATE_PATTERNS=$default_patterns; fi
 
 full_name=$(id -F 2>/dev/null || true)
 host_names="$(scutil --get LocalHostName 2>/dev/null || true) $(hostname -s 2>/dev/null || true)"
 TM_SC_LOGIN=$(id -un) TM_SC_FULL="$full_name" TM_SC_HOSTS="$host_names" \
 TM_SC_GIT_NAME=$(git config user.name 2>/dev/null || true) TM_SC_GIT_EMAIL=$(git config user.email 2>/dev/null || true) \
-python3 - <<'PY' || fail=1
+TM_SC_MESSAGE="$message" TM_SC_STAGED="$staged" python3 - <<'PY' || fail=1
 import os, re, subprocess, sys
 
-files = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], capture_output=True).stdout.decode().split("\0")
+message, staged = os.environ.get("TM_SC_MESSAGE"), os.environ.get("TM_SC_STAGED")
+git_list = lambda *a: subprocess.run(["git", *a, "-z"], capture_output=True).stdout.decode().split("\0")
+if message:
+    files = [message]
+elif staged:   # added, copied, changed or renamed in the index
+    files = git_list("diff", "--cached", "--name-only", "--diff-filter=ACMR")
+    links = {e.split("\t", 1)[1] for e in git_list("ls-files", "-s") if e.startswith("120000 ")}
+else:
+    files = git_list("ls-files", "-co", "--exclude-standard")
 ALLOWED = {"LICENSE-COMMERCIAL.md", "CONTRIBUTING.md", "README.md", "Cargo.toml", "package.json"}
 SECRETS = [
     ("Anthropic key", r"sk-ant-[A-Za-z0-9_-]{16,}"), ("API key", r"\bsk-[A-Za-z0-9]{32,}"),
@@ -38,9 +61,13 @@ for name in os.environ.get("TM_SC_HOSTS", "").split():
     if len(name) >= 4:
         SECRETS.append(("this Mac's name", r"(?i)\b" + re.escape(name) + r"\b"))
 extra = os.environ.get("TM_PRIVATE_PATTERNS")
+private = []
 if extra:
     with open(extra) as f:
-        SECRETS += [("private pattern", line.strip()) for line in f if line.strip() and not line.startswith("#")]
+        private = [("private pattern", line.strip()) for line in f if line.strip() and not line.startswith("#")]
+    SECRETS += private
+print(f"private patterns: {len(private)}" if extra else
+      "private patterns: none (other machines' names: one regex a line in ~/.config/terminum/private-patterns)")
 PERSONAL = []
 for kind, value in (("login name", "TM_SC_LOGIN"), ("full name", "TM_SC_FULL"), ("git author", "TM_SC_GIT_NAME"),
                     ("git email", "TM_SC_GIT_EMAIL")):
@@ -51,20 +78,29 @@ rules = [(k, re.compile(p)) for k, p in SECRETS]
 personal = [(k, re.compile(p)) for k, p in PERSONAL]
 found = 0
 for path in filter(None, files):
-    if os.path.islink(path) or not os.path.isfile(path) or os.path.getsize(path) > 4 << 20:
+    if staged:   # what the commit takes (the index), not the file on disk
+        if path in links:
+            continue
+        data = subprocess.run(["git", "show", ":" + path], capture_output=True).stdout
+    elif os.path.islink(path) or not os.path.isfile(path):
         continue
-    data = open(path, "rb").read()
-    if b"\0" in data:
+    else:
+        data = open(path, "rb").read()
+    if len(data) > 4 << 20 or b"\0" in data:
         continue
     checks = rules + ([] if os.path.basename(path) in ALLOWED else personal)
     for n, line in enumerate(data.decode("utf-8", "replace").splitlines(), 1):
+        if message and line.startswith("# ------------------------ >8"):
+            break   # git's own text below: the diff of `commit -v` (lines with # are kept: -m and -F keep them)
         for kind, rx in checks:
             if rx.search(line):
                 print(f"FAIL {path}:{n}: {kind}")
                 found += 1
-print(f"{'FAIL' if found else 'ok  '} tree: {len([f for f in files if f])} files, {found} findings")
+what = "message" if message else "staged" if staged else "tree"
+print(f"{'FAIL' if found else 'ok  '} {what}: {len([f for f in files if f])} files, {found} findings")
 sys.exit(1 if found else 0)
 PY
+[ -z "$message$staged" ] || exit $fail
 
 if [ -n "${TM_PORT:-}" ] && [ -n "${TM_APP_DIR:-}" ]; then
   app=$TM_APP_DIR; b="http://127.0.0.1:$TM_PORT"; sock="$app/terminumd.sock"

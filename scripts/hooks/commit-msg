@@ -1,0 +1,5 @@
+#!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+# A commit message with the rules of the tree scan (CLAUDE.md §2): commits are public once
+# pushed. Installed by `make hooks`.
+exec bash "$(git rev-parse --show-toplevel)/scripts/security_check.sh" --message "$1"

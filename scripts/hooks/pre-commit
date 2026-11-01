@@ -1,0 +1,7 @@
+#!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+# Before a commit: the scan of scripts/security_check.sh (CLAUDE.md §2: no secrets, home paths,
+# personal names or private hosts) on what the commit takes, as staged (another session's
+# unstaged files never block it), so a leak stops here instead of after a push.
+# Installed by `make hooks` (git config core.hooksPath scripts/hooks).
+exec bash "$(git rev-parse --show-toplevel)/scripts/security_check.sh" --staged

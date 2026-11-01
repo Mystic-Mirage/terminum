@@ -93,10 +93,7 @@ fn binary_for(p: &str) -> Result<PathBuf, String> {
 
 /// ssh for `recipe`, its options and destination still to add.
 fn ssh_cmd(recipe: &[String]) -> Command {
-    let mut c = Command::new(crate::hosts::ssh_bin());
-    c.args(["-T", "-o", "BatchMode=yes"]).args(crate::hosts::connect_timeout(recipe));
-    c.env_remove("TMUX").env_remove("TMUX_PANE");
-    c
+    crate::hosts::ssh_command(crate::hosts::ssh_bin(), recipe, &[])
 }
 
 /// The recipe's options, then `--`, the destination and the remote command.

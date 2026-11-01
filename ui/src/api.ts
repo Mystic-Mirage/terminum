@@ -4,6 +4,7 @@
 // listener's page holds none: its HttpOnly cookie goes by itself.
 
 import { basename } from "./paths";
+import { hello } from "../../web/static/proof.js";
 import { shownUrl } from "../../web/static/shown.js";
 
 /** This tab's storage, which survives in-page reloads; private mode may refuse it. */
@@ -26,17 +27,6 @@ export let SERVER_APPS = true;
 
 /** The loopback sign-in the page stored (null: the web listener's cookie signs in). */
 const SECRET: string | null = (() => { try { return localStorage.getItem("tm.session"); } catch { return null; } })();
-const utf8 = (s: string) => new TextEncoder().encode(s);
-const hex = (b: ArrayBuffer | Uint8Array) => Array.from(new Uint8Array(b), (x) => x.toString(16).padStart(2, "0")).join("");
-async function hmac(key: BufferSource, text: string): Promise<Uint8Array<ArrayBuffer>> {
-  const k = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return new Uint8Array(await crypto.subtle.sign("HMAC", k, utf8(text)));
-}
-/** What terminumd answers to nonce `n` when it knows sign-in `secret` (terminumd/src/auth/signin.rs):
- *  HMAC-SHA256 keyed by the proof key HMAC-SHA256(secret, "tm-proof-key"). A sign-in is stored
- *  only on 127.0.0.1, a secure context, so crypto.subtle is there. */
-const proof = async (secret: string, n: string) => hex(await hmac(await hmac(utf8(secret), "tm-proof-key"), `tm-hello-v1:${n}`));
-
 /** terminumd proved, since the last time it was out of reach, that it knows the sign-in:
  *  requests then carry a credential for its boot (signin.rs), never the secret. While terminumd
  *  is not running another program may hold its port; it cannot answer the proof, and a
@@ -50,19 +40,13 @@ let refusal = "";  // why the last proof failed, as the user is told
 export function proveServer(): Promise<string | null> {
   if (!SECRET) return Promise.resolve(null);
   if (!proven) {
-    const secret = SECRET;
-    const n = hex(crypto.getRandomValues(new Uint8Array(16)));
-    const mine: Promise<string | null> = crypto.subtle.digest("SHA-256", utf8(secret)).then(async (digest) => {
-      const id = hex(digest).slice(0, 16);
-      const res = await fetch(`/api/hello?n=${n}&id=${id}`, { cache: "no-store" });  // a network error: not reachable
-      const body = await res.json().catch(() => null);
-      if (res.status === 404 && body?.error === "unknown_signin") throw new ApiError(401, "signed_out", "Signed out: run terminum open", body);
-      const unproven = () => new ApiError(401, "unproven", "terminumd does not prove it knows this page's sign-in, or another program holds its port", body);
-      if (!res.ok || body?.proof !== await proof(secret, n) || !/^[0-9a-f]{64}$/.test(body?.boot ?? "")) throw unproven();
-      const cred = `${id}.${hex(await hmac(await hmac(utf8(secret), "tm-proof-key"), `tm-cred-v1:${body.boot}`))}`;
-      if (proven === mine) token = cred;
-      SERVER_APPS = body.apps !== false;
-      return cred;
+    const mine: Promise<string | null> = hello(SECRET, fetch).then((r) => {
+      if (r.state === "unknown") throw new ApiError(401, "signed_out", "Signed out: run terminum open", null);
+      if (r.state === "down") throw new TypeError("terminumd not reachable");   // a network error: asked again
+      if (r.state !== "ok") throw new ApiError(401, "unproven", "terminumd does not prove it knows this page's sign-in, or another program holds its port", null);
+      if (proven === mine) token = r.cred ?? null;
+      SERVER_APPS = r.apps !== false;
+      return r.cred ?? null;
     });
     mine.catch((e) => { if (e instanceof ApiError) refusal = e.message; if (proven === mine) forgetProof(); });
     proven = mine;

@@ -2,7 +2,7 @@
 //! Who may ask what over TCP (AC-09): the HTTP guard's decisions as pure functions, so the
 //! table of refused requests is tested without a server. The one listener is 127.0.0.1:<port>;
 //! other devices reach it through a proxy on this Mac (`tailscale serve`). The guard computes
-//! `signed_in` (from `signin_secret`) and `forwarded` (from the header names) and answers a
+//! `signed_in` (from `signin_credential`) and `forwarded` (from the header names) and answers a
 //! `Denial` as `{"error": code, "message": message}` with its status.
 //!
 //! Order, first refusal wins: `/internal/*` is 404 (served only on the CLI socket); a path
@@ -39,6 +39,13 @@ impl Denial {
 
     pub fn body(&self) -> Value {
         json!({"error": self.code, "message": self.message})
+    }
+}
+
+impl axum::response::IntoResponse for Denial {
+    fn into_response(self) -> axum::response::Response {
+        let status = axum::http::StatusCode::from_u16(self.status).unwrap_or(axum::http::StatusCode::FORBIDDEN);
+        (status, axum::Json(self.body())).into_response()
     }
 }
 
@@ -205,10 +212,11 @@ fn clip(s: &str) -> String {
     s.chars().take(200).collect()
 }
 
-/// The sign-in a request presents: the `X-TM-Session` header; on a WebSocket the second of
-/// the subprotocols `tm, <secret>` (the answer selects `tm`). Never the query: an address
-/// is copied and kept (an image's, in history), so files are fetched with the header.
-pub fn signin_secret(header: impl Fn(&str) -> Option<String>) -> Option<String> {
+/// The sign-in a request presents (a page's per-boot credential, a script's secret): the
+/// `X-TM-Session` header; on a WebSocket the second of the subprotocols `tm, <credential>` (the
+/// answer selects `tm`). Never the query: an address is copied and kept (an image's, in
+/// history), so files are fetched with the header.
+pub fn signin_credential(header: impl Fn(&str) -> Option<String>) -> Option<String> {
     if let Some(s) = header("x-tm-session").filter(|s| !s.is_empty()) {
         return Some(s);
     }

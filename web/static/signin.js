@@ -7,13 +7,13 @@
 // blobUrl), the WebSocket as its subprotocol. The next terminumd draws another boot, so a
 // program that takes the port while terminumd is down gets nothing it would accept.
 // Imported first by app.js, before anything fetches.
+import { hello } from "./proof.js";
 import { shownUrl } from "./shown.js";
 
 const KEY = "tm.session";
 /** The user's custom.css as last fetched (settings.js): shown at the next load before it is
  *  fetched again; it needs the sign-in, so it goes with it. */
 export const CSS_KEY = "tm.customcss";
-const enc = new TextEncoder();
 let secret = null;
 /** The current proof's credential (memory only), for the WebSocket (protocols). */
 let token = null;
@@ -36,40 +36,15 @@ export function forget() {
   try { localStorage.removeItem(KEY); localStorage.removeItem(CSS_KEY); } catch { /* nothing kept */ }
 }
 
-const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
-async function hmac(key, text) {
-  const k = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(text)));
-}
-
-/** The server's proof that it knows the secret, then the credential for its boot: {state,
- *  cred}, state "ok" (cred made), "bad" (another program answered, or nothing it could prove
- *  with), "unknown" (terminumd does not know this sign-in: signed out), or "down" (nothing answered). */
-async function proveNow(s) {
-  if (!crypto.subtle) return { state: "bad" };
-  const n = hex(crypto.getRandomValues(new Uint8Array(16)));
-  const id = hex(await crypto.subtle.digest("SHA-256", enc.encode(s))).slice(0, 16);
-  let answer;
-  try {
-    const r = await realFetch(`/api/hello?n=${n}&id=${id}`, { cache: "no-store" });
-    answer = await r.json().catch(() => null);
-    if (r.status === 404 && answer?.error === "unknown_signin") return { state: "unknown" };
-  } catch { return { state: "down" }; }
-  const key = await hmac(enc.encode(s), "tm-proof-key");
-  const want = hex(await hmac(key, `tm-hello-v1:${n}`));
-  if (typeof answer?.proof !== "string" || answer.proof.toLowerCase() !== want || !/^[0-9a-f]{64}$/.test(answer.boot ?? "")) return { state: "bad" };
-  return { state: "ok", cred: `${id}.${hex(await hmac(key, `tm-cred-v1:${answer.boot}`))}` };
-}
-
 // One proof per connection: asked before the secret first goes out, and again after the
 // connection dropped (invalidate), as another program may hold the port now.
 let proof = null;
-/** The proof for the current connection (asked when there is none): proveNow's answer. */
+/** The proof for the current connection (asked when there is none): proof.js hello's answer. */
 function proving() {
   const s = secret;
   if (!s) return Promise.resolve({ state: "ok" });
   if (!proof) {
-    const mine = proof = proveNow(s).catch(() => ({ state: "bad" }));
+    const mine = proof = hello(s, realFetch).catch(() => ({ state: "bad" }));
     mine.then((r) => {
       if (proof !== mine) return;
       if (r.state === "ok") token = r.cred;

@@ -12,7 +12,7 @@ from pathlib import Path
 import shlex
 import signal
 import subprocess
-from testrun import free_port  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
 from e2e_ws import Terminumd, check, summary, unix_request, wait_for, wait_layout
 
@@ -55,8 +55,8 @@ process.stdout.write(JSON.stringify({ from, keys: arrowsTo(from, { row: 0, col: 
 
 
 def main():
-    t = Terminumd(free_port(), f"tm-review-typing-{os.getpid()}")
-    remote_socket = f"tm-review-rt-{os.getpid()}"
+    t = Terminumd(free_port(), own("tm-review-typing"))
+    remote_socket = own("tm-review-rt")
     remote = Path(t.root) / "remote"
     remote.mkdir()
     fake_pids = Path(t.root) / "fake-ssh-pids"

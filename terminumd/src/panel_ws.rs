@@ -30,11 +30,11 @@ pub async fn socket(State(app): State<Shared>, headers: HeaderMap, ws: WebSocket
     let offered = headers.get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("");
     let ws = if offered.split(',').any(|p| p.trim() == "tm") { ws.protocols(["tm"]) } else { ws };
     let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    let secret = crate::auth::checks::signin_secret(header).unwrap_or_default();
-    ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(app, secret, rx, s))
+    let credential = crate::auth::checks::signin_credential(header).unwrap_or_default();
+    ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(app, credential, rx, s))
 }
 
-async fn serve(app: Shared, secret: String, mut rx: Receiver<Event>, ws: WebSocket) {
+async fn serve(app: Shared, credential: String, mut rx: Receiver<Event>, ws: WebSocket) {
     let (mut tx, mut incoming) = ws.split();
     let state = Event::State(json!({"version": 1, "bridge": true, "build": crate::config::build_id()}));
     if !send(&mut tx, frame(&state)).await {
@@ -54,7 +54,7 @@ async fn serve(app: Shared, secret: String, mut rx: Receiver<Event>, ws: WebSock
             }
             _ = ping.tick() => {
                 // an agent's socket comes with its token (agent_guard), not a sign-in
-                if !app.cfg.agent && !app.signins.check(&secret, false) {
+                if !app.cfg.agent && !app.signins.check(&credential, false) {
                     send(&mut tx, Message::Close(None)).await;
                     return;
                 }

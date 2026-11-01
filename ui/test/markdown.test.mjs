@@ -21,7 +21,7 @@ test("no image address carries the sign-in, before or after terminumd proved its
     asked.push(q.get("id"));
     const key = createHmac("sha256", "tok123").update("tm-proof-key").digest();
     const proof = createHmac("sha256", key).update(`tm-hello-v1:${q.get("n")}`).digest("hex");
-    return { ok: true, status: 200, json: async () => ({ proof }) };
+    return { ok: true, status: 200, json: async () => ({ proof, boot: "b".repeat(64) }) };   // boot: what its credential is made with
   };
   await proveServer();
   assert.deepEqual(asked, [createHash("sha256").update("tok123").digest("hex").slice(0, 16)]);

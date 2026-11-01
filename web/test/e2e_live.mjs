@@ -15,7 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { check, playwright, results, runningIn, within } from "./check.mjs";
 import { freePort, own } from "./testrun.mjs";
-import { endOnSignal, NO_SIGNALS } from "../../ui/test/process-stop.mjs";
+import { endOnSignal, NO_SIGNALS, stopChild } from "../../ui/test/process-stop.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
@@ -93,7 +93,7 @@ async function start() {
   }
   throw new Error("terminumd did not start");
 }
-const stop = () => new Promise((r) => { if (!proc || proc.exitCode !== null) return r(); proc.once("exit", r); proc.kill(); });
+const stop = () => (proc ? stopChild(proc) : Promise.resolve());   // SIGTERM, then SIGKILL
 /** Everything this run started ends, once: from its `finally`, or from a signal (a timeout or
  *  Ctrl-C), which in Node skips every `finally`. */
 const teardown = endOnSignal(async () => {

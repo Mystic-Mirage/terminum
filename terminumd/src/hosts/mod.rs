@@ -55,6 +55,16 @@ pub(crate) fn ssh_bin() -> std::path::PathBuf {
     crate::config::find_program("ssh", "TM_SSH").unwrap_or_else(|| "/usr/bin/ssh".into())
 }
 
+/// `program` (ssh) for `recipe` as every link to a host starts: no terminal, never a password
+/// prompt, our ConnectTimeout (connect_timeout), no tmux of ours in its environment; `extra`
+/// options, then the recipe's own and the destination (recipe::argv) and the command still to add.
+pub(crate) fn ssh_command(program: impl AsRef<std::ffi::OsStr>, recipe: &[String], extra: &[&str]) -> tokio::process::Command {
+    let mut c = tokio::process::Command::new(program);
+    c.args(["-T", "-o", "BatchMode=yes"]).args(extra).args(connect_timeout(recipe));
+    c.env_remove("TMUX").env_remove("TMUX_PANE");
+    c
+}
+
 /// Recipes whose ssh configuration (~/.ssh/config, read by `ssh -G`) sets a ConnectTimeout of its
 /// own (a slow ProxyJump): true; false when it does not.
 static CONFIG_TIMEOUT: std::sync::LazyLock<Mutex<HashMap<Vec<String>, bool>>> = std::sync::LazyLock::new(Mutex::default);

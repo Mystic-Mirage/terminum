@@ -84,7 +84,7 @@ fn signed_in(app: &Shared, req: &Request) -> bool {
     // a browser sends Sec-Fetch-Site (Node's fetch sends only Sec-Fetch-Mode): it may present
     // only a credential, never the secret (AC-09)
     let browser = h.contains_key("sec-fetch-site");
-    checks::signin_secret(header).is_some_and(|s| app.signins.check(&s, browser))
+    checks::signin_credential(header).is_some_and(|c| app.signins.check(&c, browser))
 }
 
 async fn guard(State(app): State<Shared>, mut req: Request, next: Next) -> Response {
@@ -99,8 +99,7 @@ async fn guard(State(app): State<Shared>, mut req: Request, next: Next) -> Respo
         Err(d) => {
             app.denied.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             tracing::warn!(event = "auth.denied", reason = d.code, path = %req.uri().path());
-            let status = StatusCode::from_u16(d.status).unwrap_or(StatusCode::FORBIDDEN);
-            return hardened((status, Json(d.body())).into_response());
+            return hardened(d.into_response());
         }
     };
     req.extensions_mut().insert(FromWeb(!local));
@@ -180,12 +179,8 @@ async fn hello(State(app): State<Shared>, Query(q): Query<Hello>) -> Response {
     match app.signins.hello(&q.id, &q.n) {
         // `apps`: Finder and default apps exist here (macOS), told to a known sign-in only
         Ok((proof, boot)) => Json(json!({"proof": proof, "boot": boot, "apps": cfg!(target_os = "macos")})).into_response(),
-        Err(d) => denied(d),
+        Err(d) => d.into_response(),
     }
-}
-
-fn denied(d: checks::Denial) -> Response {
-    (StatusCode::from_u16(d.status).unwrap_or(StatusCode::BAD_REQUEST), Json(d.body())).into_response()
 }
 
 async fn settings(State(app): State<Shared>) -> Json<serde_json::Value> {

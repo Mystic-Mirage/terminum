@@ -62,16 +62,20 @@ pub fn proof_key(secret: &str) -> String {
     hex(&hmac_sha256(secret.as_bytes(), b"tm-proof-key"))
 }
 
-/// The hello proof for nonce `nonce` under `proof_key` (hex, as stored: keyed by its bytes).
+/// The hello proof for nonce `nonce` under `proof_key`.
 pub fn proof(proof_key: &str, nonce: &str) -> String {
-    let key = unhex(proof_key).unwrap_or_default();
-    hex(&hmac_sha256(&key, format!("tm-hello-v1:{nonce}").as_bytes()))
+    keyed(proof_key, "tm-hello-v1:", nonce)
 }
 
 /// The credential of the sign-in whose proof key is `proof_key` in the process of `boot`.
 pub fn credential(proof_key: &str, boot: &str) -> String {
+    keyed(proof_key, "tm-cred-v1:", boot)
+}
+
+/// hex(HMAC-SHA256(proof key's bytes, prefix + text)): the prefix keeps one use from standing in for another.
+fn keyed(proof_key: &str, prefix: &str, text: &str) -> String {
     let key = unhex(proof_key).unwrap_or_default();
-    hex(&hmac_sha256(&key, format!("tm-cred-v1:{boot}").as_bytes()))
+    hex(&hmac_sha256(&key, format!("{prefix}{text}").as_bytes()))
 }
 
 /// A nonce is 16 to 128 hex digits.
@@ -186,14 +190,19 @@ impl Signins {
     }
 
     /// The page signs out: the sign-in it presents (its credential or secret) goes, in memory at
-    /// once and in the file. Err: the file still holds it, and so does memory.
-    pub fn revoke(&self, credential: &str) -> io::Result<()> {
+    /// once and in the file; false when it presents none kept here (a credential of another boot).
+    /// Err: the file still holds it, and so does memory.
+    pub fn revoke(&self, credential: &str) -> io::Result<bool> {
         let digest = self.signin_of(credential);
         let _writing = self.writer.lock();
-        let next: Vec<Item> = self.items.lock().iter().filter(|i| !same(&i.sha256, &digest)).cloned().collect();
+        let items = self.items.lock().clone();
+        let next: Vec<Item> = items.iter().filter(|i| !same(&i.sha256, &digest)).cloned().collect();
+        if next.len() == items.len() {
+            return Ok(false);
+        }
         self.save(&next)?;
         *self.items.lock() = next;
-        Ok(())
+        Ok(true)
     }
 
     /// `terminum signout`, a new password: every page signs in again. Err: the file still holds them, and so

@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use serde::Serialize;
-use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot, Notify};
 
 use super::control::{Answer, Control, Notice};
@@ -437,13 +436,10 @@ impl Server {
                 c
             }
             Link::Ssh { ssh, args } => {
-                let mut c = Command::new(ssh);
                 // ConnectTimeout also bounds the banner exchange: a hung sshd ends the link with ssh's own
                 // message instead of a wait without end (unless the user's ssh config sets its own)
-                c.args(["-T", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2"]);
-                c.args(crate::hosts::connect_timeout(args));
+                let mut c = crate::hosts::ssh_command(ssh, args, &["-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2"]);
                 c.args(crate::hosts::recipe::argv(args)).arg(remote);
-                c.env_remove("TMUX").env_remove("TMUX_PANE");
                 c
             }
         };

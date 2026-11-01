@@ -212,12 +212,12 @@ fn host_names_lose_their_port_and_brackets() {
 #[test]
 fn the_sign_in_comes_from_the_header_or_the_subprotocol_never_the_query() {
     let header = |v: &'static str| move |n: &str| (n == "x-tm-session").then(|| v.to_string());
-    assert_eq!(signin_secret(header("abc")), Some("abc".into()));
-    assert_eq!(signin_secret(header("")), None);
+    assert_eq!(signin_credential(header("abc")), Some("abc".into()));
+    assert_eq!(signin_credential(header("")), None);
     let proto = |v: &'static str| move |n: &str| (n == "sec-websocket-protocol").then(|| v.to_string());
-    assert_eq!(signin_secret(proto("tm, abc")), Some("abc".into()));
-    assert_eq!(signin_secret(proto("chat, abc")), None);
-    assert_eq!(signin_secret(proto("tm")), None);
+    assert_eq!(signin_credential(proto("tm, abc")), Some("abc".into()));
+    assert_eq!(signin_credential(proto("chat, abc")), None);
+    assert_eq!(signin_credential(proto("tm")), None);
     assert!(needs_signin("/custom.css") && needs_signin("//custom.css"), "the user's stylesheet is theirs");
 }
 

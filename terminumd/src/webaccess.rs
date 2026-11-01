@@ -181,14 +181,12 @@ fn current(app: &Shared, auth: &Arc<WebAuth>) -> bool {
 /// and sends once more, so the sign-in it meant ends instead of living on unseen.
 pub async fn logout(State(app): State<Shared>, headers: HeaderMap) -> Response {
     let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    if let Some(secret) = crate::auth::checks::signin_secret(header) {
-        if !app.signins.check(&secret, false) {
-            let d = crate::auth::checks::Denial::new(401, "bad_session", "Missing or expired sign-in");
-            return (StatusCode::UNAUTHORIZED, Json(d.body())).into_response();
-        }
+    if let Some(credential) = crate::auth::checks::signin_credential(header) {
         let a = app.clone();
-        if let Ok(Err(e)) = crate::http::blocking(move || a.signins.revoke(&secret)).await {
-            tracing::warn!(event = "signout.unsaved", error = %e);
+        match crate::http::blocking(move || a.signins.revoke(&credential)).await {
+            Ok(Ok(false)) => return crate::auth::checks::Denial::new(401, "bad_session", "Missing or expired sign-in").into_response(),
+            Ok(Err(e)) => tracing::warn!(event = "signout.unsaved", error = %e),
+            _ => {}
         }
     }
     StatusCode::NO_CONTENT.into_response()

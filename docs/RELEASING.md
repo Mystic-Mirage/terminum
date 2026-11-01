@@ -48,6 +48,9 @@ fails the build instead of hanging it. No hardened runtime and no notarization: 
 arrives by curl, which sets no quarantine. Without `local.mk`, `make install` signs ad hoc and
 says so; macOS then asks again for protected folders after an upgrade.
 
+A release refuses builds that printed a compiler or linker `warning:` (`scripts/package.py`;
+`TM_ALLOW_WARNINGS=1` releases anyway and says so); `make install` only says them.
+
 Release notes go in `docs/releases/vX.Y.Z.md`, committed before `main` is pushed; the release
 command refuses an empty or unreadable file and a symlink out of the tree.
 

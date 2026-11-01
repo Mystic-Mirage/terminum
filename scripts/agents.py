@@ -17,6 +17,7 @@ import argparse
 import hashlib
 import os
 import platform as host_platform
+import re
 import shutil
 import subprocess
 import sys
@@ -47,11 +48,27 @@ def agent_id(repo=REPO):
     return h.hexdigest()[:12]
 
 
+# the compiler's and linker's `warning:` lines of the builds run here (package.py: a release
+# refuses them, an install says them); shown as they come. Not cargo install's (the toolchain's
+# own notes), nor cargo's count line ("warning: `terminumd` (bin) generated 2 warnings").
+WARNINGS = []
+COUNT = re.compile(r"warning: .+ generated \d+ warnings?\b")
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
 def run(cmd, env=None, cwd=TERMINUMD):
     print("+", " ".join(map(str, cmd)), flush=True)
-    r = subprocess.run(cmd, cwd=cwd, env=env)
-    if r.returncode != 0:
-        raise Failed(f"{cmd[0]} exited {r.returncode}")
+    build = list(map(str, cmd[:2])) in (["cargo", "build"], ["cargo", "zigbuild"])
+    if build and sys.stdout.isatty():   # read through a pipe, cargo would drop its colors
+        env = {**(env or os.environ), "CARGO_TERM_COLOR": "always"}
+    p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+    for line in p.stdout:
+        print(line, end="", flush=True)
+        plain = ANSI.sub("", line).strip()
+        if build and plain.startswith("warning:") and not COUNT.match(plain):
+            WARNINGS.append(plain)
+    if p.wait() != 0:
+        raise Failed(f"{cmd[0]} exited {p.returncode}")
 
 
 def tool_env():

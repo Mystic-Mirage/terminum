@@ -105,7 +105,21 @@ def binaries(build, given, stage, release=False):
             raise agents.Failed(f"a release needs the Linux builds: {e}")
         print(f"warning: no Linux helpers in this package ({e}); remote hosts' files cannot be enabled. "
               "Run make toolchain.", file=sys.stderr)
+    warned(release)
     return found
+
+
+def warned(release):
+    """The builds' warnings (CLAUDE.md §8: none ships): a release refuses them unless
+    TM_ALLOW_WARNINGS=1 (said); an install says them."""
+    if not agents.WARNINGS:
+        return
+    lines = "\n  ".join(dict.fromkeys(agents.WARNINGS))
+    if release and os.environ.get("TM_ALLOW_WARNINGS") != "1":
+        raise agents.Failed(f"the builds printed {len(agents.WARNINGS)} warning(s); a release ships none "
+                            f"(fix them, or TM_ALLOW_WARNINGS=1 to release anyway):\n  {lines}")
+    print(f"warning: the builds printed {len(agents.WARNINGS)} warning(s)"
+          f"{' (TM_ALLOW_WARNINGS=1: released anyway)' if release else '; a release refuses them'}:\n  {lines}", file=sys.stderr)
 
 
 def is_macho(path):

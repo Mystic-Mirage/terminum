@@ -138,18 +138,20 @@ export function joinTableRows(lines) {
   return out;
 }
 
-/** A Markdown pipe table from line i: a "|" header row, its "|---|" line, then "|" rows:
- *  {to, head, rows, align}, or undefined. Its own widget even where an agent colored other text
- *  (Codex's inline code): a pipe table is no rendering of its own. null when no row is read but
- *  the next line starts with "|" (rows cut short or wrapped past repair): a head alone would hide
- *  that it has rows, and its lines stay text. */
+/** A Markdown pipe table from line i: a "|" header row, its "|---|" line, then rows, as GFM
+ *  reads them: every next line that starts with "|", its closing "|" or not (a row cut short,
+ *  `cut -c200`, or wrapped past repair is a row too), as long as it has two cells at least or
+ *  its closing "|": a tree's "|-- dir" or a pipeline's "| grep x" under it ends the table
+ *  (GFM would take it): {to, head, rows, align}, or undefined. Its
+ *  own widget even where an agent colored other text (Codex's inline code): a pipe table is no
+ *  rendering of its own. */
 export function pipeTable(lines, i) {
   const row = (k) => /^\s*\|.*\|\s*$/.test(lines[k]?.text ?? "");
   if (!row(i) || !TABLE_SEP.test(lines[i + 1]?.text.trim() ?? "")) return undefined;
-  const cells = (k) => lines[k].text.trim().slice(1, -1).split(BARS).map((c) => c.trim());
+  const cells = (k) => lines[k].text.trim().replace(/^\|/, "").replace(/(^|[^\\])\|$/, "$1").split(BARS).map((c) => c.trim());
   let j = i + 2;
-  while (row(j)) j++;
-  if (j === i + 2 && /^\s*\|/.test(lines[j]?.text ?? "")) return null;
+  const more = (t) => /^\s*\|/.test(t) && (/\|\s*$/.test(t) || (t.trim().slice(1).match(BARS) ?? []).length > 0);
+  while (more(lines[j]?.text ?? "")) j++;
   const head = cells(i), rows = [];
   for (let k = i + 2; k < j; k++) rows.push(cells(k));
   const n = Math.max(head.length, ...rows.map((r) => r.length)), pad = (r) => [...r, ...Array(n - r.length).fill("")];
@@ -189,11 +191,6 @@ export function scan(rows, end = rows.length, changes = rows.length) {
       continue;
     }
     const piped = pipeTable(lines, i);                            // a Markdown table, colored text around it or not
-    if (piped === null) {                                         // one not read: text up to its next blank line, no document inside
-      while (i + 1 < lines.length && lines[i + 1].text.trim()) i++;
-      noRun = i;
-      continue;
-    }
     if (piped) {
       add("table", i, piped.to, "", tableMarkdown(piped), false, piped);
       i = piped.to;

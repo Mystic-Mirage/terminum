@@ -70,7 +70,8 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
             let _ = tx.send(Message::Close(None)).await;
         })
     };
-    page.send_json(&json!({"t": "build", "id": crate::config::build_id(), "date": crate::config::BUILD_DATE}));
+    // `mac`: this is the Mac's own browser (not through a proxy), which alone may use Finder (AC-36)
+    page.send_json(&json!({"t": "build", "id": crate::config::build_id(), "date": crate::config::BUILD_DATE, "mac": !page.web}));
     hello(&app, &page);
     tokio::spawn(super::timing::follow(page.clone()));
     while let Some(Ok(m)) = incoming.next().await {

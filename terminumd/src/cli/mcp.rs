@@ -185,7 +185,7 @@ pub fn call(tool: &str, args: &Value, session: Option<&str>, env: &Env, forward:
     };
     let Some((socket, pane)) = pane_of(env) else { return text_result(NOT_IN_PANE, true) };
     let mut body = json!({"socket": socket, "socket_path": socket_path(env), "pane": pane, "tool": tool, "args": args});
-    if let Some(s) = session.map(|s| s.chars().filter(|c| !c.is_control()).take(100).collect::<String>()).filter(|s| !s.is_empty()) {
+    if let Some(s) = session.map(|s| crate::termtext::clean(s, false).chars().take(100).collect::<String>()).filter(|s| !s.is_empty()) {
         body["session"] = json!(s);
     }
     match forward(&body) {

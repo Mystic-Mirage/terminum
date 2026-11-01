@@ -2,7 +2,7 @@
 // Markdown, a Mermaid diagram or a table.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { logicalLines, regions, scan } from "../static/outparse.js";
+import { logicalLines, pipeTable, regions, scan } from "../static/outparse.js";
 
 // One row per line, every one with a hard end.
 const rows = (text) => text.split("\n").map((t) => ({ text: t, eol: true }));
@@ -364,14 +364,28 @@ test("a pipe table's row with a bar too many is a row of its own, the next rows 
 
 test("a table's last row short of its bars never takes the prose after a blank line; a wrapped table's may span blank lines", () => {
   const rows = ["| a | b |", "|---|---|", "| 4 | 5", "", "Use `ls | wc` here."].map(L);
-  assert.deepEqual(scan(rows).found, [], "no row read, the next line a row cut short: the lines stay text, the prose too");
+  const t = scan(rows).found;
+  assert.deepEqual(t.map((r) => [r.kind, r.from, r.to]), [["table", 0, 2]], "the row cut short is a row (GFM); the prose stays text");
+  assert.deepEqual(t[0].table.rows, [["4", "5"]]);
 });
 
-test("a pipe table's head with rows cut short (`cut -c`) is no widget; a head alone before other text still is one", () => {
+test("a row cut short in the middle of a pipe table is a row, and the rows after it too (GFM)", () => {
+  const rows = ["| a | b |", "|---|---|", "| 1 | 2 |", "| 3 | four is cut", "| 5 | 6 |", "", "after"].map(L);
+  const t = scan(rows).found.filter((r) => r.kind === "table");
+  assert.deepEqual(t.map((r) => [r.from, r.to]), [[0, 4]]);
+  assert.deepEqual(t[0].table.rows, [["1", "2"], ["3", "four is cut"], ["5", "6"]]);
+  assert.deepEqual(pipeTable(["| a | b |", "|---|---|", "| x | y \\|"].map(L), 0).rows, [["x", "y \\|"]], "an escaped bar at the end is the cell's");
+  const tree = pipeTable(["| a | b |", "|---|---|", "| 1 | 2 |", "|-- src", "| grep x", "|   `-- lib"].map(L), 0);
+  assert.deepEqual([tree.to, tree.rows], [2, [["1", "2"]]], "a tree's or a pipeline's line under it is no row");
+});
+
+test("a pipe table whose rows are all cut short (`cut -c`) is a table of them; a head alone before other text still is one", () => {
   const cut = ["| Version | Date | Change |", "|---|---|---|", "| 0.24.13 | 2026-10-31 | Owner: the list's foot is a", "again (it unfolded", "",
     "| Version | Date | Change |", "|---|---|---|", "| 0.24.13 | 2026-10-31 | Owner: `cut -c` and **bold** the", "| 0.24.12 | 2026-10-30 | Owner: `tmux` a **b** and",
     "| 0.24.11 | 2026-10-29 | Owner: [a](b) `x`", ""];
-  assert.deepEqual(scan(cut.map((t) => L(t))).found, [], "no table, and no document from its separator (its cells' `code` and **bold**)");
+  const found = scan(cut.map((t) => L(t))).found;
+  assert.deepEqual(found.map((r) => [r.kind, r.from, r.to]), [["table", 0, 2], ["table", 5, 9]], "never a head alone, nor a document from its separator");
+  assert.deepEqual(found[1].table.rows.map((r) => r[0]), ["0.24.13", "0.24.12", "0.24.11"]);
   const alone = scan(["| Field | Value |", "|---|---|", "", "next"].map((t) => L(t))).found.filter((r) => r.kind === "table");
   assert.deepEqual(alone.map((r) => [r.from, r.to, r.table.rows.length]), [[0, 1, 0]]);
 });

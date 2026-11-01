@@ -2,7 +2,8 @@
 //! What fbd types into a terminal (AC-12): words quoted for the pane's own shell, never a
 //! control or invisible character, never a word a command could take for an option, and
 //! never Enter: the user runs the line. Also terminumd's one rule of those characters
-//! (`control`, `hides`, `clean`): names, plans, links and a program's copies use it.
+//! (`control`, `hides`, `stray`, `clean`): names, labels, titles, plans, links and a program's
+//! copies use it.
 
 /// Whether `s` holds a character that acts as a keystroke or hides what is typed (`control`).
 pub fn has_control(s: &str) -> bool {
@@ -23,11 +24,17 @@ pub fn hides(c: char) -> bool {
     matches!(c as u32, 0xAD | 0x061C | 0x180E | 0x200B | 0x200E..=0x200F | 0x2028..=0x202E | 0x2060..=0x206F | 0xFEFF | 0xFFF9..=0xFFFB | 0xE0001 | 0xE0020..=0xE007F)
 }
 
-/// `s` without control characters and what `hides`: with `lines`, tabs and line ends kept
-/// (`\r\n`, `\r` and the line and paragraph separators are `\n`).
+/// A control character or one that `hides`: what `clean` drops, and what a label, a title or a
+/// name shown as text refuses.
+pub fn stray(c: char) -> bool {
+    c.is_control() || hides(c)
+}
+
+/// `s` without what is `stray`: with `lines`, tabs and line ends kept (`\r\n`, `\r` and the
+/// line and paragraph separators are `\n`).
 pub fn clean(s: &str, lines: bool) -> String {
     let s = if lines { s.replace("\r\n", "\n").replace(['\r', '\u{2028}', '\u{2029}'], "\n") } else { s.to_string() };
-    s.chars().filter(|c| (lines && matches!(c, '\t' | '\n')) || !(c.is_control() || hides(*c))).collect()
+    s.chars().filter(|c| (lines && matches!(c, '\t' | '\n')) || !stray(*c)).collect()
 }
 
 /// Needs no quotes in any shell: not even zsh's `=cmd` (a path lookup) or tcsh's `=N`.
@@ -91,6 +98,7 @@ mod tests {
         assert!(!has_control("naïve file — ü 文件.txt"));
         assert_eq!(clean("a\r\nb\rc\u{2028}d\te\u{202e}\u{e0041}\u{7}", true), "a\nb\nc\nd\te");
         assert_eq!(clean("a\nb\u{2028}c\u{200d}", false), "abc\u{200d}");
+        assert!(stray('\u{ad}') && stray('\u{7}') && !stray('\u{200d}') && !stray('é'), "a label keeps ZWJ, refuses a soft hyphen");
     }
 
     #[test]

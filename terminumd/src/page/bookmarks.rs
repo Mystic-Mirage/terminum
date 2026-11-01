@@ -31,6 +31,7 @@ pub const NEAR: i64 = 1000;
 /// Saves remembered by the page's ref (a save sent again is kept once).
 pub const REFS: usize = 100;
 pub const GONE: &str = "These lines are no longer in this session's history.";
+pub const ALT_GONE: &str = "It was on a full-screen program's own screen, which tmux keeps no history of.";
 pub const DELETED: &str = "This bookmark was deleted meanwhile.";
 pub const NOT_SHOWN: &str = "This session is no longer the one shown: select the text again.";
 pub const CLOSED: &str = "This session has closed.";
@@ -93,6 +94,10 @@ pub struct Item {
     pub kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
+    /// made on a full-screen program's own screen (tmux's alternate screen), which tmux keeps
+    /// no history of: found again only while it is on the screen (AC-06)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub alt: bool,
 }
 
 impl Item {
@@ -120,6 +125,7 @@ pub struct NewMark {
     pub by: Option<String>,
     pub kind: Option<String>,
     pub file: Option<String>,
+    pub alt: bool,
 }
 
 pub use super::bookmarks_find::{find, located, near, needs_whole, unlocated};
@@ -209,6 +215,7 @@ fn clean_stored(it: &Value) -> Result<Item, String> {
         by: truthy(it.get("by")),
         kind: truthy(it.get("kind")),
         file: truthy(it.get("file")),
+        alt: it["alt"] == true,
     })
 }
 
@@ -337,6 +344,7 @@ impl Store {
             by: new.by,
             kind: new.kind,
             file: new.file,
+            alt: new.alt,
         }
     }
 

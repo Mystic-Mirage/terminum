@@ -105,9 +105,9 @@ pub fn shown(host: &str, result: &str) -> String {
 
 /// `command` run on the host over its recipe; stdout (also when ssh failed after the helper
 /// answered), or ssh's last words. A copy of tunnel.rs's `ssh` (private there) with ControlPath=none.
-async fn ssh(recipe: &[String], command: &str, marker: &str) -> Result<String, String> {
+pub(super) async fn ssh(recipe: &[String], command: &str, marker: &str) -> Result<String, String> {
     let mut c = Command::new(super::ssh_bin());
-    c.args(["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ControlPath=none"]).env_remove("TMUX").env_remove("TMUX_PANE");
+    c.args(["-T", "-o", "BatchMode=yes", "-o", "ControlPath=none"]).args(super::connect_timeout(recipe)).env_remove("TMUX").env_remove("TMUX_PANE");
     c.args(super::recipe::argv(recipe)).arg(command);
     c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     let out = tokio::time::timeout(LIMIT, c.output()).await.map_err(|_| format!("ssh timed out after {} s", LIMIT.as_secs()))?

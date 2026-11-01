@@ -65,7 +65,7 @@ const st = {
   groups: [], sid: embedded ?? store.get("sid", null), projects: [],
   size: null, base: null, step: store.get("sizeStep", 0),
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
-  appCursor: false, bracketed: store.get("bracketed", true),
+  appCursor: false, bracketed: store.get("bracketed", true), atMac: false,
 };
 /** The layout row of pane `id`, or null. */
 const itemOf = (id) => findItem(st.groups, id)?.item ?? null;
@@ -88,7 +88,7 @@ function send(m) {
 function status(text) { banner("status", text); }
 
 // Pasted images, uploaded and dropped files: saved for the shown pane, their paths pasted.
-const files = uploads({ sid: () => st.sid, host: () => itemOf(st.sid)?.host ?? null, paste: (text) => input.paste(text), lines: () => !!st.bracketed && !!itemOf(st.sid)?.agent, toast, hideToast: () => { $("toast").hidden = true; } });
+const files = uploads({ sid: () => st.sid, host: () => itemOf(st.sid)?.host ?? null, atMac: () => st.atMac, paste: (text) => input.paste(text), lines: () => !!st.bracketed && !!itemOf(st.sid)?.agent, toast, hideToast: () => { $("toast").hidden = true; } });
 
 // A phone keeps fewer lines on the page: each one costs on every touch (AC-52).
 const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"), note: $("note"),
@@ -292,7 +292,7 @@ function onMessage(m) {
     case "update": if (!embedded) menu.showUpdate(m.latest); break;
     case "note": toast(m.msg, 4000); break;
     case "stall": tools.showStall(m); break;
-    case "build": conn.checkBuild(m.id); showBuild(m); break;
+    case "build": conn.checkBuild(m.id); showBuild(m); st.atMac = m.mac === true; break;
     case "trace": trace.onMessage(m); break;
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;

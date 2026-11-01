@@ -372,7 +372,8 @@ impl States {
 
     /// Forgets the panes of the server keyed by `prefix` that are not `live` (closed).
     pub fn retain(&mut self, prefix: &str, live: &[String]) {
-        self.panes.retain(|k, _| !k.starts_with(prefix) || live.contains(k));
+        let live: std::collections::HashSet<&str> = live.iter().map(String::as_str).collect();
+        self.panes.retain(|k, _| !k.starts_with(prefix) || live.contains(k.as_str()));
     }
 
     /// Says whether `key`'s footer, read at `now`, still counts work in the background behind its Done.

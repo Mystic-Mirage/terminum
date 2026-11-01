@@ -82,6 +82,8 @@ pub struct Server {
     /// the user's own sessions attached by name (AC-89): on a server of the user's own on
     /// this Mac all it lists; on a host besides `terminum`; `None` for the private server
     pub only: Mutex<Option<Vec<String>>>,
+    /// a host whose record changed in settings.json and still runs on its previous recipe: why
+    pub held: Mutex<Option<String>>,
     /// a host's session clients started again after an end: session -> (delay s, not before, started)
     pub tries: Mutex<HashMap<String, (u64, std::time::Instant, std::time::Instant)>>,
     /// its last client ended with tmux's own `%exit` while one pane at most was shown: the
@@ -110,6 +112,7 @@ impl Server {
             identity: Mutex::new(None),
             socket_path: Mutex::new(None),
             only: Mutex::new(None),
+            held: Mutex::new(None),
             tries: Mutex::default(),
             closed_by_user: AtomicBool::new(false),
             copies: Mutex::default(),
@@ -435,7 +438,10 @@ impl Server {
             }
             Link::Ssh { ssh, args } => {
                 let mut c = Command::new(ssh);
+                // ConnectTimeout also bounds the banner exchange: a hung sshd ends the link with ssh's own
+                // message instead of a wait without end (unless the user's ssh config sets its own)
                 c.args(["-T", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2"]);
+                c.args(crate::hosts::connect_timeout(args));
                 c.args(crate::hosts::recipe::argv(args)).arg(remote);
                 c.env_remove("TMUX").env_remove("TMUX_PANE");
                 c

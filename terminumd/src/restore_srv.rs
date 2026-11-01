@@ -118,7 +118,7 @@ fn agent_title(command: &str, title: &str, restored: &str) -> Option<String> {
     } else {
         return None;
     };
-    let t: String = titles::bare(title).chars().filter(|c| !c.is_control()).take(TITLE_MAX).collect();
+    let t: String = crate::termtext::clean(&titles::bare(title), false).chars().take(TITLE_MAX).collect();
     let t = t.trim();
     (!t.is_empty() && t != "Claude Code" && !titles::program_name(t) && !titles::is_version(t)).then(|| t.to_string())
 }

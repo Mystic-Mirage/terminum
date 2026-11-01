@@ -12,8 +12,6 @@ import { NOT_PASTED, shellWord } from "./input.js";
 // what terminumd takes as a pasted image; another type the browser can draw goes as a PNG
 const TAKEN = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAX_BYTES = 100 << 20;            // terminumd's upload limit (page/upload.rs MAX_BYTES)
-// this Mac's own browser: /api/os answers it alone (the loopback listener answers only to 127.0.0.1)
-const AT_MAC = typeof location !== "undefined" && location.hostname === "127.0.0.1";
 
 /** Why a file over the upload limit was not sent. */
 export const tooLarge = (name) => `${name} is larger than the 100 MB an upload may be: type or paste the path to the file instead (in Finder ⌥⌘C copies it).`;
@@ -48,7 +46,9 @@ export const pathList = (paths, lines) => paths.map(shellWord).join(lines ? "\n"
 /** sid(): the shown pane; host(): its host (null: this Mac); paste(text) at its input; lines():
  *  paths one per line: a coding agent's box with a bracketed paste (in a shell the lines would
  *  run as one command each at Enter). */
-export function uploads({ sid, host = () => null, paste, lines = () => false, toast, hideToast }) {
+/** atMac: this is the Mac's own browser, as terminumd says (its build message's `mac`): /api/os
+ *  answers it alone. */
+export function uploads({ sid, host = () => null, atMac = () => false, paste, lines = () => false, toast, hideToast }) {
   /** Saves one file: {path} or {error}. */
   async function save(blob, what, url, from) {
     const r = await fetch(url + encodeURIComponent(from), { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob })
@@ -103,7 +103,7 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
   // Dropped files: on a pane of this Mac in its browser their own paths, else copies uploaded (AC-36).
   async function dropped(got) {
     let why = "";
-    if (AT_MAC && !host()) {
+    if (atMac() && !host()) {
       const from = sid();
       if (!from) return toast("Open a session first.");
       toast("Finding the files…", 60000);

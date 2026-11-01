@@ -98,3 +98,28 @@ fn only_the_matching_end_closes_a_block() {
     assert_eq!(end_of(b"%end 1 3 1", "1 2 1"), None, "a captured line that looks like an end");
     assert_eq!(end_of(b"%end", "1 2 1"), None);
 }
+
+/// A link that ends before tmux answered says ssh's own last word, else that the host gave none.
+#[tokio::test]
+async fn an_ssh_link_that_never_reached_tmux_says_so() {
+    struct Gone(std::path::PathBuf);
+    impl Drop for Gone {
+        fn drop(&mut self) { std::fs::remove_dir_all(&self.0).ok(); }   // also when an assert fails
+    }
+    let dir = std::env::temp_dir().join(format!("tm-ctl-ssh-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let _gone = Gone(dir.clone());
+    for (name, body, want) in [
+        ("ssh", "exit 255", "ssh: no answer from the host"),
+        ("my-ssh", "echo 'Connection timed out during banner exchange' >&2; exit 255", "Connection timed out during banner exchange"),
+        ("tmux-ish", "exit 1", "tmux exited"),
+    ] {
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        let (ntx, _nrx) = mpsc::unbounded_channel();
+        let (dtx, drx) = oneshot::channel();
+        let _c = Control::spawn(Command::new(&path), ntx, dtx).unwrap();
+        assert_eq!(drx.await.unwrap(), want, "{name}");
+    }
+}

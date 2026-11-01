@@ -18,7 +18,6 @@ const SETTLE = 300;             // ms after the last change of the view before i
 const TYPED_EVERY = 1000;       // ms: a key sends the size at most this often
 const SLIVER = { cols: 20, rows: 5 };   // a view smaller than this is passing: no size sent
 const HOLD = 2000;              // ms after the last change a pane may wait for its new width unscaled
-const COPIED_WAIT = 3000;      // ms after a release a program's copy may come: terminumd's 2 s (notices.rs COPY_WAIT) and the way back
 const bounded = (cols) => Math.max(45, Math.min(240, cols));   // the columns terminumd gives a grid (its sizing.rs)
 
 /** view: the TermView; sid(): the shown pane's id; refit(): the drawn size may have changed;
@@ -146,7 +145,7 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
   }
   const BUTTON = { 0: 0, 1: 1, 2: 2 };
   let held = null;                                // a mouse button down: {button, x, y, y0}
-  let released = null;                            // the last left release to the program: when, the upper row
+  let released = null;                            // the last left release to the program: the selection's upper row
   let shiftFrom = null;                           // a Shift selection's start, while the button is down
   term.addEventListener("pointerdown", (e) => {
     if (e.pointerType !== "mouse" || !(e.button in BUTTON)) return;
@@ -186,13 +185,14 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
     if (!mouseOn()) return;
     const at = cellAt(e.clientX, e.clientY);
     report("release", at, b, e);
-    if (b === 0 && y0 !== undefined && at) released = { at: performance.now(), y: Math.min(y0, at.y) };
+    if (b === 0) released = at ? { y: Math.min(y0 ?? at.y, at.y) } : null;
   });
-  // What the program copied of its own selection after that release (terminumd's 2 s, and the
-  // way back): the selection's buttons by its upper row, with its text as the program copied it (AC-06).
+  // What the program copied of its own selection after that release (terminumd hands it on only
+  // within 2 s of the latest left release, notices.rs COPY_WAIT): the selection's buttons by its
+  // upper row, with its text as the program copied it (AC-06).
   function onCopied(m) {
     const row = released && view.screen[released.y]?.el, text = String(m.text ?? "");
-    if (m.sid !== sid() || !row?.isConnected || performance.now() - released.at > COPIED_WAIT) return;
+    if (m.sid !== sid() || !row?.isConnected) return;
     copied({ text, row });
   }
   term.addEventListener("contextmenu", (e) => { if (mouseOn(e)) e.preventDefault(); });

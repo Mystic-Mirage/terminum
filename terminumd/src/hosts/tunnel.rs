@@ -91,9 +91,10 @@ fn binary_for(p: &str) -> Result<PathBuf, String> {
     Err(format!("no helper for {p} in this build"))
 }
 
-fn ssh_cmd() -> Command {
+/// ssh for `recipe`, its options and destination still to add.
+fn ssh_cmd(recipe: &[String]) -> Command {
     let mut c = Command::new(crate::hosts::ssh_bin());
-    c.args(["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]);
+    c.args(["-T", "-o", "BatchMode=yes"]).args(crate::hosts::connect_timeout(recipe));
     c.env_remove("TMUX").env_remove("TMUX_PANE");
     c
 }
@@ -105,7 +106,7 @@ fn with_command(c: &mut Command, recipe: &[String], command: &str) {
 
 /// Runs `command` on the host; its stdout, or ssh's last words.
 async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>, timeout: Duration) -> Result<String, String> {
-    let mut c = ssh_cmd();
+    let mut c = ssh_cmd(recipe);
     with_command(&mut c, recipe, command);
     c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     let mut child = c.spawn().map_err(|e| format!("ssh: {e}"))?;
@@ -218,7 +219,7 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&supe
         "f={b}-{own}\"; [ -x \"$f\" ] || f={b}\"; [ -x \"$f\" ] || {{ echo {MISSING}; exit 0; }}; \
          TM_LOG=info exec \"$f\" --agent --socket {remote} --log \"$HOME/{HOME_DIR}/logs/agent.log\"{link_args}"
     );
-    let mut c = ssh_cmd();
+    let mut c = ssh_cmd(recipe);
     // agents on only: files' ssh stays exactly as it was when agents are off
     c.args(super::link::ssh_args(link.map(|l| (l.remote.as_str(), l.local.as_path()))));
     c.args(["-o", "ServerAliveInterval=15", "-L"]).arg(format!("{}:{remote}", local.display()));

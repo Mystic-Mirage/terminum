@@ -6,7 +6,7 @@
 // Alone: node web/test/e2e_all.mjs webLastLines.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, openPage, pause, SIZES } from "./fake.mjs";
+import { drawn, group, item, openPage, pause, SIZES, spyCopies } from "./fake.mjs";
 
 const API = "tmux:local:terminum:%1";
 const DOCS = "tmux:local:terminum:%2";
@@ -55,10 +55,10 @@ export async function webLastLines(browser, name) {
     await page.click('#lastlinesseg [data-which="latest"]');
     const now = await state();
     check("AC-96 Now shows the lines kept since the restart", now.text === "$ echo again\nagain" && now.chosen === "latest" && now.meta.startsWith("Kept · main"), JSON.stringify(now));
-    await page.evaluate(() => { window.copied = null; navigator.clipboard.writeText = async (t) => { window.copied = t; }; }).catch(() => {});
+    await spyCopies(page);
     await page.click("#lastlinescopy");
     await pause(page);
-    const copied = await page.evaluate(() => window.copied);
+    const copied = await page.evaluate(() => window.copied.at(-1));
     check("AC-96 Copy copies the lines shown", copied === "$ echo again\nagain", String(copied));
     await page.keyboard.press("Escape");
     await pause(page);

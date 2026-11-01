@@ -30,8 +30,9 @@ impl Server {
         armed.insert(pane.to_string(), (now + COPY_WAIT, to));
     }
 
-    /// A clipboard write of the pane `%N`: its page's when armed, else nothing (AC-06).
-    fn copied(&self, pane: &str, text: String) {
+    /// A clipboard write of the pane `%N` (its base64): decoded for its page when armed, else
+    /// dropped as it came (AC-06).
+    fn copied(&self, pane: &str, b64: &[u8]) {
         let to = {
             let mut armed = self.copies.lock();
             let now = Instant::now();
@@ -39,7 +40,11 @@ impl Server {
             armed.get(pane).map(|(_, f)| f.clone())
         };
         match to {
-            Some(f) => f(text),
+            Some(f) => {
+                if let Some(text) = crate::tmux::clip::text(b64) {
+                    f(text);
+                }
+            }
             None => tracing::debug!(event = "clip.unasked", server = %self.name, pane),
         }
     }
@@ -63,7 +68,7 @@ pub(super) async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::Unbou
                     w.notify_one();
                 }
             }
-            Notice::Copy(pane, text) => s.copied(&pane, text),
+            Notice::Copy(pane, b64) => s.copied(&pane, &b64),
             Notice::Pause(pane) => {
                 // flow control on a slow link: shown panes are captured anyway, so go on
                 if let Some(c) = s.client(&pane) {
@@ -85,15 +90,16 @@ mod tests {
         let s = Server::new("local", "t", Link::Local { tmux: "tmux".into(), socket: "t".into(), conf: "/dev/null".into() }, Default::default());
         let got: Arc<Mutex<Vec<String>>> = Arc::default();
         let to = |tag: &'static str| -> OnCopy { let g = got.clone(); Arc::new(move |t| g.lock().push(format!("{tag}:{t}"))) };
-        s.copied("%1", "unasked".into());
+        let b64 = |t: &str| crate::tmux::clip::encode(t.as_bytes()).into_bytes();
+        s.copied("%1", &b64("unasked"));
         s.arm_copy("%1", to("a"));
-        s.copied("%2", "another pane".into());
-        s.copied("%1", "word".into());
-        s.copied("%1", "line".into());
+        s.copied("%2", &b64("another pane"));
+        s.copied("%1", &b64("word"));
+        s.copied("%1", &b64("line"));
         s.arm_copy("%1", to("b"));
-        s.copied("%1", "latest page".into());
+        s.copied("%1", &b64("latest page"));
         s.copies.lock().get_mut("%1").expect("armed").0 = Instant::now() - Duration::from_millis(1);
-        s.copied("%1", "too late".into());
+        s.copied("%1", &b64("too late"));
         assert_eq!(*got.lock(), ["a:word", "a:line", "b:latest page"]);
     }
 }

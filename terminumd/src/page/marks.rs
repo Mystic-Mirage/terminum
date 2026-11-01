@@ -14,7 +14,8 @@ use crate::app::Shared;
 
 fn all(app: &Shared) -> Value {
     let store = app.bookmarks.lock();
-    json!({"t": "marks", "items": store.all().iter().map(bm::Item::wire).collect::<Vec<_>>(), "error": store.broken()})
+    // `most`: the characters a bookmark keeps, so the page shows what is kept (AC-33)
+    json!({"t": "marks", "items": store.all().iter().map(bm::Item::wire).collect::<Vec<_>>(), "error": store.broken(), "most": bm::MAX_TEXT})
 }
 
 /// What a page learns when it connects.
@@ -81,7 +82,8 @@ fn mark(app: &Shared, page: &Page, msg: &Value) {
 }
 
 fn new_mark(app: &Shared, page: &Page, msg: &Value) -> Result<bm::Item, bm::MarkError> {
-    let key = page.state.lock().shown.as_ref().map(|s| s.key.clone());
+    // `alt`: the pane shows a full-screen program's own screen now, which tmux keeps no history of
+    let (key, alt) = page.state.lock().shown.as_ref().map(|s| (Some(s.key.clone()), s.ctl.fields.lock().as_ref().is_some_and(|f| f.alt))).unwrap_or((None, false));
     let Some(key) = key.filter(|k| msg["sid"].as_str() == Some(k.as_str())) else {
         return Err(bm::MarkError(bm::NOT_SHOWN.into()));
     };
@@ -100,6 +102,7 @@ fn new_mark(app: &Shared, page: &Page, msg: &Value) -> Result<bm::Item, bm::Mark
         remind: msg["remind"] == true,
         dir: project_of(&item).1,
         project,
+        alt,
         ..NewMark::default()
     };
     app.bookmarks.lock().add(new)
@@ -145,7 +148,7 @@ async fn locate(app: &Shared, page: &Page, id: &str) {
     }
     // an agent's record (AC-98) is found by its title, which the agent's transcript of its call shows
     let (text, hint) = if item.by.is_some() { (&item.note, Some(item.n).filter(|n| *n >= 0)) } else { (&item.text, Some(item.n)) };
-    let Some(found) = search(app, page, id, text, hint).await else { return };
+    let Some(found) = search(app, page, id, text, hint, item.alt).await else { return };
     if let Some(f) = found.filter(|f| f.n != item.n) {
         // where to look first next time; the marks move there
         if let Ok(moved) = app.bookmarks.lock().set_n(id, f.n) {
@@ -173,13 +176,13 @@ async fn locate_text(app: &Shared, page: &Page, id: &str, text: &str, hint: Opti
             return;
         }
     }
-    let _ = search(app, page, id, text, hint).await;
+    let _ = search(app, page, id, text, hint, false).await;
 }
 
 /// Looks for `text` in the shown pane, near `hint` first, the whole history only when its whole
 /// print is not there (tmux renumbers when it drops lines or the scrollback is cleared), and
 /// tells the page `located`; None when it could not be read (the page was told why).
-async fn search(app: &Shared, page: &Page, id: &str, text: &str, hint: Option<i64>) -> Option<Option<super::bookmarks_find::Found>> {
+async fn search(app: &Shared, page: &Page, id: &str, text: &str, hint: Option<i64>, alt: bool) -> Option<Option<super::bookmarks_find::Found>> {
     let Some((key, server, pane, ctl)) = super::find::shown(page) else {
         page.send_json(&bm::unlocated(id, bm::ELSEWHERE));
         return None;
@@ -207,6 +210,10 @@ async fn search(app: &Shared, page: &Page, id: &str, text: &str, hint: Option<i6
             Err(e) => { unread(e); return None; }
         }
     }
-    page.send_json(&bm::located(id, &key, found.as_ref()));
+    let mut told = bm::located(id, &key, found.as_ref());
+    if found.is_none() && alt {
+        told["why"] = json!(bm::ALT_GONE);   // not "no longer in its history": it never was
+    }
+    page.send_json(&told);
     Some(found)
 }

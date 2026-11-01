@@ -217,7 +217,8 @@ impl Hooks {
 
     /// Forgets the panes of a server (`prefix`, "tmux:<host>:<socket>:") that are gone.
     pub fn retain(&self, prefix: &str, live: &[String]) {
-        self.recs.lock().retain(|k, _| !k.starts_with(prefix) || live.iter().any(|l| l == k));
+        let live: std::collections::HashSet<&str> = live.iter().map(String::as_str).collect();
+        self.recs.lock().retain(|k, _| !k.starts_with(prefix) || live.contains(k.as_str()));
     }
 }
 

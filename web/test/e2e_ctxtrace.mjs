@@ -8,6 +8,7 @@
 
 import { fileURLToPath } from "node:url";
 import { check, cleanup, playwright, results } from "./check.mjs";
+import { spyCopies } from "./fake.mjs";
 import { open as openShell } from "./e2e_trace.mjs";
 import { open as openAgent } from "./e2e_widgets.mjs";
 import { parseTrace, screenMessage } from "./tracereplay.mjs";
@@ -20,16 +21,12 @@ const BOX = ["❯ the problem with wrapping stays when the width of the", "  ori
 const AGENT = [line("⏺ Done."), line(""), line(RULE), line(BOX[0]),
   { r: [[BOX[1], null, null, 0], [" ", null, null, 256]], e: true }, line(RULE), line("  ~/app main")];
 
-// what the page hands to the clipboard (an http page copies by execCommand, touchcopy.js)
-const CATCH = () => {
-  const ex = document.execCommand.bind(document);
-  document.execCommand = (c, ...a) => { if (c === "copy") window.copied = String(getSelection()); return ex(c, ...a); };
-};
+// what the page hands to the clipboard (spyCopies: an http page copies by execCommand, touchcopy.js)
 async function copyTrace(page) {
-  await page.evaluate(() => { window.copied = null; });
+  await page.evaluate(() => { window.copied.length = 0; });
   await page.click("#tracefab");
-  await page.waitForFunction(() => window.copied !== null, null, { timeout: 5000 });
-  return page.evaluate(() => window.copied);
+  await page.waitForFunction(() => window.copied.length > 0, null, { timeout: 5000 });
+  return page.evaluate(() => window.copied.at(-1));
 }
 const LINE = /^(\d+) ([a-z]+) (\{.*\})$/;
 /** Every line is a header, an event or a snapshot's named line, or a row. */
@@ -45,7 +42,7 @@ const events = (text, ev) => text.split("\n").map((l) => LINE.exec(l)).filter((m
 export async function webCtxTrace(browser, name = "chromium") {
   const at = `AC-55 context trace (${name}):`;
   const { page, sent, errors } = await openShell(browser, "?trace=2");
-  await page.evaluate(CATCH);
+  await spyCopies(page);
   const order = await page.evaluate(() => [...document.getElementById("fabs").children].map((b) => b.id));
   const shown = await page.evaluate(() => { const b = document.getElementById("tracefab"); return !!b?.getClientRects().length && getComputedStyle(b).display !== "none"; });
   check(`${at} its button stands left of ⓘ and shows on a computer, no badge and no Mac log asked for`,
@@ -108,7 +105,7 @@ export async function webCtxTrace(browser, name = "chromium") {
   // a coding agent's input box on a phone: iTerm2's two rows, the page's lines of them
   const phone = { viewport: { width: 390, height: 760 }, hasTouch: true, isMobile: true };
   const ag = await openAgent(browser, { agent: true, device: phone, query: "?trace=2", cols: COLS });   // sized to the view: rows as laid out
-  await ag.page.evaluate(CATCH);
+  await spyCopies(ag.page);
   ag.say({ t: "screen", sid: "S1", full: true, n: AGENT.length, cols: COLS, rows: 30, ch: AGENT.map((r, i) => [i, r]) });
   await ag.page.waitForSelector("#screen .blk.inbox");
   await ag.page.waitForTimeout(500);

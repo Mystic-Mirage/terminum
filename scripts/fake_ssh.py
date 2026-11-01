@@ -171,6 +171,11 @@ def tmux_shim(socket_name):
 
 
 def main():
+    if "-G" in sys.argv[1:]:
+        # `ssh -G`: the configuration it would use, nothing connected (FAKE_SSH_CONNECT_TIMEOUT: a
+        # user's ssh config that sets one)
+        print(f"connecttimeout {os.environ.get('FAKE_SSH_CONNECT_TIMEOUT', 'none')}")
+        return
     forwards, reverses, opts, dest, command = parse(sys.argv[1:])
     if os.environ.get("FAKE_SSH_FAIL") and os.environ.get("FAKE_SSH_FAIL_DEST", "") in dest:
         sys.stderr.write(os.environ["FAKE_SSH_FAIL"] + "\n")

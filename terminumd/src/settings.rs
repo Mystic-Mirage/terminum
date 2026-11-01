@@ -99,9 +99,9 @@ impl Settings {
 }
 
 /// A short name a person gives or reads (a color scheme's "Rosé Pine", a project's): 1–40
-/// characters, none a control one.
+/// characters, none a control one or one that hides (termtext.rs `stray`).
 pub fn is_short_name(s: &str) -> bool {
-    (1..=40).contains(&s.chars().count()) && !s.chars().any(char::is_control)
+    (1..=40).contains(&s.chars().count()) && !s.chars().any(crate::termtext::stray)
 }
 
 /// A file name or a socket name: letters, digits, `-`, `_`, `.`, not starting with a dot.

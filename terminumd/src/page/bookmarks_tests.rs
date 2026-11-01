@@ -197,6 +197,10 @@ fn kept_across_a_restart_readable_by_the_user_only() {
     let kept: Vec<(&str, &str, Option<&str>)> = again.all().iter().map(|i| (i.id.as_str(), i.note.as_str(), i.key.as_deref())).collect();
     assert_eq!(kept, [(a.id.as_str(), "later", Some("tmux:local:terminum:%1"))]);
     assert_eq!(again.all()[0], Item { note: "later".into(), ..a.clone() });
+    // one made on a full-screen program's screen keeps saying so; others write no `alt`
+    let c = s.add(NewMark { alt: true, ..mark("tmux:local:terminum:%1", 5, "z", "") }).unwrap();
+    assert!(Store::load(d.file()).get(&c.id).is_some_and(|i| i.alt) && c.wire()["alt"] == true && a.wire().get("alt").is_none());
+    assert!(s.remove(&c.id).unwrap());
     let data: Value = serde_json::from_str(&fs::read_to_string(d.file()).unwrap()).unwrap();
     assert_eq!(data["version"], 3);
     assert_eq!(a.id.len(), 12);

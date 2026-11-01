@@ -198,3 +198,34 @@ fn working_is_the_hooks_word_and_a_changed_program_is_told_once() {
     assert_eq!(h.take_changed(), vec![K.to_string()]);
     assert!(h.take_changed().is_empty(), "told once");
 }
+
+/// The hand check of the 2026-10-31 review as a test: Claude Code's /clear (SessionEnd, then a
+/// SessionStart of a new session), its /resume (a SessionStart of the old one), then Codex in
+/// the same pane; each late event of a session no longer current changes nothing.
+#[test]
+fn clear_resume_then_codex_in_one_pane() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    let at = |s: &str, sid: &str, extra: Value| { let mut e = ev("claude", s, extra); e["session"] = json!(sid); e };
+    h.apply(K, &at("UserPromptSubmit", "A", json!({"turn": "a1"})), t);
+    h.apply(K, &at("PreToolUse", "A", json!({"turn": "a1", "tool": "Bash"})), t);
+    // /clear
+    h.apply(K, &at("SessionEnd", "A", json!({"reason": "clear"})), t);
+    assert_eq!(h.apply_event(K, &at("SessionStart", "B", json!({"source": "clear"})), t), Some(true));
+    assert_eq!(h.session(K), Some(("claude", "B".to_string())));
+    assert!(!h.apply(K, &at("PostToolUse", "A", json!({"turn": "a1"})), t), "a late tool end of the cleared session");
+    assert!(!h.apply(K, &at("Stop", "A", json!({"turn": "a1"})), t));
+    assert_ne!(h.view(K, "claude", t).map(|v| v.state), Some(State::Working), "nothing of A's work shows under B");
+    // /resume of A
+    assert_eq!(h.apply_event(K, &at("SessionStart", "A", json!({"source": "resume"})), t), Some(true));
+    assert_eq!(h.session(K), Some(("claude", "A".to_string())));
+    assert!(!h.apply(K, &at("Stop", "B", json!({})), t), "the session left by /resume");
+    h.apply(K, &at("UserPromptSubmit", "A", json!({"turn": "a2"})), t);
+    assert_eq!(h.view(K, "claude", t).map(|v| v.state), Some(State::Working));
+    h.apply(K, &at("Stop", "A", json!({"turn": "a2"})), t);
+    h.apply(K, &at("SessionEnd", "A", json!({"reason": "exit"})), t);
+    // Codex in the same pane
+    assert_eq!(h.apply_event(K, &ev("codex", "UserPromptSubmit", json!({"session": "C", "turn": "c1"})), t), Some(true));
+    assert_eq!(h.session(K), Some(("codex", "C".to_string())));
+    assert!(!h.apply(K, &at("Stop", "A", json!({"turn": "a2"})), t), "Claude's late Stop after Codex took the pane");
+    assert_eq!(h.view(K, "node", t).map(|v| (v.agent, v.state)), Some(("codex", State::Working)));
+}

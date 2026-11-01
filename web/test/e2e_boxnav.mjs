@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { check, cleanup, playwright, results } from "./check.mjs";
+import { spyCopies } from "./fake.mjs";
 import { open } from "./e2e_widgets.mjs";
 
 const COLS = 60, W = COLS - 4;                         // the text's room in a row, after the 2-cell prompt
@@ -340,8 +341,7 @@ export async function webBoxNav(browser, name = "chromium") {
   // ⌘X over a selection in the input: copied, then deleted as Backspace does (AC-40); elsewhere nothing
   await page.waitForTimeout(1600);
   await set(TEXT, TEXT.length);
-  await page.evaluate(() => { window.copied = []; if (navigator.clipboard) navigator.clipboard.writeText = async (t) => { window.copied.push(t); };
-    document.addEventListener("copy", () => window.copied.push(String(getSelection())), true); });
+  await spyCopies(page);
   const xSel = await select("wrapping", "differs"), xFrom = sent.length;
   await page.keyboard.press("Meta+KeyX");
   await page.waitForTimeout(300);

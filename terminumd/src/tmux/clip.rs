@@ -20,11 +20,11 @@ pub struct Clips {
 }
 
 impl Clips {
-    /// The texts a `%output` or `%extended-output` line of the pane `%N` (control.rs `notice`)
-    /// closes, in order; reads (`?`), bad base64, text that is not UTF-8 and writes over `MOST`
-    /// are dropped. Whatever a write still lacks at the line's end (its opener, its text, its ST)
-    /// waits for the pane's next line.
-    pub fn line(&mut self, pane: &str, line: &[u8]) -> Vec<String> {
+    /// The base64 of the writes a `%output` or `%extended-output` line of the pane `%N`
+    /// (control.rs `notice`) closes, in order, decoded only for a page waiting for one ([`text`]);
+    /// writes over `MOST` are dropped. Whatever a write still lacks at the line's end (its opener,
+    /// its text, its ST) waits for the pane's next line.
+    pub fn line(&mut self, pane: &str, line: &[u8]) -> Vec<Vec<u8>> {
         let Some(rest) = payload(line) else { return Vec::new() };
         // most lines: no write open, none in them, none starting at their end
         if !self.open.contains_key(pane) && find(rest, b"]52;").is_none() && opener_tail(rest) == 0 {
@@ -51,8 +51,8 @@ impl Clips {
                 break data[b..].iter().all(|c| c.is_ascii_alphanumeric() || b"+/=".contains(c)).then_some(i);
             };
             let close = &data[e..];
-            if close.starts_with(BEL) || close.starts_with(ST) {
-                out.extend(text(&data[b..e]));
+            if (close.starts_with(BEL) || close.starts_with(ST)) && e - b <= MOST {
+                out.push(data[b..e].to_vec());
             } else if ST.starts_with(close) {
                 break Some(i); // the line ends inside the ST
             }
@@ -100,11 +100,9 @@ fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
 
 /// The text of a write's base64, as safe to paste as a browser's selection: no control
 /// characters but tab and line ends (termtext.rs `clean`), so a Copy pasted into a
-/// terminal can never end its bracketed paste (`ESC [201~`) or send keys; None when not UTF-8.
-fn text(b64: &[u8]) -> Option<String> {
-    if b64.len() > MOST {
-        return None;
-    }
+/// terminal can never end its bracketed paste (`ESC [201~`) or send keys; None for a read
+/// (`?`), bad base64 and text that is not UTF-8.
+pub fn text(b64: &[u8]) -> Option<String> {
     Some(clean(&String::from_utf8(decode(b64)?).ok()?, true)).filter(|t| !t.trim().is_empty())
 }
 
@@ -131,6 +129,16 @@ fn decode(b64: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Standard base64 of `b`, padded (tests write programs' copies with it).
+#[cfg(test)]
+pub(crate) fn encode(b: &[u8]) -> String {
+    const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    b.chunks(3).map(|c| {
+        let n = (u32::from(c[0]) << 16) | (u32::from(*c.get(1).unwrap_or(&0)) << 8) | u32::from(*c.get(2).unwrap_or(&0));
+        (0..4).map(|i| if i <= c.len() { A[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' }).collect::<String>()
+    }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,7 +148,7 @@ mod tests {
         ls.iter().flat_map(|l| one(c, l).into_iter().map(|t| (l.split(' ').nth(1).unwrap_or_default().to_string(), t))).collect()
     }
     fn one(c: &mut Clips, l: &str) -> Vec<String> {
-        c.line(l.split(' ').nth(1).unwrap_or_default(), l.as_bytes())
+        c.line(l.split(' ').nth(1).unwrap_or_default(), l.as_bytes()).iter().filter_map(|b| text(b)).collect()
     }
     const ONE: &str = "%output %3 \\033]52;c;bGF1ZGUgQ29kZSB2Mi4xLjMxNg==\\007";
 
@@ -199,14 +207,6 @@ mod tests {
         assert_eq!(one(&mut c, &hidden), vec!["ls x\u{200c}y\u{200d}z".to_string()]);
         let blank = format!("%output %3 \\033]52;c;{}\\007", b64("\u{1b}\u{7}"));
         assert!(one(&mut c, &blank).is_empty());
-    }
-
-    fn encode(b: &[u8]) -> String {
-        const A: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        b.chunks(3).map(|c| {
-            let n = (u32::from(c[0]) << 16) | (u32::from(*c.get(1).unwrap_or(&0)) << 8) | u32::from(*c.get(2).unwrap_or(&0));
-            (0..4).map(|i| if i <= c.len() { A[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' }).collect::<String>()
-        }).collect()
     }
 
     #[test]

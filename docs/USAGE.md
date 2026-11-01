@@ -197,7 +197,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   group's or a project's header to reorder: a dashed outline shows where it lands (a finger rests
   a moment first; moving at once scrolls). Projects are named groups
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
-  on every browser; a right click on a project's header, or its ⋯, opens its menu (New Session,
+  on every browser; a right click on a project's header, or its ⋯, opens its menu (New Window,
   Rename, moves among the projects, Ungroup, Close Project, which asks first); a tmux session's group
   has the same kind of menu (New Window, a window in that session; moves, Close Group).
   ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish);

@@ -11,7 +11,6 @@ import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";
 
-const TEXT_MOST = 2000;       // the characters a bookmark keeps: terminumd's MAX_TEXT (page/bookmarks.rs)
 import { floats, FOLDED } from "./fold.js";
 import { kindMark, MarkNav } from "./marknav.js";
 
@@ -108,6 +107,7 @@ export class Marks {
     switch (m.t) {
       case "marks":
         this.items = new Map(m.items.map((i) => [i.id, i]));
+        this.most = m.most ?? this.most;               // the characters a bookmark keeps, as terminumd says
         if (m.error) this.toast(`Bookmarks: ${m.error}`, 8000);
         return this.changed();
       case "mark":
@@ -168,11 +168,11 @@ export class Marks {
   /** A new bookmark of selection sel ({n, text}), or item's note edited. */
   edit(item, sel = null) {
     // one ref per dialog: a save sent again after no answer is kept once (bookmarks.py)
-    // what is kept: TEXT_MOST characters (a program's copy can be 1 MB), never half an emoji
-    const chars = item ? null : Array.from(sel.text.slice(0, 2 * TEXT_MOST + 2)), text = chars?.slice(0, TEXT_MOST).join("");
+    // what is kept: terminumd's `most` characters (a program's copy can be 1 MB), never half an emoji
+    const most = this.most ?? 2000, chars = item ? null : Array.from(sel.text.slice(0, 2 * most + 2)), text = chars?.slice(0, most).join("");
     this.editing = { ref: Math.random().toString(36).slice(2), ...(item ? { id: item.id } : { sid: this.sid(), ...sel, text }) };
     this.setKind(item?.remind ? "reminder" : "bookmark");
-    $("marktext").textContent = item ? item.text : text + (chars.length > TEXT_MOST ? `\n… (the first ${TEXT_MOST.toLocaleString("en")} characters are kept)` : "");
+    $("marktext").textContent = item ? item.text : text + (chars.length > most ? `\n… (the first ${most.toLocaleString("en")} characters are kept)` : "");
     $("marknote").value = item?.note ?? "";
     $("markerr").hidden = true;
     $("markbox").querySelector(".primary").disabled = false;

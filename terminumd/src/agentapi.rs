@@ -57,7 +57,7 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     }
     let key = server.key(pane);
     let hooked = app.hooks.session(&key);
-    let asked: Option<String> = body["session"].as_str().map(|s| s.chars().filter(|c| !c.is_control()).take(100).collect());
+    let asked: Option<String> = body["session"].as_str().map(|s| crate::termtext::clean(s, false).chars().take(100).collect());
     let main = hooked.as_ref().map(|(_, s)| s.clone()).filter(|s| !s.is_empty());
     let other = matches!((&main, &asked), (Some(m), Some(a)) if !a.is_empty() && m != a);
     let (hooks, session) = (hooked.is_some(), main.or(asked));

@@ -118,9 +118,13 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
                 }
                 crate::restore_srv::host(app, &server, &read.sessions).await;   // its tmux started anew: its layout again (AC-15)
                 let (absent, others) = crate::attach::ensure_host(&server, &read.sessions);
+                let held = server.held.lock().clone();
                 for g in gs.iter_mut().filter(|g| g["state"].is_null()) {
                     g["state"] = json!("attached");
                     g["files"] = json!(files);
+                    if let Some(why) = held.as_ref().filter(|_| g["attached"].is_null()) {
+                        g["why"] = json!(why);   // its record changed and is not used yet (AC-87)
+                    }
                 }
                 // the host's own group offers the other sessions running there (AC-89)
                 if let Some(g) = gs.iter_mut().find(|g| g["attached"].is_null()) {

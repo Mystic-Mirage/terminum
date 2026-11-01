@@ -45,7 +45,7 @@ pub fn tmux_key_ok(name: &str) -> bool {
 /// A key of the file: a panel action, typed text, or a key tmux names.
 fn key_ok(key: &str) -> bool {
     match key.strip_prefix("text:") {
-        Some(t) => !t.is_empty() && t.chars().count() <= MAX_TEXT && !t.chars().any(char::is_control),
+        Some(t) => !t.is_empty() && t.chars().count() <= MAX_TEXT && !t.chars().any(crate::termtext::stray),
         None => ACTIONS.contains(&key) || tmux_key_ok(key),
     }
 }
@@ -129,13 +129,13 @@ fn rows(v: &Value, text: &str, at: &[Seg]) -> Result<Value, String> {
             }
             let label = match label {
                 None => label_for(key),
-                Some(Value::String(l)) if (1..=MAX_LABEL).contains(&l.chars().count()) && !l.chars().any(char::is_control) => l.clone(),
+                Some(Value::String(l)) if (1..=MAX_LABEL).contains(&l.chars().count()) && !l.chars().any(crate::termtext::stray) => l.clone(),
                 Some(_) => return Err(bad(&ep, format!("a label is 1 to {MAX_LABEL} characters"))),
             };
             let mut item = json!({"label": label, "key": key});
             match hint {
                 None => {}
-                Some(Value::String(h)) if h.chars().count() <= 100 && !h.chars().any(char::is_control) => item["hint"] = json!(h),
+                Some(Value::String(h)) if h.chars().count() <= 100 && !h.chars().any(crate::termtext::stray) => item["hint"] = json!(h),
                 Some(_) => return Err(bad(&ep, "a hint is at most 100 characters".into())),
             }
             items.push(item);
@@ -260,6 +260,8 @@ mod tests {
             ("{\"rows\": [[\"Up\"]],\n\"cols\": 3}", "hotkeys.json: line 2: unknown key cols"),
             ("{\"fn\": [[\"F1\"]]}", "hotkeys.json: expected \"rows\""),
             ("[[{\"key\": \"Up\", \"label\": \"a very long label\"}]]", "hotkeys.json: line 1: a label is 1 to 12 characters"),
+            ("[[{\"key\": \"Up\", \"label\": \"up\\u202e\"}]]", "hotkeys.json: line 1: a label is 1 to 12 characters"),
+            ("[[\"text:rm\\u200b -rf\"]]", "hotkeys.json: line 1: unknown key text:rm\u{200b} -rf"),
             ("{\"rows\": [[\"Up\"]], \"fn\": [[\"F13\"]]}", "hotkeys.json: line 1: unknown key F13"),
             ("[[\"Up\",]]", "hotkeys.json: line 1: trailing comma"),
             ("\"Up\"", "hotkeys.json: expected rows of keys"),

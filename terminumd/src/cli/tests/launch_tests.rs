@@ -55,6 +55,17 @@ fn bounded_commands_keep_both_output_streams_and_exit_status() {
     assert_eq!((output.stdout.as_slice(), output.stderr.as_slice(), output.status.code()), (b"stdout".as_slice(), b"stderr".as_slice(), Some(7)));
 }
 
+#[test]
+fn a_command_has_no_terminal_to_stop_on() {
+    // its own session: /dev/tty cannot be opened, so a read of it fails at once instead of
+    // stopping the command in the background until the limit
+    let mut command = std::process::Command::new("/bin/sh");
+    command.args(["-c", "if (: < /dev/tty) 2>/dev/null; then echo tty; else echo none; fi; ps -o sess= -p $$ >/dev/null; [ \"$(ps -o pgid= -p $$ | tr -d ' ')\" = $$ ] && echo leader"]);
+    // stopped on a tty read, it would run out its limit: an error, not this output
+    let output = launch::run_timeout(command, Duration::from_secs(20)).unwrap();
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "none\nleader\n");
+}
+
 /// The plist as plutil reads it (macOS only).
 #[cfg(target_os = "macos")]
 fn plist_json(path: &Path) -> Value {

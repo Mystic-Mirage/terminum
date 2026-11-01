@@ -347,7 +347,8 @@ impl Plans {
     /// true when any went.
     pub fn retain(&self, prefix: &str, live: &[String]) -> bool {
         let mut cur = self.cur.lock();
-        let gone: Vec<String> = cur.keys().filter(|k| k.starts_with(prefix) && !live.contains(k)).cloned().collect();
+        let live: std::collections::HashSet<&str> = live.iter().map(String::as_str).collect();
+        let gone: Vec<String> = cur.keys().filter(|k| k.starts_with(prefix) && !live.contains(k.as_str())).cloned().collect();
         for k in &gone {
             self.archive_one(&mut cur, k);
         }

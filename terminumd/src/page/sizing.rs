@@ -350,8 +350,8 @@ fn mouse_event(app: &Shared, page: &Arc<Page>, msg: &Value) {
         return; // the program did not ask for the mouse: nothing is sent
     }
     let Some(bytes) = from_message(msg, f.mouse_sgr) else { return };
-    // a release to a full-screen program: what it copies of its selection is this page's (AC-06)
-    let arm = f.alt && msg["action"] == "release";
+    // a left release to a full-screen program: what it copies of its selection is this page's (AC-06)
+    let arm = f.alt && msg["action"] == "release" && msg["button"] == 0;
     super::typing::mouse(app, page, server, pane, key, bytes, arm);
 }
 

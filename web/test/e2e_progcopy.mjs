@@ -84,16 +84,14 @@ export async function webProgCopy(browser, name) {
   await page.keyboard.press("Escape");
   await pause(page, 200);
 
-  // writes nobody asked for: another pane, no release lately
+  // writes nobody asked for: another pane (no release lately: terminumd's 2 s, notices.rs COPY_WAIT,
+  // tested there; the page shows what terminumd hands it however late, by the release's row)
   await drag([2, 0], [12, 0]);
   f.say({ t: "copied", sid: "tmux:local:terminum:%9", text: "Messages" });
   await pause(page, 200);
   check(`AC-06 (${name}) a copy of another pane shows nothing`, !(await buttons()).add);
   await page.keyboard.press("Escape");
-  await pause(page, 3200);
-  f.say({ t: "copied", sid: SID, text: "Messages" });
   await pause(page, 200);
-  check(`AC-06 (${name}) a copy 3 s after the last release shows nothing`, !(await buttons()).add);
 
   // the program's text as it copied it, never compared with the screen: Claude Code leaves out what
   // it draws unselectable (⏺, ⎿), a drag may scroll its text away
@@ -125,15 +123,16 @@ export async function webProgCopy(browser, name) {
   check(`AC-06 (${name}) [+] holds that copy`, box.includes("scrolled away"), box.slice(0, 200));
   await page.keyboard.press("Escape");
   await pause(page, 200);
-  // a copy longer than a bookmark keeps: the dialog shows what is kept, and says it is cut
+  // a copy longer than a bookmark keeps (terminumd's `most`): the dialog shows what is kept, and says it is cut
+  f.say({ t: "marks", items: [], error: null, most: 1500 });
   await drag([2, 8], [12, 10]);
   f.say({ t: "copied", sid: SID, text: "The tests pass now.\n" + "y".repeat(5000) });
   await pause(page, 200);
   await page.click("#markadd");
   await pause(page, 300);
   const long = await page.evaluate(() => document.getElementById("marktext").textContent);
-  check(`AC-06 (${name}) [+] of a long copy shows its first 2000 characters and says so`,
-    long.startsWith("The tests pass now.") && long.endsWith("\n… (the first 2,000 characters are kept)") && long.length === 2000 + "\n… (the first 2,000 characters are kept)".length, String(long.length));
+  check(`AC-06 (${name}) [+] of a long copy shows the first characters terminumd keeps (1500 here) and says so`,
+    long.startsWith("The tests pass now.") && long.endsWith("\n… (the first 1,500 characters are kept)") && long.length === 1500 + "\n… (the first 1,500 characters are kept)".length, String(long.length));
   await page.keyboard.press("Escape");
   await pause(page, 200);
 

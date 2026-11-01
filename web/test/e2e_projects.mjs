@@ -222,7 +222,7 @@ export async function webProjects(browser, name) {
   await pause(page, 100);
   const byDouble = last(sent, "project");
   check("AC-92 a double click on a project's name renames it too", byDouble?.action === "rename" && byDouble.project === "p2" && byDouble.name === "Docs", JSON.stringify(byDouble));
-  // a right click on a project's header: its menu as a row's (New Session, Rename, moves among the
+  // a right click on a project's header: its menu as a row's (New Window, Rename, moves among the
   // projects, Ungroup, Close Project, which asks first and closes every session of it)
   const headAt = (pid) => page.click(`#sessions section[data-pid="${pid}"] h2 .label`, { button: "right" });
   await headAt("p1");
@@ -235,8 +235,8 @@ export async function webProjects(browser, name) {
   await headAt("p1");
   await page.click('#rowmenu button[data-action="new"]');
   const made = last(sent, "clone");
-  check("AC-92 a right click on a project's header opens its menu: New Session, Rename, moves among the projects, Ungroup, Close Project",
-    JSON.stringify(pmenu) === JSON.stringify(["New Session", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Ungroup", "Close Project…"])
+  check("AC-92 a right click on a project's header opens its menu: New Window, Rename, moves among the projects, Ungroup, Close Project",
+    JSON.stringify(pmenu) === JSON.stringify(["New Window", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Ungroup", "Close Project…"])
     && JSON.stringify(moved) === JSON.stringify({ t: "project", action: "order", ids: ["p2", "p1"] }) && second.includes("Move Up") && second.includes("Move Down-")
     && JSON.stringify(made) === JSON.stringify({ t: "clone", id: ID(3), project: "p1" }), JSON.stringify({ pmenu, moved, second, made }));
   const kills = sent.filter((m) => m.t === "kill").length;

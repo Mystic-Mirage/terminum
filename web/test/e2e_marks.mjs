@@ -7,7 +7,7 @@
 // Alone: node web/test/e2e_marks.mjs [chromium|webkit].
 
 import { fileURLToPath } from "node:url";
-import { pressFab, pressFoot } from "./fake.mjs";
+import { pressFab, pressFoot, spyCopies } from "./fake.mjs";
 import { check, cleanup, playwright, results } from "./check.mjs";
 import { askChecks } from "./e2e_ask.mjs";
 import { open } from "./e2e_widgets.mjs";
@@ -161,7 +161,7 @@ export async function webMarks(browser, name = "") {
   const gaps = await page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect();
     return [r("markadd").top - r("markcopy").bottom, r("askfab").top - r("markadd").bottom].map(Math.round); });
   check(`${at} a computer: Copy, [+] and Ask one gap (--sp-3, 12 px) apart`, gaps.every((g) => g === 12), JSON.stringify(gaps));
-  await page.evaluate(() => { window.copied = []; document.addEventListener("copy", () => window.copied.push(String(getSelection()))); });
+  await spyCopies(page);
   // Ask (AC-37): while text is selected, under the [+], on a pastel cornflower blue fill; the column stays in sight
   const asking = await page.evaluate(() => { const g = (id) => document.getElementById(id), r = (id) => g(id).getBoundingClientRect();
     return { shown: !g("askfab").hidden, under: r("askfab").top > r("markadd").bottom && r("askfab").top - r("markadd").bottom < 16 && Math.abs(r("askfab").left - r("markadd").left) < 1,

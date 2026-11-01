@@ -89,7 +89,7 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
       }
       hook?.(msg, say);
     });
-    say({ t: "build", id: "test" });
+    say({ t: "build", id: "test", mac: true });   // the Mac's own browser, as at 127.0.0.1
     if (settings) say({ t: "settings", ...settings });
     say({ t: "layout", groups: layout });
   });

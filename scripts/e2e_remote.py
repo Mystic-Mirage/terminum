@@ -55,6 +55,57 @@ def raw(t, secret, path, host=None):
         return e.code, e.headers.get("Content-Type"), e.headers.get("Content-Security-Policy") or "", e.read()
 
 
+def recipe_edits(t, ws, pids):
+    """AC-87 edge: settings.json edited by hand under an attached host keeps its link until a new
+    recipe answers; a broken or failing one says why and changes nothing."""
+    path = os.path.join(t.home, "settings.json")
+
+    def edit(recipe):
+        s = json.load(open(path))
+        s["hosts"]["devbox"]["ssh"] = recipe
+        json.dump(s, open(path + ".tmp", "w"))
+        os.replace(path + ".tmp", path)
+
+    def why_has(text, t_s=10):
+        return wait_layout(ws, lambda gs: text in ((host_group(gs, "devbox") or {}).get("why") or ""), t_s)
+
+    def typed(word):
+        ws.send({"t": "in", "data": f"echo {word}-$((3*3))\r"})
+        return ws.until(lambda m: m["t"] == "screen" and f"{word}-9" in json.dumps(m["ch"]), 10) is not None
+
+    good = ["-p", "2222", "alex@devbox.example"]
+    edit(["-o", "ProxyCommand=x", "alex@devbox.example"])
+    held = why_has("still connected with the previous recipe")
+    check("AC-87 a recipe made invalid by hand keeps the attached link and says why",
+          held and (host_group(held, "devbox") or {}).get("state") == "attached" and typed("kept"), host_group(held or [], "devbox"))
+    edit(["-p", "2222", "alex@refused.example"])
+    failed = why_has("the new recipe failed: Permission denied (publickey)")
+    check("AC-87 a new recipe that fails over ssh keeps the attached link and says why",
+          failed and (host_group(failed, "devbox") or {}).get("state") == "attached" and typed("still"), host_group(failed or [], "devbox"))
+    for line in open(pids):                                   # the old link drops meanwhile
+        pid, _, rest = line.partition(" ")
+        if "new-session" in rest:
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+    taken = wait_layout(ws, lambda gs: (host_group(gs, "devbox") or {}).get("state") == "failed"
+                        and "Permission denied" in ((host_group(gs, "devbox") or {}).get("why") or ""), 20)
+    check("AC-87 a held host whose old link drops takes its new record, never the old one again", taken is not None,
+          host_group(taken or [], "devbox"))
+    edit(["-p", "2223", "alex@devbox.example"])
+    moved = wait_layout(ws, lambda gs: "-p 2223" in ((host_group(gs, "devbox") or {}).get("attach") or "")
+                        and (host_group(gs, "devbox") or {}).get("state") == "attached" and not (host_group(gs, "devbox") or {}).get("why"), 20)
+    check("AC-87 a new recipe that answers takes over the link", moved is not None, host_group(moved or [], "devbox"))
+    edit(good)
+    back = wait_layout(ws, lambda gs: "-p 2222" in ((host_group(gs, "devbox") or {}).get("attach") or "")
+                       and (host_group(gs, "devbox") or {}).get("state") == "attached" and (host_group(gs, "devbox") or {}).get("items"), 20)
+    check("AC-87 and back to the first recipe", back is not None, host_group(back or [], "devbox"))
+    item = (host_group(back or [], "devbox") or {"items": [{}]})["items"][0]
+    ws.send({"t": "sub", "id": item.get("id")})
+    ws.send({"t": "size", "cols": 90, "rows": 25, "typing": False})
+
+
 def main():
     t = Terminumd(PORT, LOCAL_SOCKET)
     remote_home = os.path.join(t.root, "remote-home")
@@ -122,6 +173,7 @@ def main():
         err = ws.until(lambda m: m["t"] == "error" and "paste" in m.get("msg", ""), 0.5)
         check("AC-03 a paste on a host that starts with \"-\" is text (set-buffer --), not a flag", pasted is not None and err is None, err)
         ws.send({"t": "in", "data": "\x03"})
+        recipe_edits(t, ws, pids)
 
         # AC-15: the host's tmux started anew (a reboot, its server killed): its session's windows come back
         os.makedirs(os.path.join(remote_home, "build"), exist_ok=True)

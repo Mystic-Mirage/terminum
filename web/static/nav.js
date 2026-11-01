@@ -210,9 +210,11 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   return li;
 }
 
-/** A host group's state, on a line under its name (AC-81): "" when attached; terminumd's `why`
- *  says "reconnecting (2 s)" or ssh's last line, which can be long. */
+/** A host group's state, on a line under its name (AC-81): "" when attached, unless its record
+ *  changed and is not used yet (AC-87); terminumd's `why` says "reconnecting (2 s)" or ssh's
+ *  last line, which can be long. */
 export function hostState(g) {
+  if (g.state === "attached") return g.why || "";
   if (g.state === "reconnecting") return g.why || "reconnecting";
   if (g.state === "failed") return g.why || "failed";
   if (g.state === "off") return "off";
@@ -288,7 +290,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     t.append(icon("chevron-down", 14), name, count);
     const acts = el("span", "acts");               // a fixed column: the counts line up whatever buttons follow
     h.append(t, acts);
-    if (onProjectNew) acts.append(iconButton("new", "plus", `New session in ${p.name}`, `A new window in ${p.dir || "its folder"}`, () => onProjectNew(p, tops.at(-1))));
+    if (onProjectNew) acts.append(iconButton("new", "plus", `New window in ${p.name}`, `A new window in ${p.dir || "its folder"}`, () => onProjectNew(p, tops.at(-1))));
     if (onProjectMenu) {
       const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: new session, rename, move, ungroup, close`, (b) => onProjectMenu(p, b));
       m.setAttribute("aria-haspopup", "true");

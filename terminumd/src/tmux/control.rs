@@ -33,8 +33,8 @@ pub enum Notice {
     Changed,
     /// tmux paused a pane's output (flow control): `%N`
     Pause(String),
-    /// a program in pane `%N` wrote this text to the clipboard (OSC 52)
-    Copy(String, String),
+    /// a program in pane `%N` wrote this to the clipboard (OSC 52): its base64, not decoded yet
+    Copy(String, Vec<u8>),
 }
 
 /// An answer: the block's lines, or tmux's error text.
@@ -65,6 +65,8 @@ impl Control {
     /// ends, `notices` gets nothing more and `done` is fired with the reason.
     pub fn spawn(mut cmd: Command, notices: mpsc::UnboundedSender<Notice>, done: oneshot::Sender<String>) -> std::io::Result<Control> {
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        // what ended without a word says: a link that never reached tmux says so
+        let via_ssh = std::path::Path::new(cmd.as_std().get_program()).file_name().is_some_and(|n| n.to_string_lossy().contains("ssh"));
         let mut child: Child = cmd.spawn()?;
         let pid = child.id();
         let mut stdin = child.stdin.take().expect("piped");
@@ -183,7 +185,8 @@ impl Control {
             }
             a.store(false, Ordering::Relaxed);
             cl.store(exit_reason.as_deref() == Some(""), Ordering::Relaxed);
-            let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).unwrap_or_else(|| "tmux exited".into());
+            let quiet = if via_ssh && !att.load(Ordering::Relaxed) { "ssh: no answer from the host" } else { "tmux exited" };
+            let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).unwrap_or_else(|| quiet.into());
             for w in p.lock().drain(..) {
                 let _ = w.reply.send(Err(why.clone()));
             }

@@ -1,16 +1,39 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Redact stored text without interpreting or executing shell syntax.
 
-const SECRET_WORD: [&str; 6] = ["token", "secret", "password", "passwd", "apikey", "api_key"];
+/// Names like a secret's, compared without case, `-` and `_` (`X-API-Key`, `api_key`).
+const SECRET_WORD: [&str; 5] = ["token", "secret", "password", "passwd", "apikey"];
 const SECRET_SHAPE: [&str; 9] = ["sk-", "ghp_", "gho_", "github_pat_", "glpat-", "xoxb-", "xoxp-", "AKIA", "eyJ"];
 
-/// `text` with secrets' values left out: `NAME=value`, `NAME: value`, `--name value` for a
-/// name like a secret's, `Bearer value`, words of a known secret's shape and private key blocks.
+/// A name like a secret's: a part of it (between '-', '_', quotes and other signs) holds a secret word (`MAX_TOKENS`,
+/// `secretKey`), or parts side by side spell one whole (`X-API-Key`, `api_key`); never parts
+/// that only run into one (`go_to_kennel`).
+fn secretish(w: &str) -> bool {
+    let parts = parts(w);
+    SECRET_WORD.iter().any(|s| parts.iter().any(|p| p.contains(s)) || (0..parts.len()).any(|i| {
+        let mut joined = String::new();
+        parts[i..].iter().any(|p| { joined.push_str(p); joined == *s })
+    }))
+}
+
+/// A key without quotes before a ':' in a word (`token:abc`) is a secret's only when it ends in
+/// a secret word: an image's `secrets-manager:latest` is not one.
+fn secret_at_end(w: &str) -> bool {
+    let whole: String = parts(w).concat();
+    SECRET_WORD.iter().any(|s| whole.ends_with(s))
+}
+
+fn parts(w: &str) -> Vec<String> {
+    w.split(|c: char| !c.is_alphanumeric()).filter(|p| !p.is_empty()).map(str::to_lowercase).collect()
+}
+
+/// `text` with secrets' values left out: `NAME=value`, `NAME = value`, `NAME: value`,
+/// `"name":"value"` inside a word (compact JSON), `--name value` for a name like a secret's,
+/// `Bearer value`, words of a known secret's shape and private key blocks.
 pub fn redact(text: &str) -> String {
     let text = pem_out(text);
-    let secretish = |w: &str| { let w = w.trim_start_matches('-').to_ascii_lowercase(); SECRET_WORD.iter().any(|s| w.contains(s)) };
     let mut out = String::with_capacity(text.len());
-    let mut hide_next = false;
+    let (mut hide_next, mut named) = (false, false);
     let mut at = 0;
     while at < text.len() {
         let piece = text[at..].split_inclusive(char::is_whitespace).next().expect("remaining text");
@@ -22,22 +45,40 @@ pub fn redact(text: &str) -> String {
             continue;
         }
         // a value hidden: from where it starts to its end, its quotes and escapes with it
-        let named = hide_next && (!bare.starts_with('-') || word.starts_with(['\'', '"']));
-        let assigned = word.split_once('=').filter(|(k, v)| !v.is_empty() && secretish(k)).map(|(k, _)| k);
-        if let Some(k) = assigned.filter(|_| !named) {
+        let value = hide_next && (!bare.starts_with('-') || word.starts_with(['\'', '"']));
+        // `NAME = value`: the "=" (Make's ":=", "?=", "+=") a word of its own, or the value's
+        // first character; never "==" nor "=>"
+        let named_before = std::mem::take(&mut named) && !value;
+        let spaced = named_before && (matches!(word, ":=" | "?=" | "+=")
+            || (word.starts_with('=') && !word.starts_with("==") && !word.starts_with("=>")));
+        if spaced && word.starts_with('=') && word.len() > 1 {
+            (hide_next, at) = (false, value_end(&text, at + 1, None));
+            out.push_str("=[redacted]");
+            continue;
+        }
+        // a key before a ':' in the same word (`{"token":"ab=="}`) is `keyed`'s: its value may hold '='
+        let assigned = word.split_once('=').filter(|(k, v)| !v.is_empty() && !k.contains(':') && secretish(k)).map(|(k, _)| k);
+        if let Some(k) = assigned.filter(|_| !value) {
             let opened = k.chars().next().filter(|q| matches!(q, '\'' | '"') && !k[1..].contains(*q));
             (hide_next, at) = (false, value_end(&text, at + k.len() + 1, opened));
             out.push_str(&format!("{k}=[redacted]"));
             continue;
         }
-        if named || SECRET_SHAPE.iter().any(|s| bare.starts_with(s) && bare.len() >= s.len() + 12) {
+        if value || SECRET_SHAPE.iter().any(|s| bare.starts_with(s) && bare.len() >= s.len() + 12) {
             (hide_next, at) = (false, value_end(&text, at, None));
             out.push_str("[redacted]");
             continue;
         }
-        let key = bare.trim_end_matches(':').trim_matches('"');
-        hide_next = (bare.starts_with("--") && !word.contains('=') && secretish(bare)) || (bare.ends_with(':') && secretish(key))
-            || bare.eq_ignore_ascii_case("bearer");
+        if let Some(colon) = keyed(word) {
+            (hide_next, at) = (false, json_value_end(&text, at + colon + 1));
+            out.push_str(&word[..=colon]);
+            out.push_str("[redacted]");
+            continue;
+        }
+        let key = bare.trim_end_matches(['=', ':']).trim_matches('"');
+        hide_next = spaced || (bare.starts_with("--") && !word.contains('=') && secretish(bare))
+            || ((bare.ends_with(':') || word.ends_with('=')) && secretish(key)) || bare.eq_ignore_ascii_case("bearer");
+        named = !hide_next && !word.contains(['=', ':']) && secretish(bare);
         out.push_str(piece);
         at += piece.len();
     }
@@ -67,6 +108,37 @@ fn value_end(text: &str, start: usize, inside: Option<char>) -> usize {
         (dollar, may_open) = (may_open && c == '$', false);
     }
     text.len()
+}
+
+/// The `:` inside `word` after a key named like a secret's, with its value in the same word:
+/// `{"user":"alex","password":"a b"}`, `token:abc`.
+fn keyed(word: &str) -> Option<usize> {
+    let b = word.as_bytes();
+    // never a path's "::" (`std::token::parse`)
+    word.char_indices().filter(|&(i, c)| c == ':' && i + 1 < b.len() && b[i + 1] != b':' && (i == 0 || b[i - 1] != b':')).map(|(i, _)| i).find(|&i| {
+        let key = word[..i].rsplit(['{', ',', '[', '(']).next().unwrap_or("");
+        let bare = key.trim_matches(|c: char| "'\"` ".contains(c));
+        if key.starts_with(['"', '\'']) { secretish(bare) } else { secret_at_end(bare) }
+    })
+}
+
+/// End of a value after a key inside a word: a quoted value through its closing quote (to the
+/// end of the text when it never closes), else to the first `,`, `}`, `]` or whitespace.
+fn json_value_end(text: &str, start: usize) -> usize {
+    let rest = &text[start..];
+    if let Some(q) = rest.chars().next().filter(|c| matches!(c, '"' | '\'')) {
+        let mut escaped = false;
+        for (i, c) in rest.char_indices().skip(1) {
+            match c {
+                _ if escaped => escaped = false,
+                '\\' => escaped = true,
+                _ if c == q => return start + i + 1,
+                _ => {}
+            }
+        }
+        return text.len();
+    }
+    start + rest.find(|c: char| c.is_whitespace() || matches!(c, ',' | '}' | ']')).unwrap_or(rest.len())
 }
 
 /// `text` with every "-----BEGIN … PRIVATE KEY-----" block replaced by "[redacted]".
@@ -129,6 +201,37 @@ mod tests {
         assert_eq!(redact("env \"API_KEY=alpha \\\" beta\" tool"), "env \"API_KEY=[redacted] tool");
         assert_eq!(redact("tool --password 'alpha beta'\"gamma delta\" tail"), "tool --password [redacted] tail");
         assert_eq!(redact("tool --password $'alpha beta' tail"), "tool --password [redacted] tail");
+    }
+
+    #[test]
+    fn spaced_assignments_hyphenated_names_and_compact_json() {
+        for (source, kept) in [
+            ("export API_KEY = \"abc def\" then", "export API_KEY = [redacted] then"),
+            ("API_KEY =abc then", "API_KEY =[redacted] then"),
+            ("API_KEY= abc then", "API_KEY= [redacted] then"),
+            ("curl -H 'X-API-Key: abc' tail", "curl -H 'X-API-Key: [redacted] tail"),
+            ("x-auth-token: abc tail", "x-auth-token: [redacted] tail"),
+            ("--api-key abc tail", "--api-key [redacted] tail"),
+            (r#"post {"password":"a b"} tail"#, r#"post {"password":[redacted]} tail"#),
+            (r#"{"user":"alex","api_key":"x\"y","n":1}"#, r#"{"user":"alex","api_key":[redacted],"n":1}"#),
+            (r#"{"token":12345,"user":"alex"}"#, r#"{"token":[redacted],"user":"alex"}"#),
+            ("token:abc tail", "token:[redacted] tail"),
+            (r#"{"token":"QWxhZGRpbg=="} tail"#, r#"{"token":[redacted]} tail"#),
+            ("token:abc=def tail", "token:[redacted] tail"),
+            (r#"{"password":"p=w","n":1}"#, r#"{"password":[redacted],"n":1}"#),
+            ("TOKEN := abc tail", "TOKEN := [redacted] tail"),
+            ("API_KEY ?= abc tail", "API_KEY ?= [redacted] tail"),
+            ("client_secret:abc tail", "client_secret:[redacted] tail"),
+            (r#"{"secretKey":"abc"}"#, r#"{"secretKey":[redacted]}"#),
+            ("MAX_TOKENS=abc tail", "MAX_TOKENS=[redacted] tail"),
+            (r#"{"password":"never closed"#, r#"{"password":[redacted]"#),
+        ] {
+            assert_eq!(redact(source), kept, "{source}");
+        }
+        for plain in ["a = b and x == y", "the token is new = fine", "https://example.com:8080/a", r#"{"user":"alex","n":1}"#, "token == x", "token => token.trim()", "cargo test std::token::parse",
+                      "docker pull secrets-manager:latest", "go_to_kennel=1", "tokens:5"] {
+            assert_eq!(redact(plain), plain, "{plain}");
+        }
     }
 
     #[test]

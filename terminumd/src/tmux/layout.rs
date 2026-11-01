@@ -172,7 +172,7 @@ pub fn absent_group(server: &Server, session: &str, why: &str) -> Value {
 pub fn host_group(server: &Server, files: Option<&str>) -> Value {
     let status = server.status.lock().clone();
     let (state, why) = match &status {
-        Status::Attached => ("attached", String::new()),
+        Status::Attached => ("attached", server.held.lock().clone().unwrap_or_default()),
         Status::Connecting => ("reconnecting", "connecting".to_string()),
         Status::Reconnecting { why, retry_s } => ("reconnecting", format!("reconnecting ({retry_s} s){}", if why.is_empty() { String::new() } else { format!(": {why}") })),
         Status::Failed { why } => ("failed", why.clone()),

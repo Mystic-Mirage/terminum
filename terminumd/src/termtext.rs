@@ -1,18 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! What fbd types into a terminal (AC-12): words quoted for the pane's own shell, never a
 //! control or invisible character, never a word a command could take for an option, and
-//! never Enter: the user runs the line.
+//! never Enter: the user runs the line. Also terminumd's one rule of those characters
+//! (`control`, `hides`, `clean`): names, plans, links and a program's copies use it.
 
-/// Characters that act as keystrokes (C0, DEL, C1) or hide what is typed (`hides`, and the
-/// zero-width joiners).
+/// Whether `s` holds a character that acts as a keystroke or hides what is typed (`control`).
 pub fn has_control(s: &str) -> bool {
-    s.chars().any(|c| c.is_control() || hides(c) || matches!(c, '\u{200C}' | '\u{200D}'))
+    s.chars().any(control)
 }
 
-/// What makes a line read otherwise than it runs: bidi controls, zero-width and other format
-/// characters, line and paragraph separators; never ZWNJ and ZWJ, which words and emoji need.
+/// A character that acts as a keystroke (C0, DEL, C1) or hides what is typed (`hides`, and the
+/// zero-width joiners): never in a name, a command line or an address.
+pub fn control(c: char) -> bool {
+    c.is_control() || hides(c) || matches!(c, '\u{200C}' | '\u{200D}')
+}
+
+/// What makes a line read otherwise than it runs: bidi controls, zero-width characters, the
+/// soft hyphen, word joiners, line and paragraph separators, tag characters (text a model reads
+/// and a person does not see); never ZWNJ and ZWJ, which words and emoji need. The page's own
+/// copy of the list: web/static/seltext.js `HIDE` (web/test/hides.test.mjs keeps them equal).
 pub fn hides(c: char) -> bool {
-    matches!(c as u32, 0xAD | 0x061C | 0x180E | 0x200B | 0x200E..=0x200F | 0x2028..=0x202E | 0x2060..=0x206F | 0xFEFF | 0xFFF9..=0xFFFB)
+    matches!(c as u32, 0xAD | 0x061C | 0x180E | 0x200B | 0x200E..=0x200F | 0x2028..=0x202E | 0x2060..=0x206F | 0xFEFF | 0xFFF9..=0xFFFB | 0xE0001 | 0xE0020..=0xE007F)
+}
+
+/// `s` without control characters and what `hides`: with `lines`, tabs and line ends kept
+/// (`\r\n`, `\r` and the line and paragraph separators are `\n`).
+pub fn clean(s: &str, lines: bool) -> String {
+    let s = if lines { s.replace("\r\n", "\n").replace(['\r', '\u{2028}', '\u{2029}'], "\n") } else { s.to_string() };
+    s.chars().filter(|c| (lines && matches!(c, '\t' | '\n')) || !(c.is_control() || hides(*c))).collect()
 }
 
 /// Needs no quotes in any shell: not even zsh's `=cmd` (a path lookup) or tcsh's `=N`.
@@ -74,6 +89,8 @@ mod tests {
             assert!(has_control(s), "{s:?}");
         }
         assert!(!has_control("naïve file — ü 文件.txt"));
+        assert_eq!(clean("a\r\nb\rc\u{2028}d\te\u{202e}\u{e0041}\u{7}", true), "a\nb\nc\nd\te");
+        assert_eq!(clean("a\nb\u{2028}c\u{200d}", false), "abc\u{200d}");
     }
 
     #[test]

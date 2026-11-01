@@ -5,7 +5,7 @@
 // (AC-37) shows then too, under the [+]. It lies outside the terminal's rows
 // (their taps, copying and line maths stay as they are). The selection is taken while it is
 // there: a tap on iOS clears it first, and the terminal then catches up and moves its lines.
-import { selectedText } from "./seltext.js";
+import { copyPreview, hiddenNote, selectedText, unhidden } from "./seltext.js";
 import { FLOATING } from "./fold.js";
 
 const KEEP_FOR = 600;          // ms the buttons stay after the selection went (a tap still lands)
@@ -101,7 +101,11 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
   let pending = 0;                                 // a drag changes the selection on every move: once a frame
   document.addEventListener("selectionchange", () => { if (!pending) pending = requestAnimationFrame(changed); });
   const keep = (got) => {
-    if (got.raw !== kept?.raw) copied = false;     // another selection (the same one comes back after a copy)
+    if (got.raw !== kept?.raw) {                   // another selection (the same one comes back after a copy)
+      copied = false;
+      const { text, left } = unhidden(got.raw), says = `Copy ${copyPreview(text)}${hiddenNote(left)}`;   // what it takes
+      copyButton.title = says; copyButton.setAttribute("aria-label", says);
+    }
     kept = got;
     clearTimeout(hide); hide = 0;
     show(true);
@@ -126,16 +130,16 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
   for (const b of [button, copyButton, askButton]) b.addEventListener("mousedown", (e) => e.preventDefault());   // the selection stays
   askButton.addEventListener("click", () => {
     if (!kept) return;
-    const { raw: text, n } = kept;
+    const { raw, n } = kept;
     gone();
-    onAsk(text, n);
+    onAsk(unhidden(raw).text, n);
   });
   button.addEventListener("click", () => {
     if (!kept) return;
     const { n, text } = kept;
     kept = null; show(false);
     getSelection().removeAllRanges();                                 // the terminal catches up
-    onPick({ n, text });
+    onPick({ n, text: unhidden(text).text.trim() });
   });
   copyButton.addEventListener("click", () => {
     if (!kept) return;

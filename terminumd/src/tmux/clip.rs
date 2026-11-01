@@ -4,7 +4,7 @@
 //! backslash as `\ooo`, so the write is `\033]52;<targets>;<base64>` closed by `\007` or
 //! `\033\134` (ST); base64 never holds a backslash. A write tmux split over two lines is carried.
 
-use crate::termtext::hides;
+use crate::termtext::clean;
 use std::collections::HashMap;
 
 /// The longest write kept: base64 of 1 MB of text.
@@ -99,14 +99,13 @@ fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
 }
 
 /// The text of a write's base64, as safe to paste as a browser's selection: no control
-/// characters but tab and line ends (`\r\n` and `\r` are `\n`), so a Copy pasted into a
+/// characters but tab and line ends (termtext.rs `clean`), so a Copy pasted into a
 /// terminal can never end its bracketed paste (`ESC [201~`) or send keys; None when not UTF-8.
 fn text(b64: &[u8]) -> Option<String> {
     if b64.len() > MOST {
         return None;
     }
-    let raw = String::from_utf8(decode(b64)?).ok()?.replace("\r\n", "\n").replace('\r', "\n");
-    Some(raw.chars().filter(|c| matches!(c, '\t' | '\n') || !(c.is_control() || hides(*c))).collect::<String>()).filter(|t| !t.trim().is_empty())
+    Some(clean(&String::from_utf8(decode(b64)?).ok()?, true)).filter(|t| !t.trim().is_empty())
 }
 
 /// Standard base64 (padding optional); None for a read (`?`) or a stray character.
@@ -196,7 +195,7 @@ mod tests {
         let line = format!("%output %3 \\033]52;c;{}\\007", b64("a\u{1b}[201~\r\nrm -rf x\u{9b}31m\u{7f}\tb\rc"));
         assert_eq!(lines(&mut c, &[&line]), vec![("%3".into(), "a[201~\nrm -rf x31m\tb\nc".into())]);
         // bidi controls and zero-width characters go (a line that reads otherwise than it runs), ZWNJ and ZWJ stay
-        let hidden = format!("%output %3 \\033]52;c;{}\\007", b64("ls\u{202e}\u{2066}\u{200b}\u{2028}\u{feff} x\u{200c}y\u{200d}z"));
+        let hidden = format!("%output %3 \\033]52;c;{}\\007", b64("ls\u{202e}\u{2066}\u{200b}\u{feff}\u{e0041} x\u{200c}y\u{200d}z"));
         assert_eq!(one(&mut c, &hidden), vec!["ls x\u{200c}y\u{200d}z".to_string()]);
         let blank = format!("%output %3 \\033]52;c;{}\\007", b64("\u{1b}\u{7}"));
         assert!(one(&mut c, &blank).is_empty());

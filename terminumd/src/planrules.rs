@@ -15,17 +15,10 @@ pub const DOING: usize = 120;
 pub const TITLE: usize = 80;
 pub const ETA_MOST: u64 = 1440;
 
-/// Unicode bidi and format controls that reorder text on screen (U+200E/F, U+202A–202E,
-/// U+2066–2069).
-fn bidi(c: char) -> bool {
-    matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
-}
-
-/// `s` without control characters (line breaks and tabs kept when `lines`), bidi controls and
-/// secrets' values, trimmed.
+/// `s` without control characters (line breaks and tabs kept when `lines`), what hides what a
+/// line reads (termtext.rs `clean`) and secrets' values, trimmed.
 pub fn clean_with(s: &str, lines: bool) -> String {
-    let s: String = s.chars().filter(|c| !bidi(*c) && (!c.is_control() || (lines && (*c == '\n' || *c == '\t')))).collect();
-    crate::sent::redact(s.trim())
+    crate::sent::redact(crate::termtext::clean(s, lines).trim())
 }
 
 /// `s` cleaned, line breaks and tabs kept.
@@ -45,6 +38,7 @@ mod tests {
     #[test]
     fn cleaning_drops_controls_and_bidi_keeps_lines() {
         assert_eq!(clean(" a\u{202E}b\u{2066}c\u{200F}\u{7}\nd\t "), "abc\nd");
+        assert_eq!(clean("z\u{200B}w\u{FEFF}j\u{200D}\u{2028}x"), "zwj\u{200D}\nx");
         assert_eq!(clean_with("a\nb\u{2069}", false), "ab");
         assert_eq!(clean("\u{202A}\u{202C}"), "");
         assert_eq!(clean("é ✓ 中"), "é ✓ 中", "other text stays");

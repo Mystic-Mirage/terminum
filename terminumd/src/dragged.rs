@@ -69,7 +69,7 @@ fn meta(p: &str) -> Meta {
 /// why not, the first file that is not there named (`unmatched`), or a path with a control or
 /// invisible character (each would be a key at the input, or hide what it is).
 pub fn matched(files: &[Dropped], board: &[OnBoard], meta: impl Fn(&str) -> Meta) -> Result<Vec<String>, String> {
-    if board.iter().any(|(p, _)| !p.starts_with('/') || p.chars().any(crate::tmux::args::is_control)) {
+    if board.iter().any(|(p, _)| !p.starts_with('/') || crate::termtext::has_control(p)) {
         return Err("a path the drag held has a control or invisible character or is not absolute".into());
     }
     let known: Vec<(&String, &String, Meta)> = board.iter()

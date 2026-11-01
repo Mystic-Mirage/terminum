@@ -251,12 +251,11 @@ fn skip_escape(line: &str, i: usize, style: &mut Style, link: &mut Option<Arc<st
 }
 
 /// The address of an OSC 8 `params;URI` (after "8;"): none for the empty URI that ends a link,
-/// nor for one too long or with a control or bidi formatting character (it could make the address
-/// shown on hover read otherwise), which draws as plain text.
+/// nor for one too long or with a control or invisible character (termtext.rs `control`: it
+/// could make the address shown on hover read otherwise), which draws as plain text.
 fn hyperlink(rest: &str) -> Option<Arc<str>> {
     let uri = rest.split_once(';')?.1;
-    let odd = |c: char| c.is_control() || matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
-    (!uri.is_empty() && uri.len() <= LINK_MAX && !uri.chars().any(odd)).then(|| Arc::from(uri))
+    (!uri.is_empty() && uri.len() <= LINK_MAX && !uri.chars().any(crate::termtext::control)).then(|| Arc::from(uri))
 }
 
 #[cfg(test)]

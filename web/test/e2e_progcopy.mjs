@@ -13,6 +13,7 @@ const TEXT = ["  Messages: 3.3k tokens (0.3%)", "  Free space: 931.7k (93.2%)", 
   ...Array.from({ length: 14 }, (_, i) => `  row ${i + 6}`), "  Skills: 4.9k tokens (0.5%)", "  Memory files: 1.1k tokens", "  Custom agents: 73 tokens"];
 
 TEXT.splice(8, 3, "⏺ The tests pass now.", "  ⎿  first line of the output", "     second line goes here");   // Claude Code's unselectable marks
+TEXT[12] = "  rm\u200b -rf\u2060 build";     // zero-width characters: drawn as nothing, pasted as bytes
 
 export async function webProgCopy(browser, name) {
   runningIn(`${name} 1400×900`);
@@ -108,15 +109,31 @@ export async function webProgCopy(browser, name) {
   f.say({ t: "copied", sid: SID, text: away });
   await pause(page, 200);
   check(`AC-06 (${name}) a copy with a line no longer on the screen shows the buttons`, (await buttons()).add);
+  // what Copy takes, said before the press (its label) and after (the toast): it is not drawn as it is
+  const label = await page.evaluate(() => [document.getElementById("markcopy").title, document.getElementById("markcopy").getAttribute("aria-label")]);
+  check(`AC-06 (${name}) Copy says what it takes: the line count and the first line`,
+    label.every((l) => l === "Copy 2 lines: The tests pass now."), JSON.stringify(label));
   await spyCopies(page);
   await page.click("#markcopy");
   await pause(page, 200);
-  const put = await page.evaluate(() => window.copied.at(-1) ?? null);
-  check(`AC-06 (${name}) Copy puts the latest copy, exactly as the program made it`, put === away, JSON.stringify(put));
+  const put = await page.evaluate(() => ({ text: window.copied.at(-1) ?? null, toast: document.getElementById("toast").textContent }));
+  check(`AC-06 (${name}) Copy puts the latest copy, exactly as the program made it, and the toast says what`,
+    put.text === away && put.toast === "Copied 2 lines: The tests pass now.", JSON.stringify(put));
   await page.click("#markadd");
   await pause(page, 300);
   const box = await page.evaluate(() => document.getElementById("markbox").textContent);
   check(`AC-06 (${name}) [+] holds that copy`, box.includes("scrolled away"), box.slice(0, 200));
+  await page.keyboard.press("Escape");
+  await pause(page, 200);
+  // a copy longer than a bookmark keeps: the dialog shows what is kept, and says it is cut
+  await drag([2, 8], [12, 10]);
+  f.say({ t: "copied", sid: SID, text: "The tests pass now.\n" + "y".repeat(5000) });
+  await pause(page, 200);
+  await page.click("#markadd");
+  await pause(page, 300);
+  const long = await page.evaluate(() => document.getElementById("marktext").textContent);
+  check(`AC-06 (${name}) [+] of a long copy shows its first 2000 characters and says so`,
+    long.startsWith("The tests pass now.") && long.endsWith("\n… (the first 2,000 characters are kept)") && long.length === 2000 + "\n… (the first 2,000 characters are kept)".length, String(long.length));
   await page.keyboard.press("Escape");
   await pause(page, 200);
 
@@ -131,6 +148,17 @@ export async function webProgCopy(browser, name) {
   const sh = await buttons();
   check(`AC-06 (${name}) Shift and a drag select from the press in the browser, nothing sent, the buttons shown`,
     sh.sel.replace(/\s+/g, " ").startsWith("Messages: 3.3k") && sh.sel.includes("Free") && mice() === n && sh.add && sh.ask, JSON.stringify({ sel: sh.sel, sentMice: mice() - n }));
+  // a selection over what hides what a line runs: Copy says it leaves it out, and does
+  await drag([0, 12], [60, 12], true);
+  await pause(page, 300);
+  const hid = await page.evaluate(() => document.getElementById("markcopy").title);
+  await spyCopies(page);
+  await page.click("#markcopy");
+  await pause(page, 200);
+  const hidPut = await page.evaluate(() => ({ text: window.copied.at(-1) ?? null, toast: document.getElementById("toast").textContent }));
+  check(`AC-37 (${name}) a browser selection's Copy leaves out zero-width characters and says so, before and after`,
+    hid === "Copy 1 line: rm -rf build (2 hidden characters left out)" && hidPut.text === "  rm -rf build"
+    && hidPut.toast === "Copied 1 line: rm -rf build (2 hidden characters left out)", JSON.stringify({ hid, ...hidPut }));
   // the next press goes to the program and ends that selection: the keys come back, the copy is the program's
   n = mice();
   await drag([2, 20], [12, 21]);

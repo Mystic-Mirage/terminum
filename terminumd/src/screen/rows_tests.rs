@@ -239,6 +239,9 @@ fn an_osc8_link_keeps_its_address_with_its_run() {
     assert_eq!(enc("\x1b]8;;https://x.example/\x01\x1b\\a\n", 10), vec![json!({"r": [["a", null, null, 0]], "e": true})]);
     assert_eq!(enc("a\x1b]8;;https://x.example/cut\n", 10), vec![json!({"r": [["a", null, null, 0]], "e": true})]);
     assert_eq!(enc("\x1b]8;;https://x.example/\u{202E}gpj\x1b\\a\n", 10), vec![json!({"r": [["a", null, null, 0]], "e": true})]);
+    for odd in ["\u{200B}", "\u{200D}"] {
+        assert_eq!(enc(&format!("\x1b]8;;https://x.example/a{odd}b\x1b\\a\n"), 10), vec![json!({"r": [["a", null, null, 0]], "e": true})]);
+    }
 }
 
 /// AC-35: one address under many colors is sent once in its row ("h"); a second address gets its own index.

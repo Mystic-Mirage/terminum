@@ -49,18 +49,10 @@ pub fn word(s: &str) -> String {
     if plain { s.to_string() } else { quote(s) }
 }
 
-/// Whether `c` may not appear in text put on a command line: C0, DEL, C1, line and paragraph
-/// separators, bidi embeddings, overrides and isolates, zero-width characters and marks, BOM.
-pub fn is_control(c: char) -> bool {
-    matches!(c,
-        '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}'
-        | '\u{200b}'..='\u{200f}' | '\u{2028}' | '\u{2029}'
-        | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' | '\u{feff}')
-}
-
-/// Refuses text holding a control or invisible character (names, titles, folders).
+/// Refuses text holding a control or invisible character (names, titles, folders; termtext.rs
+/// `control`).
 pub fn check_text(s: &str) -> Result<(), String> {
-    if s.chars().any(is_control) { Err(CONTROL_MSG.to_string()) } else { Ok(()) }
+    if crate::termtext::has_control(s) { Err(CONTROL_MSG.to_string()) } else { Ok(()) }
 }
 
 /// A window or pane name as tmux gets it: trimmed, at most [`MAX_NAME`] characters, no control
@@ -128,7 +120,7 @@ mod tests {
     #[test]
     fn refusals() {
         for bad in ["two\nlines", "bell\x07", "c1\u{9b}", "a\u{2028}b", "a\u{2029}b", "bidi\u{202e}",
-                    "iso\u{2067}", "zw\u{200b}", "lrm\u{200e}", "bom\u{feff}", "del\x7f", "tab\tx", "nul\0"] {
+                    "iso\u{2067}", "zw\u{200b}", "lrm\u{200e}", "bom\u{feff}", "del\x7f", "tab\tx", "nul\0", "soft\u{ad}hyphen", "wj\u{2060}", "zwj\u{200d}"] {
             assert_eq!(check_name(bad).unwrap_err(), CONTROL_MSG, "{bad:?}");
             assert!(check_text(bad).is_err(), "{bad:?}");
         }

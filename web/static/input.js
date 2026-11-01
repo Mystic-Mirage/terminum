@@ -3,7 +3,7 @@
 import { HeldDelete, WORD } from "./heldelete.js";
 import { inSelection, kbdTouch, MENU_AFTER, selectWordAt, TAP } from "./kbdtouch.js";
 import { ctrlChar, encodeKey } from "./keys.js";
-import { selectedText } from "./seltext.js";
+import { copyPreview, hiddenNote, selectedText, unhidden } from "./seltext.js";
 import { copyByCommand, keepSelectionAt } from "./touchcopy.js";
 import { composing } from "./trace.js";
 import { inWidget } from "./widgetui.js";
@@ -167,12 +167,15 @@ export class Input {
     // The button never takes focus itself; iOS opens the keyboard for a focus() made in its click.
     this.kbdButton.addEventListener("mousedown", (e) => e.preventDefault());
     this.kbdButton.addEventListener("click", () => { this.wasTyping = false; document.activeElement === k ? k.blur() : this.focus(); });
-    // Terminal text copies with its line ends (the page draws them with CSS, which never copies).
+    // Terminal text copies with its line ends (the page draws them with CSS, which never copies),
+    // without what hides what a line runs (said when there was some).
     document.addEventListener("copy", (e) => {
-      const text = selectedText(this.term);
-      if (!text) return;                                              // none of the terminal's: the browser's own copy, never an empty clipboard
+      const got = selectedText(this.term);
+      if (!got) return;                                               // none of the terminal's: the browser's own copy, never an empty clipboard
+      const { text, left } = unhidden(got);
       e.clipboardData.setData("text/plain", text);
       e.preventDefault();
+      if (left) this.options.status(`Copied${hiddenNote(left)}.`);
     });
     // A hardware keyboard on a phone or a tablet: iOS gives its keys (⌘V too) only to a focused
     // field, and a long press to select takes the focus away; so after a copy from the terminal
@@ -300,20 +303,22 @@ export class Input {
   // Copies the selection, or `given` text (the Copy button's, taken while it was selected). The
   // clipboard API needs HTTPS (or localhost); elsewhere the older copy command copies a selection.
   // keep: the selection stays (Copy beside it, AC-57): the keyboard field does not take the focus.
+  // What hides what a line runs is left out; the toast says what was copied.
   async copySelection(given, keep = false) {
-    const text = given ?? selectedText(this.term) ?? String(getSelection());
-    if (!text) return this.options.status("Select text first, then press Copy.");
+    const got = given ?? selectedText(this.term) ?? String(getSelection());
+    if (!got) return this.options.status("Select text first, then press Copy.");
+    const { text, left } = unhidden(got), said = `Copied ${copyPreview(text)}${hiddenNote(left)}`;
     this.keepSelection = keep;
     try {
       if (window.isSecureContext && navigator.clipboard?.writeText) {
         try {
           await navigator.clipboard.writeText(text);
           this.afterCopy();                        // ⌘V next
-          return this.options.status("Copied.");
+          return this.options.status(said);
         } catch { /* fall through */ }
       }
       const ok = given ? copyByCommand(text) : document.execCommand("copy");
-      this.options.status(ok ? "Copied." : "Copying is blocked here; use the system Copy menu.");
+      this.options.status(ok ? said : "Copying is blocked here; use the system Copy menu.");
     } finally {
       this.keepSelection = false;
     }

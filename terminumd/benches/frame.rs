@@ -11,6 +11,8 @@ mod screen {
     pub mod rows;
     pub mod sgr;
 }
+#[path = "../src/termtext.rs"]
+mod termtext;                    // sgr.rs's rule of a link's characters
 
 use screen::rows;
 use std::hint::black_box;

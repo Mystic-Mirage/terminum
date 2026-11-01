@@ -356,6 +356,10 @@ export async function webTouch(browser) {
   await page.waitForTimeout(300);
   await page.evaluate(() => {
     document.getElementById("kbd").blur();
+    // the moment it is away lasts `gap` (120 ms): noted when the page takes it, not by polling
+    // frames, which a loaded machine draws too seldom to see it
+    const take = Selection.prototype.removeAllRanges;
+    Selection.prototype.removeAllRanges = function () { if (this.rangeCount) window.__away = true; return take.call(this); };
     const row = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("Done and checked"));
     const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
     let n; while ((n = walk.nextNode()) && !n.data.includes("checked"));
@@ -363,9 +367,9 @@ export async function webTouch(browser) {
     r.setStart(n, i); r.setEnd(n, i + 7);
     getSelection().removeAllRanges(); getSelection().addRange(r);
   });
-  const away = await page.waitForFunction(() => !getSelection().rangeCount, null, { timeout: 3000, polling: "raf" }).then(() => true, () => false);
+  const away = await page.waitForFunction(() => window.__away === true, null, { timeout: 3000 }).then(() => true, () => false);
   say({ t: "screen", sid: "S1", full: false, n: answer.length, cols: 60, rows: answer.length, ch: [[0, line("⏺ Done and checked again.")]] });
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => String(getSelection()) === "checked", null, { timeout: 3000 }).catch(() => {});   // back `gap` later
   const back = await page.evaluate(() => String(getSelection()));
   await page.evaluate(() => getSelection().removeAllRanges());
   await page.waitForTimeout(200);

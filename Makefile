@@ -12,7 +12,10 @@
 #                   publish; only when the maintainer asks for it (CLAUDE.md §10)
 #   make signing-key       the maintainer's release key (once)
 #   make test       unit tests (Rust, scripts, UI, page)
+#   make check      every check of CLAUDE.md §8 once per tree (scripts/check_all.sh; --force: CHECK_ARGS=--force)
 #   make test-mac   the macOS checks on the LAN's Mac test runner over ssh (scripts/ci_mac.sh)
+#   make installed  whether the running terminumd is this tree's build (exit 1 if another)
+#   make hooks      the git hooks of scripts/hooks (security_check before a commit and on its message)
 
 ifeq ($(shell id -u),0)
 $(error Run make as your user, not root: terminum lives in your home folder)
@@ -32,7 +35,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test test-mac install upgrade rollback uninstall package agents toolchain release signing-key
+.PHONY: all build ui terminumd test check test-mac install installed hooks upgrade rollback uninstall package agents toolchain release signing-key
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -61,12 +64,25 @@ test: ui
 	cd ui && npx tsc -p . && npm test
 	node --test web/test/*.test.mjs
 
+check:
+	bash scripts/check_all.sh $(CHECK_ARGS)
+
 test-mac:
 	bash scripts/ci_mac.sh
 
 install: ui
 	python3 scripts/package.py --stage
 	dist/package/terminum/agents/$(PLATFORM)/terminumd install
+
+# several checkouts (worktrees, sessions) share one install: say whose build runs
+installed:
+	@got=$$($(TERMINUM) status 2>/dev/null | sed -n 's/.*running, build \([^,]*\),.*/\1/p'); \
+	if [ "$$got" = "$(BUILD)" ]; then echo "installed: this tree ($(BUILD))"; \
+	else echo "installed: ANOTHER build ($${got:-none running}), this tree is $(BUILD)"; exit 1; fi
+
+hooks:
+	git config core.hooksPath scripts/hooks
+	@echo "hooks: scripts/hooks for every checkout of this repository (git config --unset core.hooksPath removes them)"
 
 upgrade: install
 

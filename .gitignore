@@ -14,6 +14,11 @@ dist/
 # personal instructions for AI agents
 CLAUDE.local.md
 MEMORY.md
+# the /retro skill's ledger and Claude Code's local settings (they name sessions and machines)
+.claude/retro/
+.claude/settings.local.json
 
 # the maintainer's own make settings (Developer ID for codesign)
 local.mk
+# local checks: make check
+.checks/

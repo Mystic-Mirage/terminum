@@ -94,6 +94,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "marksfullseen" => super::marksfull::seen(app, &s("scope"), msg["remind"] == true),
         "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
         "lastlines" => crate::lastlines::show(app, page, &s("id")).await,
+        "diag" => super::diag::show(app, page, &s("id")).await,
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
             pause(page, true);

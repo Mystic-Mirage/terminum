@@ -3,6 +3,7 @@
 // kept of the pane, and a large window shows them as plain text (never rendered: terminal output
 // is text), scrolled to the end: those from before its tmux restarted, when there are, else the
 // latest; "Before restart | Now" switches when both are. Copy copies the lines shown; Esc or × closes.
+// The same window shows a pane's diagnostics (AC-100, diag.js).
 import { when } from "./marks.js";
 
 const $ = (id) => document.getElementById(id);
@@ -34,6 +35,19 @@ export function lastLinesView({ send, copy, title }) {
   }
 
   return {
+    /** Another text in the same window (a pane's diagnostics, AC-100): its heading, the line above
+     *  it, the text; Copy copies it on its own press (Safari copies only within one). */
+    showText(heading, meta, body) {
+      asked = null; got = null;
+      $("lastlinestitle").textContent = heading;
+      $("lastlinesmeta").textContent = meta;
+      $("lastlinesmeta").classList.remove("bad");
+      seg.hidden = true; $("lastlinesnone").hidden = true;
+      text.textContent = body; text.hidden = false;
+      $("lastlinescopy").disabled = false;
+      if (!box.open) box.showModal();
+      text.scrollTop = 0;
+    },
     /** The row menu's item: asks for `id`'s lines and opens the window at once ("Reading…"). */
     open(id, lines) {
       asked = id; got = null;

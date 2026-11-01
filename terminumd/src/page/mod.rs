@@ -6,6 +6,7 @@ pub mod answers;
 pub mod bookmarks;
 pub mod bookmarks_find;
 pub mod client;
+pub mod diag;
 pub mod find;
 pub mod folds;
 pub mod pystr;

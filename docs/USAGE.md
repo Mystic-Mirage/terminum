@@ -192,7 +192,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   in the place of its count; each row's Clone (shown while the pointer is over the row; on a phone always)
   opens a window beside it in its folder; a row hatched with pale lines is unread (its agent finished
   a turn nobody saw); a right click, or a finger
-  rested on a row and lifted, opens its menu (Clone, Add to Project, Mark as Unread or Read, Split Below, Right, Left,
+  rested on a row and lifted, opens its menu (Clone, Add to Project, Mark as Unread or Read, Diagnostics… (what terminumd and tmux see of the pane, to copy into a bug report: check it first, it holds the pane's folder, host and title), Split Below, Right, Left,
   moves, Move to Session, Close); the header's ⋯ holds the settings. Drag a row, a
   group's or a project's header to reorder: a dashed outline shows where it lands (a finger rests
   a moment first; moving at once scrolls). Projects are named groups

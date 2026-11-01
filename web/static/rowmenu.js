@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The session list's menus: a row's on a right click or a long press (Clone, Add to Project,
-// Remove from Project, Mark as Unread or Read, Show Last 300 Lines (AC-96), Split Below, Right and Left (its quick shell, AC-88),
+// Remove from Project, Mark as Unread or Read, Show Last 300 Lines (AC-96), Diagnostics (AC-100), Split Below, Right and Left (its quick shell, AC-88),
 // Move to the Top, to the Bottom, Up, Down, Move to Session…, Close Session; AC-07, AC-92, AC-93), and a project's, on its ⋯ or a right click on its header (New Window, Rename, the same moves among the
 // projects, Ungroup, Close Project; AC-92), and a tmux session's group's, the same way (New Window,
 // moves among the groups, Close Group; AC-07). A move reorders the row among its group's: a project's
@@ -13,6 +13,7 @@ import { inside, placeModal } from "./fabpane.js";
 import { floats } from "./fold.js";
 import { groupKey, groupRows, projectColor } from "./nav.js";
 import { lastLinesView } from "./lastlines.js";
+import { diagnostics } from "./diag.js";
 
 const $ = (id) => document.getElementById(id);
 const HOLD = 500;                // ms a finger rests before its menu opens
@@ -43,8 +44,9 @@ export function saveOrder(send, ul, ids) {
  *  groups(): the layout's; split(item, side): its quick shell below, right or left;
  *  keepFolded(from, to): a renamed group's fold key `to` folded when `from` was;
  *  lastLines(): the lines terminumd keeps of a session (0: none); copy(text). */
-export function rowMenus({ list, send, item, projects, clone, orderGroups, groups, split, keepFolded, lastLines, copy }) {
+export function rowMenus({ list, send, item, projects, clone, orderGroups, groups, split, keepFolded, lastLines, copy, say }) {
   const kept = lastLinesView({ send, copy, title: (id) => item(id)?.title });
+  const diag = diagnostics({ send, show: kept.showText, say, item });
   const box = $("rowmenu");
   const hide = () => {
     if (!box.open) return;
@@ -112,6 +114,8 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
       button(it.unread ? "Mark as Read" : "Mark as Unread", "unread", () => { hide(); send({ t: "unread", id, on: !it.unread }); }),
       // what it showed before its tmux restarted, kept by terminumd (AC-96)
       ...(lastLines() > 0 ? [button(`Show Last ${lastLines()} Lines`, "lastlines", () => { hide(); kept.open(id, lastLines()); })] : []),
+      // what terminumd and tmux see of the pane, for a bug report (AC-100)
+      button("Diagnostics…", "diag", () => { hide(); diag.open(id); }),
       document.createElement("hr"),
       // the view's splits are the session's quick shell (AC-88): it is shown, its shell beside it
       ...[["Split Below", "bottom"], ["Split Right", "right"], ["Split Left", "left"]].map(([label, side]) => {
@@ -300,5 +304,5 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     box.dataset.for = "";
     open(x, y, byFinger, keepKeys);
   }
-  return { headMenu, groupMenu, hide, show, rename, held, seen: kept.seen };
+  return { headMenu, groupMenu, hide, show, rename, held, seen: (m) => { kept.seen(m); diag.seen(m); } };
 }

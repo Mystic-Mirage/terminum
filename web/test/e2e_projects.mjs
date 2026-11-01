@@ -138,7 +138,7 @@ export async function webProjects(browser, name) {
   await page.click('#sessions .item[data-id$="%2"]', { button: "right" });
   const items = await menuItems(page);
   check("AC-07 a right click opens the row's menu; the moves its place allows",
-    items.join() === "Clone,Add to Project…,Plan and Notes…,Mark as Unread,Split Below,Split Right,Split Left,Move to the Top,Move Up,Move Down,Move to the Bottom,Move to Session…,Close Session", items.join());
+    items.join() === "Clone,Add to Project…,Plan and Notes…,Mark as Unread,Diagnostics…,Split Below,Split Right,Split Left,Move to the Top,Move Up,Move Down,Move to the Bottom,Move to Session…,Close Session", items.join());
   // Mark as Unread: terminumd marks it on every page; an unread row's menu has Mark as Read (AC-93)
   let k0 = sent.length;
   await page.click('#rowmenu button[data-action="unread"]');
@@ -322,7 +322,7 @@ export async function webProjects(browser, name) {
   });
   await pause(p.page, 100);
   const held = await menuItems(p.page);
-  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Notes…") && held.length === 11, held.join());
+  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Notes…") && held.includes("Diagnostics…") && held.length === 12, held.join());
   const pm = await mark(p.page);
   check("AC-93 on a phone too an unread row is hatched", pm.hatched && !pm.blob, JSON.stringify(pm));
   check("AC-07 on a phone (no hover) Clone is always there", await clone(p.page, 2) === "0.8");

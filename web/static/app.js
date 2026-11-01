@@ -307,7 +307,7 @@ function onMessage(m) {
 // Clone (AC-07): a new window right after the row's, in its folder; in its project when it has one (AC-92)
 function cloneRow(item) { send({ t: "clone", id: item.id }); }
 const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow, orderGroups: (ids) => { store.set("groupOrder", ids); drawNav(); },
-  lastLines: () => settings.page().lastLines ?? 0, copy: (text) => input.copySelection(text),
+  lastLines: () => settings.page().lastLines ?? 0, copy: (text) => input.copySelection(text), say: (text) => toast(text, 5000),
   groups: () => st.groups, split: (it, side) => { pick(it.id); quick.open(side); }, keepFolded: (from, to) => { if (st.collapsed.has(from)) { st.collapsed.add(to); store.set("collapsed", [...st.collapsed]); } } });
 
 // a finger resting on the keyboard button or held on the input offers Paste, Undo and Redo (AC-03)

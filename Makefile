@@ -1,7 +1,8 @@
 # terminum — build and install from a checkout (users install the package:
 # curl … install.sh | sh, then the terminum command; README).
 #   make install    build the package from this checkout and install it (first install or
-#                   upgrade; a build that does not come up healthy is rolled back)
+#                   upgrade; a build that does not come up healthy is rolled back); from the primary
+#                   checkout only: a worktree's is refused (CONTRIBUTING.md "Worktrees")
 #   make upgrade    the same
 #   make rollback   back to the previous build
 #   make uninstall  stop terminumd, remove the launchd agent, builds and command (keeps state, logs)
@@ -35,7 +36,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test check test-mac install installed hooks upgrade rollback uninstall package agents toolchain release signing-key
+.PHONY: all build ui terminumd test check test-mac primary-checkout install installed hooks upgrade rollback uninstall package agents toolchain release signing-key
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -70,7 +71,15 @@ check:
 test-mac:
 	bash scripts/ci_mac.sh
 
-install: ui
+# the machine has one install, so a worktree's build never replaces it: install from the primary
+# checkout after the merge (TM_INSTALL_FROM_WORKTREE=1: the maintainer's own try of a branch)
+primary-checkout:
+	@gd=$$(git rev-parse --absolute-git-dir 2>/dev/null); cd=$$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); \
+	if [ -n "$$gd" ] && [ "$$gd" != "$$cd" ] && [ -z "$$TM_INSTALL_FROM_WORKTREE" ]; then \
+	echo "make install: refused in a worktree ($$(git rev-parse --show-toplevel)): the machine has one install;"; \
+	echo "  here make build and the checks; after the merge, make install from the primary checkout"; exit 2; fi
+
+install: primary-checkout ui
 	python3 scripts/package.py --stage
 	dist/package/terminum/agents/$(PLATFORM)/terminumd install
 

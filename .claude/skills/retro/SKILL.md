@@ -28,9 +28,9 @@ ledger `$MAIN/.claude/retro/LEDGER.md` (ignored by git), scratch = the session's
 
 ## 1. Worktree
 
-`git -C $MAIN worktree add ../<repo>-retro -b retro/<date> main` — beside the checkout, never
-under `.claude/` (writes there are refused in restricted modes). The main checkout's
-uncommitted work is never touched.
+`python3 $MAIN/scripts/worktree.py add retro-<date> --kind chore --from main` (CONTRIBUTING.md
+"Worktrees"): `$MAIN/.worktrees/retro-<date>`, never under `.claude/` (writes there are refused
+in restricted modes). The main checkout's uncommitted work is never touched.
 
 ## 2. Audit CLAUDE.md (progressive disclosure)
 

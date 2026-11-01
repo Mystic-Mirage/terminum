@@ -4,6 +4,8 @@ ui/node_modules/
 ui/dist/
 ui/.build-id
 # local tooling and caches
+# worktrees: scripts/worktree.py (CONTRIBUTING.md "Worktrees")
+.worktrees/
 .playwright-cli/
 .DS_Store
 __pycache__/

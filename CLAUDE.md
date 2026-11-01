@@ -33,6 +33,7 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
 | Workspace | Per-key state in `workspaces.json`: root, expanded, selected, scroll, tabs; versioned by `rev` |
 | Roots | `TM_WRITABLE_ROOTS`: the only folders terminumd writes to |
 | Agent | `terminumd --agent` on a remote host, reached through ssh, for that host's files |
+| Worktree | `<primary>/.worktrees/<slug>`, branch `<kind>/<slug>`: made, linked, listed and removed only by `scripts/worktree.py` (CONTRIBUTING.md "Worktrees") |
 | Theme | A JSON file in `~/.terminum/themes/`: colors, ANSI palette, font; a rule assigns one per host or session |
 | Spec | `docs/specs/terminum.md` (core), `terminum-terminal.md`, `terminum-files.md`, `terminum-remote.md`: acceptance cases `AC-nn` (unique across the four), BDD scenarios, design, limits, Definition of Done |
 
@@ -143,14 +144,18 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
   the checklist of `docs/UI-GUIDELINES.md` §6.
 - The delivery states what changed, why, how it was verified, excluded scope and
   **Noticed, not fixed**; the running install is updated with `make install` when the
-  user asks for it, and `make installed` says whose build runs (several checkouts share it).
+  user asks for it, from the primary checkout only (a worktree's `make install` is refused),
+  and `make installed` says whose build runs (several checkouts share it).
 
 ### 9. Git hygiene
 - Commit only when asked; never push, publish or force-push without the user's request
   in this session; small single-concern commits that say why. Several sessions may share a
-  checkout: commit only the paths you changed (`git add <paths>`, never `-A` or `.`), and
-  work in your own worktree (`git worktree add ../terminum-<task>`) when another session's
-  changes are in the tree.
+  checkout: commit only the paths you changed (`git add <paths>`, never `-A` or `.`).
+- Each writing agent, and any change made while another session's or agent's changes are in
+  the checkout, gets its own worktree: `python3 scripts/worktree.py add <slug> --kind <kind>`
+  (from a fresh `origin/main`), never a raw `git worktree add`; `make check` and the e2e checks
+  run in one tree at a time (fixed ports and tmux sockets); after the merge, `worktree.py remove <slug>` from
+  the primary checkout (CONTRIBUTING.md "Worktrees").
 - Never commit builds, caches, logs, tokens or `workspaces.json`.
 - `AGENTS.md` → `CLAUDE.md` stays a relative symlink.
 - Dual license (AGPL-3.0 + commercial): never add code you cannot relicense; contributions

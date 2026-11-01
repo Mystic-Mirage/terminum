@@ -4,6 +4,7 @@
 //! backslash as `\ooo`, so the write is `\033]52;<targets>;<base64>` closed by `\007` or
 //! `\033\134` (ST); base64 never holds a backslash. A write tmux split over two lines is carried.
 
+use crate::termtext::hides;
 use std::collections::HashMap;
 
 /// The longest write kept: base64 of 1 MB of text.
@@ -105,7 +106,7 @@ fn text(b64: &[u8]) -> Option<String> {
         return None;
     }
     let raw = String::from_utf8(decode(b64)?).ok()?.replace("\r\n", "\n").replace('\r', "\n");
-    Some(raw.chars().filter(|c| matches!(c, '\t' | '\n') || !c.is_control()).collect::<String>()).filter(|t| !t.trim().is_empty())
+    Some(raw.chars().filter(|c| matches!(c, '\t' | '\n') || !(c.is_control() || hides(*c))).collect::<String>()).filter(|t| !t.trim().is_empty())
 }
 
 /// Standard base64 (padding optional); None for a read (`?`) or a stray character.
@@ -186,13 +187,17 @@ mod tests {
         assert!(one(&mut c, "%output %3 ZGUgQ29kZQ==\\007").is_empty());
     }
 
-    /// A hostile write (a `cat` of a file) never carries keys into a paste: ESC, C1, CR go.
+    /// A hostile write (a `cat` of a file) never carries keys into a paste: ESC, C1, CR go, and
+    /// nothing that hides what it runs.
     #[test]
     fn control_characters_are_dropped_and_line_ends_kept() {
         let b64 = |s: &str| encode(s.as_bytes());
         let mut c = Clips::default();
         let line = format!("%output %3 \\033]52;c;{}\\007", b64("a\u{1b}[201~\r\nrm -rf x\u{9b}31m\u{7f}\tb\rc"));
         assert_eq!(lines(&mut c, &[&line]), vec![("%3".into(), "a[201~\nrm -rf x31m\tb\nc".into())]);
+        // bidi controls and zero-width characters go (a line that reads otherwise than it runs), ZWNJ and ZWJ stay
+        let hidden = format!("%output %3 \\033]52;c;{}\\007", b64("ls\u{202e}\u{2066}\u{200b}\u{2028}\u{feff} x\u{200c}y\u{200d}z"));
+        assert_eq!(one(&mut c, &hidden), vec!["ls x\u{200c}y\u{200d}z".to_string()]);
         let blank = format!("%output %3 \\033]52;c;{}\\007", b64("\u{1b}\u{7}"));
         assert!(one(&mut c, &blank).is_empty());
     }

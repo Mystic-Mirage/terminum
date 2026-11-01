@@ -3,13 +3,16 @@
 //! control or invisible character, never a word a command could take for an option, and
 //! never Enter: the user runs the line.
 
-/// Characters that act as keystrokes (C0, DEL, C1) or hide what is typed (bidi overrides,
-/// zero-width and other format characters).
+/// Characters that act as keystrokes (C0, DEL, C1) or hide what is typed (`hides`, and the
+/// zero-width joiners).
 pub fn has_control(s: &str) -> bool {
-    s.chars().any(|c| {
-        c.is_control()
-            || matches!(c as u32, 0xAD | 0x061C | 0x180E | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x206F | 0xFEFF | 0xFFF9..=0xFFFB)
-    })
+    s.chars().any(|c| c.is_control() || hides(c) || matches!(c, '\u{200C}' | '\u{200D}'))
+}
+
+/// What makes a line read otherwise than it runs: bidi controls, zero-width and other format
+/// characters, line and paragraph separators; never ZWNJ and ZWJ, which words and emoji need.
+pub fn hides(c: char) -> bool {
+    matches!(c as u32, 0xAD | 0x061C | 0x180E | 0x200B | 0x200E..=0x200F | 0x2028..=0x202E | 0x2060..=0x206F | 0xFEFF | 0xFFF9..=0xFFFB)
 }
 
 /// Needs no quotes in any shell: not even zsh's `=cmd` (a path lookup) or tcsh's `=N`.
@@ -67,7 +70,7 @@ mod tests {
 
     #[test]
     fn invisible_and_control_characters() {
-        for s in ["a\u{3}b", "x\r", "\u{7f}", "a\u{85}b", "a\u{202e}b", "a\u{200b}b", "\u{2066}x", "\u{feff}"] {
+        for s in ["a\u{3}b", "x\r", "\u{7f}", "a\u{85}b", "a\u{202e}b", "a\u{200b}b", "a\u{200d}b", "\u{2066}x", "\u{2028}", "\u{feff}"] {
             assert!(has_control(s), "{s:?}");
         }
         assert!(!has_control("naïve file — ü 文件.txt"));

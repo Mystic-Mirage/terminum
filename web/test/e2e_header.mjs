@@ -4,7 +4,7 @@
 // the folder its coding agent works in when it moved (a worktree), and Files' root, unless the menu's
 // "Follow the agent's folder" is off (AC-51); so does its row in the list.
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, openPage, pause, SIZES } from "./fake.mjs";
+import { drawn, group, item, openPage, pause, SIZES, spyCopies } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1";
 const LAYOUT = [group("main", [item(SID, "api", { sub: ["claude", "~/work/api", "Fixing the tests"], index: "3", dir: "/Users/alex/work/api", profile: "local" })])];
@@ -57,11 +57,7 @@ export async function webHeader(browser, name) {
     });
     check("AC-01 the folder's Copy: its target never over the title's text (a tap on a long title's middle is the title's), inside the header, clear of ✎ and ⋯ (and the folder on a phone), a finger's 44 × 44 on a phone",
       !target.overTitle && target.inBar && target.clear && (!size.startsWith("390") || (target.w >= 44 && target.h >= 44)), JSON.stringify(target));
-    await page.evaluate(() => {                     // what was copied: by the clipboard API or the older copy command
-      window.copied = [];
-      document.addEventListener("copy", () => window.copied.push(String(getSelection())), true);
-      if (navigator.clipboard) navigator.clipboard.writeText = async (t) => { window.copied.push(t); };
-    });
+    await spyCopies(page);
     const drawer = await page.evaluate(() => document.getElementById("app").className);
     await page.click("#cursub .copydir");
     await pause(page, 200);

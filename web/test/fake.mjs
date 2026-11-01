@@ -122,3 +122,10 @@ export async function foldFoot(page) {
 /** Waits until the page drew the shown pane's screen. */
 export const drawn = (page) => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 0, null, { timeout: 10000 });
 export const pause = (page, ms = 150) => page.waitForTimeout(ms);
+/** What the page puts on the clipboard from now on, in `window.copied`: by the clipboard API or
+ *  the older copy command (an http page, touchcopy.js). */
+export const spyCopies = (page) => page.evaluate(() => {
+  window.copied = [];
+  document.addEventListener("copy", (e) => window.copied.push(e.clipboardData?.getData("text/plain") || String(getSelection())), true);
+  if (navigator.clipboard) navigator.clipboard.writeText = async (t) => { window.copied.push(t); };
+});

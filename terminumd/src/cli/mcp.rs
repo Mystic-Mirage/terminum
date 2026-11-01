@@ -22,9 +22,9 @@ const DEFAULT_VERSION: &str = "2025-06-18";
 
 pub const INSTRUCTIONS: &str = "terminum shows the user your plan and keeps what you hand them. Keep a plan: your \
 own plan tool (TaskCreate/TaskUpdate, update_plan), else update_session_plan; send doing and eta_minutes at each step \
-and every 10 minutes. Only the main agent calls update_session_plan; subagents report to it. Whenever you tell the \
-user a final report, a finding outside the task, a next step, deferred work or a question, also hand it to \
-add_notes_for_user. If a tool says you are not in terminum, stop calling.";
+and every 10 minutes. Only the main agent calls update_session_plan; subagents report to it. Hand add_notes_for_user one record \
+per final report, finding outside the task, deferred item or question, never progress; update_notes_for_user one \
+that changes. If a tool says you are not in terminum, stop calling.";
 
 pub use crate::plans::rules::NOT_IN_PANE;
 use crate::agentmarks::{self as marks, KINDS};

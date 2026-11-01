@@ -63,7 +63,9 @@ fn the_instructions_stand_in_512_characters() {
     let first: String = INSTRUCTIONS.chars().take(512).collect();
     assert_eq!(first, INSTRUCTIONS, "whole within 512, so a client's cut loses nothing");
     for w in ["update_session_plan", "eta_minutes", "add_notes_for_user", "every 10 minutes", "stop calling",
-              "Only the main agent calls update_session_plan; subagents report to it."] {
+              "Only the main agent calls update_session_plan; subagents report to it.",
+              // one record per item: the agent's own bookkeeping filled the 50-record limit (AC-98)
+              "one record", "never progress", "update_notes_for_user one"] {
         assert!(first.contains(w), "{w}");
     }
     assert!(first.ends_with('.'));

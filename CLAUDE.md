@@ -137,9 +137,13 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
   code (launchd, signing, folders, Finder). While iterating, run only the changed area's
   checks (`cargo test <module>`, `node web/test/e2e_all.mjs <check…>`).
 - A user-visible change is also checked on its real target, never only on fakes: the real
-  program (claude, vim, mc…) in a private tmux, a real host for remote behavior, `make
-  installed` after `make install`; what only the user's signed-in page, browser or iPhone can
-  show is listed under **Not verified**, in the release notes too.
+  programs in a private tmux (`web/test/e2e_liveprogs.mjs`: vim, mc, and Claude Code in both
+  TUIs, `default` and `fullscreen`, which copy and paste differently: a change to copy, paste,
+  keys or the mouse is checked in both; it uses the user's Claude Code login with no model call
+  and leaves a folder's trust entry in `~/.claude.json`, `TM_TEST_NO_CLAUDE=1` skips it), a real
+  host for remote behavior, `make installed`
+  after `make install`; what only the user's signed-in page, browser or iPhone can show is
+  listed under **Not verified**, in the release notes too.
 - Changed files reviewed and simplified; affected docs and the spec updated; a UI change holds
   the checklist of `docs/UI-GUIDELINES.md` §6.
 - The delivery states what changed, why, how it was verified, excluded scope and

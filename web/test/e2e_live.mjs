@@ -24,6 +24,7 @@ import { liveJitter } from "./e2e_livejitter.mjs";
 import { liveLinks } from "./e2e_livelinks.mjs";
 import { liveLimit } from "./e2e_livelimit.mjs";
 import { liveClip } from "./e2e_liveclip.mjs";
+import { livePrograms } from "./e2e_liveprogs.mjs";
 import { liveKeys } from "./e2e_livekeys.mjs";
 import { livePlans } from "./e2e_liveplans.mjs";
 
@@ -151,6 +152,7 @@ async function wide(browser, name) {
   await liveLimit(page, { tmux, work: WORK });
   await liveKeys(page, { tmux, work: WORK });
   await liveClip(page, { tmux, work: WORK });
+  await livePrograms(page, { tmux, work: WORK });
   await livePlans(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, signIn, name });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");

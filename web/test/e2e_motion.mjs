@@ -21,41 +21,39 @@ export async function webMotion(browser, name) {
 
   // a window flies out of the button that opened it: from .3 and a blur, ~10% past its size and back on a
   // spring, its rows coming up one after another; it goes back into the button, fast. `trace` does `act`
-  // and samples each frame for `ms` from the moment `sel` changes (its first sample in the same task, so a
-  // busy browser's lag before the sampling never counts): its scale, opacity, blur, whether it is in sight
-  // (a closed dialog in Safari stays laid out, out of sight: motion.css), and its first and last row's opacity
+  // and samples `sel` for `ms` from the moment it changes: its scale, opacity, blur, whether it is in sight
+  // (a closed dialog in Safari stays laid out, out of sight: motion.css), and its first and last row's
+  // opacity. Its own transitions and its rows' animations (all CSS: pop.js only sets the origin) are paused
+  // and stepped through every 16 ms, so a busy browser's stalled frames never hide the spring or delay "gone".
   const trace = async (sel, ms, act) => {
     await page.evaluate(([sel, ms]) => { window.traced = new Promise((done) => {
       const el = document.querySelector(sel), out = [], rows = [el.firstElementChild, el.lastElementChild];
-      let t0;
-      const step = () => { const s = getComputedStyle(el), op = (r) => parseFloat(getComputedStyle(r).opacity);
+      const sample = (t) => { const s = getComputedStyle(el), op = (r) => parseFloat(getComputedStyle(r).opacity);
         out.push([parseFloat(s.scale === "none" ? "1" : s.scale), parseFloat(s.opacity), parseFloat(/blur\(([\d.]+)px/.exec(s.filter)?.[1] ?? "0"),
-          s.display === "none" || s.visibility === "hidden" ? "gone" : "shown", Math.round(performance.now() - t0), op(rows[0]), op(rows[1])]);
-        if (performance.now() - t0 < ms) requestAnimationFrame(step); else done(out); };
-      const watch = new MutationObserver(() => { watch.disconnect(); t0 = performance.now(); step(); });
+          s.display === "none" || s.visibility === "hidden" ? "gone" : "shown", t, op(rows[0]), op(rows[1])]); };
+      const watch = new MutationObserver(() => {
+        watch.disconnect();
+        getComputedStyle(el).opacity;                     // its style flushed: its transitions begin
+        const all = el.getAnimations({ subtree: true });
+        all.forEach((a) => a.pause());
+        for (let t = 0; ; t = Math.min(t + 16, ms)) { all.forEach((a) => { a.currentTime = t; }); sample(t); if (t === ms) break; }
+        all.forEach((a) => a.finish());
+        done(out);
+      });
       watch.observe(el, { attributes: true });
-      setTimeout(() => done(out), ms + 3000);   // it never changed: the checks say so
+      setTimeout(() => done(out), 3000);   // it never changed: the checks say so
     }); }, [sel, ms]);
     await act();
     return page.evaluate(() => window.traced);
-  };
-  /** `run`'s trace, run again (after `reset`, twice at most) while the browser drew fewer than 10
-   *  frames in it: a machine that busy shows no spring to measure. */
-  const drawnWell = async (run, reset) => {
-    for (let i = 0; ; i++) {
-      const t = await run();
-      if (t.length >= 10 || i === 2) return t;
-      await reset();
-    }
   };
   /** Where `sel`'s origin is on the screen, at rest: [x, y]. */
   const origin = (sel) => page.evaluate((sel) => { const el = document.querySelector(sel), r = el.getBoundingClientRect(), [x, y] = getComputedStyle(el).transformOrigin.split(" ").map(parseFloat);
     return [Math.round(r.left + x), Math.round(r.top + y), Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; }, sel);
   const pop = (t) => ({ first: t[0] ?? [], peak: Math.max(...t.map(([s]) => s)), low: Math.min(...t.map(([s]) => s)), last: t.at(-1) ?? [],
     gone: t.find(([, , , g]) => g === "gone")?.[4] ?? null, lag: t.some(([, , , , , a, b]) => a - b > 0.2), frames: t.length });
-  const inn = await drawnWell(() => trace("#menu", 600, () => page.click("#menubtn")), async () => { await page.keyboard.press("Escape"); await pause(page, 700); });
+  const inn = await trace("#menu", 600, () => page.click("#menubtn"));
   const [ox, oy] = await origin("#menu"), btn = await page.$("#menubtn").then((b) => b.boundingBox()), menu = await page.$("#menu").then((b) => b.boundingBox());
-  const out = await trace("#menu", slack(500), () => page.keyboard.press("Escape"));
+  const out = await trace("#menu", 500, () => page.keyboard.press("Escape"));
   const [pin, pout] = [pop(inn), pop(out)];
   check("motion: a menu flies out of its button: from small, blurred and faded, ~10% past its size, then at rest in focus",
     pin.first[0] < 0.5 && pin.first[1] < 1 && pin.first[2] > 0 && pin.peak > 1.04 && pin.peak < 1.15 && pin.last[0] === 1 && pin.last[1] === 1 && pin.last[2] === 0,
@@ -66,11 +64,10 @@ export async function webMotion(browser, name) {
     JSON.stringify({ origin: [ox, oy], btn, menu }));
   check("motion: its rows come up one after another", pin.lag && pin.last[5] === 1 && pin.last[6] === 1, JSON.stringify(inn.map((f) => f.slice(4))));
   check("motion: it goes back fast: shown while it goes, shrunk, blurred and faded, gone within 250 ms",
-    out[0]?.[3] === "shown" && pout.low < 0.6 && out.some(([, , b]) => b > 0) && pout.gone !== null && pout.gone < slack(250) && pout.last[3] === "gone", JSON.stringify(pout));
+    out[0]?.[3] === "shown" && pout.low < 0.6 && out.some(([, , b]) => b > 0) && pout.gone !== null && pout.gone < 250 && pout.last[3] === "gone", JSON.stringify(pout));
   // a dialog no press opened (a second on) grows from its middle, the same way; its shade fades with it
   await pause(page, 1000);
-  const din = await drawnWell(() => trace("#confirmbox", 500, () => page.evaluate(() => document.getElementById("confirmbox").showModal())),
-    async () => { await page.evaluate(() => document.getElementById("confirmbox").close()); await pause(page, 700); });
+  const din = await trace("#confirmbox", 500, () => page.evaluate(() => document.getElementById("confirmbox").showModal()));
   const [cx, cy, mx, my] = await origin("#confirmbox");
   const dout = await trace("#confirmbox", 400, () => page.evaluate(() => document.getElementById("confirmbox").close()));
   const [qin, qout] = [pop(din), pop(dout)];

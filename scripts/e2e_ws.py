@@ -10,6 +10,7 @@ import http.client
 import json
 import os
 import shutil
+import signal
 import socket
 import struct
 import subprocess
@@ -17,6 +18,16 @@ import sys
 import tempfile
 import time
 import urllib.request
+
+
+def _ended(sig, _frame):
+    """A run ended by a signal (a timeout, a closed terminal) still runs its `finally` blocks, so
+    it ends the terminumd, tmux servers and ssh stand-ins it started (CLAUDE.md §6)."""
+    sys.exit(128 + sig)
+
+
+for _sig in (signal.SIGTERM, signal.SIGHUP):
+    signal.signal(_sig, _ended)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.environ.get("TERMINUMD_BIN", os.path.join(ROOT, "terminumd", "target", "debug", "terminumd"))

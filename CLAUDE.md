@@ -110,6 +110,11 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
   process group they made) or by `tmux -L <own socket> kill-server`, never by a pattern on
   this machine (`pkill -f`): the installed terminumd's control clients and ssh links and the
   user's own processes can match a test's command line.
+- Tests and experiments end everything they start (terminumd, tmux servers, ssh stand-ins,
+  browsers, containers, temporary folders) when they pass, fail or are ended by a signal
+  (`finally`, with SIGTERM/SIGHUP turned into an exit so it runs: `scripts/e2e_ws.py`);
+  before delivering, look for leftovers of your own runs (`ps`, `tmux -L`/`-S` sockets,
+  `docker ps`) and end them as above. A leftover is a test bug to fix, not only to end.
 - Run the checks and show results; unverified work is unfinished.
 
 ## Workflow principles

@@ -2,14 +2,16 @@
 // Virtual file tree. Folders are paged from the backend (500 rows per page), so a
 // folder with 500,000 entries costs one scrollbar and ~40 DOM rows. Expanded folders
 // are spliced into their parent by index (row arithmetic in tree-rows.ts, row HTML in
-// tree-render.ts, "expand all" in tree-expand.ts).
+// tree-render.ts, "expand all" in tree-expand.ts, paging in tree-load.ts, clicks and keys
+// in tree-input.ts, which use the members not marked private here).
 
-import { api, basename, dirname, isDirKind, isUnder, join, rebase, type Page, type Sort } from "./api";
+import { basename, dirname, isDirKind, isUnder, join, rebase, type Sort } from "./api";
 import { rowHtml, type RowView } from "./tree-render";
 import { PAGE, indexOf, rowAt, rowsOf, type DirNode, type RowDesc, type RowsHost } from "./tree-rows";
 import { expandAll, summary } from "./tree-expand";
 import { InlineEdit, type EditMode } from "./tree-edit";
-import { selectRange } from "./tree-select";
+import { Pager } from "./tree-load";
+import { TreeInput } from "./tree-input";
 
 export type { EditMode } from "./tree-edit";
 
@@ -24,6 +26,10 @@ export interface TreeCallbacks {
   notify(message: string): void;                         // e.g. what "expand all" did
 }
 
+/** The members without `private` that are not the Panel's API (cursor, anchor, epoch,
+ *  selectionRun, rows, pager, el, cb, load, expand, collapse, descAt, scrollIntoView,
+ *  expandAllFrom) are @internal: shared with TreeInput (tree-input.ts) and Pager (tree-load.ts)
+ *  only. Moving the selection state into TreeInput would close them again (Noticed, not fixed). */
 export class Tree {
   root: DirNode | null = null;
   private nodes = new Map<string, DirNode>();
@@ -31,20 +37,21 @@ export class Tree {
   selected = new Set<string>();
   showHidden = true;
   sort: Sort = "name";
-  private cursor = -1;               // row index of the keyboard cursor
-  private anchor = -1;               // row index where a ⇧-range starts
+  cursor = -1;               // row index of the keyboard cursor
+  anchor = -1;               // row index where a ⇧-range starts
   private filter = "";
-  private rowH = 22;
+  rowH = 22;
   private version = 0;               // bumps on every structural change; invalidates memos
   private renderQueued = false;
-  private epoch = 0;                 // bumps on re-root; stale async results are dropped
+  epoch = 0;                 // bumps on re-root; stale async results are dropped
   private expandRun = 0;             // bumps on expand all and any collapse; cancels a running one
-  private selectionRun = 0;          // cancels a paged range on another interaction
+  selectionRun = 0;          // cancels a paged range on another interaction
   private spacer = document.createElement("div");
   private layer = document.createElement("div");
   private edit: InlineEdit;
+  pager: Pager;
   /** The tree's state as the row arithmetic reads it. */
-  private rows: RowsHost = ((t: Tree) => ({
+  rows: RowsHost = ((t: Tree) => ({
     get version() { return t.version; },
     get filter() { return t.filter; },
     get root() { return t.root; },
@@ -53,16 +60,24 @@ export class Tree {
     load: (n: DirNode, page: number) => void t.load(n, page),
   }))(this);
 
-  constructor(private el: HTMLElement, private cb: TreeCallbacks) {
+  constructor(readonly el: HTMLElement, readonly cb: TreeCallbacks) {
     this.spacer.className = "spacer";
     this.layer.className = "rows";
+    const t = this;
+    this.pager = new Pager({
+      get epoch() { return t.epoch; },
+      query: (extra) => this.query(extra),
+      collapse: (p) => this.collapse(p, false, false),
+      touch: () => this.touch(),
+    });
     this.edit = new InlineEdit({ commit: cb.commit, rerender: () => this.touch(), done: () => el.focus() });
     el.append(this.spacer, this.layer, this.edit.el);
     el.addEventListener("scroll", () => this.queue());
     new ResizeObserver(() => this.themeChanged()).observe(el);
-    el.addEventListener("click", (e) => this.onClick(e));
-    el.addEventListener("contextmenu", (e) => this.onContext(e));
-    el.addEventListener("keydown", (e) => this.onKey(e));
+    const input = new TreeInput(this);
+    el.addEventListener("click", (e) => input.onClick(e));
+    el.addEventListener("contextmenu", (e) => input.onContext(e));
+    el.addEventListener("keydown", (e) => input.onKey(e));
   }
 
   // ── public API ──────────────────────────────────────────────────────────────
@@ -160,7 +175,7 @@ export class Tree {
     return summary(r);
   }
 
-  private expandAllFrom(p: string) { void this.expandAll(p).then((m) => { if (m) this.cb.notify(m); }); }
+  expandAllFrom(p: string) { void this.expandAll(p).then((m) => { if (m) this.cb.notify(m); }); }
 
   collapseAll() {
     this.selectionRun++;
@@ -225,58 +240,10 @@ export class Tree {
     return { hidden: this.showHidden, filter: this.filter || undefined, sort: this.sort === "name" ? undefined : this.sort, limit: PAGE, ...extra };
   }
 
-  private async load(n: DirNode, page: number, force = false): Promise<void> {
-    if (n.pending.has(page) && !force) return;
-    if (force) { n.read = (n.read ?? 0) + 1; n.pending.clear(); }
-    n.pending.add(page);
-    const epoch = this.epoch, read = n.read;
-    try {
-      let r: Page;
-      for (;;) {
-        r = await api<Page>("GET", "/api/ls", { query: this.query({ path: n.path, offset: page * PAGE }) });
-        if (r.status !== "loading") break;           // backend still reading a huge folder
-        await new Promise((res) => setTimeout(res, 300));
-        if (epoch !== this.epoch || read !== n.read) return;
-      }
-      if (epoch !== this.epoch || read !== n.read) return;
-      const reread = n.loaded && r.gen !== n.gen;
-      if (r.gen !== n.gen) n.pages.clear();          // folder was re-read: old pages are stale
-      Object.assign(n, { loaded: true, error: r.status === "error" ? r.error : undefined, total: r.total, gen: r.gen, writable: r.writable });
-      if (r.status !== "error") n.pages.set(page, r.entries);
-      if (reread && n.children.size) void this.relocate(n); // entries may have shifted
-    } catch (e: any) {
-      if (epoch === this.epoch && read === n.read) { n.error = e.message; n.loaded = true; }
-    } finally {
-      if (read === n.read) n.pending.delete(page);
-      this.touch();
-    }
-  }
+  load(n: DirNode, page: number, force = false) { return this.pager.load(n, page, force); }
+  private locate(n: DirNode, name: string) { return this.pager.locate(n, name); }
 
-  /** Re-find expanded children after their folder was re-read; drop the ones that are gone. */
-  private async relocate(n: DirNode) {
-    const epoch = this.epoch;
-    for (const [name, c] of [...n.children]) {
-      const idx = await this.locate(n, name).catch(() => null);
-      if (epoch !== this.epoch) return;
-      if (idx == null || idx >= n.total) this.collapse(join(n.path, name), false, false); // not the user: expand all goes on
-      else c.idx = idx;
-    }
-    n.sorted = undefined;
-    this.touch();
-  }
-
-  /** Index of `name` inside folder `n`, asking the backend if the page is not loaded. */
-  private async locate(n: DirNode, name: string): Promise<number | null> {
-    for (const [p, rows] of n.pages) {
-      const i = rows.findIndex((r) => r.n === name);
-      if (i >= 0) return p * PAGE + i;
-    }
-    // a failed lookup (an unreachable host, AC-37) counts as not found: the folder's error row says why
-    const r = await api<Page>("GET", "/api/ls", { query: this.query({ path: n.path, offset: 0, limit: 1, locate: name }) }).catch(() => null);
-    return r?.located ?? null;
-  }
-
-  private async expand(path: string, persist = true) {
+  async expand(path: string, persist = true) {
     this.selectionRun++;
     if (!this.root || !path.startsWith(this.root.path)) return;
     const parent = this.nodes.get(dirname(path));
@@ -293,7 +260,7 @@ export class Tree {
     if (persist) this.cb.changed();
   }
 
-  private collapse(path: string, persist = true, cancelExpand = true) {
+  collapse(path: string, persist = true, cancelExpand = true) {
     this.selectionRun++;
     if (cancelExpand) this.expandRun++;
     for (const p of [...this.expanded]) {
@@ -331,7 +298,7 @@ export class Tree {
     return true;
   }
 
-  private scrollIntoView(i: number) {
+  scrollIntoView(i: number) {
     const top = i * this.rowH, h = this.el.clientHeight;
     if (top < this.el.scrollTop) this.el.scrollTop = top;
     else if (top + this.rowH > this.el.scrollTop + h) this.el.scrollTop = top + this.rowH - h;
@@ -376,123 +343,10 @@ export class Tree {
     return this.root ? p.slice(this.root.path.length).split("/").some((s) => s.startsWith(".")) : false;
   }
 
-  // ── interaction ─────────────────────────────────────────────────────────────
-
-  private rowEl(e: Event) { return (e.target as HTMLElement).closest<HTMLElement>(".row[data-p]"); }
-
-  private select(p: string, i: number, mode: "one" | "toggle" | "range" = "one") {
-    this.selectionRun++;
-    if (mode === "range" && this.anchor >= 0) {
-      void this.rangeTo(i);
-      return;
-    } else if (mode === "toggle") {
-      if (!this.selected.delete(p)) this.selected.add(p);
-      this.anchor = i;
-    } else {
-      this.selected = new Set([p]);
-      this.anchor = i;
-    }
-    this.cursor = i;
-    this.cb.changed();
-    this.queue();
-  }
-
-  private async rangeTo(i: number, range = true) {
-    if (!this.root) return;
-    const root = this.root, epoch = this.epoch, run = ++this.selectionRun;
-    const alive = () => epoch === this.epoch && run === this.selectionRun;
-    const rows = Object.create(this.rows) as RowsHost;
-    rows.load = () => {}; // selection controls page concurrency; rendering still loads its viewport
-    const [a, b] = range ? (this.anchor < i ? [this.anchor, i] : [i, this.anchor]) : [i, i];
-    if (!range) this.anchor = i;
-    this.cursor = i;
-    this.selected.clear();
-    const selected = new Set<string>();
-    const done = await selectRange(a, b, async (index) => {
-      let d = rowAt(root, index, 0, rows);
-      if (d.kind !== "entry") return null;
-      const page = Math.floor(d.idx / PAGE);
-      while (d.dir.pending.has(page) && alive()) await new Promise((r) => setTimeout(r, 16));
-      if (!alive()) return null;
-      if (!d.row) await this.load(d.dir, page);
-      if (!alive()) return null;
-      d = rowAt(root, index, 0, rows);
-      return d.kind === "entry" && d.row ? join(d.dir.path, d.row.n) : null;
-    }, alive, (path) => selected.add(path));
-    if (done) { this.selected = selected; this.cb.changed(); this.queue(); }
-  }
-
-  private onClick(e: MouseEvent) {
-    if ((e.target as HTMLElement).closest(".inline-edit")) return;
-    const row = this.rowEl(e);
-    if (!row) return;
-    const p = row.dataset.p!, i = Number(row.dataset.i), isDir = row.dataset.d === "1";
-    if (e.shiftKey) return this.select(p, i, "range");
-    if (e.altKey && isDir && (e.target as HTMLElement).closest(".chev")) { // macOS: ⌥-click the disclosure arrow
-      this.select(p, i);
-      return this.expanded.has(p) ? this.collapse(p) : this.expandAllFrom(p);
-    }
-    if (e.metaKey && !isDir) { this.select(p, i); return this.cb.openWindow(p); }
-    if (e.metaKey || e.altKey) return this.select(p, i, "toggle");
-    this.select(p, i);
-    if (isDir) this.toggle(p); else this.cb.open(p);
-  }
-
-  private onContext(e: MouseEvent) {
-    e.preventDefault();
-    const row = this.rowEl(e);
-    if (!row) return this.cb.context(null, true, e);
-    const p = row.dataset.p!;
-    if (!this.selected.has(p)) this.select(p, Number(row.dataset.i));
-    this.cb.context(p, row.dataset.d === "1", e);
-  }
-
-  private descAt(i: number) {
+  descAt(i: number) {
     if (!this.root || i < 0) return null;
     const d = rowAt(this.root, i, 0, this.rows);
     return d.kind === "entry" && d.row ? { d, p: join(d.dir.path, d.row.n), isDir: isDirKind(d.row.k) } : null;
   }
 
-  private onKey(e: KeyboardEvent) {
-    if (!this.root || e.metaKey || e.ctrlKey) return;
-    if (e.altKey) {                                       // macOS: ⌥→ / ⌥← on a folder, recursively
-      const cur = this.descAt(this.cursor);
-      if (!cur?.isDir || (e.key !== "ArrowRight" && e.key !== "ArrowLeft")) return;
-      e.preventDefault();
-      return e.key === "ArrowRight" ? this.expandAllFrom(cur.p) : this.collapse(cur.p);
-    }
-    const total = rowsOf(this.root, this.rows);
-    const move = (to: number) => {
-      to = Math.max(0, Math.min(total - 1, to));
-      void this.rangeTo(to, e.shiftKey && this.anchor >= 0);
-      this.cursor = to;
-      this.scrollIntoView(to);
-      this.queue();
-    };
-    const page = Math.max(1, Math.floor(this.el.clientHeight / this.rowH) - 1);
-    const cur = this.descAt(this.cursor);
-    switch (e.key) {
-      case "ArrowDown": move(this.cursor + 1); break;
-      case "ArrowUp": move(this.cursor < 0 ? 0 : this.cursor - 1); break;
-      case "PageDown": move(this.cursor + page); break;
-      case "PageUp": move(this.cursor - page); break;
-      case "Home": move(0); break;
-      case "End": move(total - 1); break;
-      case "ArrowRight":
-        if (cur?.isDir && !this.expanded.has(cur.p)) void this.expand(cur.p);
-        else if (cur?.isDir) move(this.cursor + 1);
-        break;
-      case "ArrowLeft":
-        if (cur?.isDir && this.expanded.has(cur.p)) this.collapse(cur.p);
-        else if (cur && cur.d.dir !== this.root) {
-          const parent = cur.d.dir.path;
-          void this.reveal(parent).then(() => { this.selected = new Set([parent]); this.cb.changed(); this.queue(); });
-        }
-        break;
-      case "Enter": if (cur) cur.isDir ? this.toggle(cur.p) : this.cb.open(cur.p); break;
-      case "F2": if (cur) this.startRename(cur.p); break;
-      default: return;
-    }
-    e.preventDefault();
-  }
 }

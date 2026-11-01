@@ -311,7 +311,8 @@ setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own
 1. Find the closest existing component in §3 and its class; reuse it unchanged if possible.
 2. Markup in `index.html` (static) or built in a module with `el()`/`icon()`; ids only for wiring
    and tests.
-3. CSS in the file that owns the area (style.css: shell, list, header, terminal; tmux.css:
+3. CSS in the file that owns the area (style.css: shell, list, header, terminal; layout.css: the
+   phone's drawer, the views and Files docked beside the terminal; tmux.css:
    terminum's additions, forms, dialogs; marks.css, find.css, widgets.css: their features;
    shapes.css: the material by kind; grain.css: where the grain lies). Respect the 500-line cap; split by feature, not by squeezing.
 4. Tokens only (§2); no new font size, radius or height outside the scales.

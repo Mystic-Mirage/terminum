@@ -32,6 +32,8 @@ import { webTmux } from "./e2e_tmux.mjs";
 import { webTouch } from "./e2e_touch.mjs";
 import { webTrace } from "./e2e_trace.mjs";
 import { webWidgets } from "./e2e_widgets.mjs";
+import { webWidgetFolds } from "./e2e_widgetfolds.mjs";
+import { webWidgetTables } from "./e2e_widgettables.mjs";
 import { webIdeKeys } from "./e2e_idekeys.mjs";
 import { webScreenFolds } from "./e2e_screenfolds.mjs";
 import { webProjects } from "./e2e_projects.mjs";
@@ -52,7 +54,7 @@ import { webMarkNav } from "./e2e_marknav.mjs";
 import { webPaneWin } from "./e2e_panewin.mjs";
 import { webReview } from "./e2e_review_regressions.mjs";
 
-const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
+const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
   webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksFull, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview };
 const BROWSERS = ["chromium", "webkit"], KNOWN = [...BROWSERS, "firefox"];
 // Checks a user saw fail in Firefox and that need no touch screen (Firefox has no isMobile).

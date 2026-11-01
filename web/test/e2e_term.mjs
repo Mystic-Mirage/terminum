@@ -12,7 +12,7 @@ import { check } from "./check.mjs";
 
 const STATIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../static");
 const ORIGIN = "http://web.test";
-const PAGE = `<!doctype html><link rel=stylesheet href="/style.css">
+const PAGE = `<!doctype html><link rel=stylesheet href="/style.css"><link rel=stylesheet href="/layout.css">
 <body style="margin:0"><main id="term" class="wrap" style="height:600px;width:400px;overflow:auto">
 <p id="note" hidden></p><div id="hist"></div><div id="screen"></div></main>
 <button id="bottom"></button><p id="paused" hidden></p><button id="copyfab" hidden>Copy</button>

@@ -3,17 +3,18 @@
 // the file is writable), rendered Markdown with a Source toggle, images, and a card for
 // binary files. Unsaved edits live here, per file, so switching panes never drops them.
 
-import { EditorState, Compartment, type Text } from "@codemirror/state";
+import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { editorExtensions } from "./viewer-editor";
 
-import { api, apiOrToast, ApiError, basename, downloadRaw, esc, fmtSize, hydrateRaw, isUnder, PROXIED, rawUrl, rebase, toast, type FileView, type Stamp, type Tab } from "./api";
+import { api, apiOrToast, ApiError, basename, downloadRaw, esc, hydrateRaw, isUnder, rawUrl, rebase, type FileView, type Stamp, type Tab } from "./api";
 import { ask } from "./dialogs";
 import { zoomOutside } from "./embed";
-import { fileIcon } from "./icons";
 import { languageForFile } from "./highlight";
-import { isRenderable, renderDoc, type LinkHost } from "./docview";
+import { renderDoc, type LinkHost } from "./docview";
 import { mediaOf, renderBinary } from "./viewer-media";
+import { bannerHtml, modeOf, tabsHtml, toolsHtml, type Doc } from "./viewer-parts";
+import { revalidateDoc, saveDoc } from "./viewer-save";
 
 export interface ViewerCallbacks {
   changed(): void;                 // tabs / active / view mode changed → persist
@@ -22,20 +23,6 @@ export interface ViewerCallbacks {
   canReveal(path: string): boolean; // the file is in that tree (Reveal shows only then)
   active?(path: string | null): void; // the active tab changed (the viewer window's path bar)
   emptied?(): void;                // the user closed the last tab
-}
-
-interface Doc {
-  file?: FileView;
-  error?: string;
-  loading?: Promise<void>;
-  state?: EditorState;
-  saved?: Text;                    // document as last loaded or saved
-  dirty: boolean;
-  diskChanged: boolean;            // changed on disk while dirty
-  saving?: Promise<boolean>;       // one save per file at a time
-  deleted?: boolean;               // gone on disk (content kept; a rename may bring it back)
-  scroll: Record<string, number>;  // per view mode
-  host: string | null;             // where the file lives: every read and save goes there (AC-37)
 }
 
 
@@ -240,12 +227,7 @@ export class Viewer {
 
   private renderTabs() {
     this.cb.layout(this.tabs.length > 0);
-    this.tabsEl.innerHTML = this.tabs.map((t, i) => {
-      const dirty = this.docs.get(t.path)?.dirty;
-      return `<div class="tab${i === this.active ? " active" : ""}${dirty ? " dirty" : ""}" data-i="${i}" title="${esc(t.path)}">` +
-        `${fileIcon(basename(t.path))}<span class="tname">${esc(basename(t.path))}</span>` +
-        `<span class="close" title="Close">${dirty ? "●" : "×"}</span></div>`;
-    }).join("");
+    this.tabsEl.innerHTML = tabsHtml(this.tabs, this.active, this.docs);
     this.tabsEl.querySelector(".tab.active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
     this.cb.active?.(this.activePath());
   }
@@ -269,23 +251,8 @@ export class Viewer {
   }
 
   /** Check disk state without replacing edits; 304 (same etag) costs no content. */
-  private async revalidate(path: string, d = this.docs.get(path)) {
-    if (!d?.file) return;
-    path = d.file.path;
-    try {
-      const f = await api<FileView | undefined>("GET", "/api/file", { query: { path }, host: d.host, headers: { "If-None-Match": `"${d.file.etag}"` } });
-      if (d.file?.path !== path) return;
-      if (!f && !d.deleted) return; // 304: unchanged
-      this.redraw(path, () => {
-        d.deleted = false;
-        if (f && d.dirty && f.etag !== d.file?.etag) d.diskChanged = true;
-        if (f && !d.dirty) { d.file = f; d.state = undefined; d.saved = undefined; }
-      }, d);
-    } catch (e) {
-      if (d.file?.path !== path) return;
-      // keep the content: the file may have been renamed (the rename event can arrive first)
-      if (e instanceof ApiError && e.status === 404 && e.code !== "no_agent" && !d.deleted) this.redraw(path, () => { d.deleted = true; }, d);
-    }
+  private revalidate(path: string, d = this.docs.get(path)) {
+    return d ? revalidateDoc(path, d, (p, update, doc) => this.redraw(p, update, doc)) : Promise.resolve();
   }
 
   /** Save the scroll position (and editor state) of what is on screen. */
@@ -303,15 +270,11 @@ export class Viewer {
     }
   }
 
-  private modeOf(tab: Tab) {
-    return isRenderable(tab.path) && tab.view !== "source" ? "rendered" : "source";
-  }
-
   private async show() {
     const render = ++this.render;
     const tab = this.activeTab;
     if (!tab) { this.body.innerHTML = ""; this.tools.innerHTML = ""; this.shown = null; return; }
-    const mode = this.modeOf(tab);
+    const mode = modeOf(tab);
     const d = this.doc(tab.path);
     if (!d.file && !d.error) {
       this.body.innerHTML = '<div class="pinfo"><span class="spin"></span> loading…</div>';
@@ -328,7 +291,7 @@ export class Viewer {
       return;
     }
     const f = d.file;
-    const banner = this.banner(f, d);
+    const banner = bannerHtml(f, d);
     // a picture, a PDF, a video, a sound (viewer-media.ts), by the file's type: a PDF may be all text
     if (f.binary || mediaOf(f)) return renderBinary(this.body, f, banner);
     if (mode === "rendered") {
@@ -341,17 +304,6 @@ export class Viewer {
       return;
     }
     await this.showEditor(tab.path, d, banner, render);
-  }
-
-  private banner(f: FileView, d: Doc) {
-    if (d.deleted) return `<div class="banner">Deleted on disk — Save recreates it${f.writable ? "" : " (read-only here)"}</div>`;
-    if (d.diskChanged)
-      return `<div class="banner">Changed on disk <button class="btn sm" data-disk="reload">Reload</button> <button class="btn sm" data-disk="keep">Keep mine</button></div>`;
-    const notes: string[] = [];
-    if (f.truncated) notes.push(`${fmtSize(f.size)} — showing first 1 MB, editing disabled`);
-    else if (!f.binary && !f.utf8) notes.push("Not UTF-8 — editing disabled to avoid corruption");
-    else if (!f.binary && !f.writable) notes.push("Read-only: outside writable folders or no permission");
-    return notes.length ? `<div class="banner">${notes.map(esc).join(" · ")}</div>` : "";
   }
 
   private async showEditor(path: string, d: Doc, banner: string, render: number) {
@@ -386,52 +338,14 @@ export class Viewer {
     }
   }
 
-
   /** Save the file (If-Match etag); on conflict ask Overwrite / Reload / Cancel. */
   save(path: string, force = false, d = this.docs.get(path)): Promise<boolean> {
-    if (!d) return Promise.resolve(false);
-    // a save asked while one is in flight runs after it, for the text typed meanwhile (AC-56)
-    if (d.saving) return d.saving.then((ok) => ok && d.dirty ? this.save(path, force, d) : ok);
-    d.saving = this.doSave(path, d, force).finally(() => { d.saving = undefined; });
-    return d.saving;
-  }
-
-  private async doSave(path: string, d: Doc, force: boolean): Promise<boolean> {
-    if (!d.file || !d.state || !d.file.writable) return false;
-    path = d.file.path;                // a rename may have happened during a conflict prompt
-    const doc = d.state.doc;           // what we send; typing may continue meanwhile
-    const text = d.state.sliceDoc();
-    try {
-      const r = await api<{ etag: string }>("PUT", "/api/file", {
-        query: { path }, body: { text }, host: d.host, headers: { "If-Match": `"${force ? "*" : d.file.etag}"` },
-      });
-      if (d.file.path !== path) {
-        await this.revalidate(d.file.path, d);
-        toast("Not saved: file was renamed — save again");
-        return false;
-      }
-      d.file = { ...d.file, etag: r.etag, size: new TextEncoder().encode(text).length, text };
-      d.saved = doc;
-      d.dirty = !d.state.doc.eq(doc);  // edits typed during the request stay unsaved
-      d.diskChanged = false;
-      this.renderTabs();
-      this.redraw(path, undefined, d);
-      toast(`Saved ${basename(path)}`);
-      return true;
-    } catch (e) {
-      if (e instanceof ApiError && e.code === "conflict") {
-        const choice = await ask(e.message, "The file was changed by another program since you opened it.", [
-          { id: "overwrite", label: "Overwrite", danger: true },
-          { id: "reload", label: "Reload (discard mine)" },
-          { id: "cancel", label: "Cancel", primary: true },
-        ]);
-        if (choice === "overwrite") return this.doSave(path, d, true);
-        if (choice === "reload") { this.discard(path, d); return false; }
-        return false;
-      }
-      toast(e instanceof ApiError && e.status === 0 ? "Not saved: server restarting — save again" : e instanceof Error ? e.message : String(e));
-      return false;
-    }
+    return d ? saveDoc(path, d, force, {
+      revalidate: (p, doc) => this.revalidate(p, doc),
+      tabsChanged: () => this.renderTabs(),
+      redraw: (p, doc) => this.redraw(p, undefined, doc),
+      discard: (p, doc) => this.discard(p, doc),
+    }) : Promise.resolve(false);
   }
 
   private discard(path: string, d = this.docs.get(path)) {
@@ -448,17 +362,7 @@ export class Viewer {
     if (this.active != null && this.shown) this.renderTools(this.tabs[this.active], this.doc(this.tabs[this.active].path));
   }
 
-  private renderTools(tab: Tab, d: Doc) {
-    const f = d.file;
-    const md = isRenderable(tab.path) && f && !f.binary;
-    const mode = this.modeOf(tab);
-    this.tools.innerHTML =
-      (d.dirty ? `<button class="btn sm primary" data-act="save" title="Save (⌘S)">Save</button>` : "") +
-      (md ? `<div class="seg"><button data-act="rendered" class="${mode === "rendered" ? "on" : ""}" title="Rendered">Rendered</button>` +
-        `<button data-act="source" class="${mode === "source" ? "on" : ""}" title="Source${f?.writable ? " (editable)" : ""}">Source</button></div>` : "") +
-      (!this.cb.canReveal(tab.path) ? "" : `<button class="icon" data-act="reveal" title="Reveal in tree"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/></svg></button>`) +
-      (PROXIED ? "" : `<button class="icon" data-act="open-app" title="Open with default app"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2.5h4.5V7M13.5 2.5 7 9M12 10v3.5H2.5V4H6"/></svg></button>`);
-  }
+  private renderTools(tab: Tab, d: Doc) { this.tools.innerHTML = toolsHtml(tab, d, this.cb.canReveal(tab.path)); }
 
   private openWithApp(path: string) { return apiOrToast("POST", "/api/os/open", { body: { path } }); }
 

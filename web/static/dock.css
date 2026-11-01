@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* Docked Files' width (AC-70): the separator between the terminal and Files (dock.js). */
 #dockgrip { display: none; }
-/* on the chrome band left of Files (style.css "1400px and wider"), over the terminal's column edge */
+/* on the chrome band left of Files (layout.css "1400px and wider"), over the terminal's column edge */
 body.docked #main > #dockgrip { display: block; grid-column: 2; grid-row: 1 / -1; justify-self: start; position: relative;
   z-index: 6; width: 8px; margin-left: -1px; cursor: col-resize; touch-action: none; }
 body.docked #main > #dockgrip:hover, body.docked #main > #dockgrip:focus-visible { background: color-mix(in srgb, var(--accent) 45%, transparent); outline: none; }

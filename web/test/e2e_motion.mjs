@@ -98,10 +98,11 @@ export async function webMotion(browser, name) {
   await page.mouse.up();
   await page.click("#newsesscancel");
   const fab = await page.$("#findfab").then((b) => b.boundingBox());
+  // the pulse (320 ms) is counted as it starts, not sampled: a busy browser's frame can outlast it
+  await page.evaluate(() => { window.pulses = 0; document.getElementById("findfab").addEventListener("animationstart", (e) => { if (e.pseudoElement === "::before") window.pulses++; }); });
   await page.mouse.click(fab.x + fab.width / 2, fab.y + fab.height / 2);
-  await page.waitForFunction(() => document.getAnimations().some((a) => a.effect?.pseudoElement === "::before" && a.effect.target?.id === "findfab"), null, { timeout: 1000 }).catch(() => {});
-  const pulse = await page.evaluate(() => ({ mark: document.getElementById("findfab").dataset.press,
-    running: document.getAnimations().filter((a) => a.effect?.pseudoElement === "::before" && a.effect.target?.id === "findfab").length }));
+  await page.waitForFunction(() => window.pulses > 0, null, { timeout: slack(1000) }).catch(() => {});
+  const pulse = await page.evaluate(() => ({ mark: document.getElementById("findfab").dataset.press, running: window.pulses }));
   await page.keyboard.press("Escape");
   await page.mouse.move(fab.x - 200, fab.y + 200);
   await pause(page, 400);
@@ -117,8 +118,11 @@ export async function webMotion(browser, name) {
     /0px 1px 3px 0px/.test(press.shadow) && /inset/.test(press.shadow) && press.scale === "none" && press.mark === null && press.before === "none" && ["a", "b"].includes(pulse.mark) && pulse.running === 1,
     JSON.stringify({ press, pulse }));
 
+  // the settle (320 ms) is noted as it starts, not sampled after the click: under load it can be over by then
+  await page.evaluate(() => { window.settled = []; document.addEventListener("animationstart", (e) => {
+    if (e.target.closest?.("#sessions .item.on") && parseFloat(getComputedStyle(e.target).animationDuration) > 0) window.settled.push(`${e.target.className}:${e.animationName}`); }); });
   await page.click("#sessions .item[data-id='tmux:local:terminum:%2']");
-  const settle = await moving(page, "#sessions .item.on");
+  const settle = await page.waitForFunction(() => window.settled.length && window.settled, null, { timeout: slack(1000) }).then((h) => h.jsonValue(), () => []);
   check("motion: the newly selected row settles once (its fill and its bar)", settle.length >= 1, JSON.stringify(settle));
   await pause(page, 400);
 

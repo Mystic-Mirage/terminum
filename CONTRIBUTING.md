@@ -26,7 +26,7 @@ The agreement is recorded by a CLA check on the pull request (until it is set up
 
 ```bash
 make test                         # cargo test, typecheck, UI unit tests
-cd ui && node test/e2e_panel.mjs  # browser checks (once: npx playwright-core install chromium-headless-shell)
+cd ui && node test/e2e_panel.mjs  # browser checks (once: npx playwright-core install chromium webkit)
 ```
 
 Changes to behavior update the specs in `docs/specs/` (scenarios first) in the same

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { contrast } from "../../web/static/contrast.js";
 import { base, check, cleanup, panelUrl, PANE_B, SB, signIn, wsKey } from "./e2e_harness.mjs";
+import { NO_SIGNALS } from "./process-stop.mjs";
 
 export async function panelReview(page) {
   const file = `${SB}/keyboard-cancel.txt`;
@@ -107,7 +108,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { chromium, webkit } = await import("playwright-core");
   try {
     for (const [name, engine] of Object.entries({ chromium, webkit })) {
-      const browser = await engine.launch();
+      const browser = await engine.launch(NO_SIGNALS);
       try {
         for (const viewport of [{ width: 1400, height: 900 }, { width: 390, height: 844 }]) {
           const page = await browser.newPage({ viewport });

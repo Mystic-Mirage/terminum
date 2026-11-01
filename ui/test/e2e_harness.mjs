@@ -8,8 +8,8 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { stopChild } from "./process-stop.mjs";
 import { freePort, own } from "../../web/test/testrun.mjs";
+import { endOnSignal, stopChild } from "./process-stop.mjs";
 
 // this run's: checks in several worktrees at once never meet (testrun.mjs)
 export const PORT = await freePort();
@@ -95,8 +95,18 @@ export const panelUrl = (pane = PANE_A, cwd = SB, host = null) =>
 // ── terminumd ────────────────────────────────────────────────────────────────
 // terminumd plays the build the UI bundle was made for, or every panel would reload itself (AC-16)
 const UI_BUILD = fs.readFileSync(path.resolve(HERE, "../.build-id"), "utf8").trim();
+let server = null;
+export const stopServer = async () => { if (server) await stopChild(server); };
+/** Everything this harness started ends, once: from the run's `finally`, or from a signal (a
+ *  timeout or Ctrl-C), which in Node skips every `finally`. */
+export const cleanup = endOnSignal(async () => {
+  await stopServer();
+  try { tmux("kill-server"); } catch { /* gone */ }
+  removeDirs();
+});
 async function start(env = {}) {
-  const p = spawn(BIN, [], {
+  // the child is noted at once: a signal while it starts still ends it
+  server = spawn(BIN, [], {
     env: {
       ...process.env, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: TMUX_SOCKET,
       TM_WRITABLE_ROOTS: SB, TM_LOG: "warn", TM_BUILD_ID: UI_BUILD, ...env,
@@ -107,12 +117,10 @@ async function start(env = {}) {
     try { await fetch(base + "/"); if ((await onSocket("GET", "/health")).status === 200) break; } catch { /* starting */ }
     await new Promise((r) => setTimeout(r, 100));
   }
-  return p;
 }
-let server = await start();
-export const stopServer = () => stopChild(server);
+await start();
 /** terminumd is back (`env`: as another build, TM_BUILD_ID). */
-export async function bringBack(env = {}) { server = await start(env); }
+export async function bringBack(env = {}) { await start(env); }
 /** terminumd goes away for `gapMs` (a restart); `during` runs meanwhile. */
 export async function restartServer(gapMs, during = () => {}) {
   await stopServer();
@@ -151,8 +159,3 @@ export async function waitFor(ok, ms = 4000) {
   }
 }
 
-export async function cleanup() {
-  await stopServer();
-  try { tmux("kill-server"); } catch { /* gone */ }
-  removeDirs();
-}

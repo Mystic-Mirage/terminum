@@ -23,11 +23,12 @@ import {
 import { panelMedia } from "./e2e_panel_media.mjs";
 import { panelDrop } from "./e2e_panel_drop.mjs";
 import { panelDocs } from "./e2e_panel_docs.mjs";
+import { NO_SIGNALS } from "./process-stop.mjs";
 
 // playwright-core is a devDependency; PLAYWRIGHT_CORE may point at another copy
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
 
-const browser = await chromium.launch();
+const browser = await chromium.launch(NO_SIGNALS);   // signals end the run through the harness's cleanup
 const context = await browser.newContext({ viewport: { width: 520, height: 900 } });
 const page = await context.newPage();
 const SECRET = await signIn(page).catch(async (e) => { await cleanup(); throw e; });

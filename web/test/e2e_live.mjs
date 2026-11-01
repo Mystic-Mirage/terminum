@@ -15,6 +15,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { check, playwright, results, runningIn, within } from "./check.mjs";
 import { freePort, own } from "./testrun.mjs";
+import { endOnSignal, NO_SIGNALS } from "../../ui/test/process-stop.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
@@ -77,7 +78,9 @@ const onSocket = (method, p, body) => new Promise((resolve, reject) => {
   req.on("error", reject);
   req.end(body === undefined ? undefined : JSON.stringify(body));
 });
+let ended = false;
 async function start() {
+  if (ended) throw new Error("the run was ended");   // a signal ended it while a browser ran
   // as the build the Files panel was bundled for: another one makes the panel reload itself (AC-34)
   const env = { ...process.env, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
   delete env.TMUX;
@@ -91,6 +94,16 @@ async function start() {
   throw new Error("terminumd did not start");
 }
 const stop = () => new Promise((r) => { if (!proc || proc.exitCode !== null) return r(); proc.once("exit", r); proc.kill(); });
+/** Everything this run started ends, once: from its `finally`, or from a signal (a timeout or
+ *  Ctrl-C), which in Node skips every `finally`. */
+const teardown = endOnSignal(async () => {
+  ended = true;
+  runningIn("");
+  await stop();
+  purge();
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(WORK, { recursive: true, force: true });
+});
 // The password, set once as `terminum password` does (a new one would sign every page out).
 const PASSWORD = "correct horse battery";
 let passwordSet = false;
@@ -250,7 +263,7 @@ try {
   const pw = await playwright();
   const which = process.argv.slice(2).filter((a) => ["chromium", "webkit"].includes(a));
   for (const name of which.length ? which : ["chromium", "webkit"]) {
-    const browser = await pw[name].launch();
+    const browser = await pw[name].launch(NO_SIGNALS);
     try {
       const ctx = await wide(browser, name);
       await phone(browser, name);
@@ -265,11 +278,7 @@ try {
     await start();
   }
 } finally {
-  runningIn("");
-  await stop();
-  purge();
-  fs.rmSync(tmp, { recursive: true, force: true });
-  fs.rmSync(WORK, { recursive: true, force: true });
+  await teardown();
 }
 const failed = results.filter((r) => !r.ok).length;
 console.log(failed ? `FAIL (${failed} of ${results.length})` : `PASS (${results.length} checks)`);

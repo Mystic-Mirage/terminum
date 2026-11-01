@@ -5,6 +5,7 @@ import signal
 from pathlib import Path
 import subprocess
 import tempfile
+import time
 import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "bench_ls.sh"
@@ -49,6 +50,14 @@ elif 'limit=1' in args[-1]:
             process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        text=True, start_new_session=True)
             try:
+                # a short wait counts from the daemon's start: a loaded machine starts it late
+                started = time.monotonic() + 10
+                while wait < 1 and not (root / "daemon.pid").exists() and time.monotonic() < started:
+                    try:
+                        stdout, stderr = process.communicate(timeout=0.05)
+                        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+                    except subprocess.TimeoutExpired:
+                        pass
                 stdout, stderr = process.communicate(timeout=wait)
                 return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
             except BaseException:

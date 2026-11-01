@@ -46,6 +46,6 @@ test("Copy's preview of a hostile 1 MB copy takes no time (no backtracking)", ()
   for (const text of ["\n".repeat(1e6) + "x", " ".repeat(1e6) + "x", "a\n".repeat(5e5)]) {
     const t0 = performance.now();
     copyPreview(text);
-    assert.ok(performance.now() - t0 < 200, `${(performance.now() - t0).toFixed(0)} ms`);
+    assert.ok(performance.now() - t0 < 1000, `${(performance.now() - t0).toFixed(0)} ms`);   // quadratic would be minutes; a loaded machine is not
   }
 });

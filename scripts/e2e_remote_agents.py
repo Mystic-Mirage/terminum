@@ -22,9 +22,10 @@ from urllib.parse import urlencode
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout  # noqa: E402
 from e2e_remote import api  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PORT, LOCAL_SOCKET, REMOTE_SOCKET = 47963, "tm-test-alocal", "tm-test-aremote"
+PORT, LOCAL_SOCKET, REMOTE_SOCKET = free_port(), own("tm-test-alocal"), own("tm-test-aremote")
 STUB = """#!/bin/sh
 echo "$*" >> "$HOME/claude-argv"
 case "$*" in

@@ -26,9 +26,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_remote import api, host_group  # noqa: E402
 from e2e_remote_sshd import stage  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
 VARIANT = sys.argv[3] if len(sys.argv) > 3 else "alpine"
-PORT, SOCKET = (47971, "tm-rr9-a") if VARIANT == "alpine" else (47972, "tm-rr9-d")
+PORT, SOCKET = (free_port(), own("tm-rr9-a")) if VARIANT == "alpine" else (free_port(), own("tm-rr9-d"))
 NAME, SSH_PORT, BOB_PORT = f"tm-rr9-{VARIANT}", (2230 if VARIANT == "alpine" else 2232), (2231 if VARIANT == "alpine" else 2233)
 
 STUB = r"""#!/bin/sh

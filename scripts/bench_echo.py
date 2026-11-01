@@ -16,8 +16,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
-PORT, SOCKET = 47967, "tm-test-bench-echo"
+PORT, SOCKET = free_port(), own("tm-test-bench-echo")
 
 
 def text_of(ch):

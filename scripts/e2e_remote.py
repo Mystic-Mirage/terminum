@@ -20,9 +20,10 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PORT, LOCAL_SOCKET, REMOTE_SOCKET = 47961, "tm-test-rlocal", "tm-test-remote"
+PORT, LOCAL_SOCKET, REMOTE_SOCKET = free_port(), own("tm-test-rlocal"), own("tm-test-remote")
 
 
 def host_group(layout, name):

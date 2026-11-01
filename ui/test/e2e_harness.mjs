@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The harness of e2e_panel.mjs: a sandbox folder, a private tmux server (`tmux -L tm-test-panel`)
-// with two shell panes in it, a private terminumd on port 47932 with its own TM_HOME and state
+// The harness of e2e_panel.mjs: a sandbox folder, a private tmux server (`tmux -L tm-test-panel-<pid>`)
+// with two shell panes in it, a private terminumd on a free port with its own TM_HOME and state
 // folder, the sign-in through its CLI socket, and the check helpers. Nothing here touches the
 // user's tmux server, sign-ins or workspaces.
 
@@ -9,9 +9,11 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { stopChild } from "./process-stop.mjs";
+import { freePort, own } from "../../web/test/testrun.mjs";
 
-export const PORT = Number(process.env.TM_TEST_PORT ?? 47932);
-export const TMUX_SOCKET = "tm-test-panel";
+// this run's: checks in several worktrees at once never meet (testrun.mjs)
+export const PORT = await freePort();
+export const TMUX_SOCKET = own("tm-test-panel");
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 export const BIN = process.env.TM_BIN ?? path.resolve(HERE, "../../terminumd/target/debug/terminumd");
 export const SB = fs.realpathSync(fs.mkdtempSync("/tmp/tm-e2e-")); // the sandbox: the only writable root

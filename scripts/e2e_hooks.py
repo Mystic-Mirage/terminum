@@ -17,8 +17,9 @@ from functools import partial
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import BIN, Terminumd, check, summary, tmux_on, wait_layout  # noqa: E402
 from e2e_agentstate import DONE_CC, PROGRAM, SHELL_CC  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
-PORT, SOCKET = 47975, "tm-test-hooks"
+PORT, SOCKET = free_port(), own("tm-test-hooks")
 tmux = partial(tmux_on, SOCKET)
 
 

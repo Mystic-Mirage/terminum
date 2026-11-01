@@ -17,8 +17,9 @@ from functools import partial
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_core import items, text_of  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, tmux_on, wait_layout  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
-PORT, SOCKET = 47963, "tm-test-sizing"
+PORT, SOCKET = free_port(), own("tm-test-sizing")
 tmux = partial(tmux_on, SOCKET)
 
 

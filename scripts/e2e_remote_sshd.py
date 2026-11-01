@@ -23,8 +23,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_remote import api, host_group  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
-PORT, SOCKET, NAME, SSH_PORT = 47960, "tm-test-rsshd", "tm-test-sshd", 2222
+PORT, SOCKET, NAME, SSH_PORT = free_port(), own("tm-test-rsshd"), "tm-test-sshd", 2222
 HOME = "/home/alex"
 OLD = "0123456789ab"
 

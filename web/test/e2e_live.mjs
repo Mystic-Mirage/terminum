@@ -14,6 +14,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { check, playwright, results, runningIn, within } from "./check.mjs";
+import { freePort, own } from "./testrun.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
@@ -28,7 +29,8 @@ import { livePlans } from "./e2e_liveplans.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
-const PORT = 47969, SOCKET = "tm-test-live";
+// this run's: checks in several worktrees at once never meet, and purge() ends only this run's server
+const PORT = await freePort(), SOCKET = own("tm-test-live");
 const BASE = `http://127.0.0.1:${PORT}`;
 const tmp = fs.mkdtempSync("/tmp/tml-");
 const HOME = path.join(tmp, "h"), APP = path.join(tmp, "a"), WORK = fs.realpathSync(fs.mkdtempSync("/tmp/tmlw-"));

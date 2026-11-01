@@ -20,9 +20,10 @@ from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PORT, LOCAL, REMOTE = 47966, "tm-test-hal", "tm-test-hrem"
+PORT, LOCAL, REMOTE = free_port(), own("tm-test-hal"), own("tm-test-hrem")
 remote = partial(tmux_on, REMOTE)
 
 

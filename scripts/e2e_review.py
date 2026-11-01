@@ -14,13 +14,14 @@ import subprocess
 
 from e2e_remote import api
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_for
+from testrun import free_port  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 
 
 
 def checkpoint():
-    t = Terminumd(47986, f"tm-review-checkpoint-{os.getpid()}")
+    t = Terminumd(free_port(), f"tm-review-checkpoint-{os.getpid()}")
     t.env["HOME"] = t.root
     stage = "initial checkpoint"
     try:
@@ -56,7 +57,7 @@ def checkpoint():
 
 
 def host():
-    t = Terminumd(47985, f"tm-review-host-{os.getpid()}")
+    t = Terminumd(free_port(), f"tm-review-host-{os.getpid()}")
     t.env["HOME"] = t.root
     remote_socket = f"tm-review-rhost-{os.getpid()}"
     remote = Path(t.root) / "remote"
@@ -115,7 +116,7 @@ def host():
 
 
 def security():
-    t = Terminumd(47984, f"tm-review-security-{os.getpid()}")
+    t = Terminumd(free_port(), f"tm-review-security-{os.getpid()}")
     try:
         t.start()
         result = subprocess.run(["bash", str(HERE / "security_check.sh")], env=t.env)

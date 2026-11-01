@@ -16,8 +16,9 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import WS, Terminumd, check, proof, results, summary, unix_request  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
-PORT, SOCKET = 47964, "tm-test-access"
+PORT, SOCKET = free_port(), own("tm-test-access")
 
 
 def raw(port, method, path, headers=None, body=b""):

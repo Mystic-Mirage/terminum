@@ -15,8 +15,9 @@ from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, summary, tmux_on, wait_layout  # noqa: E402
+from testrun import free_port, own  # noqa: E402
 
-PORT, SOCKET = 47970, "tm-test-agent"
+PORT, SOCKET = free_port(), own("tm-test-agent")
 tmux = partial(tmux_on, SOCKET)
 
 # what each stand-in prints at the screen's bottom, as Codex draws, then it waits; "later" clears

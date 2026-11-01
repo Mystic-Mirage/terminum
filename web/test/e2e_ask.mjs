@@ -79,9 +79,9 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(300);
   stayed = await top();
-  const typed = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data);
-  check(`${at} Ask in a coding agent's box: typed, not pasted (shown whole, not folded), new lines as Ctrl+J, a blank line after the quote and after the question; nothing sent; the view stays where it was`,
-    typed.length === 1 && typed[0].startsWith("> Quote #0007\n> out 2500 lorem") && typed[0].endsWith("\n\nand now?\n\n") && !typed[0].includes("\x1b[200~") && was > 0 && stayed === was, JSON.stringify({ typed, was, stayed }));
+  const typed = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data), typedFocus = await page.evaluate(() => document.activeElement?.id);
+  check(`${at} Ask in a coding agent's box: typed, not pasted (shown whole, not folded), new lines as Ctrl+J, a blank line after the quote and after the question; nothing sent; the view stays where it was; the keys go back to the terminal`,
+    typed.length === 1 && typed[0].startsWith("> Quote #0007\n> out 2500 lorem") && typed[0].endsWith("\n\nand now?\n\n") && !typed[0].includes("\x1b[200~") && was > 0 && stayed === was && typedFocus === "kbd", JSON.stringify({ typed, was, stayed, typedFocus }));
   // Send to Agent (a coding agent's pane only): the same paste, then Enter a moment after
   await selectRow(page, "out 2500 lorem");
   await page.click("#askfab");
@@ -91,17 +91,38 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(400);
   const now = sent.slice(k).filter((x) => x.t === "in");
-  check(`${at} Ask's Send to Agent in a coding agent's pane: the paste, then Enter`,
-    now.length === 2 && now[0].data.startsWith("> Quote #0007\n> out 2500 lorem") && now[0].data.endsWith("\n\nsend it") && now[1].data === "\r", JSON.stringify(now.map((x) => x.data)));
+  // the keys go back to the terminal: typed next, they reach the pane, not the page's body (the agent's next question)
+  const sentFocus = await page.evaluate(() => document.activeElement?.id);
+  k = sent.length;
+  await page.keyboard.type("11");
+  await page.waitForTimeout(200);
+  const next = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data).join("");
+  check(`${at} Ask's Send to Agent in a coding agent's pane: the paste, then Enter; the keys typed after it reach the pane`,
+    now.length === 2 && now[0].data.startsWith("> Quote #0007\n> out 2500 lorem") && now[0].data.endsWith("\n\nsend it") && now[1].data === "\r" && sentFocus === "kbd" && next === "11",
+    JSON.stringify({ now: now.map((x) => x.data), sentFocus, next }));
   say({ t: "layout", groups: layout });
   await page.waitForTimeout(150);
   await selectRow(page, "out 2500 lorem");
   await page.click("#askfab");
   await page.fill("#askq", "never mind");
   k = sent.length;
-  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");                                // in its field, as the user does
   await page.waitForTimeout(200);
-  check(`${at} Ask: Esc closes it and pastes nothing`, !await page.evaluate(() => document.getElementById("askbox").open) && !sent.slice(k).some((x) => x.t === "in" || x.t === "askno"));
+  const escFocus = await page.evaluate(() => document.activeElement?.id);
+  check(`${at} Ask: Esc closes it and pastes nothing; the keys go back to the terminal`,
+    !await page.evaluate(() => document.getElementById("askbox").open) && !sent.slice(k).some((x) => x.t === "in" || x.t === "askno") && escFocus === "kbd", JSON.stringify({ escFocus }));
+  await selectRow(page, "out 2500 lorem");
+  await page.click("#askfab");
+  await page.waitForSelector("#askbox[open]", { timeout: 3000 }).catch(() => {});
+  k = sent.length;
+  await page.click('#askbox button[value="cancel"]');
+  await page.waitForTimeout(200);
+  const cancelFocus = await page.evaluate(() => document.activeElement?.id);
+  await page.keyboard.type("11");
+  await page.waitForTimeout(200);
+  const afterCancel = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data).join("");
+  check(`${at} Ask: Cancel closes it and pastes nothing; the keys typed next reach the pane`,
+    !await page.evaluate(() => document.getElementById("askbox").open) && cancelFocus === "kbd" && afterCancel === "11" && !sent.slice(k).some((x) => x.t === "askno"), JSON.stringify({ cancelFocus, afterCancel }));
   // a narrow window: Ask under the [+] there too (the column's buttons give way)
   await page.setViewportSize({ width: 800, height: 900 });
   await page.waitForTimeout(300);

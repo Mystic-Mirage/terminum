@@ -58,8 +58,11 @@ export function centerOn(area, w, h, vw, vh, gap = 8) {
  *  there (stay: Add to Chat's, the view left where it was); sid(): the shown pane; agent(): it runs a
  *  coding agent; pane(): its {cols, rows, used (the rows its agent's box and footer take, 0 unknown)};
  *  asked(n, quote, line): one was asked about (asked.js keeps it
- *  marked); toast(text): says what was not done. {open(text, line), seen(m), sync()}. */
-export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast }) {
+ *  marked); toast(text): says what was not done; closed(): the dialog closed, however (Add to Chat,
+ *  Send to Agent, Cancel, Esc): the keys go back to the terminal, as the browser gives them back to
+ *  what had them before it opened, the page's body after a Shift selection (sizing.js).
+ *  {open(text, line), seen(m), sync()}. */
+export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast, closed }) {
   const box = $("askbox"), q = $("askq"), add = box.querySelector(".primary"), now = $("asksend");
   let quote = "", line = null, waiting = null, size;
   const fail = (text) => { $("askerr").textContent = text; $("askerr").hidden = !text; };
@@ -75,7 +78,8 @@ export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast }) {
     box.classList.add("placed");
   };
   addEventListener("resize", place);
-  box.addEventListener("close", () => { waiting?.(null); });
+  // Esc leaves the focus in the closed dialog's field a moment (the terminal would not take it from a field)
+  box.addEventListener("close", () => { waiting?.(null); if (box.contains(document.activeElement)) document.activeElement.blur(); closed?.(); });
   box.querySelector("form").addEventListener("submit", async (e) => {
     const how = e.submitter?.value;
     if (how !== "add" && how !== "send") return;                    // Cancel closes it

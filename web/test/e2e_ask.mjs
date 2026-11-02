@@ -157,9 +157,11 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.click("#askfab");
   await page.fill("#askq", "switch away");
   k = sent.length;
+  // the other pane is shown as the dialog closes, in the page: a round trip from here could outlast the 0.2 s under load
+  await page.evaluate((id) => document.getElementById("askbox").addEventListener("close",
+    () => document.querySelector(`#sessions .item[data-id="${id}"]`)?.click(), { once: true }), layout[0].items[1].id);
   await page.click("#asksend");
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
-  await page.evaluate((id) => document.querySelector(`#sessions .item[data-id="${id}"]`)?.click(), layout[0].items[1].id);   // within the 0.2 s
   await page.waitForTimeout(400);
   const away = { keys: sent.slice(k).filter((x) => x.t === "in").map((x) => x.data), sub: sent.slice(k).some((x) => x.t === "sub" && x.id === layout[0].items[1].id),
     toast: await page.evaluate(() => document.getElementById("toast").textContent) };

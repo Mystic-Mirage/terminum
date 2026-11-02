@@ -350,7 +350,10 @@ export async function webBoxNav(browser, name = "chromium") {
   await set(TEXT, TEXT.length);
   const xOutFrom = sent.length;
   await select("Done.", "wrapping");
-  await page.keyboard.press("Meta+KeyX");
+  // the page's key handler alone: the page leaves this ⌘X to the browser, whose own cut of text that is not
+  // editable makes WebKit play the Mac's alert sound on every run (Safari does the same for a user)
+  await page.evaluate(() => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown",
+    { key: "x", code: "KeyX", metaKey: true, bubbles: true, cancelable: true })));
   await page.waitForTimeout(200);
   check(`${at} ⌘X over a selection in the input copies and deletes exactly it; one reaching out of the input deletes nothing`,
     xOk && cc.text === TEXT && sent.slice(xOutFrom).every((m) => m.t !== "in" || !m.data), JSON.stringify({ xSel, text: cc.text.slice(0, 40), xCopied: xCopied.slice(0, 40) }));

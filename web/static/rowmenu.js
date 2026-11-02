@@ -61,11 +61,10 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     if (back?.isConnected && box.contains(document.activeElement)) back.focus({ preventScroll: true });
   };
   let openedAt = -Infinity, back = null;           // when a finger opened it; what had the focus
-  const button = (label, action, run, enabled = true) => {
+  const button = (label, action, run, enabled = true, mark = MARKS[action]) => {
     const b = document.createElement("button");
     b.type = "button"; b.textContent = label; b.dataset.action = action; b.disabled = !enabled;
     b.setAttribute("role", "menuitem");
-    const mark = action === "unread" ? (label === "Mark as Read" ? "mail-open" : "mail") : MARKS[action];
     if (mark) b.prepend(icon(mark, 16));
     // the lift of the finger that opened it is no press of what is under it now
     b.onclick = (e) => { e.stopPropagation(); if (performance.now() - openedAt > 350) run(); };
@@ -120,7 +119,7 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
       // as if nobody had opened it since its agent finished, on every page, until it is shown again (AC-93)
       // the Plan pane is the shown session's (AC-97): shown first, then opened
       button("Plan and Notes…", "plan", () => { hide(); li.querySelector(":scope > .item").click(); document.dispatchEvent(new Event("planopen")); }),
-      button(it.unread ? "Mark as Read" : "Mark as Unread", "unread", () => { hide(); send({ t: "unread", id, on: !it.unread }); }),
+      button(it.unread ? "Mark as Read" : "Mark as Unread", "unread", () => { hide(); send({ t: "unread", id, on: !it.unread }); }, true, it.unread ? "mail-open" : "mail"),
       // what it showed before its tmux restarted, kept by terminumd (AC-96)
       ...(lastLines() > 0 ? [button(`Show Last ${lastLines()} Lines`, "lastlines", () => { hide(); kept.open(id, lastLines()); })] : []),
       // what terminumd and tmux see of the pane, for a bug report (AC-100)
@@ -153,8 +152,7 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     row.append(...SPLITS.map(([word, side]) => {
       const b = button(word, `split-${side}`, () => { hide(); split(it, side); });
       b.prepend(icon(`split-${side}`, 20));
-      b.title = `Split ${word}`;
-      b.setAttribute("aria-label", b.title);
+      b.title = b.ariaLabel = `Split ${word}`;
       if (side !== "bottom") b.classList.add("wide-only");
       return b;
     }));

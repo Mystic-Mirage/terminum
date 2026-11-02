@@ -53,7 +53,9 @@ function unified(lines, i, max) {
 /** The table of diff rows from line i: {to, head, rows, align, marks ("+", "-" or "" a row)}, or
  *  undefined when fewer than two of its rows are a table's. */
 export function diffTable(lines, i, max = 2000) {
-  const got = ROW.test(lines[i]?.text ?? "") ? numbered(lines, i, max) : unified(lines, i, max);
+  const t = lines[i]?.text ?? "";
+  if (!t.includes("|")) return undefined;                      // every row of either kind has a bar: one look for most lines
+  const got = ROW.test(t) ? numbered(lines, i, max) : unified(lines, i, max);
   const sep = got.findIndex((r) => SEP.test(r.text));
   const body = got.filter((r, k) => k !== sep && !(sep > 0 && k === sep - 1));
   if (body.length < 2 && !(sep > 0 && body.length)) return undefined;

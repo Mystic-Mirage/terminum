@@ -58,7 +58,7 @@ export async function webScreen(browser, name) {
     await pause(page, 200);
     const on = await page.evaluate(() => ({ full: document.getElementById("term").classList.contains("fullscreen"),
       hist: getComputedStyle(document.getElementById("hist")).display, modes: document.querySelectorAll("[data-mode], [data-screen], #resize, #scrlabel").length,
-      mark: (({ hidden, title }) => !hidden && title)(document.getElementById("curscreen")), shown: document.getElementById("curscreen").getBoundingClientRect().width > 0 }));
+      mark: ((m) => m.getBoundingClientRect().width > 0 && m.title)(document.getElementById("curscreen")) }));
     frame({ alt: false });
     await pause(page, 200);
     const off = await page.evaluate(() => ({ full: document.getElementById("term").classList.contains("fullscreen"), hist: getComputedStyle(document.getElementById("hist")).display,
@@ -66,7 +66,7 @@ export async function webScreen(browser, name) {
     check("AC-05 a full-screen program hides the history; no view modes, Screen mode or Fit to this screen are offered",
       on.full && on.hist === "none" && on.modes === 0, JSON.stringify(on));
     check("AC-05 off the alternate screen the history is back", !off.full && off.hist !== "none", JSON.stringify(off));
-    check("AC-05 the header marks a full-screen program (\"Full screen mode\") while it runs, and not after", on.mark === "Full screen mode" && on.shown && off.mark === 0, JSON.stringify({ on, off }));
+    check("AC-05 the header marks a full-screen program (\"Full screen mode\") while it runs, and not after", on.mark === "Full screen mode" && off.mark === 0, JSON.stringify({ on, off }));
 
     // the mouse for a full-screen program
     frame({ alt: true, mouse: true });

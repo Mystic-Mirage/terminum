@@ -50,7 +50,6 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
     if (now === full) return;
     full = now;
     term.classList.toggle("fullscreen", full);
-    $("curscreen").hidden = !full;                 // the header says so: no history, no widgets
     reflow();
     showSized();
     refit();

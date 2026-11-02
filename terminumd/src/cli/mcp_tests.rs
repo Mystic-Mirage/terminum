@@ -318,15 +318,16 @@ fn nothing_up_at_the_start_still_offers_the_tools_and_asks_again() {
         if b["tool"] == "probe" { probes.set(probes.get() + 1); }
         if up.get() { Ok((200, Some(json!({"text": NOT_IN_PANE, "error": true})))) } else { Err(Down) }
     };
-    let init: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &e, &f).unwrap()).unwrap();
+    let say = |line: &str| -> Value { serde_json::from_str(&answer(line, &e, &f).unwrap()).unwrap() };
+    let init = say(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#);
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS, "nothing up: offered");
-    let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
+    let list = say(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#);
     assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 4);
     assert_eq!(probes.get(), 2, "a probe that reached nobody is not kept");
-    let call: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_session_plan","arguments":{}}}"#, &e, &f).unwrap()).unwrap();
+    let call = say(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_session_plan","arguments":{}}}"#);
     assert_eq!(call["result"]["content"][0]["text"], DOWN, "{call}");
     up.set(true);
-    let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
+    let list = say(r#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#);
     assert_eq!(list["result"]["tools"], json!([]), "up and not knowing the pane: none, kept");
     let _ = answer(r#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#, &e, &f);
     assert_eq!(probes.get(), 3);

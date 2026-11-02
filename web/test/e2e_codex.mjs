@@ -36,15 +36,16 @@ export async function webCodex(browser, name) {
       return { screenmode: t.classList.contains("screenmode"), box: !!box?.textContent.includes("›"), edges: edges.length,
         lines: edges.every((e) => getComputedStyle(e).backgroundImage.includes("gradient")),
         edgesShown: edges.some((e) => vis(e) && e.getBoundingClientRect().width > 200 && e.getBoundingClientRect().height >= 10),
-        foot: [...document.querySelectorAll("#screen .blk.foot .ln")].map(vis), fab: vis(document.getElementById("footfab")) };
+        foot: [...document.querySelectorAll("#screen .blk.foot .ln")].map(vis), fab: vis(document.getElementById("footfab")),
+        mark: document.getElementById("curscreen").getBoundingClientRect().width };
     });
     const idle = await look();
     frame(codex("fix the tests", "Working"));                    // typed into while it works: its state word changed
     await shownText("Working");
     await pause(page, 200);
     const busy = await look();
-    check("Codex: its own full screen stays in Lines mode; its input is a box between two lines, as Claude Code's",
-      !idle.screenmode && idle.box && idle.edges === 2 && idle.lines && (phone ? !idle.edgesShown : idle.edgesShown), JSON.stringify(idle));
+    check("Codex: its own full screen stays in Lines mode, no full-screen mark (AC-05); its input is a box between two lines, as Claude Code's",
+      !idle.screenmode && !idle.mark && idle.box && idle.edges === 2 && idle.lines && (phone ? !idle.edgesShown : idle.edgesShown), JSON.stringify(idle));
     if (phone) check("Codex: on a phone its footer waits behind ⓘ, also while it is typed into and works",
       idle.foot.join() === "false,false" && busy.foot.join() === "false,false" && idle.fab && busy.fab, JSON.stringify({ idle, busy }));
     else check("Codex: on a computer its footer stays in sight", idle.foot.join() === "true,true" && busy.foot.join() === "true,true", JSON.stringify({ idle, busy }));

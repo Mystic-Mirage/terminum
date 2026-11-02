@@ -102,6 +102,8 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .agmark.term { border-radius: 3px; background: var(--term-tile); color: var(--term-tile-ink); }   /* a terminal's icon, as on the Dock */
 #curagent { flex: 0 0 16px; height: 16px; display: grid; place-items: center; }
 #curagent:empty { display: none; }
+#curscreen { flex: 0 0 16px; height: 16px; display: grid; place-items: center; color: var(--muted); }   /* a full-screen program runs (sizing.js) */
+#curscreen[hidden] { display: none; }
 .host { color: var(--remote); font-weight: 500; }
 .s .ag-claude { color: color-mix(in srgb, #f0b48a 60%, var(--t-fg)); }     /* pale orange, readable on a light theme too */
 .s .ag-codex { color: color-mix(in srgb, #c9b8ff 60%, var(--t-fg)); }      /* pale violet */

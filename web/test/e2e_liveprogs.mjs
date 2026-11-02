@@ -24,6 +24,8 @@ const text = (page) => page.evaluate(() => document.getElementById("screen").inn
 const waitText = (page, t, ms = 15000) => page.waitForFunction((t) => document.getElementById("screen").innerText.includes(t), t, { timeout: ms }).then(() => true, () => false);
 const until = async (ok, ms = 8000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 150))) if (await ok()) return true; return false; };
 const SHELLS = /^-?(zsh|bash|sh|fish|dash)$/;
+// the header's full-screen mark is in sight (AC-05)
+const marked = (page) => page.evaluate(() => document.getElementById("curscreen").getBoundingClientRect().width > 0);
 
 /** `cmd` in a new window of the private tmux, shown on the page as the user opens it: its pane. */
 async function open(page, tmux, work, name, cmd) {
@@ -43,6 +45,7 @@ async function vim(page, { tmux, work }) {
   const pane = await open(page, tmux, work, "vim", `vim -u NONE -N -n ${file}`);
   const up = await waitText(page, "first line in vim");
   check("real vim: its full-screen grid is on the page", up && tmux("display", "-p", "-t", pane, "#{alternate_on}") === "1", (await text(page)).slice(0, 80));
+  check("AC-05 live: the header marks vim's full screen", await until(() => marked(page)));
   // AC-100: the row's menu shows what terminumd and tmux see of the pane, here vim's; its Copy copies it
   await page.evaluate(() => { window.copied = []; navigator.clipboard.writeText = async (t) => { window.copied.push(t); }; });
   await page.click(`#sessions .item[data-id$=":${pane}"]`, { button: "right" });
@@ -67,6 +70,7 @@ async function vim(page, { tmux, work }) {
   const saved = await until(() => fs.readFileSync(file, "utf8").startsWith("added on the page\nfirst line in vim"));
   check("real vim: keys typed on the page edit and save the file", saved, JSON.stringify(fs.readFileSync(file, "utf8")));
   check("real vim: :wq gives the shell back", await until(() => SHELLS.test(tmux("display", "-p", "-t", pane, "#{pane_current_command}"))));
+  check("AC-05 live: the mark goes with vim", await until(async () => !(await marked(page))));
   close(tmux, pane);
 }
 
@@ -155,6 +159,7 @@ async function claudeDefault(page, ctx) {
   check("real claude (default): it runs on the normal screen with no mouse",
     ready && tmux("display", "-p", "-t", pane, "#{alternate_on}#{mouse_any_flag}") === "00", tmux("capture-pane", "-p", "-t", pane).slice(-200));
   if (!ready) return quit(tmux, pane).then(() => close(tmux, pane));
+  check("AC-05 live: no full-screen mark for Claude Code's default TUI", !(await marked(page)));
   await pasted(page, tmux, pane, "default");
   // the page selects and copies itself (⌘C: the copy event the page fills): the row's words as shown
   await waitText(page, "Safe mode");
@@ -181,6 +186,7 @@ async function claudeFullscreen(page, ctx) {
   check("real claude (fullscreen): it runs on the alternate screen with the mouse",
     ready && tmux("display", "-p", "-t", pane, "#{alternate_on}#{mouse_any_flag}") === "11", tmux("capture-pane", "-p", "-t", pane).slice(-200));
   if (!ready) return quit(tmux, pane).then(() => close(tmux, pane));
+  check("AC-05 live: the header marks Claude Code's fullscreen TUI", await until(() => marked(page)));
   await pasted(page, tmux, pane, "fullscreen");
   // Claude Code selects on the mouse the page passes on, and copies on the release
   await waitText(page, "Safe mode");

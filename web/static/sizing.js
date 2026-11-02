@@ -5,7 +5,7 @@
 // first key typed after a pause (at most once a second); terminumd decides whether it sizes the
 // window (the active page does) and keeps it within 45×14 and 240×70. The normal screen is never
 // scaled: a pane whose width is not the view's re-flows to it (`reflow`, style.css). A full-screen program (tmux's alternate screen,
-// not a coding agent's) is its grid: it hides the history and the widgets and gets the mouse when
+// not a coding agent's) is its grid: it hides the history and the widgets, the header marks it, and gets the mouse when
 // it asked for it; one another page sized is drawn as it is (app.js scales a wider one) with
 // "Sized for another screen" until this page sizes it again, and one whose view changes width
 // keeps the chosen text size, clipped at the edge, until tmux has the new width (2 s at most after
@@ -50,6 +50,7 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
     if (now === full) return;
     full = now;
     term.classList.toggle("fullscreen", full);
+    $("curscreen").hidden = !full;                 // the header says so: no history, no widgets
     reflow();
     showSized();
     refit();

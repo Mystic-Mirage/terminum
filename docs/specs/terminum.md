@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.24.22 |
+| Version | 0.24.23 |
 | Date | 2026-11-02 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.23 | 2026-11-02 | Owner: nothing said that a session ran on its alternate screen as a full-screen program (Claude Code's fullscreen TUI, vim, mc), where the history and the widgets are hidden (a table Claude Code drew there stays text): the header shows a full-screen mark after the agent's, "Full screen mode" on hover, while it does; not for Codex, whose alternate screen keeps them (AC-05). |
 | 0.24.22 | 2026-11-02 | Owner: the session list's menus show an icon before each item (Lucide's), a destructive one's (Close Session, Close Project…, Close Group…) a red × as its words; Split Below, Right and Left stand in one row, each a drawing of the split with the new pane filled over its side's word (a phone: Below alone) (AC-07). An unread row's hatching was lines 1.5 px wide at 45°, blurred over two pixels in some rows and not others: its lines are whole pixels, one wide (AC-93). |
 | 0.24.21 | 2026-11-01 | Owner, from a flaky e2e_panel check that once caught it: after one proof the page and the panel sent their 30-day secret on every request until one failed, so a request made between terminumd letting go of the port and the page noticing could hand it to whatever listened there now (where launchd does not hold the port: before the agent is loaded, `TM_NO_LAUNCHD`, Linux, tests). Now the secret never goes out after the sign-in: `/api/hello` also says the process's `boot` (256 random bits drawn at start), and requests carry `<id>.<HMAC(proof key, "tm-cred-v1:" + boot)>`, which the next terminumd, of another boot, refuses; a 401 `bad_session` to a request is proved again and sent once more (an upgrade under a loaded page); terminumd refuses the secret itself from a browser that sends Sec-Fetch-Site, so a page that sent it would fail loud. Not closed, and said so: a program that serves its own page on the port while terminumd is down can still read the secret from the origin's storage. Pragmatic review: a per-boot credential instead of a challenge and a token store (no state, no endpoint, no round trip, no eviction); the secret refused from browsers; the narrower claim; recorded, not done: keeping the sign-in as a non-extractable key instead of the secret in storage, keeping a sign-in a 404 `unknown_signin` from an unproven server would drop (the form shows either way) (AC-09). |
 | 0.24.20 | 2026-11-01 | Owner, from a retrospective of 30 sessions: bug reports came as screenshots, and the state they needed (the pane's size, its alternate screen and mouse modes, what runs, the agent's state) was guessed or asked for again. A row's menu has Diagnostics…: what terminumd and tmux see of the pane, with the build and the browser, as one text shown in the Last Lines window, copied with its Copy (Safari copies only on a press); it holds the pane's folder (~ for the home folder), host and title, and no screen lines, history or sign-in (AC-100). Pragmatic review applied: shown before it is copied (a copy when the answer arrived was outside the press, which Safari refuses), the folder with ~, the window's line says what to check before sharing. |
@@ -377,15 +378,15 @@ Scenario: AC-04 edge — settings of earlier versions
 Scenario: AC-05 happy path — mc on a phone
   Given pane %5 (zsh) is shown on a phone whose view holds 48×30 cells at the chosen text size, and the pane is sized to it (AC-13)
   When the user runs "mc"
-  Then tmux reports #{alternate_on} 1 with the next frame; the page hides the history and the widgets while it runs and draws its 48×30 grid, blank rows included; mc draws itself for 48×30: both panels fit, the menu bar and function key bar are whole
+  Then tmux reports #{alternate_on} 1 with the next frame; the page hides the history and the widgets while it runs, shows a full-screen mark in the header after the agent's ("Full screen mode" on hover) and draws its 48×30 grid, blank rows included; mc draws itself for 48×30: both panels fit, the menu bar and function key bar are whole
   When the user presses F10 (the hot keys' Fn row), Esc, arrows, Enter, ⌃O
   Then they reach mc as tmux's key names (AC-03) and mc acts on them
 Scenario: AC-05 edge — a coding agent's own full screen
   Given the shown pane runs Codex, which draws on the alternate screen
-  Then its history and widgets stay (as on the normal screen), and its input box and footer are the page's (AC 40)
+  Then its history and widgets stay (as on the normal screen), no full-screen mark shows, and its input box and footer are the page's (AC 40)
 Scenario: AC-05 happy path — the program ends
   When mc exits
-  Then #{alternate_on} is 0 and the screen shows the shell with its history again
+  Then #{alternate_on} is 0, the full-screen mark goes and the screen shows the shell with its history again
 ```
 
 ### AC-06 — Mouse and touch for full-screen programs [SHOULD / P1]

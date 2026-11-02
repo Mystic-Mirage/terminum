@@ -27,7 +27,6 @@ body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibi
 #marksfull .fullline > span { flex: 1; min-width: 0; }
 #marksfull .link { padding: 0; color: inherit; text-decoration: underline; font-weight: 600; white-space: nowrap; }
 /* the bookmarks' pane is a window as View's (panewin.css), its texts in View's type */
-:is(#markpane, #remindpane) .meta { font-size: var(--fs-meta); }
 /* nearly round, never quite: the outline drifts slowly */
 @keyframes blob {
   0%, 100% { border-radius: 58% 42% 52% 48% / 46% 56% 44% 54%; }
@@ -81,7 +80,7 @@ body:not([data-shown="term"]) #markadd, body:not([data-shown="term"]) #markcopy,
 body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpane, body.wide #markrail, body.wide #markbar { grid-row: 1 / -1; }
 
 /* a dialog's primary in the hue of the button that opened it (controls.css reads the tokens) */
-#markbox { --key-primary-fill: var(--mark); --key-primary-ink: #1b1200; }
+#markbox { --key-primary-fill: var(--mark); --key-primary-ink: #1b1200; width: min(max(480px, calc(var(--term-w, 0px) * .8)), calc(100vw - 32px)); }   /* 80% of the terminal's width (marks.js) */
 #askbox { --key-primary-fill: var(--ask); --key-primary-ink: var(--ask-ink); }
 /* Ask's dialog a quarter larger than a dialog, centered on the terminal where ask.js placed it (AC-37) */
 #askbox { width: min(600px, calc(100vw - 32px)); }
@@ -162,9 +161,7 @@ dialog.dlg.docdlg .dhead { margin: 0; padding: 10px 10px 10px 16px; }
 :is(#markpane, #remindpane) .mkcols { flex: 1; min-height: 0; display: grid; grid-template-rows: fit-content(var(--list, 50%)) auto minmax(min(200px, 50%), 1fr); padding: 0 12px; }
 :is(#markpane, #remindpane) .mkcols[hidden] { display: none; }
 :is(#markpane, #remindpane) .mknav { min-height: 0; overflow: auto; }
-:is(#markpane, #remindpane) .mkline { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
-:is(#markpane, #remindpane) .mkline .note { flex: 1 1 auto; min-width: 0; }
-:is(#markpane, #remindpane) .mkline .meta { flex: none; max-width: 50%; }   /* the time whole; another session's name cut first */
+:is(#markpane, #remindpane) .meta { font-size: var(--fs-meta); }   /* where and when: a line of its own over the title, 1 px over the list's */
 :is(#markpane, #remindpane) .note { font: 600 var(--win-md)/1.35 var(--win-font); }   /* the chat's font and size (tokens.css) */
 :is(#markpane, #remindpane) .snip { font: var(--win-md)/1.35 var(--win-font); }
 /* the line: a grabber inside the window (one surface: no band of the chrome as the page's splitters), 44 px for a finger */

@@ -179,6 +179,9 @@ export async function webMarks(browser, name = "") {
   await page.click("#markadd");
   await page.waitForSelector("#markbox[open]");
   check(`${at} [+] opens the dialog with the selected text`, (await page.textContent("#marktext")).includes("out 2500 lorem ipsum"));
+  const wide = await page.evaluate(() => ({ dlg: Math.round(document.getElementById("markbox").getBoundingClientRect().width),
+    want: Math.round(Math.min(Math.max(480, document.getElementById("term").clientWidth * 0.8), innerWidth - 32)) }));
+  check(`${at} the dialog is 80% of the terminal's width (480 px at least, the window's less 32 px at most)`, Math.abs(wide.dlg - wide.want) <= 1, JSON.stringify(wide));
   await page.fill("#marknote", "look again");
   await page.click('#markbox button[value="save"]');
   await page.waitForFunction(() => !document.getElementById("markbox").open, null, { timeout: 5000 }).catch(() => {});
@@ -384,6 +387,21 @@ export async function webMarks(browser, name = "") {
   await page.waitForTimeout(300);
   check(`${at} after the end-of-output button the view follows the output, not the bookmark`,
     await page.evaluate(() => { const t = document.getElementById("term"); return t.scrollHeight - t.scrollTop - t.clientHeight < 8; }));
+  // a bookmark made on the screen, its rows then redrawn (Claude Code's /clear: no history reset): its line goes with its text
+  await selectRow(page, "after the jump");
+  await page.click("#markadd");
+  await page.waitForSelector("#markbox[open]");
+  await page.click('#markbox button[value="save"]');
+  const lineOn = (ms) => page.waitForFunction(() => { const l = document.getElementById("markline"); return !l.hidden && l.range?.toString() === "after the jump"; }, null, { timeout: ms }).then(() => true, () => false);
+  const onScreen = await lineOn(5000);
+  say({ t: "screen", sid: "S1", full: false, n: 2, cols: 80, rows: 2, ch: [[0, line("")], [1, line("")]] });
+  await page.waitForFunction(() => ![...document.querySelectorAll("#screen .ln")].some((el) => el.textContent === "after the jump"));
+  await page.waitForTimeout(150);
+  check(`${at} a bookmark's wavy line on the screen goes when its rows are redrawn without its text (a cleared screen)`,
+    onScreen && await page.evaluate(() => document.getElementById("markline").hidden), JSON.stringify({ onScreen }));
+  say({ t: "screen", sid: "S1", full: false, n: 2, cols: 80, rows: 2, ch: [[1, line("after the jump")]] });
+  const returned = await lineOn(3000);
+  check(`${at} its text back just under its line: the wavy line is back on it`, returned);
   await page.click('#sessions .item[data-id="S2"]');
   await page.waitForFunction(() => [...document.querySelectorAll("#screen .ln")].some((el) => el.textContent === "two"));
   check(`${at} a pane without bookmarks has no bookmarks button`, await page.evaluate(() => document.getElementById("marksfab").hidden));

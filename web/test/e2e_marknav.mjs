@@ -24,7 +24,8 @@ const mod = process.platform === "darwin" ? "Meta" : "Control";
 
 export async function webMarkNav(browser, name) {
   const at = `[${name}]`;
-  const f = await open(browser, { history: HIST, first: 0, screen: ["done"], hook: (m, say) => {
+  // 900 px tall: half the pane holds the 5 entries of three lines each (where and when, title, text)
+  const f = await open(browser, { history: HIST, first: 0, screen: ["done"], device: { viewport: { width: 1200, height: 900 } }, hook: (m, say) => {
     if (m.t !== "locate") return;
     const n = { A: 200, B: 100, C: 150, R: 300 }[m.id];
     say(n === undefined ? { t: "located", id: m.id, sid: "S1", n: null, why: "These lines are no longer in this session's history." }
@@ -73,11 +74,11 @@ export async function webMarkNav(browser, name) {
     && shown.place.left && shown.place.right
     && shown.wrap === "pre-wrap" && shown.tall === 28, JSON.stringify({ shown, next }));
 
-  // the list on top, each its title, its time at its right and its text's start on one line; the view under it past the line
+  // the list on top, each its where and when on a line over its title (12 px: the list's meta and 1 px) and its text's start on one line; the view under it past the line
   const layout = () => page.evaluate(() => {
     const r = (s) => document.querySelector(s).getBoundingClientRect(), [list, grip, view] = ["#markpane .mknav", "#markpane .mkgrip", "#markpane .mkview"].map(r);
     const row = (id) => { const li = document.querySelector(`#markpane li[data-id="${id}"]`), note = li.querySelector(".note").getBoundingClientRect(), meta = li.querySelector(".meta").getBoundingClientRect(), snip = li.querySelector(".snip");
-      return { snip: snip?.textContent ?? null, oneLine: snip ? snip.getBoundingClientRect().height < 24 : null, metaRight: meta.left >= note.right && Math.abs(meta.top - note.top) < 4 }; };
+      return { snip: snip?.textContent ?? null, oneLine: snip ? snip.getBoundingClientRect().height < 24 : null, metaAbove: meta.bottom <= note.top + 1 && Math.abs(meta.left - note.left) < 1, metaSize: parseFloat(getComputedStyle(li.querySelector(".meta")).fontSize) }; };
     let saved = null; try { saved = localStorage.getItem("markShare"); } catch { /* none */ }
     const ul = document.querySelector("#markpane .mknav");
     return { fits: ul.scrollHeight <= ul.clientHeight + 1, stacked: list.bottom <= grip.top + 0.5 && grip.bottom <= view.top + 0.5 && Math.abs(list.left - view.left) < 1 && Math.abs(list.width - view.width) < 1,
@@ -86,9 +87,9 @@ export async function webMarkNav(browser, name) {
       R: row("R"), A: row("A"), B: row("B") };
   });
   const half = await layout();
-  check(`AC-33 ${at} the list on top, as tall as its 5 rows (under half), the view under it: each entry its title, its time at its right, its text's start on one line with no Markdown marks or breaks`,
+  check(`AC-33 ${at} the list on top, as tall as its 5 rows (under half), the view under it: each entry its time on a line over its title, its text's start on one line with no Markdown marks or breaks`,
     half.stacked && half.fits && half.list < half.view && half.now === "50" && half.R.snip === "Fixed the retry loop. src/retry.rs next: add a test" && half.R.oneLine
-    && half.R.metaRight && half.A.snip === "out 200 lorem ipsum" && half.B.metaRight, JSON.stringify(half));
+    && half.R.metaAbove && half.R.metaSize === 12 && half.A.snip === "out 200 lorem ipsum" && half.B.metaAbove, JSON.stringify(half));
   await page.mouse.move(half.gripX, half.gripMid);
   await page.mouse.down();
   await page.mouse.move(half.gripX, half.gripMid - 80, { steps: 4 });

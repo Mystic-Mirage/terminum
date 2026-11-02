@@ -176,6 +176,7 @@ export class Marks {
     $("marknote").value = item?.note ?? "";
     $("markerr").hidden = true;
     $("markbox").querySelector(".primary").disabled = false;
+    $("markbox").style.setProperty("--term-w", `${$("term").clientWidth}px`);   // its width: 80% of the terminal's (marks.css)
     $("markbox").showModal();
     $("marknote").focus();
   }

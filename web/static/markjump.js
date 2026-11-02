@@ -30,12 +30,7 @@ export class Jumper {
     let frame = 0, left = 0;
     this.follow = () => {
       if (frame || !this.find) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        if (!this.find) return;
-        const at = this.at, live = at instanceof Range ? at.startContainer.isConnected : at?.isConnected;
-        this.mark(live ? at : this.find());
-      });
+      frame = requestAnimationFrame(() => { frame = 0; this.track(); });
     };
     term.addEventListener("scroll", () => { if (term.scrollLeft !== left) { left = term.scrollLeft; this.follow(); } }, { passive: true });
     const sizes = new ResizeObserver(this.follow);
@@ -48,6 +43,26 @@ export class Jumper {
     document.getElementById("kbd")?.addEventListener("input", release);
     document.getElementById("bottom")?.addEventListener("click", release);
   }
+
+  /** A screen frame drawn (app.js): rows drawn anew under a mark (a cleared screen) take its text away. */
+  static drawn() { for (const j of Jumper.all) j.track(true); }
+
+  /** A range is live while it holds the text it was put on: rows drawn anew under it leave it
+   *  over whatever rows stand there now. */
+  live(at) { return at instanceof Range ? at.startContainer.isConnected && at.toString() === this.said : !!at?.isConnected; }
+
+  /** The mark kept on its text: drawn again where it stands, looked up anew once it went (none
+   *  while it is gone). frame: a screen frame, which moves no text in the history. */
+  track(frame = false) {
+    if (!this.find) return;
+    const at = this.at;
+    if (!this.live(at)) return this.mark(this.find());
+    // a highlight on a live range repaints itself
+    if (!this.marker && !(frame && !this.view.screenEl.contains(at.startContainer ?? at))) this.mark(at);
+  }
+
+  /** The lookup of line n's needle: once its text was found, only its text, never its row. */
+  seek(n, needle, skip) { return () => this.target(n, needle, skip, this.said == null); }
 
   /** Every message from the bridge (app.js): answers someone may wait for. */
   seen(m) { for (const w of [...this.waiters]) if (w.test(m)) { this.waiters.delete(w); w.resolve(m); } }
@@ -89,7 +104,7 @@ export class Jumper {
     for (const o of Jumper.all) if (o !== this) o.token++;
     this.token++;
     this.clear();
-    this.find = () => this.target(n, needle, 0);
+    this.find = this.seek(n, needle, 0);
     this.mark(this.find());
   }
 
@@ -154,8 +169,9 @@ export class Jumper {
 
   /** Where line n's text is now: a Range over it (in the rows, or in a rendered widget), else
    *  the element that shows the line. Looked up anew each time: a widget may have been drawn.
-   *  needle: the text, or [texts] tried in turn, the longest first (a bookmark's). */
-  target(n, needle, skip = 0) {
+   *  needle: the text, or [texts] tried in turn, the longest first (a bookmark's). row: else the
+   *  line's row (false: null; a widget over it stays its place). */
+  target(n, needle, skip = 0, row = true) {
     const rec = this.view.recordAt(n);
     if (!rec) return null;
     // the element that shows the line: its row, else the widget drawn over it, else the nearest
@@ -172,7 +188,7 @@ export class Jumper {
     for (const [anchor, h] of this.widgets.hosts) {
       if (h.raw || !h.rows.includes(rec.el)) continue;
       const body = anchor.shadowRoot?.querySelector(".wg .body");
-      if (!needle || !body) return anchor;
+      if (!needle || !body) return anchor;                         // its widget, its text drawn there (not yet)
       if (!this.exact) return first(textNodes(body)) || anchor;
       // the rendered text holds the region's matches in order: those on its rows before this one first
       const before = h.rows.slice(0, h.rows.indexOf(rec.el)).reduce((s, el) => s + count(this.view.recs.get(el)?.txt ?? ""), 0);
@@ -187,8 +203,8 @@ export class Jumper {
       letters += this.exact ? r.txt.length : loose(r.txt).length;
       if (this.exact && r.data.e) break;                            // a search's match lies within its line
     }
-    if (!needle) return shown(rec.el);
-    return (this.exact ? rangeOfText(nodes, needle, skip) : first(nodes)) || shown(rec.el);
+    if (!needle) return row ? shown(rec.el) : null;
+    return (this.exact ? rangeOfText(nodes, needle, skip) : first(nodes)) || (row ? shown(rec.el) : null);
   }
 
   reveal(n, needle, skip = 0) {
@@ -199,7 +215,7 @@ export class Jumper {
     w.following = false;                           // set now: the scroll event comes later
     const t = term.getBoundingClientRect();
     term.scrollTop += first.getBoundingClientRect().top - t.top - term.clientHeight / 3;
-    this.find = () => this.target(n, needle, skip);
+    this.find = this.seek(n, needle, skip);
     this.pinFn = w.pin = () => { const at = this.find(); this.mark(at); return at; };
     w.keepPlace(() => w.update(false, true));     // the regions near it drawn, its place kept
     this.mark(this.find());
@@ -211,15 +227,16 @@ export class Jumper {
    *  wavy line on its left, from its first row to its last; the text keeps its own look. The
    *  line lies in the terminal's scrolled content, so it scrolls with the text. */
   mark(at) {
+    if (at instanceof Range && at !== this.at) this.said = at.toString();   // what makes it live (live)
     if (this.marker) { this.at = at ?? null; return this.marker(this.at); }
     const line = (this.line ??= Object.assign(document.createElement("div"), { id: "markline" }));
     if (!line.isConnected) this.term.append(line);
     this.at = line.range = at ?? null;               // for the page's own checks
-    const live = at instanceof Range ? at.startContainer.isConnected : at?.isConnected;
-    const rects = !live ? [] : at instanceof Range ? [...at.getClientRects()].filter((r) => r.height) : [at.getBoundingClientRect()];
+    const rects = !this.live(at) ? [] : at instanceof Range ? [...at.getClientRects()].filter((r) => r.height) : [at.getBoundingClientRect()];
     if (!rects.length) { line.hidden = true; return; }
     const t = this.term.getBoundingClientRect(), top = Math.min(...rects.map((r) => r.top)), bottom = Math.max(...rects.map((r) => r.bottom));
-    line.style.cssText = `top:${Math.round(top - t.top + this.term.scrollTop)}px;height:${Math.round(bottom - top)}px;left:${this.term.scrollLeft + 5}px`;   // in the middle of the terminal's 16 px gutter, apart from its edge and the text
+    const css = `top:${Math.round(top - t.top + this.term.scrollTop)}px;height:${Math.round(bottom - top)}px;left:${this.term.scrollLeft + 5}px`;   // in the middle of the terminal's 16 px gutter, apart from its edge and the text
+    if (css !== this.css) line.style.cssText = this.css = css;
     line.hidden = false;
   }
 
@@ -228,6 +245,7 @@ export class Jumper {
     if (this.widgets.pin === this.pinFn) this.widgets.pin = null;   // another jump's (a search, a bookmark) stays
     this.find = null;
     this.at = null;
+    this.said = null;
     this.marker?.(null);
     if (this.line) { this.line.hidden = true; this.line.range = null; }
   }

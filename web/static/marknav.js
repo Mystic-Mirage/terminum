@@ -196,8 +196,8 @@ export class MarkNav {
     li.dataset.id = item.id;
     const b = el("button", "mkitem");
     b.type = "button";
-    // its title and, at its right, where and when; under it its text's start, one line of words
-    const top = el("span", "mkline"), words = oneLine(item.text, !!item.by);
+    // where and when on a line of their own, its title under them across the whole width, then its text's start, one line of words
+    const words = oneLine(item.text, !!item.by);
     const title = el("span", "note" + (item.note ? "" : " quiet"));
     const mark = kindMark(item);
     if (mark) title.append(mark);
@@ -207,8 +207,7 @@ export class MarkNav {
     const at = item.due && openReminder(item) ? "up now" : when(item.at);   // a reminder up (AC-91)
     const meta = el("span", "meta" + (at === "up now" ? " up" : ""), (theirs ? [now ?? item.title, at] : [at]).join(" · "));
     if (theirs && now === null) meta.append(el("span", "closed", "closed"));
-    top.append(title, meta);
-    b.append(top);
+    b.append(meta, title);
     if (item.note && words) b.append(el("span", "snip", words));
     b.onclick = () => this.choose(item);
     li.append(b);

@@ -162,7 +162,13 @@ fn a_bounded_connect_reaches_a_listener_and_says_why_it_did_not() {
     assert!(began.elapsed() < SWEEP_WAIT);
     let dead = t.0.join("dead.sock");
     drop(UnixListener::bind(&dead).unwrap());
-    assert_eq!(connect_within(&dead, SWEEP_WAIT).unwrap_err().kind(), std::io::ErrorKind::ConnectionRefused);
+    // a child another test forks in this process holds a copy of the listener until it execs: under
+    // load the first connect can still reach it, so it is asked again while that lasts (at most 2 s)
+    let refused = (0..100).find_map(|_| match connect_within(&dead, SWEEP_WAIT) {
+        Err(e) => Some(e.kind()),
+        Ok(_) => { std::thread::sleep(std::time::Duration::from_millis(20)); None }
+    });
+    assert_eq!(refused, Some(std::io::ErrorKind::ConnectionRefused));
     assert_eq!(connect_within(&t.0.join("none.sock"), SWEEP_WAIT).unwrap_err().kind(), std::io::ErrorKind::NotFound);
     let long = PathBuf::from(format!("/{}", "x".repeat(200)));
     assert_eq!(connect_within(&long, SWEEP_WAIT).unwrap_err().kind(), std::io::ErrorKind::InvalidInput);

@@ -39,10 +39,10 @@ export async function liveSplit(page, { tmux, work }) {
   const panes = () => tmux("list-panes", "-a", "-F", "#{pane_id} #{window_id} #{pane_current_path}").split("\n").filter(Boolean).map((l) => l.split(" "));
   const [pane, win] = panes().find((p) => p[2] === work) ?? [];
   const of = (fmt) => tmux("display", "-p", "-t", pane, fmt);
-  // the width the page sized the window to once it holds still (a pane just shown is still being
-  // sized under load: a width read mid-way changed by itself, 56 → 87, before the split did anything)
+  // the width the page sized the window to once it holds still for 1.5 s (a pane just shown is still
+  // being sized under load: a width read mid-way changed by itself, 56 → 87, before the split did anything)
   let before = of("#{window_width}");
-  for (let still = 0, t = 0; still < 5 && t < 50; t++) {
+  for (let still = 0, t = 0; still < 15 && t < 100; t++) {
     await page.waitForTimeout(100);
     const now = of("#{window_width}");
     still = now === before ? still + 1 : 0;

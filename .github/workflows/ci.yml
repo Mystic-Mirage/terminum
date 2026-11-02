@@ -22,13 +22,17 @@ jobs:
     # thrashes the disk until cancelled (~60-80 GiB written an hour, 2026-10-31)
     timeout-minutes: 20
     env:
-      # the VM's 2 GB are shared with coding agents: one rustc at a time, no debug info
-      # (two rustc with it took the whole VM out of memory, 2026-10-25)
+      # the runner's 2G cap sits in a VM shared with coding agents: one rustc at a time, no
+      # debug info (two rustc with it took the whole VM out of memory, 2026-10-25)
       CARGO_BUILD_JOBS: "1"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_INCREMENTAL: "0"
       NO_COLOR: "1"
     steps:
+      - name: The runner's memory counters before the job
+        run: |
+          cp "/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/memory.events" "$RUNNER_TEMP/memory.events.before"
+
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,7 +53,9 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Unit tests (Rust, scripts, UI, page)
-        run: make test
+        # the largest process's peak is rustc's, the number that has to fit under the cap
+        run: |
+          /usr/bin/time -f 'largest process peak RSS: %M KiB' make test
 
       - name: No warnings
         run: cd terminumd && cargo clippy --locked --all-targets -- -D warnings
@@ -74,3 +80,11 @@ jobs:
 
       - name: Security checks
         run: bash scripts/security_check.sh
+
+      - name: The runner's memory use (cap hits and OOM kills in this job, peak since the runner started)
+        if: always()
+        run: |
+          cg="/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)"
+          echo "cap $(cat "$cg/memory.max"), peak since the runner started $(cat "$cg/memory.peak")"
+          paste "$RUNNER_TEMP/memory.events.before" "$cg/memory.events" \
+            | awk '{print $1, $4 - $2}' | sed 's/^/this job: /'

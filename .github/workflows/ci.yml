@@ -54,8 +54,9 @@ jobs:
 
       - name: Unit tests (Rust, scripts, UI, page)
         # the largest process's peak is rustc's, the number that has to fit under the cap
+        # (GNU time is the "time" package: without it the tests run unmeasured, never not at all)
         run: |
-          /usr/bin/time -f 'largest process peak RSS: %M KiB' make test
+          if [ -x /usr/bin/time ]; then /usr/bin/time -f 'largest process peak RSS: %M KiB' make test; else make test; fi
 
       - name: No warnings
         run: cd terminumd && cargo clippy --locked --all-targets -- -D warnings

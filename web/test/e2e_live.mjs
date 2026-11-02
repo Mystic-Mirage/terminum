@@ -124,7 +124,13 @@ async function wide(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await ctx.newPage();
   const errors = [];
-  page.on("pageerror", (e) => errors.push(String(e.stack ?? e)));
+  // WebKit reports a load that failed as the page's error, "Fetch API cannot load … due to access control
+  // checks", though the code caught it (the Panel's reads while terminumd restarts: AC-14, AC-34); said, not counted
+  page.on("pageerror", (e) => {
+    const said = String(e.stack ?? e);
+    if (/^(Error: )?Fetch API cannot load \S+ due to access control checks\.?$/.test(String(e.message ?? said))) console.log(`NOTE [${name}] WebKit's own report of a failed load: ${e.message}`);
+    else errors.push(said);
+  });
   await signIn(page);
   check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/" && !new URL(page.url()).search);
   check("AC-09 the sign-in is kept in the origin's storage", await page.evaluate(() => /^[0-9a-f]{64}$/.test(localStorage.getItem("tm.session") ?? "")));
@@ -145,7 +151,9 @@ async function wide(browser, name) {
   await page.keyboard.press("Enter");
   await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("live-42"), null, { timeout: 5000 }));
   await livePaste(page, { home: HOME, name });
-  await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
+  // a drop's own paths come from Finder's drag pasteboard (dragged.rs): macOS only, elsewhere terminumd says so
+  if (process.platform === "darwin") await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
+  else console.log("SKIP AC-36 files dropped from Finder: their own paths are found on macOS only (dragged.rs)");
   const size = tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}");
   check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
   await liveQuick(page, { tmux, work: WORK });

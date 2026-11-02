@@ -89,3 +89,9 @@ test("numbered diff: an added row's rest with a blank mark column; a numbered li
   assert.deepEqual(cut.rows, [["a", "b"], ["c", "cut"]], "text less indented than the row's is no part of it");
   assert.equal(cut.to, 1);
 });
+
+test("numbered diff: a cut row takes at most 40 lines from its start", () => {
+  const rest = Array.from({ length: 60 }, (_, k) => `          part${k}`);
+  const t = diffTable(L("      1 +| a | b |", "      2 +| c | long", ...rest), 0);
+  assert.equal(t.to, 1 + 39, "the row's line and 39 more");
+});

@@ -28,9 +28,9 @@ function numbered(lines, i, max) {
   const got = [];
   for (let j = i; j < lines.length && j - i < max; j++) {
     const t = lines[j].text, m = ROW.exec(t), cut = m ? null : CUT.exec(t), last = got.at(-1);
-    if (m) got.push({ mark: m[1] ?? "", text: m[2].trim(), to: j, col: CUT.exec(t)?.[1].length });
-    else if (cut && CELLS.test(cut[3])) got.push({ mark: cut[2].trim(), text: cut[3].trimEnd(), to: j, col: cut[1].length });
-    else if (last?.col && !last.text.endsWith("|") && goesOn(t, last) && j - last.to < ROW_LINES) {
+    if (m) got.push({ mark: m[1] ?? "", text: m[2].trim(), to: j });            // closed: it goes on nowhere
+    else if (cut && CELLS.test(cut[3])) got.push({ mark: cut[2].trim(), text: cut[3].trimEnd(), to: j, at: j, col: cut[1].length });
+    else if (last?.col && !last.text.endsWith("|") && goesOn(t, last) && j - last.at < ROW_LINES) {
       last.text += t.slice(last.col + 1).trimEnd();
       last.to = j;
     } else break;

@@ -81,6 +81,11 @@ pub fn agent(name: &str) -> Option<&'static str> {
     AGENTS.iter().copied().find(|a| *a == name)
 }
 
+/// A session in `Hooks::ended`.
+fn ended_key(agent: &str, session: &str) -> String {
+    format!("{agent} {session}")
+}
+
 fn s(ev: &Value, k: &str) -> String {
     ev[k].as_str().unwrap_or("").to_string()
 }
@@ -110,7 +115,7 @@ impl Hooks {
             if ended.len() >= ENDED_MOST {
                 ended.pop_front();
             }
-            ended.push_back(format!("{agent} {session}"));
+            ended.push_back(ended_key(agent, &session));
             return Some(recs.remove(key).is_some());
         }
         if recs.len() >= MOST && !recs.contains_key(key) {
@@ -121,7 +126,7 @@ impl Hooks {
         }
         // a start or a prompt makes a record, and any event of a session not seen to end (its record went
         // with a host's link that dropped, or with a restart): a late event of an ended session makes none
-        if !recs.contains_key(key) && !start && (session.is_empty() || self.ended.lock().contains(&format!("{agent} {session}"))) {
+        if !recs.contains_key(key) && !start && (session.is_empty() || self.ended.lock().contains(&ended_key(agent, &session))) {
             return Some(false);
         }
         let r = recs.entry(key.to_string()).or_insert_with(|| Rec { agent, session: session.clone(), state: None, tool: String::new(),

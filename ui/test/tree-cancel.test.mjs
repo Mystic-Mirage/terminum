@@ -41,3 +41,16 @@ test("a delayed normal expansion still opens the folder", async () => {
   assert.deepEqual([...tree.expanded], [path]);
   assert.equal(parent.children.get("sub").node.path, path);
 });
+
+test("New File with a selection whose folder cannot open here starts in the root", async () => {
+  for (const kept of ["/elsewhere/notes.txt", "/sandbox/closed/deep/a.txt"]) {
+    const root = node("/sandbox"), started = [];
+    const tree = Object.assign(Object.create(Tree.prototype), {
+      root, nodes: new Map([[root.path, root]]), expanded: new Set(), selected: new Set([kept]), cursor: -1, rows: new Map(),
+      epoch: 0, expandRun: 0, selectionRun: 0, edit: { start: (e) => started.push(e) }, cb: { changed() {} }, touch() {}, load: async () => {},
+      locate: async () => null,
+    });
+    await tree.startCreate(tree.targetDir(), "file");
+    assert.deepEqual(started, [{ mode: "file", dir: "/sandbox" }], kept);
+  }
+});

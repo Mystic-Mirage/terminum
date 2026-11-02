@@ -218,6 +218,10 @@ export class Tree {
   async startCreate(dir: string, mode: "file" | "folder") {
     if (!this.root) return;
     if (dir !== this.root.path && !this.expanded.has(dir)) await this.expand(dir);
+    // a folder that did not open here (a selection kept from another folder, or under a closed one) has no
+    // row for the name's field: it goes in the root, never nowhere
+    if (!this.root) return;
+    if (dir !== this.root.path && !this.expanded.has(dir)) dir = this.root.path;
     this.edit.start({ mode, dir });
   }
 

@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.8.0 |
+| Version | 0.8.1 |
 | Date | 2026-10-28 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.8.1 | 2026-11-02 | New File… and New Folder… did nothing when the selection kept with the pane named a path whose folder does not open in the tree (in another folder, or under a closed one): the name's field had no row to stand on. Such a selection makes it in the root (AC-57); found as a rare failure of `web/test/e2e_live.mjs` in WebKit. |
 | 0.8.0 | 2026-10-28 | Owner: the tree's context menu has Sorting › Recent First, Alphabetical, By Extension (folders always first); terminumd sorts, so a 500,000-entry folder still pages; a finger held on the tree opens its menu (iOS Safari sends no contextmenu); the menu has a second level (AC-52). Pragmatic review applied: an order made under its own once-cell (Recent's 500,000 lstat() held the listing's lock, name order waiting behind it); Recent's times read on up to 8 threads (3.7 s cold for 500,000 by `SORT=recent scripts/bench_ls.sh`, now 2.1 s); a finger never starts a row's drag (iOS lifts a draggable row on a long press); no hold in the rename field; a menu opened over another closes it (its keys' listener stayed). Rejected: three flat items instead of a second level (the owner asked for Sorting → three choices). |
 | 0.7.2 | 2026-10-26 | An audit's findings fixed. A JSON or YAML root of 100,000 values drew 100,000 rows at once: the top level is paged as a folder's children; Expand all and Collapse all kept every tree drawn before in memory. YAML: a key named `__proto__` vanished (it set the object's prototype), a key twice in one mapping kept the last silently, `\UFFFFFFFF` threw and left Rendered blank: each key is a member of its own, a key twice and an escape past Unicode are errors with their line and column. CSV: a last record `""` with no line end was dropped, and a column first met after row 5000 was never shown (AC-94). A video or a sound no longer shown played on, detached: it is stopped and let go as soon as its element leaves the page; a picture's `blob:` address lives while it is shown (it was revoked once drawn, so Open Image in New Tab failed); MIDI renders run two at a time, and one whose tab closed or file changed is called off, its WAV never made (AC-64). Keep Both was refused when the name was taken by a link to a file outside the roots: the new file is judged in its folder, and saved beside the link (AC-95). |
 | 0.7.1 | 2026-10-25 | A ⌘S pressed while a save is still in flight saves again once it ends, so text typed meanwhile is written too (before, the press joined the running save and that text stayed unsaved; seen on the Linux CI, whose slower save outlasted the check's wait) (AC-56). |
@@ -262,6 +263,11 @@ Scenario: AC-57 happy path — file and folder
   Then "src/util.rs" exists empty, is selected and opens in a tab
   When the user presses ⌥⇧N, types "db/migrations", Enter
   Then "src/db/migrations" exists (intermediate folders made) and is expanded
+
+Scenario: AC-57 edge — a selection whose folder does not open here
+  Given the selection kept with the pane is "/Users/alex/elsewhere/notes.txt" (another folder) or a file under a closed folder whose parent is closed too
+  When the user presses "New File…"
+  Then the name's field opens at the top of the root, and the file is made there
 
 Scenario Outline: AC-57 error — invalid name
   When the user types "<name>"
@@ -829,6 +835,7 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 
 - [x] AC-51 … AC-71 — `ui/test/e2e_panel.mjs` (tree, viewer, Markdown, workspaces across reload and restart, edit and conflicts, create, rename, Trash, terminal insert and cd into a tmux pane, watcher, keyboard, filter, images, hidden files, multi-select, links, expand all, icons) → pass; `scripts/bench_ls.sh` on a 500,000-entry folder (10 runs, a new terminumd each): first page p95 333 ms (budget 2.5 s), a random cached page p95 9 ms, RSS 33 MB → pass.
 - [x] AC-70 (2026-10-16) — a new file opens in the page's View: `web/test/e2e_live.mjs` "a new file opens in View, where a click opens files, not under the tree" in Chromium and WebKit; it fails with the panel's own editor (checked by reverting the fix).
+- [x] AC-57 (2026-11-02, 0.8.1) — New File… with a selection whose folder does not open here: `ui/test/tree-cancel.test.mjs` (another folder's file, a file under two closed folders: the field starts in the root; fails without the fix), `web/test/e2e_live.mjs` AC-70's new file in Chromium and WebKit.
 - [x] AC-70 (2026-10-18) — View belongs to its session: `web/test/e2e_app.mjs` "View belongs to its session: another session hides it, coming back shows it as it was" and "a View whose last file closed does not come back with its session" in Chromium and WebKit → pass.
 - [ ] AC-72, AC-73 — backlog, not implemented.
 - [x] 0.4.0 (2026-10-21) — AC-54 `cd ui && node test/e2e_panel.mjs` (a ```mermaid fence drawn as an SVG image at its size, its source hidden; Source shows the fence's text, Diagram goes back; a fence Mermaid cannot draw keeps its source with Mermaid's message; a ```rust fence highlighted; a hostile fence (an HTML label with onerror, a click handler) drawn as an image only: no dialog, no element of its label); screenshots in Chromium and WebKit at 1200×800 and 390×844, dark and light (the toggle 44×44 on a touch screen; a dark theme's diagram drawn dark, again when the theme changes); AC-70 `web/test/e2e_switch.mjs` (docked Files closed in one session stays open in another and closed when back; "sub" carries the width the session's own Files leave, no other width after it) → pass.

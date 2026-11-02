@@ -92,10 +92,12 @@ export async function webProjects(browser, name) {
   check("AC-07 a session group's Rename… asks with its name and names its tmux session; its place and fold are kept",
     naming.value === "main" && /Rename main/.test(naming.text) && JSON.stringify(regrouped.sent) === JSON.stringify({ t: "renamegroup", group: "local/main", name: "work" })
       && regrouped.order?.[0] === "local/work" && regrouped.folded.some((k) => k.includes("\nwork\n")), JSON.stringify(regrouped));
-  // the unread row's hatching: pale lines over its whole box (its background), the blob gone; `ink` the lines' color
+  // the unread row's hatching: pale lines of whole pixels over its whole box (a layer under its text), the blob gone; `ink` the lines' color
   const mark = (pg = page) => pg.evaluate(() => {
-    const b = document.querySelector('#sessions .item[data-id$="%4"]'), img = getComputedStyle(b).backgroundImage;
-    return { hatched: img.startsWith("repeating-linear-gradient("), ink: img.replace(/\s+/g, " "), said: b.getAttribute("aria-description"), blob: !!document.querySelector("#sessions .unread:not(.item)") };
+    const b = document.querySelector('#sessions .item[data-id$="%4"]'), h = getComputedStyle(b, "::before"), r = b.getBoundingClientRect();
+    const mask = h.maskImage && h.maskImage !== "none" ? h.maskImage : h.webkitMaskImage;
+    const whole = h.position === "absolute" && Math.abs(parseFloat(h.width) - r.width) < 1 && Math.abs(parseFloat(h.height) - r.height) < 1;
+    return { hatched: /crispEdges/.test(mask ?? "") && whole && h.zIndex === "-1", ink: h.backgroundColor, said: b.getAttribute("aria-description"), blob: !!document.querySelector("#sessions .unread:not(.item)") };
   });
   const clone = (pg, n) => pg.evaluate((n) => getComputedStyle(document.querySelector(`#sessions li:has(> .item[data-id$="%${n}"]) > .clone`)).opacity, n);
   const m1 = await mark();

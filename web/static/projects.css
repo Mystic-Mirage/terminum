@@ -36,9 +36,14 @@
 }
 
 /* unread: its agent finished a turn nobody has looked at; the row hatched over its whole box,
-   pale see-through lines in the session name's color, over its own fill (hover, shown) */
-#sessions .item.unread { background-image: repeating-linear-gradient(-45deg,
-  color-mix(in srgb, var(--name, var(--t-fg)) 13%, transparent) 0 1.5px, transparent 1.5px 6px); }
+   pale see-through lines in the session name's color, over its own fill (hover, shown), under its
+   text. Each line a staircase of whole pixels (a 6 px tile, its diagonal): a gradient's lines at
+   45° fall between pixels, some rows blurred over two */
+#sessions .item.unread { position: relative; isolation: isolate; }
+#sessions .item.unread::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: color-mix(in srgb, var(--name, var(--t-fg)) 16%, transparent);
+  -webkit-mask: var(--hatch) 0 0 / 6px 6px repeat; mask: var(--hatch) 0 0 / 6px 6px repeat; }
+:root { --hatch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6' shape-rendering='crispEdges'%3E%3Cpath d='M0 5h1v1H0zM1 4h1v1H1zM2 3h1v1H2zM3 2h1v1H3zM4 1h1v1H4zM5 0h1v1H5z'/%3E%3C/svg%3E"); }
 
 /* the second line: folder and titles first, what runs there at the right edge */
 .s > .progs { flex: none; margin-left: auto; padding-left: 8px; display: flex; gap: 6px; }

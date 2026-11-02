@@ -16,8 +16,11 @@
 @media (hover: hover) and (min-width: 861px) { #attachfab { display: none !important; } }   /* a computer: Upload on the hot keys, or a drop */
 body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; }   /* find's field under its magnifier stands there */
 #marksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--mark); }
-#marksfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);
-  font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--mark); border: 1px solid var(--mark); }
+/* a count on a button's corner (bookmarks', reminders'): a ring round one digit, an ellipse round two,
+   clear of the icon */
+:is(#marksfabn, #remindfabn) { position: absolute; right: -6px; top: -6px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 50%;
+  font: 700 9.5px/14px var(--ui); font-variant-numeric: tabular-nums; text-align: center; background: var(--t-bg); }
+#marksfabn { color: var(--mark); border: 1px solid var(--mark); }
 /* agents' records that went for room (marksfull.js): a warning banner, a line a scope and kind */
 #marksfull { background: var(--warn-fill); color: #fff; padding: 2px 12px; }
 #marksfull .fullline { display: flex; align-items: center; gap: 8px; min-height: 32px; }

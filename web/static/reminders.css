@@ -11,8 +11,7 @@
 /* up and unseen: it stands still, its count filled (the owner: nothing blinks) */
 #remindfab.due #remindfabn { background: var(--remind-ink); color: var(--remind); border-color: var(--remind-ink); }
 #remindfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--remind); }
-#remindfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);
-  font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--remind-text); border: 1px solid var(--remind); }
+#remindfabn { color: var(--remind-text); border: 1px solid var(--remind); }   /* its shape: marks.css */
 #remindfabn:empty { display: none; }
 body:not([data-shown="term"]) :is(#remindfab, #remindpane) { display: none !important; }
 body.wide :is(#remindfab, #remindpane) { grid-row: 1 / -1; }

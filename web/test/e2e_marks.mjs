@@ -219,6 +219,22 @@ export async function webMarks(browser, name = "") {
   check(`${at} a renamed session keeps its bookmarks (marks, strip, count); outside projects its pane lists its own`,
     renamed.rail >= 4 && renamed.strip && renamed.fab === String(renamed.listed) && renamed.listed >= 6 && renamed.head === "Bookmarks and reminders of this session", JSON.stringify(renamed));
 
+  // its count: a ring round one digit, an ellipse round two, clear of the drawn bookmark (its stroke's half too)
+  const ring = await page.evaluate(() => {
+    const n = document.getElementById("marksfabn"), b = n.getBoundingClientRect(), cs = getComputedStyle(n);
+    const drawn = [...document.querySelectorAll("#marksfab svg path")].map((p) => p.getBoundingClientRect());
+    const right = Math.max(...drawn.map((r) => r.right)), top = Math.min(...drawn.map((r) => r.top));
+    const was = n.textContent;
+    n.textContent = "12";
+    const two = n.getBoundingClientRect();
+    n.textContent = was;
+    return { digits: was.length, w: b.width, h: b.height, radius: cs.borderTopLeftRadius, border: cs.borderTopWidth, clear: b.left - right, above: top - b.top, two: [two.width, two.height],
+      inView: b.top >= 0 && b.right <= innerWidth };
+  });
+  check(`${at} the bookmarks' count is a ring round one digit, an ellipse round two, clear of the icon, inside the window`,
+    ring.digits === 1 && Math.abs(ring.w - ring.h) < 0.5 && ring.radius === "50%" && ring.border === "1px" && ring.clear >= 0.5
+      && ring.two[0] > ring.two[1] + 2 && ring.two[1] === ring.h && ring.inView, JSON.stringify(ring));
+
   // the way back: into older lines not loaded, found by its text (its line moved)
   await page.click('#msgrail .dot[title*="Bookmark: ask about the retry loop"]');
   await page.waitForFunction(() => document.getElementById("markline")?.range?.toString().includes("retry loop"), null, { timeout: 8000 }).catch(() => {});

@@ -108,7 +108,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #curscreenwhy { position: relative; flex: 0 0 12px; height: 16px; display: none; place-items: center; padding: 0; color: var(--mark-icon); font: 800 14px/1 var(--ui); }   /* the bookmarks' orange (marks.css) */
 @media (pointer: coarse) { #curscreenwhy { height: 40px; } #curscreenwhy::after { content: ""; position: absolute; inset: 0 -8px; } }   /* 28×40 for a finger, within the gaps: the title keeps its room and its tap */
 @media (hover: hover) { #curscreenwhy:hover { filter: brightness(1.25); } }
-#main:has(#term.fullscreen.agentpane) #curscreenwhy { display: grid; }
+#main:has(#term.fullscreen.agenttui) #curscreenwhy { display: grid; }
 .host { color: var(--remote); font-weight: 500; }
 .s .ag-claude { color: color-mix(in srgb, #f0b48a 60%, var(--t-fg)); }     /* pale orange, readable on a light theme too */
 .s .ag-codex { color: color-mix(in srgb, #c9b8ff 60%, var(--t-fg)); }      /* pale violet */
@@ -306,8 +306,10 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #zoom .zcap { position: absolute; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); margin: 0;
   font: 12px var(--ui); text-align: center; color: #ccc; overflow-wrap: anywhere; pointer-events: none; }
 
-#toast { position: absolute; left: 50%; bottom: calc(16px + var(--keys-h, 0px)); transform: translateX(-50%);
-  z-index: 6; margin: 0; padding: 6px 14px; border-radius: var(--r-lg); font-size: 13px; text-align: center;
+/* at the top, where the eye is, not over the agent's input at the bottom: toast.js places it over the terminal's top (this
+   top only while nothing is laid out); clicks and taps go through to the rows under it */
+#toast { position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%);
+  z-index: 6; pointer-events: none; margin: 0; padding: 6px 14px; border-radius: var(--r-lg); font-size: 13px; text-align: center;
   width: max-content; max-width: min(560px, calc(100% - 32px)); overflow-wrap: anywhere;   /* a long message wraps, inside the column */
   --fill: var(--t-fg); color: var(--t-bg); box-shadow: var(--shadow-near); }   /* a .box */
 /* over the terminal's top (term.js places it); taps go through to what is under it */

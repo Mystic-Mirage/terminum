@@ -49,6 +49,8 @@ import { rowMenus, saveOrder } from "./rowmenu.js";
 import { ideKeys } from "./idekeys.js";
 import { editChoices, undoKey, undoTouch } from "./undo.js";
 import * as trace from "./trace.js";
+import { tipOfDay } from "./tips.js";
+import { toast } from "./toast.js";
 
 const $ = (id) => document.getElementById(id);
 const narrow = matchMedia("(max-width: 860px)");
@@ -168,7 +170,7 @@ function tapMove(x, y) {
 
 // On a touch screen the invisible keyboard field lies over the cursor's row (kbdplace.js).
 const placeKbd = kbdPlacer({ touch, mouseOn: () => sizing.mouseOn() });
-view.onDrawn = () => { placeKbd(); marks(); asked.redraw(); Jumper.drawn(); trace.drawn(); };
+view.onDrawn = () => { sizing.syncTui(); placeKbd(); marks(); asked.redraw(); Jumper.drawn(); trace.drawn(); };
 new ResizeObserver(() => placeKbd()).observe($("term"));   // a banner above it moved the terminal: the field follows, never over the banner
 
 // Code, Markdown and diagrams in the output as widgets (AC-56).
@@ -199,12 +201,6 @@ function showFooter(on) {
 }
 showFooter(store.get("showFooter", false));
 $("footfab").addEventListener("click", () => view.keepBottom(() => showFooter(!$("term").classList.contains("showfoot"))));
-
-let toastTimer = 0;
-function toast(text, ms = 1800) {
-  $("toast").textContent = text; $("toast").hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { $("toast").hidden = true; }, ms);
-}
 
 function pickFile() { $("upload").value = ""; $("upload").click(); }
 $("upload").addEventListener("change", () => { if ($("upload").files.length) files.uploadFiles([...$("upload").files]); });
@@ -455,6 +451,7 @@ $("bigger").onclick = () => view.keepBottom(() => { setSize(st.size + 1); applyF
 $("appcur").onchange = (e) => { st.appCursor = e.target.checked; };
 $("bracket").onchange = (e) => { st.bracketed = e.target.checked; store.set("bracketed", st.bracketed); };
 $("insclip").onchange = (e) => { st.insertClipboard = e.target.checked; store.set("insertClipboard", st.insertClipboard); };
+if (!embedded) tipOfDay({ store });
 
 // ---------- the on-screen keyboard ----------
 // iOS Safari lays the keyboard over the page instead of shrinking it. Size the app to the

@@ -61,21 +61,39 @@ export async function webScreen(browser, name) {
       mark: ((m) => m.getBoundingClientRect().width > 0 && m.title)(document.getElementById("curscreen")) }));
     // a coding agent's full-screen TUI: an orange ! beside the mark says why to turn it off, on hover and on a press
     const why = () => page.evaluate(() => ((b) => ({ shown: b.getBoundingClientRect().width > 0, title: b.title, color: getComputedStyle(b).color }))(document.getElementById("curscreenwhy")));
+    // a screen whose program shows the terminal's cursor; the ! changes once it held 400 ms (sizing.js)
+    const cursorShown = () => frame({ alt: true, ch: ROWS.map((l, i) => [i, i ? l : { r: [[" ", null, null, 256]], e: true }]) });
+    const held = () => pause(page, 600);
     const plain = await why();
     f.say({ t: "layout", groups: LAYOUT.map((g) => ({ ...g, items: g.items.map((it) => (it.id === SID ? { ...it, agent: "claude" } : it)) })) });
-    await pause(page, 200);
+    await held();
     const agent = await why();
     if (agent.shown) await page.click("#curscreenwhy");
     const told = await page.textContent("#toast");
+    // a toast stands over the terminal's top, under the header, not over the agent's input at the bottom
+    const atTop = await page.evaluate(() => ((t, m) => ({ gap: Math.round(t.top - m.top), shown: t.height > 0 }))(document.getElementById("toast").getBoundingClientRect(), document.getElementById("term").getBoundingClientRect()));
+    check("a toast shows at the terminal's top, under the header", atTop.shown && atTop.gap >= 0 && atTop.gap <= 24, JSON.stringify(atTop));
+    // a program the agent starts in its pane (Claude Code's Ctrl+G editor) shows the terminal's cursor: no !
+    cursorShown();
+    await held();
+    const editor = await why();
+    frame({ alt: true });                                    // a redraw hides the cursor for a moment: the ! stays away
+    await pause(page, 100);
+    cursorShown();
+    await held();
+    const blip = await why();
+    frame({ alt: true });
+    await held();
+    const back = await why();
     frame({ alt: false });
-    await pause(page, 200);
+    await held();
     const off = await page.evaluate(() => ({ full: document.getElementById("term").classList.contains("fullscreen"), hist: getComputedStyle(document.getElementById("hist")).display,
       mark: document.getElementById("curscreen").getBoundingClientRect().width }));
     const agentOff = await why();
     f.say({ t: "layout", groups: LAYOUT });
-    check("AC-05 a coding agent's full-screen TUI: an orange ! beside the mark, its why on hover and as a toast on a press; none for a program or off the alternate screen",
-      !plain.shown && agent.shown && /fullscreen mode off/.test(agent.title) && agent.color === "rgb(255, 159, 26)" && told === agent.title && !agentOff.shown,
-      JSON.stringify({ plain, agent, told, agentOff }));
+    check("AC-05 a coding agent's full-screen TUI: an orange ! beside the mark, its why on hover and as a toast on a press; none for a program, its Ctrl+G editor (the terminal's cursor shown, a redraw's moment without it too) or off the alternate screen",
+      !plain.shown && agent.shown && /fullscreen mode off/.test(agent.title) && agent.color === "rgb(255, 159, 26)" && told === agent.title && !editor.shown && !blip.shown && back.shown && !agentOff.shown,
+      JSON.stringify({ plain, agent, told, editor, blip, back, agentOff }));
     check("AC-05 a full-screen program hides the history; no view modes, Screen mode or Fit to this screen are offered",
       on.full && on.hist === "none" && on.modes === 0, JSON.stringify(on));
     check("AC-05 off the alternate screen the history is back", !off.full && off.hist !== "none", JSON.stringify(off));

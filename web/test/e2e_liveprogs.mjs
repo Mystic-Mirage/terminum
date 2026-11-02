@@ -102,7 +102,7 @@ async function claude(page, { tmux, work }, tui) {
   const stub = fs.mkdtempSync(path.join(work, "pb-")), stubLog = path.join(stub, "copied.txt");
   // the user's clipboard is never written: pbcopy is a stub that keeps what it was given
   fs.writeFileSync(path.join(stub, "pbcopy"), `#!/bin/sh\ncat >> '${stubLog}'\n`, { mode: 0o755 });
-  const env = `PATH='${stub}':"$PATH" ANTHROPIC_BASE_URL=http://127.0.0.1:9 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
+  const env = `PATH='${stub}':"$PATH" EDITOR='vim -u NONE -N' ANTHROPIC_BASE_URL=http://127.0.0.1:9 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
   const pane = await open(page, tmux, DIR, `claude-${tui}`, `env ${env} claude --safe-mode --tools '' --settings '{"tui":"${tui}"}'`);
   const ready = await until(async () => {
     const t = tmux("capture-pane", "-p", "-t", pane);
@@ -189,6 +189,11 @@ async function claudeFullscreen(page, ctx) {
     ready && tmux("display", "-p", "-t", pane, "#{alternate_on}#{mouse_any_flag}") === "11", tmux("capture-pane", "-p", "-t", pane).slice(-200));
   if (!ready) return quit(tmux, pane).then(() => close(tmux, pane));
   check("AC-05 live: the header marks Claude Code's fullscreen TUI, an orange ! beside the mark", await until(() => marked(page)) && await until(() => why(page)));
+  // its Ctrl+G editor, a program in its pane that tmux still names Claude Code: the terminal's cursor shows, no !
+  tmux("send-keys", "-t", pane, "C-g");
+  const editing = await until(() => tmux("display", "-p", "-t", pane, "#{cursor_flag}") === "1", 10000) && await until(async () => !(await why(page)));
+  tmux("send-keys", "-t", pane, "Escape", ":q!", "Enter");
+  check("AC-05 live: no ! over Claude Code's Ctrl+G editor (vim), the ! again back in Claude Code", editing && await until(() => why(page)));
   await pasted(page, tmux, pane, "fullscreen");
   // Claude Code selects on the mouse the page passes on, and copies on the release
   await waitText(page, "Safe mode");

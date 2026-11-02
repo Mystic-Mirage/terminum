@@ -82,6 +82,14 @@
     </form>
     <div id="navgrip" role="separator" aria-orientation="vertical" aria-label="Width of the session list" tabindex="0"
       aria-valuemin="200" aria-valuemax="640"></div>
+    <!-- Tip of the day (AC-101, tips.js): a computer's only, above the list's tools -->
+    <section id="tip" aria-labelledby="tiphead" hidden>
+      <div class="tiphead"><h2 id="tiphead">Tip of the day</h2>
+        <button id="tipclose" class="icon x" type="button" title="Close until tomorrow" aria-label="Close until tomorrow"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:13px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+      <p id="tiptext"></p>
+      <div class="tipacts"><button id="tipnext" type="button">Next</button><button id="tipoff" type="button" title="Turn tips off (Settings turns them on)">Turn off</button></div>
+    </section>
     <!-- the foot (AC-07): on a computer folded to one row of its buttons' icons, a toggle (foot.css; foot.js copies them) -->
     <div class="nav-foot">
       <button id="foottoggle" class="footpeek" type="button" aria-expanded="false" aria-controls="footmenu" aria-label="Session tools" title="Session tools"><span class="icons" aria-hidden="true"><span id="markpeek" class="count"></span></span><svg class="tri" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M3 1.5 7.5 5 3 8.5z" fill="currentColor"/></svg></button>
@@ -287,6 +295,7 @@
     <button id="restoreagain" class="row" type="button" hidden><span>Restore again<small>Recreates what the last restore could not</small></span></button>
     <label class="row"><span>Follow the agent's folder<small>The header and Files show where the coding agent works (a worktree it moved to), not where it started</small></span><input id="followagent" type="checkbox" role="switch" checked></label>
     <label class="row"><span>Side marks<small>Sent messages, answers, bookmarks and reminders on the terminal's right edge, kept in this browser</small></span><input id="sidemarks" type="checkbox" role="switch" checked></label>
+    <label class="row"><span>Tip of the day<small>A tip at the foot of the session list, on a computer</small></span><input id="tipson" type="checkbox" role="switch" checked></label>
     <label class="row"><span>Application cursor keys<small>For apps that ignore the arrow keys</small></span><input id="appcur" type="checkbox" role="switch"></label>
     <label class="row"><span>Bracketed paste<small>Turn off if pasted text shows extra characters</small></span><input id="bracket" type="checkbox" role="switch"></label>
     <label class="row"><span>Shift+Insert and Ctrl+Insert paste and copy<small>Linux and Windows keyboards. Turn off to send them to the program</small></span><input id="insclip" type="checkbox" role="switch" checked></label>

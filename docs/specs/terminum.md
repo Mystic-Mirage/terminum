@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.24.25 |
+| Version | 0.24.26 |
 | Date | 2026-11-02 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.26 | 2026-11-02 | Owner: Claude Code's Ctrl+G editor got the coding agent's orange ! (tmux names the editor's pane Claude Code, its process group's leader): the ! now also needs the terminal's cursor hidden, as Claude Code's own TUI keeps it and an editor does not (AC-05). A toast read at the bottom covered the agent's input: it shows at the terminal's top, under the header (and under the bookmark bar or the Paused chip when one shows; under the header while a phone shows Files), and clicks go through it. Tip of the day: one tip at the foot of the session list on a computer, Next, × until tomorrow, Turn off and a Settings switch, on for a new browser (AC-101). |
 | 0.24.25 | 2026-11-02 | Owner: Claude Code's fullscreen TUI hides the history and the widgets, and nothing said that terminum does more without it: a coding agent's full-screen mark has an orange ! beside it, its why on hover and as a 6 s toast on a press (a phone); a program's full screen (vim, mc) has none (AC-05). |
 | 0.24.24 | 2026-11-02 | Contributor: Shift+Insert pastes and Ctrl+Insert copies, as in xterm and Windows; they went to the program as ESC[2;2~ and ESC[2;5~. Settings' "Shift+Insert and Ctrl+Insert paste and copy" (on by default, kept in this browser) sends them to the program again; on a Mac nothing changes (Insert is Help there) (AC-03). |
 | 0.24.23 | 2026-11-02 | Owner: nothing said that a session ran on its alternate screen as a full-screen program (Claude Code's fullscreen TUI, vim, mc), where the history and the widgets are hidden (a table Claude Code drew there stays text): the header shows a full-screen mark after the agent's, "Full screen mode" on hover, while it does; not for Codex, whose alternate screen keeps them (AC-05). |
@@ -207,6 +208,7 @@ Open questions:
 | AC-93 | [SHOULD / P1] | A session whose coding agent finished a turn while no page in sight showed it is marked unread until a page shows it. |
 | AC-96 | [SHOULD / P1] | After tmux restarts (a reboot, a killed server) a session's terminal begins with its last 300 lines from before the restart, and its menu opens them, the number set in settings.json. |
 | AC-100 | [MAY / P2] | A row's menu shows the pane's diagnostics to copy into a bug report: terminum's build, the browser and its window, the row as listed and tmux's own fields of the pane (size, cursor, alternate screen, mouse modes, history, command, folder); no screen lines, history or sign-in. |
+| AC-101 | [MAY / P2] | On a computer the session list shows a tip of the day, quiet, with Next, × until tomorrow and Turn off, and Settings turns tips on and off (on for a new browser). |
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
 
 ## 5. BDD scenarios
@@ -390,7 +392,12 @@ Scenario: AC-05 happy path — mc on a phone
   Then they reach mc as tmux's key names (AC-03) and mc acts on them
 Scenario: AC-05 edge — Claude Code's fullscreen TUI
   Given the shown pane runs Claude Code with "tui": "fullscreen", on the alternate screen
-  Then the full-screen mark has an orange ! beside it, saying on hover, and as a toast for 6 s on a press (a phone), "terminum does more with fullscreen mode off: the history and widgets show only then. Turn it off in the agent's settings."; a program's full screen (mc, vim) has no ! (known limit: a program Claude Code starts in its pane, its Ctrl+G editor, gets it: the hooks still name the agent)
+  Then the full-screen mark has an orange ! beside it, saying on hover, and as a toast for 6 s on a press (a phone), "terminum does more with fullscreen mode off: the history and widgets show only then. Turn it off in the agent's settings."; a program's full screen (mc, vim) has no !
+Scenario: AC-05 edge — a program Claude Code starts in its pane (its Ctrl+G editor)
+  Given Claude Code's fullscreen TUI is shown with the !
+  When the user presses Ctrl+G and vim opens in the pane (tmux still names the pane's program Claude Code: vim is in its process group)
+  Then the ! goes while the terminal's cursor shows (Claude Code's TUI hides it and draws its own; an editor shows it) and is back when the editor ends; a change counts once it held 400 ms (a program hides its cursor while it redraws)
+  But an editor that draws its own cursor (Helix, Kakoune) still gets the ! (known limit)
 Scenario: AC-05 edge — a coding agent's own full screen
   Given the shown pane runs Codex, which draws on the alternate screen
   Then its history and widgets stay (as on the normal screen), no full-screen mark shows, and its input box and footer are the page's (AC 40)
@@ -1031,6 +1038,24 @@ Scenario: AC-100 failure — the pane closed or its tmux does not answer
   Then a toast says "No diagnostics: " and terminumd's reason ("This pane has closed. Pick another one.", "<server> does not answer.") and nothing is copied; an answer for another pane, or one not asked for, copies nothing
 ```
 
+### AC-101 — Tip of the day [MAY / P2]
+
+```gherkin
+Scenario: AC-101 happy path — a tip at the foot of the session list
+  Given a computer (a window over 860 px wide and 560 px tall, a fine pointer: a shorter window keeps the list's room for the sessions) and Settings' "Tip of the day" on (on for a new browser)
+  When the page opens
+  Then one tip shows above the list's tools: "Tip of the day", its text and its icons (the plan's round button, the splits' drawings) in 12 px muted text, Next and Turn off as 24 px keys, × on the right, on the list's own background
+  And each new day of the browser shows the next of the tips of tips.js (in order, round), in a tab left open too when it is looked at again; a stored tip the page cannot read starts again at the first; Next shows the next one at once and keeps it for today
+Scenario: AC-101 edge — closed, not turned off
+  When the user presses ×
+  Then the tip goes until the next day; Settings' switch stays on
+Scenario: AC-101 edge — turned off
+  When the user presses Turn off
+  Then the tip goes and Settings' "Tip of the day" is off, kept in this browser; switched on there, today's tip shows again
+Scenario: AC-101 edge — a phone, a touch screen, an embedded page
+  Then no tip shows
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Architecture (AC-01, AC-02, AC-03, AC-09, AC-10)
@@ -1501,3 +1526,4 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] 0.24.20 (2026-11-01) — AC-100 `cargo test page::diag` (every field by its tmux name, a short answer leaves the rest empty, no control character), `node --test web/test/diag.test.mjs` (the text's parts, a row no longer listed, only the answer asked for shown, an error said and nothing shown), `web/test/e2e_liveprogs.mjs` in `e2e_live.mjs` (Chromium and WebKit, a real vim in a private tmux under a private terminumd: the row's menu shows, and its Copy copies, alternate_on 1, pane_current_command vim and the folder with ~). Not verified: a copy in Safari on the Mac and the iPhone (WebKit here, under Playwright).
 - [x] 0.24.24 (2026-11-02) — AC-03 `node --test web/test/*.test.mjs` 162/162 (keys.test.mjs: Shift+Insert and Ctrl+Insert are the clipboard's, other Inserts and the switch off go to the program); by hand in Chrome on Linux against a private terminumd: Shift+Insert pastes, Ctrl+Insert copies. Not verified: `make check`, `e2e_liveprogs.mjs`, Safari, WebKit.
 - [x] 0.24.25 (2026-11-02) — AC-05 `web/test/e2e_screen.mjs` (`e2e_all.mjs webScreen`, Chromium and WebKit at 1400×900 and 390×844): a program's full screen has no !, a coding agent's has the orange ! beside the mark (the bookmarks' orange), its why as its title and, on a press, the toast; none off the alternate screen; `e2e_codex.mjs`: Codex's alternate screen has neither; `web/test/e2e_liveprogs.mjs`: real Claude Code's fullscreen TUI gets the !, vim none. Screenshots looked at: the header in both engines and sizes, dark and light themes (12×16 px on a computer, 12×40 with a 28×40 press area on a touch screen: a 40 px wide box pushed the title out of a phone's header). Known limit: Claude Code's Ctrl+G editor in its pane gets the ! too (the hooks still name the agent).
+- [x] 0.24.26 (2026-11-02) — AC-05 `web/test/e2e_screen.mjs` (`e2e_all.mjs webScreen`, Chromium and WebKit at both sizes): an agent's alternate screen showing the terminal's cursor (its Ctrl+G editor) has no !, the ! is back when the cursor hides; a toast stands 12 px under the terminal's top and the clicks on the rows under it reach the program (AC-06's mouse checks); `web/test/e2e_liveprogs.mjs`: real Claude Code's fullscreen TUI in a private tmux, Ctrl+G opens vim: no !, :q! gives the ! back (tmux's pane_current_command stays Claude Code's version, cursor_flag 0 in its TUI, 1 in vim and nano: measured). AC-101 `web/test/e2e_tips.mjs` (`webTips`, Chromium and WebKit): the first tip for a new browser, no fill, 12 px text, 24 px keys, above the tools; Next kept; the plan's ring drawn; × until tomorrow across a reload; a new day the next tip; Turn off kept across a reload and the switch turning it on; none at 390×844. A redraw's moment without the cursor (100 ms) brings no !. A tab left open rolls to the next tip when focused on a new day; a stored tip of -1.5 starts at the first. The toast measured under a shown bookmark bar (8 px below it, both sizes and engines) and under the header with a phone's Files shown (one-off script). Screenshots looked at: the tip in both engines, dark and light; the toast at both sizes, with Files on a phone. Pragmatic review: the tip texts corrected (Codex's /hooks trust; a paste or drop of files, not a copy of binary data), the day rolled in an open tab, a bad stored value guarded, the ! held 400 ms, the toast placed under the bar and the chip; not taken: none. /simplify: the ! decided only on a full screen and its check alone each drawn frame (syncTui), the tip's state written in one place and drawn only when shown, the tests' helpers shared; not taken: one top lane for the toast, the bookmark bar and the Paused chip (they place themselves; a layout change of three overlays, outside this change), the cursor flag sent apart by terminumd (the page's cursor row is that flag already: a protocol change for no new fact), the switch moved to prefs.js (insclip and bracket are wired the same way).

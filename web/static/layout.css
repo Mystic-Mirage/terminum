@@ -26,7 +26,6 @@
   .item .s { font-size: 12.5px; }
   .nav-foot { padding: 10px 16px max(16px, env(safe-area-inset-bottom)); }
   .footbtn { --key-h: 48px; font-size: 15px; }
-  #toast { bottom: calc(68px + max(var(--keys-h, 0px), env(safe-area-inset-bottom))); }   /* above the floating buttons */
   #updchip { order: 2; }   /* before ⋯, not between ☰ and the title */
   /* the header on an 8 px grid: the title row (☰, the title block, ✎ and Plan, ⋯, every one on the row's
      middle), then the view switch across the width; 14 px at the sides puts ⋯ over the floating

@@ -17,6 +17,7 @@ const $ = (id) => document.getElementById(id);
 const SETTLE = 300;             // ms after the last change of the view before its size is sent
 const TYPED_EVERY = 1000;       // ms: a key sends the size at most this often
 const SLIVER = { cols: 20, rows: 5 };   // a view smaller than this is passing: no size sent
+const TUI_HOLD = 400;           // ms a change of the agent's own TUI (the header's !) holds before it shows
 const HOLD = 2000;              // ms after the last change a pane may wait for its new width unscaled
 const bounded = (cols) => Math.max(45, Math.min(240, cols));   // the columns terminumd gives a grid (its sizing.rs)
 
@@ -25,6 +26,7 @@ const bounded = (cols) => Math.max(45, Math.min(240, cols));   // the columns te
 export function paneSizing({ view, send, sid, refit, notify, copied }) {
   const term = $("term");
   let last = null, typedAt = -Infinity, settle = 0, elsewhere = null, full = false;
+  let tuiWait = 0;                                     // syncTui's
   let holdUntil = 0, holdTimer = 0, heldFor = null;   // a hold, once for each size sent (heldFor)
 
   // a full-screen program: on the alternate screen, but not Codex's own (its input box, footer
@@ -44,10 +46,19 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
     send({ t: "size", cols: g.cols, rows: g.rows, typing });
   }
 
+  // the agent's own TUI (the header's !): it hides the terminal's cursor and draws its own; a
+  // program it starts in its pane (Claude Code's Ctrl+G editor) shows it. A change counts once it
+  // held for TUI_HOLD: a program hides its cursor while it redraws
+  const ownTui = () => !!view.agent && fullscreen() && !view.screenEl.querySelector(".cur");
+  function syncTui() {
+    if (tuiWait || ownTui() === term.classList.contains("agenttui")) return;
+    tuiWait = setTimeout(() => { tuiWait = 0; term.classList.toggle("agenttui", ownTui()); }, TUI_HOLD);
+  }
+
   /** The program on the screen changed (alt): a full-screen one hides history and widgets. */
   function sync() {
     const now = fullscreen();
-    term.classList.toggle("agentpane", !!view.agent);   // its full screen: an agent's TUI (the header's !)
+    syncTui();
     if (now === full) return;
     full = now;
     term.classList.toggle("fullscreen", full);
@@ -240,7 +251,7 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
   });
 
   return {
-    fullscreen, mouseOn, sync, holding, reflow, onCopied,
+    fullscreen, mouseOn, sync, syncTui, holding, reflow, onCopied,
     /** The grid that fits the terminal at the chosen text size, to send with "sub" ({} for none:
      *  hidden, or a sliver). */
     grid: () => { const g = grid(); return !term.hidden && term.clientWidth && g.cols >= SLIVER.cols && g.rows >= SLIVER.rows ? g : {}; },

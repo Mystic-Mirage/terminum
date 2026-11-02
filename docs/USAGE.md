@@ -140,6 +140,9 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   worktree), its row in the list, the header's folder and the Files tree follow it, and paths
   it prints open from there. Settings' Follow the agent's folder turns that off for this browser (`page.followAgent`
   in settings.json for every browser that did not choose).
+- **Tip of the day**: on a computer the foot of the session list shows a tip, another each day;
+  Next shows the next one, × closes it until tomorrow, Turn off (or Settings' Tip of the day) turns
+  tips off for this browser.
 - **Ask**: select text in the terminal and press the blue speech bubble with a question mark (under
   the selection's orange [+]); type a question and Add to Chat puts the selection as a Markdown
   quote (`> Quote #0007`, then `> ` and each of its lines), a blank line, your question and a blank

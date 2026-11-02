@@ -54,3 +54,38 @@ test("git diff: a context line after a cut row is no part of it; a table nothing
   assert.equal(diffTable(L("     | a | b |", "     |---|---|", "     | 1 | 2 |", "     | 3 | 4 |"), 0), undefined, "no row added or removed");
   assert.equal(diffTable(L("   +| a | b |", "  +| c | d |"), 0), undefined, "marks in two columns: one row each");
 });
+
+// Claude Code's numbered diff of a table whose rows are wider than the pane: the rest of a row on the next
+// lines with no number, from its text's column; a removed row's rest keeps its "-"; cut inside a word too
+test("numbered diff: a row the width cut goes on in its next lines, joined as drawn", () => {
+  const t = diffTable(L(
+    "       8  | metric | against | means |",
+    "       9  | spk_sim | against the reference or the input | ECAPA speaker-embedding cosine: is it still the same pers",
+    "          on |",
+    "      10 -| cer | against the reference's or input's transcript | Whisper-small character error rate: words kept, no",
+    "         -thing invented |",
+    "      10 +| cer | the transcript | 大脑增",
+    "          强器 |",
+    "      11  | wer | x | y |",
+    "  ⎿  Updated"), 0);
+  assert.deepEqual(t.rows, [
+    ["metric", "against", "means"],
+    ["spk_sim", "against the reference or the input", "ECAPA speaker-embedding cosine: is it still the same person"],
+    ["cer", "against the reference's or input's transcript", "Whisper-small character error rate: words kept, nothing invented"],
+    ["cer", "the transcript", "大脑增强器"],
+    ["wer", "x", "y"]]);
+  assert.deepEqual(t.marks, ["", "", "-", "+", ""]);
+  assert.equal(t.to, 7, "the agent's next mark is no part of it");
+});
+
+test("numbered diff: an added row's rest with a blank mark column; a numbered line or a short indent ends a cut row", () => {
+  const t = diffTable(L(
+    "    15 +| Start | `2026-10-20` |",
+    "    16 +| Fetch | `git fetch`, ok; `FETCH_HEAD` matched",
+    "         |",
+    "    17 +| Head | `74387a2` |"), 0);
+  assert.deepEqual(t.rows.map((r) => r[1]), ["`2026-10-20`", "`git fetch`, ok; `FETCH_HEAD` matched", "`74387a2`"]);
+  const cut = diffTable(L("    15 +| a | b |", "    16 +| c | cut", "  next paragraph"), 0);
+  assert.deepEqual(cut.rows, [["a", "b"], ["c", "cut"]], "text less indented than the row's is no part of it");
+  assert.equal(cut.to, 1);
+});

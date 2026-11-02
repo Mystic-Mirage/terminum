@@ -113,15 +113,25 @@ export async function webFoot(browser, name) {
   check("AC-07 no page errors (the foot)", !f.errors.length, f.errors.join(" | "));
   await f.close();
 
-  // motion on: it moves as it unfolds (each frame's height sampled), not at once
+  // motion on: it moves as it unfolds, not at once. Its transition (CSS) is paused and stepped through
+  // every 16 ms once it starts, so a busy browser's stalled frames never hide the heights between
   const g = await openPage(browser, { device: { ...WIDE, reducedMotion: "no-preference" } });
   await drawn(g.page);
   await away(g.page);
   await pause(g.page, 500);
   const sampling = g.page.evaluate(() => new Promise((done) => {
-    const menu = document.querySelector(".footmenu"), seen = [], t0 = performance.now();
-    const tick = () => { seen.push(Math.round(menu.getBoundingClientRect().height)); performance.now() - t0 < 700 ? requestAnimationFrame(tick) : done(seen); };
-    requestAnimationFrame(tick);
+    const foot = document.querySelector(".nav-foot"), menu = document.querySelector(".footmenu"), seen = [];
+    const watch = new MutationObserver(() => {
+      watch.disconnect();
+      getComputedStyle(menu).gridTemplateRows;                 // its style flushed: its transition begins
+      const all = menu.getAnimations({ subtree: true });
+      all.forEach((a) => a.pause());
+      for (let t = 0; ; t = Math.min(t + 16, 700)) { all.forEach((a) => { a.currentTime = t; }); seen.push(Math.round(menu.getBoundingClientRect().height)); if (t === 700) break; }
+      all.forEach((a) => a.finish());
+      done(seen);
+    });
+    watch.observe(foot, { attributes: true, attributeFilter: ["class"] });
+    setTimeout(() => done(seen), 3000);                         // it never opened: the check says so
   }));
   await g.page.click("#foottoggle");
   const seen = await sampling, full = Math.max(...seen);

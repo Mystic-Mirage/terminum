@@ -7,7 +7,9 @@
 //! subagents run (in the background) is working until the last of them stops (or BG_LEASE
 //! passes without an event), through an idle notification and the next prompts: its end is
 //! then, for reminders and unread. Hook events come out of order (they
-//! run in the background): a working event of a turn that stopped changes nothing. Codex has no
+//! run in the background): a working event of a turn that stopped changes nothing. A record that
+//! went with a host's link or a restart comes back with its session's next event; a session seen
+//! to end makes none. Codex has no
 //! failure event and no question event: its done and its questions are the screen's.
 
 use std::collections::{BTreeSet, HashMap};
@@ -26,6 +28,8 @@ pub const WAIT_LEASE: Duration = Duration::from_secs(120);
 pub const BG_LEASE: Duration = Duration::from_secs(600);
 /// Panes kept at most (one per pane that ran an agent).
 const MOST: usize = 500;
+/// Ended sessions remembered (their late events make no record).
+const ENDED_MOST: usize = 500;
 
 #[derive(Clone, Debug)]
 struct Rec {
@@ -65,6 +69,8 @@ pub struct Hooks {
     pub last: Mutex<HashMap<&'static str, std::time::SystemTime>>,
     /// panes whose program changed since `take_changed` was last asked (their plans go)
     changed: Mutex<Vec<String>>,
+    /// the latest sessions that ended ("agent session"), oldest first
+    ended: Mutex<std::collections::VecDeque<String>>,
 }
 
 /// The coding agents with hooks (`terminum hooks`), by the name they come with.
@@ -100,6 +106,11 @@ impl Hooks {
         }
         self.last.lock().insert(agent, std::time::SystemTime::now());
         if name == "SessionEnd" {
+            let mut ended = self.ended.lock();
+            if ended.len() >= ENDED_MOST {
+                ended.pop_front();
+            }
+            ended.push_back(format!("{agent} {session}"));
             return Some(recs.remove(key).is_some());
         }
         if recs.len() >= MOST && !recs.contains_key(key) {
@@ -108,8 +119,9 @@ impl Hooks {
         if recs.get(key).is_some_and(fresh) || name == "SessionStart" {
             recs.remove(key);
         }
-        // only a start or a prompt makes a record: a late event of an ended session makes none
-        if !recs.contains_key(key) && name != "SessionStart" && name != "UserPromptSubmit" {
+        // a start or a prompt makes a record, and any event of a session not seen to end (its record went
+        // with a host's link that dropped, or with a restart): a late event of an ended session makes none
+        if !recs.contains_key(key) && !start && (session.is_empty() || self.ended.lock().contains(&format!("{agent} {session}"))) {
             return Some(false);
         }
         let r = recs.entry(key.to_string()).or_insert_with(|| Rec { agent, session: session.clone(), state: None, tool: String::new(),

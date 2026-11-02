@@ -108,7 +108,7 @@ fn subagents_keep_it_working_through_an_idle_notice_and_the_next_prompt() {
 fn waiting_for_an_approval_or_an_answer_and_a_failure() {
     let h = Hooks::default();
     let t = Instant::now();
-    assert!(!h.apply(K, &ev("claude", "PermissionRequest", json!({"tool": "Bash: rm -rf"})), t), "no start or prompt seen: no record");
+    assert!(h.apply(K, &ev("claude", "PermissionRequest", json!({"tool": "Bash: rm -rf"})), t), "a live session's event makes its record (it went with a link or a restart)");
     h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
     h.apply(K, &ev("claude", "PermissionRequest", json!({"tool": "Bash: rm -rf"})), t);
     assert_eq!(h.view(K, "c", t).map(|v| (v.state, v.why)), Some((State::Waiting, "Approve Bash: rm -rf".to_string())));
@@ -228,4 +228,24 @@ fn clear_resume_then_codex_in_one_pane() {
     assert_eq!(h.session(K), Some(("codex", "C".to_string())));
     assert!(!h.apply(K, &at("Stop", "A", json!({"turn": "a2"})), t), "Claude's late Stop after Codex took the pane");
     assert_eq!(h.view(K, "node", t).map(|v| (v.agent, v.state)), Some(("codex", State::Working)));
+}
+
+/// A host's link dropped (its panes' records went: links.rs forget) or terminumd restarted while an
+/// agent worked: its next event of any kind makes its record again, as working, so the list and the
+/// plan answers know its hooks run; a session that ended stays without one.
+#[test]
+fn any_event_of_a_live_session_makes_its_record_again() {
+    let h = Hooks::default();
+    let t = Instant::now();
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.retain("tmux:local:", &[]);                                    // the link's forget
+    assert!(!h.has(K));
+    assert!(h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p1", "tool": "mcp__terminum__update_session_plan"})), t));
+    assert!(h.has(K));
+    assert_eq!(h.view(K, "c", t).unwrap().state, State::Working);
+    h.apply(K, &ev("claude", "SessionEnd", json!({})), t);
+    assert!(!h.apply(K, &ev("claude", "PostToolUse", json!({"turn": "p1"})), t), "ended: no record");
+    assert!(!h.has(K));
+    assert!(!h.apply(K, &json!({"agent": "claude", "event": "PostToolUse"}), t), "no session named: no record");
+    assert!(!h.has(K));
 }

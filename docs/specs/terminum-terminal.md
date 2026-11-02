@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.6.25 |
+| Version | 0.6.26 |
 | Date | 2026-11-02 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.26 | 2026-11-02 | A host's agents said "terminum's hooks are not running" (the plan pane, the plan tools' answers) after their link dropped or terminumd restarted, until their next prompt: a pane's hook record went with the link and only a start or a prompt made one. Any event of a session not seen to end makes it again (its tool calls, terminum's own included); a late event of an ended session still makes none (AC-39). |
 | 0.6.25 | 2026-11-02 | A numbered diff Claude Code showed of a Markdown table with a row wider than the pane stayed text: such a row goes on in the next lines with no number, from its text's column (a removed row's rest keeps its "-"), and the table took only rows closed on one line. The rest of a cut row joins it as drawn, also inside a word (AC-31). |
 | 0.6.24 | 2026-11-02 | Owner: hooks and MCP on a host seemed not installed and agents there made no bookmarks: they were installed and the link up, but `terminum mcp` (`terminum-host mcp` on a host) asked about its pane once as the agent started and kept a "no" when nothing answered (a link reconnecting, terminumd restarting), and listed the host's links only then: that session had no terminum tools until it ended. Nothing answering now offers the tools (each call says terminum is not running until it is back); the links are listed at each call. Pragmatic review: kept offering them on any "down" rather than only when a socket exists (a link's socket is removed while it is down, the case to fix) (AC-97). A `git diff` of a Markdown table (an agent's tool output, its mark +, - or a space before the "|", rows the width cut going on in the next lines from that column) drew its head and separator alone as a table and the rows as text: it is one diff table, rows marked. Pragmatic review, fixed: a cut context row took the removed row under it, and a collapsed "… +N lines", git's own output at column 0 and a one-column code diff became rows (AC-31). The bookmarks' and reminders' counts on their buttons: a ring round one digit, an ellipse round two, 2 px further up and right, clear of the icon (AC-33, AC-91). |
 | 0.6.23 | 2026-11-01 | Owner, from a retrospective of 30 sessions: agents' own progress notes filled the 50-record limit of a scope three times (one note per status line). The MCP instructions (508 characters of 512) ask for one record per final report, finding, deferred item or question, never for progress, and an update of the earlier record when it changes (AC-98). |
@@ -1037,6 +1038,7 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 
 - [x] AC-31 — `web/test/e2e_widgets.mjs` (inherited) → pass. Update 0.2.2 (drawn tables): `web/test/outparse.test.mjs` tables cases and `e2e_widgets.mjs` "a drawn table" → pass. Update 2026-10-18 (a table without its top rule): `outparse.test.mjs` "a drawn table without its top rule starts at its head row" → pass. Update 0.5.2 (a long table split in two): `outparse.test.mjs` "a long drawn table is one widget with its head" (fails on 3e78316: settled at line 35, inside the table at 30–54) → pass; `node --test web/test/*.test.mjs` 137/137; `e2e_widgets.mjs` chromium and webkit 41/41 each.
 - [x] AC-31 (0.6.25, 2026-11-02) — a numbered diff's rows the width cut: `node --test web/test/difftable.test.mjs` (from rows seen in panes: a context row's rest, a removed row's "-" rest cut inside a word, a CJK cell, an added row's rest with a blank mark column; less indented text ends a row; both fail before the fix) → pass.
+- [x] AC-39 (0.6.26, 2026-11-02) — `cargo test tmux::hookstate` (a record forgotten with a link comes back with the session's next tool event, as working; an ended session's late event and an event naming no session make none; fails before the fix) → pass.
 - [x] AC-32 — `cargo test page::folds` (fold.py's cases ported) and `e2e_widgets.mjs` folds → pass. On the screen (0.3.2): `cargo test page::folds` (a tool's output, never a full-screen program's or the cursor's rows), `cargo test screen::frame` (folds go when they change), `web/test/e2e_screenfolds.mjs` (one line, Show stays open, rows back when dropped), `scripts/e2e_core.py` (a real pane's screen carries its fold) → pass.
 - [x] AC-33 — `cargo test page::bookmarks` and `web/test/e2e_marks.mjs` → pass.
 - [x] AC-34 — `cargo test page::search` and `e2e_marks.mjs` search → pass. The `found` message keeps iterm-enhancer's shape `{ref, sid, q, hits, total}`, as `find.js` reads it.

@@ -65,7 +65,7 @@ const st = {
   groups: [], sid: embedded ?? store.get("sid", null), projects: [],
   size: null, base: null, step: store.get("sizeStep", 0),
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
-  appCursor: false, bracketed: store.get("bracketed", true), atMac: false,
+  appCursor: false, bracketed: store.get("bracketed", true), insertClipboard: store.get("insertClipboard", true), atMac: false,
 };
 /** The layout row of pane `id`, or null. */
 const itemOf = (id) => findItem(st.groups, id)?.item ?? null;
@@ -107,7 +107,7 @@ const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(ro
 
 const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term"), panel: $("hotkeys"), pasteDialog: $("pastebox"),
   send: (data, path, e) => { if (data === "\r") sent.enter(); send({ t: "in", data, ...trace.keyFields(data, path, e) }); sizing.typed(); if (data.includes("\r")) st.ran = true; },
-  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, shown: () => !!st.sid, sid: () => st.sid, onTyped: (line, path) => { if (path !== "asked") view.typed(); st.undone = false; if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
+  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, insertClipboard: () => st.insertClipboard, shown: () => !!st.sid, sid: () => st.sid, onTyped: (line, path) => { if (path !== "asked") view.typed(); st.undone = false; if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
     tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), holdMenu: (x, y) => editMenu(x, y), undo: () => undoRedo(false, true), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
     // Ctrl+W deletes a word: in an agent's input box; at a shell's prompt, not after an Enter until the list says the shell is back (nano: search)
     lineMove: (d, repeat) => (findItem(st.groups, st.sid)?.item.agent ? boxMoves.line(d, st.appCursor, repeat) : null),
@@ -441,6 +441,7 @@ document.fonts?.addEventListener("loadingdone", () => { view.ratio = 0; view.kee
 function syncControls() {
   $("appcur").checked = st.appCursor;
   $("bracket").checked = st.bracketed;
+  $("insclip").checked = st.insertClipboard;
   const keysOn = !$("hotkeys").hidden;
   $("keysbtn").setAttribute("aria-pressed", String(keysOn));
   $("keysfab").setAttribute("aria-pressed", String(keysOn));
@@ -452,6 +453,7 @@ $("smaller").onclick = () => view.keepBottom(() => { setSize(st.size - 1); apply
 $("bigger").onclick = () => view.keepBottom(() => { setSize(st.size + 1); applyFit(); });
 $("appcur").onchange = (e) => { st.appCursor = e.target.checked; };
 $("bracket").onchange = (e) => { st.bracketed = e.target.checked; store.set("bracketed", st.bracketed); };
+$("insclip").onchange = (e) => { st.insertClipboard = e.target.checked; store.set("insertClipboard", st.insertClipboard); };
 
 // ---------- the on-screen keyboard ----------
 // iOS Safari lays the keyboard over the page instead of shrinking it. Size the app to the

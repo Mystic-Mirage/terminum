@@ -29,6 +29,9 @@ function baseChar(e) {
   return e.key.length === 1 ? e.key : null;
 }
 
+/** Shift+Insert (paste) or Ctrl+Insert (copy): the browser's own while Settings' switch is on. */
+export const clipboardInsert = (e) => e.key === "Insert" && e.shiftKey !== e.ctrlKey && !e.altKey && !e.metaKey;
+
 // Returns the bytes for e, or null to let the browser handle it (text input, Cmd shortcuts).
 export function encodeKey(e, appCursor) {
   // Option+↑/↓ and ⌘↑/↓ are Page Up and Page Down, as the Mac's own terminals page with them

@@ -1,7 +1,7 @@
 // The web app's key encoder (AC-52): bytes as iTerm2 sends them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { encodeKey } from "../static/keys.js";
+import { clipboardInsert, encodeKey } from "../static/keys.js";
 
 const key = (k, mods = {}, code = "") => ({ key: k, code, shiftKey: false, altKey: false, ctrlKey: false, metaKey: false, ...mods });
 
@@ -24,6 +24,16 @@ test("Cmd shortcuts and plain text are left to the browser", () => {
   assert.equal(encodeKey(key("v", { metaKey: true }), false), null);
   assert.equal(encodeKey(key("a", {}, "KeyA"), false), null);
   assert.equal(encodeKey(key("c", { ctrlKey: true }, "KeyC"), false), "\x03");
+});
+
+test("Shift+Insert and Ctrl+Insert are the clipboard's; other Inserts go to the program", () => {
+  assert.equal(clipboardInsert(key("Insert", { shiftKey: true })), true);
+  assert.equal(clipboardInsert(key("Insert", { ctrlKey: true })), true);
+  assert.equal(clipboardInsert(key("Insert")), false);
+  assert.equal(clipboardInsert(key("Insert", { shiftKey: true, ctrlKey: true })), false);
+  assert.equal(clipboardInsert(key("Insert", { shiftKey: true, altKey: true })), false);
+  assert.equal(encodeKey(key("Insert", { shiftKey: true }), false), "\x1b[2;2~", "the switch off: the program gets it");
+  assert.equal(encodeKey(key("Insert", { ctrlKey: true }), false), "\x1b[2;5~");
 });
 
 test("a pasted image's path is one shell word", async () => {

@@ -52,8 +52,10 @@ class Worktrees(unittest.TestCase):
         (self.primary / ".toolchain/bin").mkdir(parents=True)
         (self.primary / ".toolchain/bin/zig").write_text("zig")
         (self.primary / "local.mk").write_text("TM_CODESIGN_IDENTITY=x\n")
+        # a folder with a file: an empty one copies with --reflink=always on any disk (nothing to clone)
         probe = Path(self.tmp.name) / "probe"
         probe.mkdir()
+        (probe / "f").write_text("x")
         self.clones = worktree.clone(probe, Path(self.tmp.name) / "probe-clone")
 
     def tearDown(self):

@@ -117,9 +117,19 @@ async fn an_ssh_link_that_never_reached_tmux_says_so() {
         let path = dir.join(name);
         std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
         std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-        let (ntx, _nrx) = mpsc::unbounded_channel();
-        let (dtx, drx) = oneshot::channel();
-        let _c = Control::spawn(Command::new(&path), ntx, dtx).unwrap();
+        let mut tries = 0;
+        let (_c, _nrx, drx) = loop {
+            let (ntx, nrx) = mpsc::unbounded_channel();
+            let (dtx, drx) = oneshot::channel();
+            match Control::spawn(Command::new(&path), ntx, dtx) {
+                // Linux refuses to run a file another test's fork still holds open for writing (ETXTBSY): again
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 100 => {
+                    tries += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+                r => break (r.unwrap(), nrx, drx),
+            }
+        };
         assert_eq!(drx.await.unwrap(), want, "{name}");
     }
 }

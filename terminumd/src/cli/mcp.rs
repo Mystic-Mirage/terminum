@@ -4,8 +4,9 @@
 //! only the protocol. Its four tools check their arguments here, then go (POST /agent, 2 s) to the
 //! first sink that knows the pane tmux names in the agent's environment (TMUX, TMUX_PANE): the
 //! local terminumd, else a Mac's link on a host (sinks.rs); terminumd keeps the plan and the
-//! notes, this process keeps nothing. Tools and instructions are offered only when a sink
-//! knows the pane (one `probe` to each at initialize, 2 s in all).
+//! notes, this process keeps nothing. Tools and instructions are offered unless the sinks say
+//! they do not know the pane (one `probe` to each at initialize, 2 s in all): a terminumd
+//! restarting or a host's link down when the agent starts never hides them for its session.
 
 use std::io::{BufRead, Read, Write};
 use std::time::Duration;
@@ -52,8 +53,9 @@ pub fn main() -> i32 {
         return 2;
     }
     let env = Env { tmux: std::env::var("TMUX").ok(), pane: std::env::var("TMUX_PANE").ok(), known: Default::default() };
-    let sinks = super::sinks::all();
     let forward = |body: &Value| {
+        // listed at each call: a Mac's link may come up after the agent started
+        let sinks = super::sinks::all();
         // a probe is cheap: 2 s for all the sinks; a call: 2 s for each
         let each = if body["tool"] == "probe" { BUDGET / sinks.len().max(1) as u32 } else { BUDGET };
         super::sinks::first_knowing(&sinks, |p| super::sockhttp::call(p, "POST", "/agent", Some(body), each))
@@ -134,15 +136,19 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
     }
 }
 
-/// Whether a sink knows the agent's pane: probed once (a sink that answers anything but
-/// "not in a pane" knows it), false outside a tmux pane.
+/// Whether the agent's pane may be terminum's: false outside a tmux pane or when the sinks up
+/// answer that they do not know it (kept), true when one knows it (kept) or none is up (not
+/// kept; an agent lists the tools once, so they stay, answering DOWN until one is back).
 fn knows(env: &Env, forward: Forward) -> bool {
     let Some((socket, pane)) = pane_of(env) else { return false };
     if let Some(k) = env.known.get() {
         return k;
     }
     let body = json!({"socket": socket, "socket_path": socket_path(env), "pane": pane, "tool": "probe", "args": {}});
-    let k = matches!(forward(&body), Ok(a @ (200, Some(_))) if !super::sinks::not_in_pane(&a));
+    let k = match forward(&body) {
+        Err(Down) => return true,
+        Ok(a) => a.0 == 200 && a.1.is_some() && !super::sinks::not_in_pane(&a),
+    };
     env.known.set(Some(k));
     k
 }

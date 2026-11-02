@@ -302,9 +302,34 @@ fn a_probe_nobody_knows_gives_no_tools_and_no_instructions() {
     let p = probes.into_inner();
     assert_eq!(p.len(), 1, "probed once");
     assert_eq!(p[0], json!({"socket": "terminum", "socket_path": "/private/tmp/tmux-501/terminum", "pane": "%3", "tool": "probe", "args": {}}));
-    let down = env(Some(TMUX), Some("%3"), None);
-    let r = answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &down, &|_: &Value| Err(Down)).unwrap();
-    assert!(!r.contains("instructions"), "nothing up: no instructions");
+    let outside = env(None, None, None);
+    let r = answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &outside, &|_: &Value| Ok((200, Some(json!({"text": "ok"}))))).unwrap();
+    assert!(!r.contains("instructions"), "outside a pane: no instructions, nothing asked");
+}
+
+/// A terminumd restarting or a host's link down when the agent starts: the tools are offered
+/// (each says DOWN while it lasts), and the pane is asked about again until a sink answers.
+#[test]
+fn nothing_up_at_the_start_still_offers_the_tools_and_asks_again() {
+    let e = env(Some(TMUX), Some("%3"), None);
+    let up = std::cell::Cell::new(false);
+    let probes = std::cell::Cell::new(0);
+    let f = |b: &Value| {
+        if b["tool"] == "probe" { probes.set(probes.get() + 1); }
+        if up.get() { Ok((200, Some(json!({"text": NOT_IN_PANE, "error": true})))) } else { Err(Down) }
+    };
+    let init: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &e, &f).unwrap()).unwrap();
+    assert_eq!(init["result"]["instructions"], INSTRUCTIONS, "nothing up: offered");
+    let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 4);
+    assert_eq!(probes.get(), 2, "a probe that reached nobody is not kept");
+    let call: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_session_plan","arguments":{}}}"#, &e, &f).unwrap()).unwrap();
+    assert_eq!(call["result"]["content"][0]["text"], DOWN, "{call}");
+    up.set(true);
+    let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
+    assert_eq!(list["result"]["tools"], json!([]), "up and not knowing the pane: none, kept");
+    let _ = answer(r#"{"jsonrpc":"2.0","id":4,"method":"tools/list"}"#, &e, &f);
+    assert_eq!(probes.get(), 3);
 }
 
 #[test]

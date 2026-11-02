@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.6.23 |
-| Date | 2026-11-01 |
+| Version | 0.6.24 |
+| Date | 2026-11-02 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.24 | 2026-11-02 | Owner: hooks and MCP on a host seemed not installed and agents there made no bookmarks: they were installed and the link up, but `terminum mcp` (`terminum-host mcp` on a host) asked about its pane once as the agent started and kept a "no" when nothing answered (a link reconnecting, terminumd restarting), and listed the host's links only then: that session had no terminum tools until it ended. Nothing answering now offers the tools (each call says terminum is not running until it is back); the links are listed at each call. Pragmatic review: kept offering them on any "down" rather than only when a socket exists (a link's socket is removed while it is down, the case to fix) (AC-97). |
 | 0.6.23 | 2026-11-01 | Owner, from a retrospective of 30 sessions: agents' own progress notes filled the 50-record limit of a scope three times (one note per status line). The MCP instructions (508 characters of 512) ask for one record per final report, finding, deferred item or question, never for progress, and an update of the earlier record when it changes (AC-98). |
 | 0.6.22 | 2026-11-01 | Owner: after Ask the keys typed next did nothing until another session was shown and this one again (a trace showed none reached terminumd). A Shift selection in a full-screen program takes the keys from the terminal (sizing.js), and when the dialog closed the browser gave them to the page's body: only a pasted quote gave them back, not a typed one (Send to Agent in Claude Code's box), Cancel or Esc. However it closes, the keys go back to the terminal (AC-37); reproduced and checked on Claude Code's full-screen TUI in a private tmux, Chromium and WebKit. |
 | 0.6.21 | 2026-11-01 | Owner, from a review of the open bookmarks: sent history kept `API_KEY = "abc"`, `X-API-Key: abc` and compact JSON `{"password":"a b"}` as typed; their values are redacted now; a name is a secret's when a part of it holds a secret word or parts side by side spell one (`go_to_kennel` is none), and a key without quotes before a ':' only when it ends in one (an image's `secrets-manager:latest` stays) (AC-90). A pipe table with a row cut short was a table only above it, the rest text: rows are every next line starting with "|", as GFM reads them, and a table whose rows are all cut short is a table of them, no longer text; a line of a single cell without its closing "|" under it (a tree's "|-- src", a pipeline's "| grep x") ends it (AC-31; 0.6.19's rule replaced). A bookmark made on a full-screen program's own screen said its lines were no longer in the history, though tmux never kept them: it says so; the bookmark dialog's limit is terminumd's, sent with the bookmarks (AC-33). The page guessed from its address whether it was the Mac's own browser for files dropped from Finder: terminumd says it (AC-36). `terminum hooks install`'s Claude Code commands ran in a background process group of the terminal, where a read of /dev/tty would stop them until the limit, and a Ctrl-C left them running: each has a session of its own and ends with terminum (AC-39); the review's hand checks of /clear, /resume and then Codex in one pane are a test. |
@@ -717,6 +718,8 @@ Scenario: AC-97 failure — tools refused
   Then the tool answers an error "This session does not run in a terminum pane; do not call terminum's tools again."
   When terminumd is not running (no answer on its private socket in 2 s)
   Then each tool answers an error "terminum is not running; go on without it."
+  When nothing answers as the agent starts in a pane (terminumd restarting, a host's link down)
+  Then the tools and instructions are offered all the same (an agent lists them once, at its start): each call answers "terminum is not running; go on without it." until terminumd or the link is back, then works, or says the session is not in a terminum pane; the sinks (a host's `run/mac-*.sock` too) are listed at each call, so a link that comes up later serves the session. Before, such a session had no tools until it ended. The cost: an agent in a pane terminum does not serve, started while nothing answered, carries the tools; terminum's MCP server is installed only where the user asked for it (`terminum hooks install`, a host's coding agents' progress)
   When update_session_plan has no items, over 50, an item over 200 characters, or a status not pending, in_progress, completed or blocked
   Then it answers an error naming the limit or the allowed values (an empty list: "send the whole plan"), and nothing is stored; eta_minutes outside 1–1440 is refused the same way
   When plans.json cannot be written or does not parse

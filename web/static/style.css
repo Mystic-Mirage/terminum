@@ -21,6 +21,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 svg circle { fill: currentColor; stroke: none; }
 svg.lu { width: var(--s, 16px); height: var(--s, 16px); stroke-width: 2; stroke-linejoin: round; flex: 0 0 auto; }
 svg.lu circle { fill: none; stroke: currentColor; }
+svg.lu .fill { fill: currentColor; stroke: none; opacity: .6; }   /* a shape filled (icons.js), as a split's new pane */
 svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by side */
 /* Only terminal text is selectable: a long press on a button or label must not select it. */
 #bar, #nav, #rowmenu, #hotkeys, #menu, #bottom, #paused, #toast, .winhead, button { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }

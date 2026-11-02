@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.24.21 |
-| Date | 2026-11-01 |
+| Version | 0.24.22 |
+| Date | 2026-11-02 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.22 | 2026-11-02 | Owner: the session list's menus show an icon before each item (Lucide's), a destructive one's (Close Session, Close Project…, Close Group…) a red × as its words; Split Below, Right and Left stand in one row, each a drawing of the split with the new pane filled over its side's word (a phone: Below alone) (AC-07). |
 | 0.24.21 | 2026-11-01 | Owner, from a flaky e2e_panel check that once caught it: after one proof the page and the panel sent their 30-day secret on every request until one failed, so a request made between terminumd letting go of the port and the page noticing could hand it to whatever listened there now (where launchd does not hold the port: before the agent is loaded, `TM_NO_LAUNCHD`, Linux, tests). Now the secret never goes out after the sign-in: `/api/hello` also says the process's `boot` (256 random bits drawn at start), and requests carry `<id>.<HMAC(proof key, "tm-cred-v1:" + boot)>`, which the next terminumd, of another boot, refuses; a 401 `bad_session` to a request is proved again and sent once more (an upgrade under a loaded page); terminumd refuses the secret itself from a browser that sends Sec-Fetch-Site, so a page that sent it would fail loud. Not closed, and said so: a program that serves its own page on the port while terminumd is down can still read the secret from the origin's storage. Pragmatic review: a per-boot credential instead of a challenge and a token store (no state, no endpoint, no round trip, no eviction); the secret refused from browsers; the narrower claim; recorded, not done: keeping the sign-in as a non-extractable key instead of the secret in storage, keeping a sign-in a 404 `unknown_signin` from an unproven server would drop (the form shows either way) (AC-09). |
 | 0.24.20 | 2026-11-01 | Owner, from a retrospective of 30 sessions: bug reports came as screenshots, and the state they needed (the pane's size, its alternate screen and mouse modes, what runs, the agent's state) was guessed or asked for again. A row's menu has Diagnostics…: what terminumd and tmux see of the pane, with the build and the browser, as one text shown in the Last Lines window, copied with its Copy (Safari copies only on a press); it holds the pane's folder (~ for the home folder), host and title, and no screen lines, history or sign-in (AC-100). Pragmatic review applied: shown before it is copied (a copy when the answer arrived was outside the press, which Safari refuses), the folder with ~, the window's line says what to check before sharing. |
 | 0.24.19 | 2026-11-01 | Owner, from a review of the open bookmarks: terminumd decoded every program's clipboard write, also with no page waiting for one: only a write a page waits for is decoded; a right or middle release no longer arms a copy, and the page drops its own 3 s window, terminumd's 2 s being the one (AC-06). A project's menu said New Session and its [+] "New session in …" for what makes a window in the project: New Window, as a tmux session's group (AC-92). Hot keys' labels, hints and typed text, short names (a color scheme's, a project's), restored window titles and agents' session names drop or refuse what hides what a line reads, as names on tmux command lines do (termtext.rs `stray`). |
@@ -439,7 +440,7 @@ Scenario: AC-07 happy path — new window, new session, split
   Given the page shows pane %3 of window "api" in session "main", folder /Users/alex/work/api
   When the user presses Clone on the row of "api" (the groups have no [+]: AC-07 Clone)
   Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" and the page shows the new pane within 2 s, placed right after "api" (the `new` message, a group's window after the shown pane's, stays for scripts)
-  When the user picks "Split Below", "Split Right" or "Split Left" from its row's menu (a right click or a long press; a phone: Split Below only)
+  When the user picks "Split Below", "Split Right" or "Split Left" from its row's menu (a right click or a long press; a phone: Split Below only; the three side by side, each a drawing of the split, every other item with its icon and Close Session's a red ×)
   Then the pane's quick shell opens there (AC-88); the page offers no tmux split, and a window of several panes made elsewhere (the user's own tmux, an agent, the `split` message) shows its panes under the window's first one
   When the user presses "New session" at the list's foot, or on a computer [+] in the list's head (left of the button that hides the list), and types "scratch"
   Then terminumd runs "new-session -d -s scratch -c ~" and the page shows its pane; a name tmux refuses (empty, with ":" or ".") is refused inline with tmux's message; the form opens where its button is: under the list's head for [+] (the foot stays folded), above the foot for the foot's

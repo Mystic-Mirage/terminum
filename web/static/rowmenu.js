@@ -17,6 +17,13 @@ import { diagnostics } from "./diag.js";
 
 const $ = (id) => document.getElementById(id);
 const HOLD = 500;                // ms a finger rests before its menu opens
+// each item's icon, by its action (icons.js); a destructive one's is a red ×
+const MARKS = { clone: "copy-plus", project: "folder-plus", unproject: "folder-minus", plan: "list-checks", lastlines: "history",
+  diag: "activity", top: "arrow-up-to-line", up: "arrow-up", down: "arrow-down", bottom: "arrow-down-to-line", movewin: "arrow-right-left",
+  close: "x", new: "plus", newproject: "plus", rename: "pencil", ungroup: "ungroup", back: "chevron-left", session: "terminal",
+  paste: "clipboard", copy: "copy", undo: "undo-2", redo: "redo-2" };
+// the splits of the view (AC-88), side by side: what each makes, drawn
+const SPLITS = [["Below", "bottom"], ["Right", "right"], ["Left", "left"]];
 
 /** A finger resting on what `at(e)` finds in `el` (and not moving) for HOLD calls
  *  onHold(found, x, y); the click its lift makes is dropped. */
@@ -58,6 +65,8 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     const b = document.createElement("button");
     b.type = "button"; b.textContent = label; b.dataset.action = action; b.disabled = !enabled;
     b.setAttribute("role", "menuitem");
+    const mark = action === "unread" ? (label === "Mark as Read" ? "mail-open" : "mail") : MARKS[action];
+    if (mark) b.prepend(icon(mark, 16));
     // the lift of the finger that opened it is no press of what is under it now
     b.onclick = (e) => { e.stopPropagation(); if (performance.now() - openedAt > 350) run(); };
     b.addEventListener("mousedown", (e) => e.preventDefault());   // the input keeps the keys (a menu opened with them, open)
@@ -118,11 +127,7 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
       button("Diagnostics…", "diag", () => { hide(); diag.open(id); }),
       document.createElement("hr"),
       // the view's splits are the session's quick shell (AC-88): it is shown, its shell beside it
-      ...[["Split Below", "bottom"], ["Split Right", "right"], ["Split Left", "left"]].map(([label, side]) => {
-        const b = button(label, `split-${side}`, () => { hide(); split(it, side); });
-        if (side !== "bottom") b.classList.add("wide-only");
-        return b;
-      }),
+      splits(it),
       document.createElement("hr"),
       button("Move to the Top", "top", () => move(0), movable && i > 0),
       button("Move Up", "up", () => move(i - 1), movable && i > 0),
@@ -138,6 +143,24 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     open(x, y, byFinger);
   }
 
+  /** Split Below, Right and Left in one row, each a drawing of the split over its side's word;
+   *  a phone's has Below only. */
+  function splits(it) {
+    const row = document.createElement("div");
+    row.className = "splits";
+    row.setAttribute("role", "group");
+    row.setAttribute("aria-label", "Split");
+    row.append(...SPLITS.map(([word, side]) => {
+      const b = button(word, `split-${side}`, () => { hide(); split(it, side); });
+      b.prepend(icon(`split-${side}`, 20));
+      b.title = `Split ${word}`;
+      b.setAttribute("aria-label", b.title);
+      if (side !== "bottom") b.classList.add("wide-only");
+      return b;
+    }));
+    return row;
+  }
+
   /** The other sessions of the tmux server `it`'s window is in: where it may move (AC-07). */
   function sessionsFor(it) {
     const own = groups().find((g) => g.items.some((x) => x.id === it.id));
@@ -147,7 +170,7 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
 
   function moveMenu(it, x, y) {
     const again = () => { const li = list.querySelector(`.item[data-id="${CSS.escape(it.id)}"]`)?.closest("li"); if (li) rowMenu(li, x, y); else hide(); };
-    fill("Move to Session", button("‹ Back", "back", again), document.createElement("hr"),
+    fill("Move to Session", button("Back", "back", again), document.createElement("hr"),
       ...sessionsFor(it).map((g) => {
         const b = button(g.label, "session", () => { hide(); send({ t: "move", id: it.id, session: g.wid }); });
         b.dataset.session = g.wid;
@@ -176,7 +199,7 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
       return b;
     });
     const again = () => { const li = list.querySelector(`.item[data-id="${CSS.escape(it.id)}"]`)?.closest("li"); if (li) rowMenu(li, x, y); else hide(); };
-    fill("Add to Project", button("‹ Back", "back", again),
+    fill("Add to Project", button("Back", "back", again),
       document.createElement("hr"), ...others, button("New project…", "newproject", named));
     open(x, y);
   }

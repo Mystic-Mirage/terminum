@@ -15,7 +15,10 @@
 
 const SVG = "http://www.w3.org/2000/svg";
 
-// name -> shapes: a string is a path, [cx, cy, r] a circle
+const FOLDER = "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z";
+const FRAME = "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z";
+
+// name -> shapes: a string is a path, [cx, cy, r] a circle, { fill } a filled path
 const ICONS = {
   hourglass: ["M5 22h14", "M5 2h14", "M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22",
     "M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"],
@@ -40,6 +43,28 @@ const ICONS = {
   "maximize-2": ["M15 3h6v6", "m21 3-7 7", "m3 21 7-7", "M9 21H3v-6"],
   // a host's other tmux sessions, to attach (AC-89)
   import: ["M12 3v12", "m8 11 4 4 4-4", "M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4"],
+  // the session list's menus (rowmenu.js)
+  "folder-plus": ["M12 10v6", "M9 13h6", FOLDER],
+  "folder-minus": ["M9 13h6", FOLDER],
+  "list-checks": ["m3 17 2 2 4-4", "m3 7 2 2 4-4", "M13 6h8", "M13 12h8", "M13 18h8"],
+  mail: ["m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7", "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"],
+  "mail-open": ["M21.2 8.4c.5.38.8.97.8 1.6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V10a2 2 0 0 1 .8-1.6l8-6a2 2 0 0 1 2.4 0l8 6Z", "m22 10-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 10"],
+  history: ["M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", "M3 3v5h5", "M12 7v5l4 2"],
+  activity: ["M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"],
+  "arrow-up-to-line": ["M5 3h14", "m18 13-6-6-6 6", "M12 7v14"],
+  "arrow-up": ["m5 12 7-7 7 7", "M12 19V5"],
+  "arrow-down": ["M12 5v14", "m19 12-7 7-7-7"],
+  "arrow-down-to-line": ["M12 17V3", "m6 11 6 6 6-6", "M19 21H5"],
+  "arrow-right-left": ["m16 3 4 4-4 4", "M20 7H4", "m8 21-4-4 4-4", "M4 17h16"],
+  "chevron-left": ["m15 18-6-6 6-6"],
+  clipboard: ["M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2", "M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"],
+  "undo-2": ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
+  "redo-2": ["m15 14 5-5-5-5", "M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"],
+  ungroup: ["M6 4h6a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z", "M12 14h6a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z"],
+  // a split of the terminal: the window, its divider and the new pane filled (terminum's own, on Lucide's grid)
+  "split-bottom": [FRAME, "M3 12h18", { fill: "M3 12h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" }],
+  "split-right": [FRAME, "M12 3v18", { fill: "M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7z" }],
+  "split-left": [FRAME, "M12 3v18", { fill: "M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7z" }],
 };
 
 /** An inline Lucide icon at `size` px, drawn in the text color. */
@@ -52,7 +77,8 @@ export function icon(name, size = 16) {
   for (const s of ICONS[name] ?? []) {
     let el;
     if (typeof s === "string") { el = document.createElementNS(SVG, "path"); el.setAttribute("d", s); }
-    else if (Array.isArray(s)) {
+    else if (!Array.isArray(s)) { el = document.createElementNS(SVG, "path"); el.setAttribute("d", s.fill); el.setAttribute("class", "fill"); }
+    else {
       el = document.createElementNS(SVG, "circle");
       [["cx", s[0]], ["cy", s[1]], ["r", s[2]]].forEach(([k, v]) => el.setAttribute(k, String(v)));
     }

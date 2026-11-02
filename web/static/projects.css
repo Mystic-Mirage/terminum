@@ -56,6 +56,13 @@
 #rowmenu button:disabled { opacity: .4; }
 #rowmenu button[data-action="close"] { color: var(--danger-text); }
 #rowmenu .picon { flex: none; color: var(--proj); }
+#rowmenu button > svg:where(.lu) { color: var(--muted); }   /* each item's icon; a project's keeps its color (.picon) */
+#rowmenu button[data-action="close"] > svg { color: inherit; }   /* a destructive one's ×: red as its words */
+/* Split Below, Right and Left side by side: the split drawn over its side's word */
+#rowmenu .splits { display: flex; gap: 2px; }
+#rowmenu .splits button { flex: 1 1 0; min-width: 0; height: 54px; flex-direction: column; justify-content: center; gap: 4px; padding: 0;
+  font-size: var(--fs-label); text-align: center; }
+#rowmenu .splits button > svg { color: var(--t-fg); }
 @media (hover: hover) { #rowmenu button:not(:disabled):hover { background: var(--surface-4); } }
 #rowmenu button:focus-visible { background: var(--surface-4); }
 @media (hover: none) { #rowmenu button { height: 44px; } }

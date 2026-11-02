@@ -15,7 +15,7 @@ const LAYOUT = [group("main", [item(ID(1), "api", { sub: ["claude", "~/work/api"
 const P1 = { id: "p1", name: "Group 1", color: 0, host: null, dir: "/Users/alex/work/api", members: [ID(1), ID(3)] };
 const P2 = { id: "p2", name: "Group 2", color: 1, host: null, dir: "/Users/alex/work/docs", members: [ID(2)] };
 const menuItems = (page) => page.evaluate(() => [...document.querySelectorAll("#rowmenu[open] button:not([data-action=x])")].filter((b) => b.getClientRects().length)   // shown: a phone has no Split Right or Left
-  .map((b) => `${b.textContent}${b.disabled ? "-" : ""}`));
+  .map((b) => `${b.getAttribute("aria-label") ?? b.textContent}${b.disabled ? "-" : ""}`));   // a split's word is drawn: its name in its label
 const last = (sent, t) => sent.filter((m) => m.t === t).pop();
 
 export async function webProjects(browser, name) {
@@ -139,6 +139,18 @@ export async function webProjects(browser, name) {
   const items = await menuItems(page);
   check("AC-07 a right click opens the row's menu; the moves its place allows",
     items.join() === "Clone,Add to Project…,Plan and Notes…,Mark as Unread,Diagnostics…,Split Below,Split Right,Split Left,Move to the Top,Move Up,Move Down,Move to the Bottom,Move to Session…,Close Session", items.join());
+  // each item with its icon, Close Session's a red ×; the three splits side by side, each drawn
+  const menuLook = await page.evaluate(() => {
+    const shown = [...document.querySelectorAll("#rowmenu[open] button:not([data-action=x])")].filter((b) => b.getClientRects().length);
+    const close = document.querySelector('#rowmenu button[data-action="close"]'), x = close.querySelector("svg");
+    const sp = [...document.querySelectorAll("#rowmenu .splits button")].map((b) => b.getBoundingClientRect());
+    return { bare: shown.filter((b) => !b.querySelector(":scope > svg")).map((b) => b.textContent),
+      red: getComputedStyle(x).color === getComputedStyle(close).color && getComputedStyle(close).color !== getComputedStyle(document.querySelector('#rowmenu button[data-action="clone"]')).color,
+      row: sp.length === 3 && sp.every((r) => Math.abs(r.top - sp[0].top) < 1 && r.width > 40) && sp[0].right <= sp[1].left && sp[1].right <= sp[2].left,
+      drawn: [...document.querySelectorAll("#rowmenu .splits svg")].every((s) => s.querySelector(".fill")) };
+  });
+  check("AC-07 every item of the row's menu has its icon, Close Session a red ×; Split Below, Right and Left in one row, each a drawing of its split",
+    !menuLook.bare.length && menuLook.red && menuLook.row && menuLook.drawn, JSON.stringify(menuLook));
   // Mark as Unread: terminumd marks it on every page; an unread row's menu has Mark as Read (AC-93)
   let k0 = sent.length;
   await page.click('#rowmenu button[data-action="unread"]');

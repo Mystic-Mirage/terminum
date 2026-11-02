@@ -389,3 +389,38 @@ test("a pipe table whose rows are all cut short (`cut -c`) is a table of them; a
   const alone = scan(["| Field | Value |", "|---|---|", "", "next"].map((t) => L(t))).found.filter((r) => r.kind === "table");
   assert.deepEqual(alone.map((r) => [r.from, r.to, r.table.rows.length]), [[0, 1, 0]]);
 });
+
+test("a git diff of a Markdown table is one table from its head to its last row, never its head alone", () => {
+  const text = ["     @@ -13,6 +13,7 @@ Change log:", "", "      | Version | Date |", "      |---|---|",
+    "     +| 1.21.0 | signs of automation, cut at the wi", "     dth here", "      | 1.20.0 | the server's language |",
+    "     @@ -128,7 +129,7 @@ Open questions:"].join("\n");
+  const t = regions(rows(text)).filter((r) => r.kind === "table");
+  assert.equal(t.length, 1, JSON.stringify(t));
+  assert.equal(t[0].from, 2);
+  assert.equal(t[0].to, 6);
+  assert.deepEqual(t[0].table.marks, ["+", ""]);
+});
+
+test("a git diff table through the whole parse: a cut context row never takes the removed row under it; Claude Code's collapsed lines, a prompt and a one-column code diff are no rows", () => {
+  const cut = ["      | Version | Date | Change |", "      |---|---|---|",
+    "     +| 1.21.0 | 2026-11-01 | signs of automation —", "     (WebDriver, driver globals, an a",
+    "      | 1.20.0 | 2026-11-01 | the server answers", "     every text the server words",
+    "     -| 1.19.0 | 2026-10-31 | Ready for translation. |",
+    "      | 1.18.0 | 2026-10-31 | Visitors counted |"].join("\n");
+  const t = regions(rows(cut)).filter((r) => r.kind === "table");
+  assert.equal(t.length, 1, JSON.stringify(t));
+  assert.deepEqual(t[0].table.marks, ["+", "", "-", ""]);
+  assert.deepEqual(t[0].table.rows.map((r) => r.length), [3, 3, 3, 3]);
+  assert.equal(t[0].table.rows[2][2], "Ready for translation.");
+
+  const folded = ["      | a | b |", "      |---|---|", "     +| 1 | a row cut sh", "     … +42 lines (ctrl+o to expand)"].join("\n");
+  const f = regions(rows(folded)).find((r) => r.kind === "table");
+  assert.equal(f.table.rows[0][1], "a row cut sh", "Claude Code's collapsed lines are no part of a row");
+
+  const raw = ["| a | b |", "|---|---|", "+| 1 | added, no closing bar", "alex@devbox ~/app % git status"].join("\n");
+  const r = regions(rows(raw)).find((x) => x.kind === "table");
+  assert.ok(!r || !JSON.stringify(r.table.rows).includes("git status"), "at column 0 the prompt is never a row's rest");
+
+  const code = ["-| A", "+| B", " | C", "alex@devbox ~/app % "].join("\n");
+  assert.equal(regions(rows(code)).filter((x) => x.kind === "table").length, 0, "a code diff of variants is no table");
+});

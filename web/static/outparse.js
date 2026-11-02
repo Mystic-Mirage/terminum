@@ -125,7 +125,7 @@ export function joinTableRows(lines) {
     if (t.startsWith("|") && !t.endsWith("|")) {
       while (j + 1 < lines.length && j - i < 4 && !text.endsWith("|")) {
         const more = trim[j + 1];
-        if (!more || more.startsWith("| ")) break;
+        if (!more || more.startsWith("| ") || /^[+-]\|/.test(more)) break;   // a diff's next row (difftable.js)
         text += text.endsWith("-") && more.startsWith("-") ? more : ` ${more}`;
         j++;
       }
@@ -190,16 +190,17 @@ export function scan(rows, end = rows.length, changes = rows.length) {
       i = printed.to;
       continue;
     }
+    // a Markdown table in a diff first: its head and separator may be context lines a plain table's would take alone
+    const changed = diffTable(lines, i, MAX_LINES);
+    if (changed) {
+      add("table", i, changed.to, "", tableMarkdown(changed), false, changed);
+      i = changed.to;
+      continue;
+    }
     const piped = pipeTable(lines, i);                            // a Markdown table, colored text around it or not
     if (piped) {
       add("table", i, piped.to, "", tableMarkdown(piped), false, piped);
       i = piped.to;
-      continue;
-    }
-    const changed = diffTable(lines, i, MAX_LINES);               // a Markdown table in an agent's diff
-    if (changed) {
-      add("table", i, changed.to, "", tableMarkdown(changed), false, changed);
-      i = changed.to;
       continue;
     }
     const table = drawnTable(lines, i, MAX_LINES);

@@ -21,3 +21,36 @@ test("rows without the header shown, an escaped pipe, one row only", () => {
   assert.equal(diffTable(L("  12   | one row |", "  13   text"), 0), undefined, "one row is no table");
   assert.equal(diffTable(L("  12   plain code", "  13   more"), 0), undefined);
 });
+
+// `git diff` of a Markdown table in an agent's tool output: the mark (+, - or a space) in one
+// column right before the "|", rows cut at the width going on in the next lines from that column
+const GIT = ["     @@ -13,6 +13,7 @@ Change log:", "",
+  "      | Version | Date | Change |", "      |---|---|---|",
+  "     +| 1.21.0 | 2026-11-01 | Owner requests: signs of automation —",
+  "     (WebDriver, driver globals and elements, an a",
+  "      | 1.20.0 | 2026-11-01 | Owner requests: the server answers",
+  "     every text the server words",
+  "     -| 1.19.0 | 2026-10-31 | Ready for translation. |",
+  "      | 1.18.0 | 2026-10-31 | Visitors counted |",
+  "     @@ -128,7 +129,7 @@ Open questions:",
+  "      ## Next heading"];
+
+test("git diff rows of a table: the header from its context lines, cut rows joined, marked", () => {
+  const t = diffTable(L(...GIT), 2);
+  assert.deepEqual(t.head, ["Version", "Date", "Change"]);
+  assert.deepEqual(t.rows, [
+    ["1.21.0", "2026-11-01", "Owner requests: signs of automation — (WebDriver, driver globals and elements, an a"],
+    ["1.20.0", "2026-11-01", "Owner requests: the server answers every text the server words"],
+    ["1.19.0", "2026-10-31", "Ready for translation."],
+    ["1.18.0", "2026-10-31", "Visitors counted"]]);
+  assert.deepEqual(t.marks, ["+", "", "-", ""]);
+  assert.equal(t.to, 9, "ends at the hunk's next head");
+});
+
+test("git diff: a context line after a cut row is no part of it; a table nothing changed in is a plain one", () => {
+  const t = diffTable(L("    | a | b |", "    |---|---|", "   +| 1 | cut sh", "    ## Next heading", "   +| 2 | x |"), 0);
+  assert.deepEqual(t.rows, [["1", "cut sh"]], "the context line ends the table");
+  assert.equal(t.to, 2);
+  assert.equal(diffTable(L("     | a | b |", "     |---|---|", "     | 1 | 2 |", "     | 3 | 4 |"), 0), undefined, "no row added or removed");
+  assert.equal(diffTable(L("   +| a | b |", "  +| c | d |"), 0), undefined, "marks in two columns: one row each");
+});

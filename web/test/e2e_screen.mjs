@@ -59,10 +59,23 @@ export async function webScreen(browser, name) {
     const on = await page.evaluate(() => ({ full: document.getElementById("term").classList.contains("fullscreen"),
       hist: getComputedStyle(document.getElementById("hist")).display, modes: document.querySelectorAll("[data-mode], [data-screen], #resize, #scrlabel").length,
       mark: ((m) => m.getBoundingClientRect().width > 0 && m.title)(document.getElementById("curscreen")) }));
+    // a coding agent's full-screen TUI: an orange ! beside the mark says why to turn it off, on hover and on a press
+    const why = () => page.evaluate(() => ((b) => ({ shown: b.getBoundingClientRect().width > 0, title: b.title, color: getComputedStyle(b).color }))(document.getElementById("curscreenwhy")));
+    const plain = await why();
+    f.say({ t: "layout", groups: LAYOUT.map((g) => ({ ...g, items: g.items.map((it) => (it.id === SID ? { ...it, agent: "claude" } : it)) })) });
+    await pause(page, 200);
+    const agent = await why();
+    if (agent.shown) await page.click("#curscreenwhy");
+    const told = await page.textContent("#toast");
     frame({ alt: false });
     await pause(page, 200);
     const off = await page.evaluate(() => ({ full: document.getElementById("term").classList.contains("fullscreen"), hist: getComputedStyle(document.getElementById("hist")).display,
       mark: document.getElementById("curscreen").getBoundingClientRect().width }));
+    const agentOff = await why();
+    f.say({ t: "layout", groups: LAYOUT });
+    check("AC-05 a coding agent's full-screen TUI: an orange ! beside the mark, its why on hover and as a toast on a press; none for a program or off the alternate screen",
+      !plain.shown && agent.shown && /fullscreen mode off/.test(agent.title) && agent.color === "rgb(255, 159, 26)" && told === agent.title && !agentOff.shown,
+      JSON.stringify({ plain, agent, told, agentOff }));
     check("AC-05 a full-screen program hides the history; no view modes, Screen mode or Fit to this screen are offered",
       on.full && on.hist === "none" && on.modes === 0, JSON.stringify(on));
     check("AC-05 off the alternate screen the history is back", !off.full && off.hist !== "none", JSON.stringify(off));

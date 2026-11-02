@@ -28,11 +28,13 @@ export function headerParts(group, item, follow = following()) {
 }
 
 /** copy(text): the page's Copy (input.js), the selection kept. Returns show(found). */
-export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, records }) {
+export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, records, toast }) {
   const plan = planPane({ send, sid, toChat, records });   // the shown session's plan (AC-97): its progress here, its pane
   let peeking = 0, shown = null;
   const unpeek = () => { clearTimeout(peeking); peeking = 0; $("bar").classList.remove("peek"); };
   $("curfull").addEventListener("click", unpeek);
+  // a coding agent's full-screen TUI (style.css): its why on hover, as a toast on a press (a phone); not the header's own click (the list)
+  $("curscreenwhy").addEventListener("click", (e) => { e.stopPropagation(); toast(e.currentTarget.title, 6000); });
   const full = (title, path) => { $("curfull").querySelector(".ft").textContent = title; $("curfull").querySelector(".fp").textContent = path; };
   function show(found) {
     // drawn again with every change of the list: the full name and path stay up, kept current, until another session shows

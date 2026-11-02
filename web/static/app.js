@@ -39,6 +39,7 @@ import { uploads } from "./upload.js";
 import { waitingCards } from "./waiting.js";
 import { Widgets } from "./widgets.js";
 import { Marks } from "./marks.js";
+import { Jumper } from "./markjump.js";
 import { fabFold } from "./fold.js";
 import { promptRail } from "./promptrail.js";
 import { askedMarks } from "./asked.js";
@@ -167,7 +168,7 @@ function tapMove(x, y) {
 
 // On a touch screen the invisible keyboard field lies over the cursor's row (kbdplace.js).
 const placeKbd = kbdPlacer({ touch, mouseOn: () => sizing.mouseOn() });
-view.onDrawn = () => { placeKbd(); marks(); asked.redraw(); trace.drawn(); };
+view.onDrawn = () => { placeKbd(); marks(); asked.redraw(); Jumper.drawn(); trace.drawn(); };
 new ResizeObserver(() => placeKbd()).observe($("term"));   // a banner above it moved the terminal: the field follows, never over the banner
 
 // Code, Markdown and diagrams in the output as widgets (AC-56).
@@ -368,8 +369,8 @@ function toggleGroup(key) {
 }
 
 // The header (header.js): the title, then the folder with its Copy, the window, what runs there.
-const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => view.setAgent(a),
-  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), records: () => bookmarks.agentRecords() });
+const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
+  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), records: () => bookmarks.agentRecords(), toast });
 
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;

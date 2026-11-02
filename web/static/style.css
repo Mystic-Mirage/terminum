@@ -104,6 +104,11 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #curagent:empty { display: none; }
 #curscreen { flex: 0 0 16px; height: 16px; display: none; place-items: center; color: var(--muted); }
 #main:has(#term.fullscreen) #curscreen { display: grid; }   /* a full-screen program runs (sizing.js) */
+/* beside it, a coding agent's full-screen TUI: an orange ! that says terminum does more without it (header.js) */
+#curscreenwhy { position: relative; flex: 0 0 12px; height: 16px; display: none; place-items: center; padding: 0; color: var(--mark-icon); font: 800 14px/1 var(--ui); }   /* the bookmarks' orange (marks.css) */
+@media (pointer: coarse) { #curscreenwhy { height: 40px; } #curscreenwhy::after { content: ""; position: absolute; inset: 0 -8px; } }   /* 28×40 for a finger, within the gaps: the title keeps its room and its tap */
+@media (hover: hover) { #curscreenwhy:hover { filter: brightness(1.25); } }
+#main:has(#term.fullscreen.agentpane) #curscreenwhy { display: grid; }
 .host { color: var(--remote); font-weight: 500; }
 .s .ag-claude { color: color-mix(in srgb, #f0b48a 60%, var(--t-fg)); }     /* pale orange, readable on a light theme too */
 .s .ag-codex { color: color-mix(in srgb, #c9b8ff 60%, var(--t-fg)); }      /* pale violet */

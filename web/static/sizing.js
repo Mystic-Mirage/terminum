@@ -28,7 +28,7 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
   let holdUntil = 0, holdTimer = 0, heldFor = null;   // a hold, once for each size sent (heldFor)
 
   // a full-screen program: on the alternate screen, but not Codex's own (its input box, footer
-  // and history are the page's); Claude Code draws none, so one in its pane is a program's
+  // and history are the page's); Claude Code's is its fullscreen TUI ("tui": "fullscreen"), a full screen too
   const fullscreen = () => !!view.alt && view.agent !== "codex";
   /** The grid that fits the terminal at the chosen text size (not the scaled one). */
   const grid = () => view.gridFit(view.chosenSize());
@@ -47,6 +47,7 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
   /** The program on the screen changed (alt): a full-screen one hides history and widgets. */
   function sync() {
     const now = fullscreen();
+    term.classList.toggle("agentpane", !!view.agent);   // its full screen: an agent's TUI (the header's !)
     if (now === full) return;
     full = now;
     term.classList.toggle("fullscreen", full);

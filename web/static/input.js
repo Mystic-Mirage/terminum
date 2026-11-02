@@ -120,7 +120,7 @@ export class Input {
           if (char === held) held.timer = setInterval(() => this.type(held.key, "keydown"), REPEAT);
         }, HOLD);
       } else stopChar();
-      let seq = this.options.insertClipboard?.() && clipboardInsert(e) ? null : encodeKey(e, this.options.appCursor());
+      let seq = this.options.insertClipboard() && clipboardInsert(e) ? null : encodeKey(e, this.options.appCursor());
       if (seq === "\x7f" && e.key === "Backspace") seq = this.backspace(e.repeat);   // held: words after a while
       const line = /^Arrow(Up|Down)$/.test(e.key) && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !this.mods.ctrl && !this.mods.alt
         ? this.options.lineMove?.(e.key === "ArrowUp" ? -1 : 1, e.repeat) ?? null : null;   // by the page's lines in an agent's input (boxnav.js)

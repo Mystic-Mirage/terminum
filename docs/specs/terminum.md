@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.24.24 |
+| Version | 0.24.25 |
 | Date | 2026-11-02 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.25 | 2026-11-02 | Owner: Claude Code's fullscreen TUI hides the history and the widgets, and nothing said that terminum does more without it: a coding agent's full-screen mark has an orange ! beside it, its why on hover and as a 6 s toast on a press (a phone); a program's full screen (vim, mc) has none (AC-05). |
 | 0.24.24 | 2026-11-02 | Contributor: Shift+Insert pastes and Ctrl+Insert copies, as in xterm and Windows; they went to the program as ESC[2;2~ and ESC[2;5~. Settings' "Shift+Insert and Ctrl+Insert paste and copy" (on by default, kept in this browser) sends them to the program again; on a Mac nothing changes (Insert is Help there) (AC-03). |
 | 0.24.23 | 2026-11-02 | Owner: nothing said that a session ran on its alternate screen as a full-screen program (Claude Code's fullscreen TUI, vim, mc), where the history and the widgets are hidden (a table Claude Code drew there stays text): the header shows a full-screen mark after the agent's, "Full screen mode" on hover, while it does; not for Codex, whose alternate screen keeps them (AC-05). |
 | 0.24.22 | 2026-11-02 | Owner: the session list's menus show an icon before each item (Lucide's), a destructive one's (Close Session, Close Project…, Close Group…) a red × as its words; Split Below, Right and Left stand in one row, each a drawing of the split with the new pane filled over its side's word (a phone: Below alone) (AC-07). An unread row's hatching was lines 1.5 px wide at 45°, blurred over two pixels in some rows and not others: its lines are whole pixels, one wide (AC-93). |
@@ -384,9 +385,12 @@ Scenario: AC-04 edge — settings of earlier versions
 Scenario: AC-05 happy path — mc on a phone
   Given pane %5 (zsh) is shown on a phone whose view holds 48×30 cells at the chosen text size, and the pane is sized to it (AC-13)
   When the user runs "mc"
-  Then tmux reports #{alternate_on} 1 with the next frame; the page hides the history and the widgets while it runs, shows a full-screen mark in the header after the agent's ("Full screen mode" on hover) and draws its 48×30 grid, blank rows included; mc draws itself for 48×30: both panels fit, the menu bar and function key bar are whole
+  Then tmux reports #{alternate_on} 1 with the next frame; the page hides the history and the widgets while it runs, shows a full-screen mark in the header after the agent's ("Full screen mode" on hover; for a coding agent's own TUI an orange ! beside it, below) and draws its 48×30 grid, blank rows included; mc draws itself for 48×30: both panels fit, the menu bar and function key bar are whole
   When the user presses F10 (the hot keys' Fn row), Esc, arrows, Enter, ⌃O
   Then they reach mc as tmux's key names (AC-03) and mc acts on them
+Scenario: AC-05 edge — Claude Code's fullscreen TUI
+  Given the shown pane runs Claude Code with "tui": "fullscreen", on the alternate screen
+  Then the full-screen mark has an orange ! beside it, saying on hover, and as a toast for 6 s on a press (a phone), "terminum does more with fullscreen mode off: the history and widgets show only then. Turn it off in the agent's settings."; a program's full screen (mc, vim) has no ! (known limit: a program Claude Code starts in its pane, its Ctrl+G editor, gets it: the hooks still name the agent)
 Scenario: AC-05 edge — a coding agent's own full screen
   Given the shown pane runs Codex, which draws on the alternate screen
   Then its history and widgets stay (as on the normal screen), no full-screen mark shows, and its input box and footer are the page's (AC 40)
@@ -1496,3 +1500,4 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] 0.24.21 (2026-11-01) — AC-09 `cargo test auth::` (credential_tests: a credential signs in only with the terminumd it was made for, a restart's new boot refuses it, from a browser the secret is refused and a script's taken, a mixed or empty id or MAC is no one, Sign out with a credential ends its sign-in and a stale one is no one, past 30 days refused; 698 Rust tests in all), `web/test/e2e_signin.mjs` in Chromium and WebKit (13 each: the credential, never the secret, in headers, the WebSocket's subprotocols, an image's fetch and Sign out; a request of another boot proved again and sent once more; 5 requests in flight across a restart all go through; an unproven server gets neither), `ui/test/e2e_panel.mjs` 167/167 against a private terminumd (a program on the port, answering nothing or forging the proof, never gets the secret; every credential the panel used before a restart is refused by the next terminumd), `web/test/e2e_live.mjs` 223/223 (a request with the secret from the browser 401 in both engines, a WebSocket with it refused in WebKit; Chromium sends no Sec-Fetch-Site on an upgrade), `node web/test/e2e_all.mjs` 1615/1615, `make check` on the merged tree. Not verified: Safari on a physical iPhone, the user's own signed-in Safari across an upgrade.
 - [x] 0.24.20 (2026-11-01) — AC-100 `cargo test page::diag` (every field by its tmux name, a short answer leaves the rest empty, no control character), `node --test web/test/diag.test.mjs` (the text's parts, a row no longer listed, only the answer asked for shown, an error said and nothing shown), `web/test/e2e_liveprogs.mjs` in `e2e_live.mjs` (Chromium and WebKit, a real vim in a private tmux under a private terminumd: the row's menu shows, and its Copy copies, alternate_on 1, pane_current_command vim and the folder with ~). Not verified: a copy in Safari on the Mac and the iPhone (WebKit here, under Playwright).
 - [x] 0.24.24 (2026-11-02) — AC-03 `node --test web/test/*.test.mjs` 162/162 (keys.test.mjs: Shift+Insert and Ctrl+Insert are the clipboard's, other Inserts and the switch off go to the program); by hand in Chrome on Linux against a private terminumd: Shift+Insert pastes, Ctrl+Insert copies. Not verified: `make check`, `e2e_liveprogs.mjs`, Safari, WebKit.
+- [x] 0.24.25 (2026-11-02) — AC-05 `web/test/e2e_screen.mjs` (`e2e_all.mjs webScreen`, Chromium and WebKit at 1400×900 and 390×844): a program's full screen has no !, a coding agent's has the orange ! beside the mark (the bookmarks' orange), its why as its title and, on a press, the toast; none off the alternate screen; `e2e_codex.mjs`: Codex's alternate screen has neither; `web/test/e2e_liveprogs.mjs`: real Claude Code's fullscreen TUI gets the !, vim none. Screenshots looked at: the header in both engines and sizes, dark and light themes (12×16 px on a computer, 12×40 with a 28×40 press area on a touch screen: a 40 px wide box pushed the title out of a phone's header). Known limit: Claude Code's Ctrl+G editor in its pane gets the ! too (the hooks still name the agent).

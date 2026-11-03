@@ -36,7 +36,8 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
       p = await signin.prove();
     } finally { connecting = false; }
     if (stopped) return;
-    if (p === "down") return lost(signin.unanswered() ? `No answer from terminum's server within ${signin.unanswered() / 1000} s` : undefined);
+    const waited = signin.unanswered();
+    if (p === "down") return lost(waited ? `No answer from terminum's server within ${waited / 1000} s` : undefined);
     if (p === "unknown") return signedOut();
     if (p === "bad") {                             // asked again later, less and less often
       downSince ||= performance.now();

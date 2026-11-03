@@ -153,17 +153,19 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
         let screen = rows::screen_rows(&capture.join("\n"), f.width, f.height);
         let texts: Vec<String> = screen.iter().map(rows::row_text).collect();
         let step = ctl.numbering.lock().step(f.history, f.width, &texts, f.alt, f.limit);
-        // history captures (up to thousands of rows) go on a local server's bulk client, beside
-        // this pane's typing; a host's bulk client is its main session's, so there the pane's own
-        let bulk = server.is_local().then(|| server.bulk()).flatten();
-        let hist = bulk.as_deref().unwrap_or(&*client);
-        match step {
-            Step::Reset => {
-                shown.clear();
-                super::hist::reset(&app, &page, hist, &ctl, &key, &pane, &f).await;
+        if !matches!(step, Step::Same) {
+            // history captures (up to thousands of rows) go on a local server's bulk client, beside
+            // this pane's typing; a host's bulk client is its main session's, so there the pane's own
+            let bulk = server.is_local().then(|| server.bulk()).flatten();
+            let hist = bulk.as_deref().unwrap_or(&*client);
+            match step {
+                Step::Reset => {
+                    shown.clear();
+                    super::hist::reset(&app, &page, hist, &ctl, &key, &pane, &f).await;
+                }
+                Step::Append { from, to } => super::hist::append(&app, &page, hist, &ctl, &key, &pane, &f, from, to).await,
+                Step::Same => {}
             }
-            Step::Append { from, to } => super::hist::append(&app, &page, hist, &ctl, &key, &pane, &f, from, to).await,
-            Step::Same => {}
         }
         let cursor = (f.cursor_on && f.cy < screen.len()).then_some(f.cy);
         // a full-screen program's rows never fold (a coding agent's own alternate screen is an

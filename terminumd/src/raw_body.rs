@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! A raw file's answer: streamed in chunks, never read whole, with a single `Range`.
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Seek, SeekFrom};
 
 use axum::body::{Body, Bytes};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::response::Response;
 
-const CHUNK: usize = 64 << 10;
+const CHUNK: usize = 256 << 10;
 
 /// What a `Range` header asks of a file of `len` bytes: `Ok(None)` the whole file (no header,
 /// several ranges, or a unit other than bytes), `Ok(Some((start, end)))` inclusive, `Err(())` 416.
@@ -37,7 +37,7 @@ pub fn range(header: Option<&str>, len: u64) -> Result<Option<(u64, u64)>, ()> {
 }
 
 /// The answer for an opened file of `len` bytes: 200 whole or 206 with `Content-Range`, the
-/// body read `CHUNK` bytes at a time on the blocking pool as the client takes it. It seeks:
+/// body read `CHUNK` bytes at a time (tokio's file: on the blocking pool) as the client takes it. It seeks:
 /// call it off the async workers.
 pub fn response(mut f: std::fs::File, len: u64, range_header: Option<&str>) -> Response {
     let (status, start, count) = match range(range_header, len) {
@@ -54,27 +54,15 @@ pub fn response(mut f: std::fs::File, len: u64, range_header: Option<&str>) -> R
         let stream = futures_util::stream::once(async move { Err::<Bytes, _>(e) });
         return Response::new(Body::from_stream(stream));
     }
-    let stream = futures_util::stream::unfold((Some(f), count), |(file, left)| async move {
-        let f = file.filter(|_| left > 0)?;
-        let read = tokio::task::spawn_blocking(move || -> std::io::Result<(std::fs::File, Vec<u8>)> {
-            let mut f = f;
-            let mut buf = vec![0; CHUNK.min(left as usize)];
-            let n = f.read(&mut buf)?;
-            if n == 0 {
-                return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "the file shrank while read"));
-            }
-            buf.truncate(n);
-            Ok((f, buf))
-        })
-        .await
-        .unwrap_or_else(|e| Err(std::io::Error::other(e)));
-        match read {
-            Ok((f, buf)) => {
-                let n = buf.len() as u64;
-                Some((Ok(Bytes::from(buf)), (Some(f), left - n)))
-            }
+    let file = tokio::io::AsyncReadExt::take(tokio::fs::File::from_std(f), count);
+    let stream = futures_util::stream::unfold(Some(file), |file| async move {
+        let mut file = file.filter(|f| f.limit() > 0)?;
+        let mut buf = Vec::with_capacity(CHUNK.min(file.limit() as usize));
+        match tokio::io::AsyncReadExt::read_buf(&mut file, &mut buf).await {
+            Ok(0) => Some((Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "the file shrank while read")), None)),
+            Ok(_) => Some((Ok(Bytes::from(buf)), Some(file))),
             // an error ends the body: the client sees a short answer, never a wrong one
-            Err(e) => Some((Err(e), (None, 0))),
+            Err(e) => Some((Err(e), None)),
         }
     });
     let mut res = Response::new(Body::from_stream(stream));

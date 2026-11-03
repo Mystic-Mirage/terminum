@@ -38,14 +38,16 @@ where
 fn worker(page: Arc<Page>) -> mpsc::Sender<Read> {
     let (tx, mut rx) = mpsc::channel::<Read>(WAITING);
     tokio::spawn(async move {
+        let closed = page.closed();
+        tokio::pin!(closed);
         loop {
             let work = tokio::select! {
                 w = rx.recv() => match w { Some(w) => w, None => break },
-                _ = page.closed() => break,
+                _ = &mut closed => break,
             };
             tokio::select! {
                 _ = work => {}
-                _ = page.closed() => break,
+                _ = &mut closed => break,
             }
         }
     });

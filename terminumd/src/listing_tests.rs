@@ -30,7 +30,7 @@ fn lossy_names_are_refused_instead_of_aliasing_another_file() {
 fn errors_and_empty_folders_are_evicted_with_their_slot_overhead() {
     let c = Cache::new(1);
     c.slots.lock().insert(PathBuf::from("/missing"), (Slot::Done(Err("missing".into()), Instant::now()), Instant::now()));
-    let empty = Listing { entries: vec![], dir_mtime: 0, generation: 1, read_at: Instant::now(), bytes: 0, filtered: Mutex::new(None), recent: OnceLock::new(), by_ext: OnceLock::new() };
+    let empty = Listing { entries: vec![], dir_mtime: 0, generation: 1, read_at: Instant::now(), bytes: 0, filtered: Mutex::new(None), filtered_bytes: Default::default(), recent: OnceLock::new(), by_ext: OnceLock::new() };
     c.slots.lock().insert(PathBuf::from("/empty"), (Slot::Done(Ok(Arc::new(empty)), Instant::now()), Instant::now()));
     assert!(c.stats().0 > 1);
     c.evict();

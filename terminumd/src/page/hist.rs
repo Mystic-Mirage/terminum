@@ -18,6 +18,8 @@ use crate::tmux::control::Control;
 
 /// Rows per `more` (AC-02).
 const PAGE: i64 = 1000;
+/// Rows parsed on the async worker itself; more go to the blocking pool.
+const INLINE_ROWS: usize = 200;
 /// Rows one `unfold` may ask for (AC-32).
 const UNFOLD_MAX: i64 = 20_000;
 
@@ -85,8 +87,11 @@ pub async fn rows_at(client: &Control, pane: &str, top: i64, history: i64, limit
         }
         // the capture's first row: s rows back from tmux's end then (never past its oldest)
         let first = top + moved + s.max(-before.0);
-        // a search's tens of thousands of rows: parsed off the async workers, beside typing and frames
-        let rows = tokio::task::spawn_blocking(move || rows::capture_rows(&lines.join("\n"), width)).await.map_err(|e| e.to_string())?;
+        // a search's tens of thousands of rows: parsed off the async workers, beside typing and
+        // frames; a frame's few new rows here
+        let many = lines.len() > INLINE_ROWS;
+        let parse = move || rows::capture_rows(&lines.join("\n"), width);
+        let rows = if many { tokio::task::spawn_blocking(parse).await.map_err(|e| e.to_string())? } else { parse() };
         // rows tmux no longer has (its oldest came after `from`) are empty, before those it has
         return Ok(placed(rows, first, from, want));
     }

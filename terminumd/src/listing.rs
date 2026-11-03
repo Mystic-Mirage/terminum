@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AO};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering as AO};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -56,6 +56,8 @@ pub struct Listing {
     bytes: usize,
     /// last filtered view, so paging through a filtered 500K folder does not re-filter
     filtered: Mutex<Option<Filtered>>,
+    /// its bytes, so the cache counts them without waiting on a filter being made
+    filtered_bytes: AtomicUsize,
     /// the orders besides by name (listing_sort.rs): made once each when first asked for, a
     /// caller of another order (or of the name order) never waiting for one being made
     recent: OnceLock<Arc<Vec<u32>>>,
@@ -173,7 +175,7 @@ fn read_dir_sorted(path: &Path, generation: u64) -> Result<Listing, String> {
         entries.push(Entry { name, kind });
     }
     entries.sort_unstable_by(|a, b| b.kind.is_dir().cmp(&a.kind.is_dir()).then_with(|| natural_cmp(&a.name, &b.name)));
-    Ok(Listing { entries, dir_mtime: mtime_ns(&meta), generation, read_at: Instant::now(), bytes, filtered: Mutex::new(None), recent: OnceLock::new(), by_ext: OnceLock::new() })
+    Ok(Listing { entries, dir_mtime: mtime_ns(&meta), generation, read_at: Instant::now(), bytes, filtered: Mutex::new(None), filtered_bytes: AtomicUsize::new(0), recent: OnceLock::new(), by_ext: OnceLock::new() })
 }
 
 impl Listing {
@@ -181,12 +183,14 @@ impl Listing {
     /// sort and filter indexes built so far. A listing a reader still holds after eviction is
     /// the reader's, not the cache's, and is not counted.
     fn resident_bytes(&self) -> usize {
-        let index = |v: &Vec<u32>| v.capacity() * std::mem::size_of::<u32>() + std::mem::size_of::<Vec<u32>>();
         let slack = (self.entries.capacity() - self.entries.len()) * std::mem::size_of::<Entry>();
-        let sorts: usize = [&self.recent, &self.by_ext].iter().filter_map(|c| c.get()).map(|v| index(v)).sum();
-        let filtered = self.filtered.lock().as_ref().map_or(0, |(f, _, _, v)| f.capacity() + index(v));
-        std::mem::size_of::<Listing>() + self.bytes + slack + sorts + filtered
+        let sorts: usize = [&self.recent, &self.by_ext].iter().filter_map(|c| c.get()).map(|v| index_bytes(v)).sum();
+        std::mem::size_of::<Listing>() + self.bytes + slack + sorts + self.filtered_bytes.load(AO::Relaxed)
     }
+}
+
+fn index_bytes(v: &Vec<u32>) -> usize {
+    v.capacity() * std::mem::size_of::<u32>() + std::mem::size_of::<Vec<u32>>()
 }
 
 fn entry_name(name: std::ffi::OsString) -> Result<Box<str>, String> {
@@ -380,6 +384,7 @@ impl Cache {
                         None => (0..listing.entries.len() as u32).filter(keep).collect(),
                     };
                     let v = Arc::new(v);
+                    listing.filtered_bytes.store(filter_lc.len() + index_bytes(&v), AO::Relaxed);
                     *cached = Some((filter_lc.clone(), hidden, sort, v.clone()));
                     Some(v)
                 }

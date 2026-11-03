@@ -15,13 +15,12 @@ use crate::tmux::Server;
 
 /// (row, text, hard end) of rows `from..to` (absolute) of the shown pane, or why not.
 pub async fn rows_of(server: &Server, pane: &str, ctl: &Ctl, keep: i64, around: Option<i64>) -> Result<Vec<(i64, String, bool)>, String> {
-    let (top, history, screen, oldest, f) = {
+    let (top, history, screen, oldest, width, height, limit) = {
         let n = ctl.numbering.lock();
         let f = ctl.fields.lock();
         let (Some(top), Some(f)) = (n.top(), f.as_ref()) else { return Err("the pane is not shown yet".into()) };
-        (top, n.history(), n.screen().to_vec(), n.oldest(keep), (f.width, f.height as i64, f.limit))
+        (top, n.history(), n.screen().to_vec(), n.oldest(keep), f.width, f.height as i64, f.limit)
     };
-    let (width, height, limit) = f;
     let (mut first, mut end) = (oldest, top + height);
     if let Some(a) = around {
         (first, end) = super::bookmarks::near(first, end, a);

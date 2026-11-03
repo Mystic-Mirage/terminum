@@ -18,17 +18,19 @@ fn checked(ctx: &Ctx, method: &str, path: &str, body: Option<Value>) -> Result<V
 }
 
 /// How long `hosts <action>` waits for terminumd: the sum of the server's stages for that
-/// action plus an answer's 5 s. enable: probe 30 + copy 300 + connect (ready 20, forward 5,
-/// answer 5); files-remove: its ssh 60; agents-on: the helper brought up to date (probe 30 +
-/// copy 300) and the install 300; agents-off: the hooks' removal 90 and the helper's 60 (AC-99).
+/// action plus an answer's 5 s. enable: probe + copy + connect (ready, forward, an answer);
+/// files-remove: the helper's removal; agents-on: the helper brought up to date (probe + copy)
+/// and the install; agents-off: the hooks' removal and the helper's (AC-99).
 pub fn host_budget(action: &str) -> Duration {
-    Duration::from_secs(5 + match action {
-        "enable" => 30 + 300 + 30,
-        "files-remove" => 60,
-        "agents-on" => 30 + 300 + 300,
-        "agents-off" => 90 + 60,
-        _ => 0,
-    })
+    use crate::hosts::{agentsinstall as inst, tunnel as t};
+    let answer = Duration::from_secs(5);
+    answer + match action {
+        "enable" => t::PROBE_LIMIT + t::COPY_LIMIT + t::READY_LIMIT + t::FORWARD_LIMIT + answer,
+        "files-remove" => t::HELPER_REMOVE_LIMIT,
+        "agents-on" => t::PROBE_LIMIT + t::COPY_LIMIT + inst::LIMIT,
+        "agents-off" => inst::REMOVE_LIMIT + t::HELPER_REMOVE_LIMIT,
+        _ => Duration::ZERO,
+    }
 }
 
 fn waited(ctx: &Ctx, method: &str, path: &str, body: Option<Value>, budget: Duration) -> Result<Value, String> {

@@ -61,7 +61,7 @@ pub struct Server {
     pub socket: String,
     pub link: Link,
     inner: Mutex<Inner>,
-    wakes: Mutex<HashMap<String, watch::Sender<u64>>>,
+    wakes: Mutex<HashMap<String, watch::Sender<()>>>,
     printed: Mutex<HashMap<String, u64>>,
     /// the list must be read again (a window, pane, session or layout changed)
     pub dirty: Arc<Notify>,
@@ -218,16 +218,16 @@ impl Server {
         self.inner.lock().panes = panes;
     }
 
-    /// The pane `%N`'s wake-up, one per viewer: its revision goes up on each `%output`, so every
-    /// viewer wakes, and one that was capturing meanwhile sees the change on its next wait.
+    /// The pane `%N`'s wake-up, one per viewer: each `%output` marks it changed for every viewer,
+    /// so each wakes, and one that was capturing meanwhile sees the change on its next wait.
     pub fn wake(&self, pane: &str) -> Wake {
-        Wake::new(self.wakes.lock().entry(pane.to_string()).or_insert_with(|| watch::channel(0).0).subscribe())
+        Wake::new(self.wakes.lock().entry(pane.to_string()).or_insert_with(|| watch::channel(()).0).subscribe())
     }
 
     /// Wakes the viewers of `pane`, or of every shown pane.
     pub fn woke(&self, pane: Option<&str>) {
         let wakes = self.wakes.lock();
-        let bump = |tx: &watch::Sender<u64>| tx.send_modify(|r| *r = r.wrapping_add(1));
+        let bump = |tx: &watch::Sender<()>| tx.send_replace(());
         match pane {
             Some(p) => wakes.get(p).into_iter().for_each(bump),
             None => wakes.values().for_each(bump),

@@ -8,6 +8,9 @@ import { drawn, line, openPage, pause } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1";
 const SECRET = "b".repeat(64);
+// the find button's distance from the terminal's right edge, and whether it shows
+const column = (page) => page.evaluate(() => { const t = document.getElementById("term").getBoundingClientRect(), b = document.getElementById("findfab");
+  return { right: Math.round(t.right - b.getBoundingClientRect().right), visible: !b.hidden }; });
 const banner = (page) => page.evaluate(() => { const e = document.getElementById("status"); return e.hidden ? "" : e.textContent; });
 
 export async function webHold(browser) {
@@ -48,16 +51,14 @@ export async function webHold(browser) {
   await g.page.setViewportSize({ width: 1200, height: 800 });
   await pause(g.page, 600);
   const resized = await g.page.evaluate(() => window.__placed);
-  const col1 = await g.page.evaluate(() => { const t = document.getElementById("term").getBoundingClientRect(), b = document.getElementById("findfab").getBoundingClientRect();
-    return { right: Math.round(t.right - b.right), visible: !document.getElementById("findfab").hidden }; });
+  const col1 = await column(g.page);
   check("AC-18 200 screen frames with nothing moved: the floating buttons are not placed again", burst === 0, JSON.stringify({ burst }));
   check("AC-18 a window resize places the floating buttons again, still at the terminal's right", resized >= 1 && col1.visible && col1.right >= 0 && col1.right < 120,
     JSON.stringify({ resized, col1 }));
   // a pane switch (its "hist" reset and full screen): the column stays where it stood
   await g.page.click(`#sessions .item[data-id='tmux:local:terminum:%2']`);
   await pause(g.page, 600);
-  const col2 = await g.page.evaluate(() => { const t = document.getElementById("term").getBoundingClientRect(), b = document.getElementById("findfab");
-    return { right: Math.round(t.right - b.getBoundingClientRect().right), visible: !b.hidden }; });
+  const col2 = await column(g.page);
   const sub = g.sent.filter((m) => m.t === "sub").at(-1)?.id;
   check("AC-18 after a pane switch the floating buttons stand in the same column", sub?.endsWith("%2") && col2.visible && col2.right === col1.right,
     JSON.stringify({ sub, col1, col2 }));

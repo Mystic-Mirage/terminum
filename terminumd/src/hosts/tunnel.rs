@@ -28,6 +28,13 @@ const BACKOFF_MAX: u64 = 30;
 const UPDATED_NOTE: Duration = Duration::from_secs(60);
 /// A failed update is tried again after this long (AC-84 failure).
 const UPDATE_RETRY: Duration = Duration::from_secs(600);
+/// Each stage's limit (the CLI waits their sum, `host_budget`): the probe, the helper's copy, its
+/// "ready" line, its answer through the forward, its removal.
+pub(crate) const PROBE_LIMIT: Duration = Duration::from_secs(30);
+pub(crate) const COPY_LIMIT: Duration = Duration::from_secs(300);
+pub(crate) const READY_LIMIT: Duration = Duration::from_secs(20);
+pub(crate) const FORWARD_LIMIT: Duration = Duration::from_secs(5);
+pub(crate) const HELPER_REMOVE_LIMIT: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 pub(super) struct Agent {
@@ -130,7 +137,7 @@ async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>, timeout: 
 /// so whatever the host's rc files print cannot be taken for the answer.
 pub(super) async fn probe(recipe: &[String]) -> Result<(Result<&'static str, String>, String), String> {
     let marker = format!("tm-probe-{}", crate::auth::crypto::random_hex::<6>());
-    let out = ssh(recipe, &super::link::probe_command(&marker), None, Duration::from_secs(30)).await?;
+    let out = ssh(recipe, &super::link::probe_command(&marker), None, PROBE_LIMIT).await?;
     let (s, m, home) = super::link::parse_probe(&out, &marker).ok_or("the host did not answer the probe")?;
     Ok((platform(&s, &m).ok_or_else(|| format!("no helper for {s} {m}")), home))
 }
@@ -157,7 +164,7 @@ async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), St
     ]
     .join("; ");
     let bytes = tokio::fs::read(binary).await.map_err(|e| format!("{}: {e}", binary.display()))?;
-    let out = ssh(recipe, &script, Some(bytes), Duration::from_secs(300)).await?;
+    let out = ssh(recipe, &script, Some(bytes), COPY_LIMIT).await?;
     let got = answer(&out);
     if got != id {
         return Err(format!("the copied helper says {got}, expected {id}"));
@@ -189,11 +196,11 @@ async fn answers(mut stream: tokio::net::UnixStream) -> Result<(), String> {
         let mut head = [0u8; 7];
         stream.read_exact(&mut head).await.map(|_| head)
     };
-    match tokio::time::timeout(Duration::from_secs(5), ask).await {
+    match tokio::time::timeout(FORWARD_LIMIT, ask).await {
         Ok(Ok(head)) if &head == b"HTTP/1." => Ok(()),
         Ok(Ok(_)) => Err("not an HTTP answer".into()),
         Ok(Err(e)) => Err(e.to_string()),
-        Err(_) => Err("no answer within 5 s".into()),
+        Err(_) => Err(format!("no answer within {} s", FORWARD_LIMIT.as_secs())),
     }
 }
 
@@ -231,7 +238,7 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&supe
     stdin.write_all(format!("{token}\n").as_bytes()).await.map_err(|e| e.to_string())?;
     let mut out = BufReader::new(child.stdout.take().expect("piped"));
     let mut said = None;
-    let ready = tokio::time::timeout(Duration::from_secs(20), async {
+    let ready = tokio::time::timeout(READY_LIMIT, async {
         for _ in 0..50 {
             match super::bounded::line(&mut out, super::bounded::LINE_MAX).await {
                 Ok(Some(l)) if l == MISSING => return Some(String::new()),
@@ -478,7 +485,7 @@ pub(super) async fn remove_helper(recipe: &[String]) -> Result<(), String> {
          \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/logs/agent.log\"*; \
          rmdir \"$d/bin\" \"$d/logs\" \"$d/run\" \"$d\" 2>/dev/null; true"
     );
-    ssh(recipe, &script, None, Duration::from_secs(60)).await.map(drop)
+    ssh(recipe, &script, None, HELPER_REMOVE_LIMIT).await.map(drop)
 }
 
 #[cfg(test)]

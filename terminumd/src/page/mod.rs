@@ -98,8 +98,10 @@ impl Page {
             if self.is_closed() {
                 return;
             }
-            // the queue's receiver dropped without close(): looked at again now and then
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(1), woke).await;
+            tokio::select! {
+                _ = woke => {}
+                _ = self.tx.closed() => {}               // the queue's receiver dropped without close()
+            }
         }
     }
 

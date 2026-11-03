@@ -268,7 +268,8 @@ export class Marks {
 
   /** `place` false (new output): the floating buttons are placed again only if what places them changed. */
   drawRail(place = true) {
-    if (place || this.fabKey !== this.fabInputs()) this.placeFab();
+    const fab = this.fabInputs();
+    if (place || this.fabKey !== fab) this.placeFab(fab);
     const rail = $("markrail"), term = this.term, v = this.view, mine = this.mine();
     const box = railBox(term);
     // a wide window has them on the strip at the left (promptrail.js)
@@ -380,8 +381,8 @@ export class Marks {
    *  bookmarks (with their number, while it has one) and the reminders (while one is open). Where
    *  the keyboard's buttons float, ⟨…⟩ stands first and the column, Attach in it (only there), under
    *  it, shown while it is unfolded (fold.js). */
-  placeFab() {
-    this.fabKey = this.fabInputs();
+  placeFab(inputs = this.fabInputs()) {
+    this.fabKey = inputs;
     // the bookmarks' pane lists its bookmarks and open reminders (marknav.js): the button counts them
     const term = this.term, here = this.sid() ? this.here() : [], n = here.filter((b) => !b.remind || openReminder(b)).length;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;

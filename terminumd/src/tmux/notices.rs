@@ -51,10 +51,10 @@ impl Server {
 }
 
 /// One viewer's wake-up of a shown pane (`Server::wake`).
-pub struct Wake(watch::Receiver<u64>);
+pub struct Wake(watch::Receiver<()>);
 
 impl Wake {
-    pub(super) fn new(rx: watch::Receiver<u64>) -> Wake {
+    pub(super) fn new(rx: watch::Receiver<()>) -> Wake {
         Wake(rx)
     }
 

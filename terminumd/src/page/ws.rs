@@ -48,11 +48,13 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
         tokio::spawn(async move {
             let mut ping = tokio::time::interval(PING);
             ping.tick().await;
+            let closed = page.closed();
+            tokio::pin!(closed);
             loop {
                 let msg = tokio::select! {
                     m = rx.recv() => match m { Some(text) => Message::Text(text.into()), None => break },
                     _ = ping.tick() => Message::Ping(Default::default()),
-                    _ = page.closed() => break,
+                    _ = &mut closed => break,
                 };
                 if page.is_closed() {
                     break;
@@ -80,10 +82,12 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
     tokio::spawn(super::timing::follow(page.clone()));
     // the writer closes the page when the peer stops reading: the loop ends then even though
     // the peer never sends again, so the shown pane is released (`left` below)
+    let closed = page.closed();
+    tokio::pin!(closed);
     loop {
         let m = tokio::select! {
             m = incoming.next() => match m { Some(Ok(m)) => m, _ => break },
-            _ = page.closed() => break,
+            _ = &mut closed => break,
         };
         let text = match m {
             Message::Text(t) => t.to_string(),

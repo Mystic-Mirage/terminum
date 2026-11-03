@@ -18,9 +18,9 @@ use crate::cli::agentsetup::AGENTS;
 pub const KNOWN: [&str; 7] = ["$HOME/.local/bin", "$HOME/.claude/local", "$HOME/.npm-global/bin", "$HOME/.nvm/versions/node/*/bin",
                               "$HOME/.bun/bin", "/usr/local/bin", "/opt/homebrew/bin"];
 /// One whole run's limit: two shell probes per question of 10 s each, then `claude plugin …` calls.
-const LIMIT: Duration = Duration::from_secs(300);
+pub(crate) const LIMIT: Duration = Duration::from_secs(300);
 /// Taking the entries out runs after agents are already off here: kept short, reported on its own.
-const REMOVE_LIMIT: Duration = Duration::from_secs(90);
+pub(crate) const REMOVE_LIMIT: Duration = Duration::from_secs(90);
 
 /// `s` as one single-quoted /bin/sh word.
 fn sq(s: &str) -> String {
@@ -124,11 +124,6 @@ async fn ssh_within(recipe: &[String], command: &str, marker: &str, limit: Durat
     Ok(stdout)
 }
 
-async fn run(app: &Shared, host: &str, action: &str, refresh: bool) -> Result<Vec<(String, String)>, String> {
-    let recipe = super::recipe_of(app, host).ok_or_else(|| format!("no host {host}"))?;
-    run_on(&recipe, action, refresh, LIMIT).await
-}
-
 async fn run_on(recipe: &[String], action: &str, refresh: bool, limit: Duration) -> Result<Vec<(String, String)>, String> {
     let marker = new_marker()?;
     let out = ssh_within(recipe, &remote_command(&script(&marker, action, refresh)), &marker, limit).await?;
@@ -155,7 +150,8 @@ where F: FnOnce(Vec<String>) -> Fut, Fut: Future<Output = Result<(), String>> {
 
 /// After the helper was updated: rewritten only where the content differs.
 pub async fn refresh(app: &Shared, host: &str) -> Result<Vec<(String, String)>, String> {
-    run(app, host, "install", true).await
+    let recipe = super::recipe_of(app, host).ok_or_else(|| format!("no host {host}"))?;
+    run_on(&recipe, "install", true, LIMIT).await
 }
 
 #[cfg(test)]

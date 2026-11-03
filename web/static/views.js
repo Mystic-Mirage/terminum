@@ -28,7 +28,6 @@ export class Views {
     this.floating = false;         // File is open over the terminal at WIDE
     this.filesSrc = "";            // what the Files frame shows: its pane, folder and host
     this.filesError = null;        // why the pane has no Files
-    this.termShown = true;         // as terminumd knows it: frames are sent while it is shown (AC-02)
     this.filesShown = false;
     this.fileHost = null;          // the host the File frame's files are on
     this.sid = null;               // the shown session, whose View is #file
@@ -100,9 +99,8 @@ export class Views {
     document.body.classList.toggle("wide", wide);
     document.body.classList.toggle("docked", wide && this.docked);
     for (const n of NAMES) document.querySelector(`button[data-view="${n}"]`).setAttribute("aria-selected", String(shown[n]));
+    if (shown.term === $("term").hidden) this.send({ t: "screens", on: shown.term });   // hidden: no frames for it; shown: all anew (AC-02)
     $("term").hidden = !shown.term;
-    if (shown.term !== this.termShown) this.send({ t: "screens", on: shown.term });   // hidden: no frames for it; shown: all anew (AC-02)
-    this.termShown = shown.term;
     // a selection left in the hidden terminal would keep it paused, and iOS its Copy menu up
     const sel = getSelection();
     if (!shown.term && sel?.anchorNode && $("term").contains(sel.anchorNode)) sel.removeAllRanges();

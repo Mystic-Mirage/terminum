@@ -26,6 +26,7 @@ const PART_WAIT: std::time::Duration = std::time::Duration::from_millis(250);
 /// Most bytes and items typed but not yet handed to tmux (a slow host): more is refused, loud.
 const QUEUE_BYTES: usize = 4 << 20;
 const QUEUE_ITEMS: usize = 10_000;
+const PASTE_TOO_LARGE: &str = "Paste is larger than 1 MB";
 pub const OVERLOAD: &str = "tmux is not keeping up: more than 4 MB of typing waits for it — this input was not sent";
 
 /// Typed data not yet handed to tmux.
@@ -137,7 +138,7 @@ fn queue(app: &Shared, page: &Arc<Page>, item: Typed) {
 /// A paste the page sent as such (`paste` message).
 pub fn paste(app: &Shared, page: &Arc<Page>, data: String, bracket: bool) {
     if data.len() > PASTE_MAX {
-        error(page, "Paste is larger than 1 MB", None);       // refused before it is copied or queued
+        error(page, PASTE_TOO_LARGE, None);       // refused before it is copied or queued
         return;
     }
     let wrapped = if bracket { format!("{PASTE_START}{data}{PASTE_END}") } else { data };
@@ -269,7 +270,7 @@ async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Control, serv
         return Ok(());                                 // tmux makes no buffer of nothing ("no buffer tm-…")
     }
     if text.len() > PASTE_MAX {
-        return Err("Paste is larger than 1 MB".into());
+        return Err(PASTE_TOO_LARGE.into());
     }
     if text.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\t' | '\r')) {
         return Err("The text holds control characters and was not sent".into());
@@ -376,6 +377,8 @@ mod tests {
         q.batch().unwrap();                             // one paste handed to tmux (each item its own server here)
         assert_eq!(q.bytes, QUEUE_BYTES - PASTE_MAX);
         assert!(q.push(item("a", b"")), "drained: typing goes again");
+        // the words say the limits the code holds
+        assert!(OVERLOAD.contains(&format!("{} MB", QUEUE_BYTES >> 20)) && PASTE_TOO_LARGE.contains(&format!("{} MB", PASTE_MAX >> 20)));
     }
 
     #[test]

@@ -191,7 +191,7 @@ fn sha256_file(path: &Path) -> std::io::Result<String> {
             Err(e) => return Err(e),
         }
     }
-    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Ok(crate::auth::crypto::hex(&hasher.finalize()))
 }
 
 /// Downloads, checks and installs a release; the installer's exit status.
@@ -235,14 +235,12 @@ mod tests {
 
     #[test]
     fn a_file_hashes_in_chunks_to_its_whole_digest() {
-        let dir = std::env::temp_dir().join(format!("tm-sha-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = crate::testutil::fresh_dir("sha");
         // larger than the 64 KiB buffer, so several chunks and a partial last one are hashed
         let data: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
         let f = dir.join("pkg.tar.gz");
         std::fs::write(&f, &data).unwrap();
-        let whole: String = Sha256::digest(&data).iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(sha256_file(&f).unwrap(), whole);
+        assert_eq!(sha256_file(&f).unwrap(), crate::auth::crypto::sha256_hex(&data));
         std::fs::write(&f, b"").unwrap();
         assert_eq!(sha256_file(&f).unwrap(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         assert!(sha256_file(&dir.join("missing")).is_err());

@@ -39,7 +39,8 @@ pub fn new_marker() -> Result<String, String> {
 pub fn script(marker: &str, action: &str, refresh: bool) -> String {
     let dirs = KNOWN.iter().map(|d| if d.contains('*') { d.replace("$HOME", "\"$HOME\"") } else { format!("\"{d}\"") }).collect::<Vec<_>>().join(" ");
     let refresh = if refresh { " --refresh" } else { "" };
-    format!(r#"M={marker}; export M
+    format!(r#"{WATCH}
+M={marker}; export M
 S="${{SHELL:-/bin/sh}}"
 {CAP}
 after() {{ awk -v m="$M" 'f {{ print; exit }} $0 == m {{ f = 1 }}' | tr -d '\r'; }}
@@ -56,6 +57,15 @@ if [ -n "$c" ]; then set -- --claude "$c"; else set --; fi
 exec "$H" hooks {action} --host-mode --marker "$M"{refresh} "$@"
 "#, agents = AGENTS.join(" "))
 }
+
+/// The script ends with its ssh: terminumd ends an operation a later agents on or off took over
+/// by killing its ssh (AC-99), and sshd leaves the command running. ssh's stdin, kept open by
+/// terminumd, moves to fd 3 for a watcher that ends the script's process group (sshd made the
+/// shell its leader; the helper exec'd in it) once it closes; everything else reads /dev/null.
+/// Where the shell leads no group (a test's), `-$$` names none and nothing is killed.
+const WATCH: &str = r#"exec 3<&0 </dev/null
+(cat <&3 >/dev/null 2>&1; kill -TERM -$$) >/dev/null 2>&1 &
+exec 3<&-"#;
 
 /// `cap <command…>`: the command without input, its stdout through a temporary file (a child
 /// it leaves behind holding stdout, e.g. an rc's `sleep 60 &`, cannot keep a pipe open past the
@@ -113,8 +123,10 @@ pub(super) async fn ssh(recipe: &[String], command: &str, marker: &str) -> Resul
 async fn ssh_within(recipe: &[String], command: &str, marker: &str, limit: Duration) -> Result<String, String> {
     let mut c = super::ssh_command(super::ssh_bin(), recipe, &["-o", "ControlPath=none"]);
     c.args(super::recipe::argv(recipe)).arg(command);
-    c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     let mut child = c.spawn().map_err(|e| format!("ssh: {e}"))?;
+    // open while this waits: its close (this dropped, the ssh killed) ends the script (WATCH)
+    let _stdin = child.stdin.take();
     let out = super::bounded::output(&mut child, super::bounded::ANSWER_MAX, limit).await?;
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     if !out.status.success() && !stdout.contains(marker) {

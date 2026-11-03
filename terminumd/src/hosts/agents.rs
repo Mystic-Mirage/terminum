@@ -5,7 +5,13 @@
 //! only when one took them. Off: they are taken out, the record cleared, the helper removed only
 //! when Files does not use it. The ssh steps are behind [`Ops`] so the decisions are tested.
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 use serde_json::{Map, Value};
+use tokio::sync::Notify;
 
 use crate::app::Shared;
 
@@ -113,35 +119,108 @@ impl Ops for Live<'_> {
     }
 }
 
+/// Said by an agents on or off that a later one for the same host ended.
+const SUPERSEDED: &str = "a later agents on or off for this host took over; this one was stopped";
+
+/// One agents on or off at a time per host, the last asked winning: a new one stops the one
+/// running (dropped mid-step, its ssh killed) and runs after it, so an off given during a long
+/// on is never written over by that on's late save, nor its removal raced by that on's install.
+#[derive(Default)]
+pub struct Turns(Mutex<HashMap<String, Arc<Turn>>>);
+
+#[derive(Default)]
+struct Turn {
+    running: tokio::sync::Mutex<()>,
+    asked: AtomicU64,
+    stop: Notify,
+}
+
+impl Turns {
+    /// `work` in `host`'s turn: it stops the one running and goes after it.
+    async fn run<T>(&self, host: &str, work: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
+        self.turn(host, true, work).await
+    }
+
+    /// `work` in `host`'s turn after the one running, which it leaves be (a refresh); a later
+    /// `run` stops it all the same.
+    async fn after<T>(&self, host: &str, work: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
+        self.turn(host, false, work).await
+    }
+
+    /// Whether an on or off of `host` runs or waits now.
+    fn busy(&self, host: &str) -> bool {
+        self.0.lock().get(host).is_some_and(|t| t.running.try_lock().is_err())
+    }
+
+    async fn turn<T>(&self, host: &str, take_over: bool, work: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
+        let turn = self.0.lock().entry(host.to_string()).or_default().clone();
+        let mine = if take_over {
+            let mine = turn.asked.fetch_add(1, Ordering::SeqCst) + 1;
+            turn.stop.notify_waiters();
+            mine
+        } else {
+            turn.asked.load(Ordering::SeqCst)
+        };
+        let _running = turn.running.lock().await;
+        let stopped = async {
+            loop {
+                let woke = turn.stop.notified();
+                tokio::pin!(woke);
+                woke.as_mut().enable();
+                if turn.asked.load(Ordering::SeqCst) != mine {
+                    return;
+                }
+                woke.await;
+            }
+        };
+        tokio::select! {
+            biased;
+            _ = stopped => Err(SUPERSEDED.into()),
+            r = work => r,
+        }
+    }
+}
+
 /// `hosts agents <host> on|off`: the per-agent result lines.
 pub async fn set_agents(app: &Shared, host: &str, on: bool) -> Result<Vec<String>, String> {
     if !super::records(app).contains_key(host) {
         return Err(format!("no host named {host}"));
     }
-    let recipe = super::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
-    set_with(&Live { app, host, recipe }, host, on).await
+    app.agent_turns.run(host, async {
+        // read in its turn: an earlier operation may have changed the record
+        let recipe = super::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
+        set_with(&Live { app, host, recipe }, host, on).await
+    }).await
 }
 
-/// After AC-84 updated the helper: the host's agents' entries rewritten where they differ.
+/// After AC-84 updated the helper: the host's agents' entries rewritten where they differ, in
+/// the host's turn after any on or off running (agents still on then).
 pub fn after_update(app: &Shared, host: &str) {
     if !super::link::wanted(app, host) {
         return;
     }
     let (app, host) = (app.clone(), host.to_string());
     tokio::spawn(async move {
-        match super::agentsinstall::refresh(&app, &host).await {
+        let refresh = async {
+            if !super::link::wanted(&app, &host) {
+                return Ok(Vec::new());
+            }
+            super::agentsinstall::refresh(&app, &host).await
+        };
+        match app.agent_turns.after(&host, refresh).await {
             Ok(got) => tracing::info!(event = "agents.refreshed", host, result = lines(&host, &got).join("; ")),
             Err(why) => tracing::warn!(event = "agents.refresh_failed", host, why),
         }
     });
 }
 
-/// The host is being removed with agents on: terminum's entries taken out, best effort.
+/// The host is being removed with agents on, or while an on or off runs for it: that one
+/// stopped, terminum's entries taken out, best effort.
 pub fn removed(app: &Shared, host: &str) {
-    let Some(recipe) = super::recipe_of(app, host).filter(|_| super::link::wanted(app, host)) else { return };
-    let host = host.to_string();
+    let Some(recipe) = super::recipe_of(app, host).filter(|_| super::link::wanted(app, host) || app.agent_turns.busy(host)) else { return };
+    let (app, host) = (app.clone(), host.to_string());
     tokio::spawn(async move {
-        match super::agentsinstall::remove_on(&recipe).await {
+        match app.agent_turns.run(&host, super::agentsinstall::remove_on(&recipe)).await {
             Ok(got) => tracing::info!(event = "agents.removed", host, result = lines(&host, &got).join("; ")),
             Err(why) => tracing::warn!(event = "agents.remove_failed", host, why),
         }

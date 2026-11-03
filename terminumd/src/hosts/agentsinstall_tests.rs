@@ -86,3 +86,36 @@ fn install_stops_after_the_helper_when_the_recipe_changed() {
     let e = rt.block_on(install(&recipe, |_| async { Err("copy failed".to_string()) }, || panic!("not asked"))).unwrap_err();
     assert_eq!(e, "copy failed");
 }
+
+/// The script under sshd's shape: /bin/sh leading its own process group, stdin a pipe held by
+/// terminumd. `then`: what it does after the watcher (a slow step, then a mark it got there).
+fn watched(then: &str) -> (std::process::Child, std::path::PathBuf) {
+    use std::os::unix::process::CommandExt;
+    let dir = crate::testutil::fresh_dir("watch");
+    let mark = dir.join("ran");
+    let child = std::process::Command::new("/bin/sh").arg("-c").arg(format!("{WATCH}\n{then}; touch '{}'", mark.display()))
+        .process_group(0).stdin(std::process::Stdio::piped()).spawn().unwrap();
+    (child, mark)
+}
+
+#[test]
+fn the_script_ends_with_its_ssh_and_runs_on_while_it_lasts() {
+    // stopped (its ssh killed: stdin closed): the slow step and what follows never run
+    let (mut child, mark) = watched("sleep 0.6");
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    drop(child.stdin.take());
+    let t = std::time::Instant::now();
+    child.wait().unwrap();
+    assert!(t.elapsed() < std::time::Duration::from_millis(300), "ended at once: {:?}", t.elapsed());
+    std::thread::sleep(std::time::Duration::from_millis(700));   // past the slow step
+    assert!(!mark.exists(), "nothing ran after its ssh ended");
+    // its ssh open: it runs to its end, and the watcher goes with the group after
+    let (mut child, mark) = watched("sleep 0.2");
+    let ssh = child.stdin.take();                  // wait() would close it first
+    let st = child.wait().unwrap();
+    assert!(st.success(), "{st:?}");
+    assert!(mark.exists(), "it ran to its end");
+    drop(ssh);
+    let _ = std::fs::remove_dir_all(mark.parent().unwrap());
+}
+

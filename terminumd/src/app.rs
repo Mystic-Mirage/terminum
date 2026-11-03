@@ -74,6 +74,8 @@ pub struct App {
     /// remote hosts and their files agents (AC-81–AC-87)
     pub hosts: crate::hosts::Hosts,
     pub tunnels: crate::hosts::tunnel::Tunnels,
+    /// each host's agents on/off, one at a time, the last asked winning (AC-99)
+    pub agent_turns: crate::hosts::agents::Turns,
     /// each host's agents link (links.rs)
     #[allow(dead_code)] // started and stopped by the host tunnel (the next round)
     pub links: crate::links::Links,

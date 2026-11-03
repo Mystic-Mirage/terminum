@@ -101,6 +101,14 @@ export async function webTerm(browser) {
   await run(() => { t.view.toBottom(); t.hist("append", 6000, 20); });
   s = await state();
   check("AC-52 web: following the output, a touch screen keeps about 2000 lines", !s.broken.length && s.lines >= 2000 && s.lines < 2000 + 800 + 20, JSON.stringify(s));
+  const more = 2400 - s.lines, was = s;                       // up to a fifth over: nothing cut (each cut lays out all in WebKit)
+  await run((m) => { t.view.toBottom(); for (let k = 0; k < m; k += 5) t.hist("append", 6020 + k, Math.min(5, m - k)); }, more);
+  s = await state();
+  check("AC-52 web: following the output, appends up to a fifth over the lines kept cut nothing", !s.broken.length && s.first === was.first && s.lines === was.lines + more,
+    JSON.stringify({ was, more, s }));
+  await run((m) => { t.view.toBottom(); t.hist("append", 6020 + m, 5); }, more);
+  s = await state();
+  check("AC-52 web: past a fifth over, whole blocks go down to the lines kept", !s.broken.length && s.lines >= 2000 && s.lines < 2400, JSON.stringify(s));
 
   const first = s.first;
   await run((f) => t.hist("prepend", f - 1000, 1000), first);
@@ -109,7 +117,7 @@ export async function webTerm(browser) {
 
   // an older page still on its way: the cap waits, and a page that no longer fits is refused
   const before = s.lines;
-  await run(() => { t.view.loading = true; t.view.toBottom(); t.hist("append", 6020, 5); });
+  await run((next) => { t.view.loading = true; t.view.toBottom(); t.hist("append", next, 5); }, s.first + s.lines);
   s = await state();
   check("AC-52 web: the cap waits while older lines are on their way", !s.broken.length && s.lines === before + 5, JSON.stringify(s));
   await run((f) => t.hist("prepend", f - 2000, 1000), s.first);

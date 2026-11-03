@@ -94,9 +94,10 @@ function status(text) { banner("status", text); }
 // Pasted images, uploaded and dropped files: saved for the shown pane, their paths pasted.
 const files = uploads({ sid: () => st.sid, host: () => itemOf(st.sid)?.host ?? null, atMac: () => st.atMac, paste: (text) => input.paste(text), lines: () => !!st.bracketed && !!itemOf(st.sid)?.agent, toast, hideToast: () => { $("toast").hidden = true; } });
 
-// A phone keeps fewer lines on the page: each one costs on every touch (AC-52).
+// The lines kept on the page while it follows the output: each one is laid out on every frame, a
+// phone's on every touch too (AC-52; a computer with 20,000: 39 ms a frame).
 const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"), note: $("note"),
-  bottomBtn: $("bottom"), paused: $("paused"), send, keep: touch.matches ? 2000 : Infinity });
+  bottomBtn: $("bottom"), paused: $("paused"), send, keep: touch.matches ? 2000 : 5000 });
 // Sizing and full-screen programs (AC-04, AC-05, AC-13), settings.json's page defaults (AC-19): before anything draws.
 const sizing = paneSizing({ view, send, sid: () => st.sid, refit: () => view.keepBottom(syncControls), notify: (text) => toast(text, 9000),
   copied: (pick) => bookmarks.picker.program(pick) });   // a full-screen program's own selection (AC-06)

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Against a fake terminumd (fake.mjs): an /api/hello that never answers counts as the server down
 // (AC-14, proof.js's 5 s deadline) and the page connects once it answers; a burst of screen frames
-// with nothing moved places the floating buttons no more (marks.js placeFab), a resize places them.
+// with nothing moved places the floating buttons no more (marks.js placeFab), a resize places them;
+// a computer following the output keeps about 5000 history lines on the page (term.js trim).
 import { check } from "./check.mjs";
 import { drawn, line, openPage, pause } from "./fake.mjs";
 
@@ -60,6 +61,18 @@ export async function webHold(browser) {
   const sub = g.sent.filter((m) => m.t === "sub").at(-1)?.id;
   check("AC-18 after a pane switch the floating buttons stand in the same column", sub?.endsWith("%2") && col2.visible && col2.right === col1.right,
     JSON.stringify({ sub, col1, col2 }));
-  check("web hold: no page errors", !f.errors.length && !g.errors.length, JSON.stringify([...f.errors, ...g.errors]));
   await g.close();
+
+  // #19: 8000 lines appended while following: a computer keeps about 5000 (every one before, each laid out per frame)
+  const h = await openPage(browser);
+  await drawn(h.page);
+  const sid = h.sent.filter((m) => m.t === "sub").at(-1)?.id;
+  for (let k = 0; k < 16; k++)
+    h.say({ t: "hist", mode: "append", sid, first: k * 500, oldest: 0, truncated: false, lines: Array.from({ length: 500 }, (_, i) => line(`out ${k * 500 + i}`)) });
+  await pause(h.page, 600);
+  const kept = await h.page.evaluate(() => ({ lines: document.querySelectorAll("#hist .ln").length, last: [...document.querySelectorAll("#hist .ln")].at(-1)?.textContent }));
+  check("AC-52 a computer following the output keeps 5000 to 6000 history lines on the page", kept.lines >= 5000 && kept.lines <= 6000 + 800 && kept.last === "out 7999",
+    JSON.stringify(kept));
+  check("web hold: no page errors", !f.errors.length && !g.errors.length && !h.errors.length, JSON.stringify([...f.errors, ...g.errors, ...h.errors]));
+  await h.close();
 }

@@ -244,7 +244,8 @@ export class TermView {
   }
 
   // Drop lines older than the server's limit, so a long-running session stays light; while
-  // following the output, also whole blocks beyond `keep` lines.
+  // following the output and a fifth over `keep` lines, also whole blocks down to `keep` (a removal
+  // at the top lays out every line below it in WebKit: once per append took 33 ms a frame at 5000).
   trim(follow) {
     let drop = 0;
     while (drop < this.hist.length && this.hist[drop].n < this.oldest) drop++;
@@ -253,9 +254,10 @@ export class TermView {
       this.hist = this.hist.slice(drop);
     }
     let cut = 0;
+    const over = follow && this.hist.length > this.keep * 1.2;
     for (let b = this.histEl.firstElementChild; b?.classList.contains("blk"); b = this.histEl.firstElementChild) {
       const n = b.childElementCount;
-      if (n && !(follow && this.hist.length - cut - n >= this.keep)) break;
+      if (n && !(over && this.hist.length - cut - n >= this.keep)) break;
       b.remove();
       cut += n;
     }

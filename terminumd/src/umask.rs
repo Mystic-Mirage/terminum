@@ -33,6 +33,7 @@ pub fn restore() {
 
 /// The mode a new file (`dir` false) or folder of the user's gets: as its creation under the
 /// started umask would give it (022 when none was kept).
+#[allow(clippy::unnecessary_cast)] // mode_t is u16 on macOS, u32 on Linux
 pub fn user_mode(dir: bool) -> u32 {
     (if dir { 0o777 } else { 0o666 }) & !(started().unwrap_or(0o022) as u32)
 }

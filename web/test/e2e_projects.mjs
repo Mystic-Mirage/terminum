@@ -139,8 +139,10 @@ export async function webProjects(browser, name) {
 
   await page.click('#sessions .item[data-id$="%2"]', { button: "right" });
   const items = await menuItems(page);
-  check("AC-07 a right click opens the row's menu; the moves its place allows",
-    items.join() === "Clone,Add to Project…,Plan and Notes…,Mark as Unread,Diagnostics…,Split Below,Split Right,Split Left,Move to the Top,Move Up,Move Down,Move to the Bottom,Move to Session…,Close Session", items.join());
+  const focused = await page.evaluate(() => document.activeElement?.dataset.action);
+  check("AC-07 the row's menu opens with its focus on Clone, never on Close Session above it (Enter asks nothing)", focused === "clone", String(focused));
+  check("AC-07 a right click opens the row's menu, Close Session first; the moves its place allows",
+    items.join() === "Close Session,Clone,Add to Project…,Plan and Notes…,Mark as Unread,Diagnostics…,Split Below,Split Right,Split Left,Move to the Top,Move Up,Move Down,Move to the Bottom,Move to Session…", items.join());
   // each item with its icon, Close Session's a red ×; the three splits side by side, each drawn
   const menuLook = await page.evaluate(() => {
     const shown = [...document.querySelectorAll("#rowmenu[open] button:not([data-action=x])")].filter((b) => b.getClientRects().length);
@@ -336,7 +338,15 @@ export async function webProjects(browser, name) {
   });
   await pause(p.page, 100);
   const held = await menuItems(p.page);
-  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Notes…") && held.includes("Diagnostics…") && held.length === 12, held.join());
+  // the lift's click lands on what is under the finger now, the menu's first items among them
+  const under = await p.page.evaluate(() => {
+    const r = document.querySelector('#sessions .item[data-id$="%2"]').getBoundingClientRect(), b = document.querySelector("#rowmenu[open] [data-action=close]")?.getBoundingClientRect();
+    for (const [x, y] of [[r.left + 40, r.top + 10], ...(b ? [[b.left + b.width / 2, b.top + b.height / 2]] : [])]) document.elementFromPoint(x, y)?.click();
+    return !!b;
+  });
+  await pause(p.page, 100);
+  check("AC-07 the finger's lift asks nothing: Close Session, now first, stays unpressed", under && !await p.page.evaluate(() => document.getElementById("confirmbox").open));
+  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Close Session" && held[1] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Notes…") && held.includes("Diagnostics…") && held.length === 12, held.join());
   const pm = await mark(p.page);
   check("AC-93 on a phone too an unread row is hatched", pm.hatched && !pm.blob, JSON.stringify(pm));
   check("AC-07 on a phone (no hover) Clone is always there", await clone(p.page, 2) === "0.8");

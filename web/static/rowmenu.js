@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The session list's menus: a row's on a right click or a long press (Clone, Add to Project,
+// The session list's menus: a row's on a right click or a long press (Close Session, Clone, Add to Project,
 // Remove from Project, Mark as Unread or Read, Show Last 300 Lines (AC-96), Diagnostics (AC-100), Split Below, Right and Left (its quick shell, AC-88),
-// Move to the Top, to the Bottom, Up, Down, Move to Session…, Close Session; AC-07, AC-92, AC-93), and a project's, on its ⋯ or a right click on its header (New Window, Rename, the same moves among the
+// Move to the Top, to the Bottom, Up, Down, Move to Session…; AC-07, AC-92, AC-93), and a project's, on its ⋯ or a right click on its header (New Window, Rename, the same moves among the
 // projects, Ungroup, Close Project; AC-92), and a tmux session's group's, the same way (New Window,
 // moves among the groups, Close Group; AC-07). A move reorders the row among its group's: a project's
 // sessions in the project, a tmux session's windows in tmux; a project among the projects. Each is modal (a <dialog>): the
@@ -95,7 +95,8 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
       box.style.left = `${inside(x, w, innerWidth)}px`;
       box.style.top = `${inside(y, h, innerHeight)}px`;
     }
-    if (!keep) box.querySelector("button:not(:disabled):not([data-action=x])")?.focus({ preventScroll: true });
+    // never on Close Session, a row's first: Enter after opening never asks to close it
+    if (!keep) box.querySelector("button:not(:disabled):not([data-action=x]):not([data-action=close])")?.focus({ preventScroll: true });
   }
 
   /** The rows beside `li` in its list, and where its order goes. */
@@ -113,6 +114,11 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     const { ids, save, movable } = siblings(li), i = ids.indexOf(id), last = ids.length - 1;
     const move = (to) => { const o = ids.filter((k) => k !== id); o.splice(to, 0, id); save(o); hide(); };
     fill(it.title,
+      button("Close Session", "close", () => {
+        hide();
+        closeSession(it, send);
+      }),
+      document.createElement("hr"),
       button("Clone", "clone", () => { hide(); clone(it); }),
       button("Add to Project…", "project", () => projectMenu(it, mine, x, y)),
       ...(mine ? [button(`Remove from ${mine.name}`, "unproject", () => { hide(); send({ t: "project", action: "remove", id }); })] : []),
@@ -132,12 +138,7 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
       button("Move Up", "up", () => move(i - 1), movable && i > 0),
       button("Move Down", "down", () => move(i + 1), movable && i < last),
       button("Move to the Bottom", "bottom", () => move(last), movable && i < last),
-      ...(sessionsFor(it).length ? [button("Move to Session…", "movewin", () => moveMenu(it, x, y))] : []),
-      document.createElement("hr"),
-      button("Close Session", "close", () => {
-        hide();
-        closeSession(it, send);
-      }));
+      ...(sessionsFor(it).length ? [button("Move to Session…", "movewin", () => moveMenu(it, x, y))] : []));
     box.dataset.for = id;
     open(x, y, byFinger);
   }

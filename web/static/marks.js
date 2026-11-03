@@ -205,7 +205,7 @@ export class Marks {
     save.disabled = false; this.saving = false;
     if (reply.error) { $("markerr").textContent = reply.error; $("markerr").hidden = false; return; }
     $("markbox").close();
-    if (!ed.id && ed.sid === this.sid()) this.jumper.markAt(ed.n, loose(ed.text));   // its wavy line at once, where it stands
+    if (!ed.id && ed.sid === this.sid()) this.jumper.markAt(ed.n, loose(ed.text), this.kind === "reminder");   // its wavy line at once, where it stands
     const where = this.hereProject() ? "an agent of this project" : "this session's agent";
     if (!ed.id) this.toast(this.kind === "reminder" ? `Reminder set: it comes up when ${where} ends a turn.` : "Bookmarked.", this.kind === "reminder" ? 3500 : undefined);
   }

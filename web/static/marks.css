@@ -126,6 +126,7 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
    folder's straight bar, so the three never read as one */
 :root { --wave-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='16'%3E%3Cpath d='M2 0Q3.6 4 2 8T2 16' fill='none' stroke='%23000' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
   --wave-size: 4px 16px; }   /* a gentle wavy line, 4px wide, repeated down: a mask */
+:root { --markline: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E"); }   /* the bolder one a bookmark's text has in the terminal */
 .wave { width: 4px; min-height: 30px; background: var(--mark);
   -webkit-mask: var(--wave-line) repeat-y center / var(--wave-size); mask: var(--wave-line) repeat-y center / var(--wave-size); }
 
@@ -145,10 +146,12 @@ dialog.dlg.docdlg .dhead { margin: 0; padding: 10px 10px 10px 16px; }
 /* a quote asked about (asked.js): a light blue wavy line down its rows' left, in the gutter, as a reminder's quote */
 .askline { position: absolute; width: 4px; pointer-events: none; z-index: 1; background: var(--ask);
   -webkit-mask: var(--wave-line) repeat-y center / var(--wave-size); mask: var(--wave-line) repeat-y center / var(--wave-size); }
-/* the bookmark brought into view: its text as it is, a wavy line on its left (markjump.js) */
+/* the bookmark brought into view: its text as it is, a wavy line on its left in its color, a
+   reminder's pink (markjump.js) */
 #term { position: relative; }
-#markline { position: absolute; width: 6px; pointer-events: none; z-index: 1; opacity: .6;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23ff9f1a' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") repeat-y; }
+#markline { position: absolute; width: 6px; pointer-events: none; z-index: 1; opacity: .6; background: var(--mark);
+  -webkit-mask: var(--markline) repeat-y; mask: var(--markline) repeat-y; }
+#markline.remind { background: var(--remind); }
 
 /* the session's pane goes through its bookmarks and reminders (marknav.js): the chosen one, ✓, Undo */
 :is(#markpane, #remindpane) .mknav li.chosen .mkitem { background: var(--surface-4); }

@@ -77,7 +77,7 @@ function bridge(items) {
     }
     if (msg.t === "mark" && msg.note === "FAIL") say({ t: "marked", ref: msg.ref, error: "300 bookmarks are kept at most: delete some first." });
     else if (msg.t === "mark" && !msg.id) {
-      const item = { id: `N${++k}`, sid: msg.sid, key: null, n: msg.n, text: msg.text, note: msg.note, title: "One", host: null, at: at0 + 100 + k };
+      const item = { id: `N${++k}`, sid: msg.sid, key: null, n: msg.n, text: msg.text, note: msg.note, title: "One", host: null, at: at0 + 100 + k, ...(msg.remind ? { remind: true } : {}) };
       items.set(item.id, item);
       say({ t: "marked", ref: msg.ref, id: item.id });
       say({ t: "mark", item });
@@ -119,6 +119,13 @@ async function fromPane(page, text) {
   await page.click(`#markpane .mkitem:has-text("${text}")`);   // chosen: shown beside the list
   await page.click("#markpane .mkvgo");                          // Show in terminal
 }
+
+// the line marking a bookmark's text: its fill, the bookmarks' and the reminders' colors resolved
+const lineColor = (page) => page.evaluate(() => {
+  const l = document.getElementById("markline"), v = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const probe = (c) => { const d = document.createElement("div"); d.style.color = c; document.body.append(d); const x = getComputedStyle(d).color; d.remove(); return x; };
+  return { fill: l && getComputedStyle(l).backgroundColor, shown: !!l && !l.hidden, mark: probe(v("--mark")), remind: probe(v("--remind")) };
+});
 
 async function selectRow(page, text) {
   await page.evaluate((text) => {
@@ -198,6 +205,8 @@ export async function webMarks(browser, name = "") {
     return { shown: !!l && !l.hidden, text: l?.range?.toString().slice(0, 14), edge: r && Math.round(r.left - tr.left - t.clientLeft), gap: r && tx && Math.round(tx.left - r.right) }; });
   check(`${at} a bookmark just saved has its wavy line at once, 5 px from the terminal's edge and 5 px before the text`,
     just.shown && just.text === "out 2500 lorem" && just.edge === 5 && just.gap === 5, JSON.stringify(just));
+  const orange = await lineColor(page);
+  check(`${at} a bookmark's line is the bookmarks' orange`, orange.shown && orange.fill === orange.mark, JSON.stringify(orange));
   await page.waitForFunction(() => document.querySelector('#msgrail .dot[title*="look again"]'), null, { timeout: 3000 }).catch(() => {});   // drawn at the next frame
   const rail = await page.evaluate(() => [...document.querySelectorAll("#msgrail .dot.mark")].map((b) => ({ top: parseFloat(b.style.top), title: b.title })));
   check(`${at} the session's bookmarks are orange dots on the left strip (a wide window; none on the right edge), placed by their lines`,
@@ -253,7 +262,7 @@ export async function webMarks(browser, name = "") {
   check(`${at} Quote in chat pastes the note and, under it, the text quoted into the input, no Enter`,
     pasted.includes("ask about the retry loop\r\r> ") && pasted.includes("the retry loop never resets") && !pasted.replace(/\x1b\[201~$/, "").endsWith("\r"), JSON.stringify(pasted));
   check(`${at} the text keeps its look; a wavy line on its left from its first row to its last marks it`, m?.line === true
-    && await page.evaluate(() => !CSS.highlights?.has("bookmark") && getComputedStyle(document.getElementById("markline")).backgroundImage.includes("svg")), JSON.stringify(m));
+    && await page.evaluate(() => !CSS.highlights?.has("bookmark") && /svg/.test(getComputedStyle(document.getElementById("markline")).maskImage || getComputedStyle(document.getElementById("markline")).webkitMaskImage)), JSON.stringify(m));
 
   // this session's bookmarks from the button at the terminal's top right: a toggle
   await pressFab(page, "#marksfab");
@@ -451,6 +460,27 @@ export async function webMarks(browser, name = "") {
     /at most/.test(await page.textContent("#markerr")) && await page.evaluate(() => document.getElementById("markbox").open));
   await page.click('#markbox button[value="cancel"]');
   check(`${at} Cancel closes it`, !await page.evaluate(() => document.getElementById("markbox").open));
+  // a reminder made the same way: its line is the reminders' pink (it was the bookmarks' orange)
+  await selectRow(page, "out 2600 lorem");
+  await page.click("#markadd");
+  await page.click('#markkind button[data-kind="reminder"]');
+  await page.fill("#marknote", "check this later");
+  await page.click('#markbox button[value="save"]');
+  await page.waitForFunction(() => !document.getElementById("markbox").open, null, { timeout: 5000 }).catch(() => {});
+  const pink = await lineColor(page);
+  check(`${at} a reminder just saved has its wavy line in the reminders' pink`, pink.shown && pink.fill === pink.remind, JSON.stringify(pink));
+  // brought into view from its mark on the strip, after a bookmark's: pink again, the bookmark's orange
+  await page.click("#mbclose").catch(() => {});
+  await page.waitForFunction(() => document.querySelector('#msgrail .dot[title*="check this later"]'), null, { timeout: 3000 }).catch(() => {});
+  await page.click('#msgrail .dot[title*="look again"]');
+  await page.waitForFunction(() => document.getElementById("markline")?.range?.toString().includes("out 2500"), null, { timeout: 8000 }).catch(() => {});
+  const shownMark = await lineColor(page);
+  await page.click('#msgrail .dot[title*="check this later"]');
+  await page.waitForFunction(() => document.getElementById("markline")?.range?.toString().includes("out 2600"), null, { timeout: 8000 }).catch(() => {});
+  const shownRemind = await lineColor(page);
+  check(`${at} brought into view, a bookmark's line is orange and a reminder's pink`,
+    shownMark.fill === shownMark.mark && shownRemind.shown && shownRemind.fill === shownRemind.remind, JSON.stringify({ shownMark, shownRemind }));
+  await page.click("#mbclose").catch(() => {});
 
   // a selection in a widget's rendered text, by a mouse drag (WebKit keeps a script's range in a
   // shadow root out of the document's selection); the widget is drawn once near the view

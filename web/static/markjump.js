@@ -84,6 +84,7 @@ export class Jumper {
     const token = ++this.token, gone = () => token !== this.token || this.sid() !== item.sid;
     getSelection()?.removeAllRanges();             // a selection would hold the lines back
     this.clear();
+    this.remind = !!item.remind;                   // its line pink, as the reminders' marks
     try {
       // a sent message (AC-90) is looked for by its text, nearest the line it was sent on
       this.send(item.find ? { t: "locate", id: item.id, text: item.text, n: item.n, prompt: !!item.prompt } : { t: "locate", id: item.id });
@@ -99,11 +100,13 @@ export class Jumper {
     }
   }
 
-  /** Marks line n's needle where it stands, the view not moved (a bookmark just made, AC-33). */
-  markAt(n, needle) {
+  /** Marks line n's needle where it stands, the view not moved (a bookmark or, with `remind`, a
+   *  reminder just made, AC-33). */
+  markAt(n, needle, remind = false) {
     for (const o of Jumper.all) if (o !== this) o.token++;
     this.token++;
     this.clear();
+    this.remind = remind;
     this.find = this.seek(n, needle, 0);
     this.mark(this.find());
   }
@@ -231,6 +234,7 @@ export class Jumper {
     if (this.marker) { this.at = at ?? null; return this.marker(this.at); }
     const line = (this.line ??= Object.assign(document.createElement("div"), { id: "markline" }));
     if (!line.isConnected) this.term.append(line);
+    line.classList.toggle("remind", !!this.remind);
     this.at = line.range = at ?? null;               // for the page's own checks
     const rects = !this.live(at) ? [] : at instanceof Range ? [...at.getClientRects()].filter((r) => r.height) : [at.getBoundingClientRect()];
     if (!rects.length) { line.hidden = true; return; }
@@ -244,6 +248,7 @@ export class Jumper {
   clear() {
     if (this.widgets.pin === this.pinFn) this.widgets.pin = null;   // another jump's (a search, a bookmark) stays
     this.find = null;
+    this.remind = false;
     this.at = null;
     this.said = null;
     this.marker?.(null);

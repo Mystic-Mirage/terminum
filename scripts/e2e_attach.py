@@ -62,7 +62,7 @@ def main():
               and g["items"][0]["id"].startswith(f"tmux:local:{OWN}:%"), added)
         saved = json.load(open(os.path.join(t.home, "settings.json")))
         check("AC-89 the attached session is kept in settings.json", saved.get("attach") == {OWN: ["work"]}, saved)
-        check("AC-89 the attach command is the user's own", g and g["attach"] == f"tmux -L {OWN} attach -t =work", g and g["attach"])
+        check("AC-89 the attach command is the user's own", g and g["attach"] == f"tmux -L {OWN} attach -t '=work'", g and g["attach"])
         check("AC-89 terminum's own sessions are still listed apart", any(x["label"] == "main" and not x.get("attached") for x in groups))
         env = own("show-environment", "-t", "work", "DISPLAY").strip()
         check("AC-89 attaching leaves the session's environment as it was (no update-environment)", ":tm-test" not in env, env)

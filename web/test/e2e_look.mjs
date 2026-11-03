@@ -8,7 +8,7 @@ import { check, runningIn } from "./check.mjs";
 import { drawn, group, item, LAYOUT, openPage, pause, SIZES, pressFoot } from "./fake.mjs";
 
 const HOST = group("devbox", [item("tmux:devbox:default:%1", "build", { host: "devbox" })],
-  { host: "devbox", session: "terminum", state: "attached", others: 2, server: "devbox:default", attach: "ssh -t -- devbox 'tmux attach -t =terminum'" });
+  { host: "devbox", session: "terminum", state: "attached", others: 2, server: "devbox:default", attach: "ssh -t -- devbox \"tmux attach -t '=terminum'\"" });
 const ASKING = group("asks", [item("tmux:local:terminum:%7", "claude", { agent: "claude", shell: false, state: "waiting" })]);
 const AGENTS = group("agents", [item("tmux:local:terminum:%8", "Claude Code", { agent: "claude", shell: false }),
   item("tmux:local:terminum:%9", "Codex", { agent: "codex", shell: false, index: "2" }),

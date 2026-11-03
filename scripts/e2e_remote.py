@@ -143,7 +143,7 @@ def main():
         devbox = [g for g in groups if g.get("host") == "devbox"]
         check("AC-81 only the session terminum of the host is listed, with how to attach to it",
               len(devbox) == 1 and devbox[0].get("session") == "terminum" and not any(i.get("title") == "theirs" for i in devbox[0]["items"])
-              and devbox[0].get("attach") == "ssh -t -p 2222 -- alex@devbox.example 'tmux attach -t =terminum'", devbox)
+              and devbox[0].get("attach") == "ssh -t -p 2222 -- alex@devbox.example \"tmux attach -t '=terminum'\"", devbox)
         recs = unix_request(t.sock, "GET", "/hosts")[1]["hosts"]
         check("AC-87 the record keeps the checked recipe", recs and recs[0]["ssh"] == ["-p", "2222", "alex@devbox.example"], recs)
 

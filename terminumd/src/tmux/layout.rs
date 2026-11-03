@@ -183,9 +183,10 @@ pub fn host_group(server: &Server, files: Option<&str>) -> Value {
            "new": (state == "attached").then_some("New window"), "pool": null, "items": [], "state": state, "why": why, "files": files})
 }
 
-/// One word for a POSIX shell: as is when plain, else single-quoted.
+/// One word for a POSIX shell and zsh: as is when plain, else single-quoted (a leading `=` too:
+/// zsh reads `=main` as the path of a program named main).
 fn sh(s: &str) -> String {
-    if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "@%_+=:,./-".contains(c)) {
+    if !s.is_empty() && !s.starts_with('=') && s.chars().all(|c| c.is_ascii_alphanumeric() || "@%_+=:,./-".contains(c)) {
         s.to_string()
     } else {
         format!("'{}'", s.replace('\'', "'\\''"))
@@ -201,7 +202,9 @@ pub fn attach_command(server: &Server, session: &str) -> String {
         Link::Local { socket, .. } => format!("tmux -L {} attach -t {}", sh(socket), sh(&format!("={session}"))),
         Link::Ssh { args, .. } => {
             let recipe: Vec<String> = super::super::hosts::recipe::argv(args).iter().map(|a| sh(a)).collect();
-            format!("ssh -t {} {}", recipe.join(" "), sh(&attach))
+            // in double quotes when nothing in it would expand there: the inner quotes stay readable
+            let remote = if attach.contains(['"', '$', '`', '\\', '!']) { sh(&attach) } else { format!("\"{attach}\"") };
+            format!("ssh -t {} {remote}", recipe.join(" "))
         }
     }
 }
@@ -393,11 +396,17 @@ mod tests {
     fn a_group_says_how_another_terminal_attaches() {
         let host = Server::new("devbox", "default", Link::Ssh { ssh: "ssh".into(), args: vec!["-p".into(), "2222".into(), "alex@devbox.example".into()] },
             Arc::new(tokio::sync::Notify::new()));
-        assert_eq!(attach_command(&host, HOST_SESSION), "ssh -t -p 2222 -- alex@devbox.example 'tmux attach -t =terminum'");
+        assert_eq!(attach_command(&host, HOST_SESSION), "ssh -t -p 2222 -- alex@devbox.example \"tmux attach -t '=terminum'\"");
         assert_eq!(host_group(&host, None)["session"], "terminum");
         let local = Server::new("local", "terminum", Link::Local { tmux: "tmux".into(), socket: "terminum".into(), conf: "/dev/null".into() },
             Arc::new(tokio::sync::Notify::new()));
-        assert_eq!(attach_command(&local, "main"), "tmux -L terminum attach -t =main");
+        assert_eq!(attach_command(&local, "main"), "tmux -L terminum attach -t '=main'");
+        // zsh (macOS's shell) reads the copied target as written; bare, `=main` is a program's path
+        if let Ok(out) = std::process::Command::new("zsh").arg("-c").arg(format!("printf '%s' {}", sh("=main"))).output() {
+            assert_eq!(String::from_utf8_lossy(&out.stdout), "=main");
+            let bare = std::process::Command::new("zsh").arg("-c").arg("printf '%s' =terminum-no-such-program").output().unwrap();
+            assert!(!bare.status.success(), "zsh expanded a bare =word");
+        }
         assert_eq!(attach_command(&local, "my work's"), "tmux -L terminum attach -t '=my work'\\''s'");
     }
 

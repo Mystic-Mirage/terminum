@@ -36,6 +36,8 @@ pub struct State {
     pub view: Option<(u16, u16)>,
     /// the page is hidden: no stream, no list refresh for it
     pub paused: bool,
+    /// its terminal is hidden behind Files or View (a phone): no screens captured or sent for it
+    pub screens_off: bool,
     /// when this page last made a window, session or split (one a second, AC-07)
     pub last_new: Option<Instant>,
     /// typed, not yet handed to tmux
@@ -66,11 +68,18 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         }
         "in" => super::typing::typed(app, page, s("data"), msg["k"].as_u64()),
         "paste" => super::typing::paste(app, page, s("data"), msg["bracket"].as_bool().unwrap_or(true)),
-        "more" => super::hist::older(app, page, msg["before"].as_i64().unwrap_or(0), msg["to"].as_i64()).await,
-        "unfold" => super::hist::unfold(app, page, msg["n"].as_i64().unwrap_or(0), msg["to"].as_i64().unwrap_or(-1)).await,
+        // reads wait on tmux or ssh: off the loop, so keys sent meanwhile are typed at once
+        "more" => {
+            let (before, to) = (msg["before"].as_i64().unwrap_or(0), msg["to"].as_i64());
+            read(app, page, "more", move |a, p| async move { super::hist::older(&a, &p, before, to).await });
+        }
+        "unfold" => {
+            let (n, to) = (msg["n"].as_i64().unwrap_or(0), msg["to"].as_i64().unwrap_or(-1));
+            read(app, page, "unfold", move |a, p| async move { super::hist::unfold(&a, &p, n, to).await });
+        }
         "find" => super::find::start(app, page, &msg),
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
-        "files" => files(app, page).await,
+        "files" => read(app, page, "files", |a, p| async move { files(&a, &p).await }),
         "size" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
         "new" | "newsession" | "split" | "clone" | "rename" | "renamegroup" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
         "plan" => super::plans::handle(app, page, &msg).await,
@@ -101,7 +110,19 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
             super::sizing::handover(app, page).await;
         }
         "resume" => resume(app, page),
+        "screens" => screens(page, msg["on"] != false),
         _ => tracing::debug!(event = "page.unknown", t),
+    }
+}
+
+/// Runs a read in its lane (`reads`); a full lane is said on the page.
+fn read<F, Fut>(app: &Shared, page: &Arc<Page>, kind: &'static str, work: F)
+where
+    F: FnOnce(Shared, Arc<Page>) -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    if !super::reads::spawn(page, kind, work(app.clone(), page.clone())) {
+        error(page, "Too many reads of the history or folder are waiting; try again in a moment.", None);
     }
 }
 
@@ -130,6 +151,17 @@ fn pause(page: &Page, on: bool) {
     if on
         && let Some(s) = &st.shown {
             s.ctl.pause(true);
+        }
+}
+
+/// The terminal hidden behind Files or View, or shown again: unlike `pause`, Files and the pane's
+/// sizing go on; shown again, the stream sends a whole screen and history (AC-02).
+fn screens(page: &Page, on: bool) {
+    let mut st = page.state.lock();
+    st.screens_off = !on;
+    if on
+        && let Some(s) = &st.shown {
+            s.ctl.wake.notify_one();
         }
 }
 
@@ -177,4 +209,33 @@ pub async fn files_message(app: &Shared, server: &crate::tmux::Server, key: &str
     let home = if server.is_local() { crate::config::home().display().to_string() } else { server.home().await.unwrap_or_default() };
     let agent = app.hooks.cwd(key).filter(|a| a != cwd);
     json!({"t": "files", "sid": key, "key": key, "cwd": cwd, "home": home, "host": host, "agent": agent})
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::page::{trace, Pages};
+
+    #[tokio::test]
+    async fn a_hidden_terminal_stops_screens_only_and_showing_it_wakes_the_stream() {
+        let dir = std::env::temp_dir().join(format!("tm-screens-{}", std::process::id()));
+        let (page, _rx) = Pages::default().add(true, trace::Recorder::new(dir)).unwrap();
+        screens(&page, true);                                // nothing shown yet: only the state
+        assert!(!page.state.lock().screens_off);
+        let link = crate::tmux::server::Link::Local { tmux: "tmux".into(), socket: "tm-test-screens".into(), conf: "/dev/null".into() };
+        let server = Server::new("local", "tm-test-screens", link, Arc::new(tokio::sync::Notify::new()));
+        let ctl = Arc::new(Ctl::default());
+        let task = tokio::spawn(async {});
+        page.state.lock().shown = Some(Shown { key: "k".into(), server, pane: "%1".into(), ctl: ctl.clone(), task });
+        let woken = |ctl: Arc<Ctl>| async move { tokio::time::timeout(Duration::from_millis(50), ctl.wake.notified()).await.is_ok() };
+
+        screens(&page, false);
+        assert!(page.state.lock().screens_off && !page.state.lock().paused, "hidden behind Files: screens off, not paused");
+        assert!(!woken(ctl.clone()).await, "hiding wakes nothing");
+        screens(&page, true);
+        assert!(!page.state.lock().screens_off);
+        assert!(woken(ctl.clone()).await, "shown again: the stream is woken to send all anew");
+    }
 }

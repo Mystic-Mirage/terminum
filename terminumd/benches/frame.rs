@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The frame budget (spec §11: capture + cut + SGR < 3 ms for 200×60): a colored 200×60
 //! capture (SGR runs, 256 colors, RGB, wide CJK characters, box drawing) is cut into rows
-//! and every row encoded, 1000 times; prints the mean and fails over 3 ms.
-//! Run: `cargo bench --bench frame` (release profile).
+//! and every row encoded, 1000 times, each run timed; prints the mean, p50, p95 and max and
+//! fails when p95 is over 3 ms. In memory only: tmux's own capture and the browser's paint are
+//! not in it. Run: `cargo bench --bench frame` (release profile).
 
 #![allow(dead_code, unused_imports)] // the modules' tests are compiled out of a bench
 
@@ -74,16 +75,22 @@ fn main() {
     for _ in 0..50 {
         black_box(frame(black_box(&capture)));
     }
-    let start = Instant::now();
-    for _ in 0..RUNS {
-        black_box(frame(black_box(&capture)));
-    }
-    let mean_ms = start.elapsed().as_secs_f64() * 1000.0 / f64::from(RUNS);
+    let mut ms: Vec<f64> = (0..RUNS)
+        .map(|_| {
+            let start = Instant::now();
+            black_box(frame(black_box(&capture)));
+            start.elapsed().as_secs_f64() * 1000.0
+        })
+        .collect();
+    ms.sort_by(f64::total_cmp);
+    let mean_ms = ms.iter().sum::<f64>() / ms.len() as f64;
+    let at = |q: f64| ms[((ms.len() as f64 * q).ceil() as usize).clamp(1, ms.len()) - 1];
+    let (p50, p95, max) = (at(0.50), at(0.95), ms[ms.len() - 1]);
     println!(
-        "frame {WIDTH}x{HEIGHT}: capture {} bytes -> {bytes} bytes of rows; mean {mean_ms:.3} ms over {RUNS} runs (budget {BUDGET_MS} ms)",
+        "frame {WIDTH}x{HEIGHT}: capture {} bytes -> {bytes} bytes of rows; mean {mean_ms:.3} p50 {p50:.3} p95 {p95:.3} max {max:.3} ms over {RUNS} runs (budget p95 {BUDGET_MS} ms)",
         capture.len()
     );
-    if mean_ms > BUDGET_MS {
+    if p95 > BUDGET_MS {
         eprintln!("over budget");
         std::process::exit(1);
     }

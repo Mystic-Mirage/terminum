@@ -11,7 +11,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
 use crate::app::Shared;
@@ -37,8 +37,10 @@ pub(super) struct Agent {
     updated_at: Option<Instant>,
     /// agents' link: "" (off), "up", "refused: <why>" (link.rs)
     pub(super) agents: String,
-    /// the last refused forward: -R is asked again RETRY later
+    /// the last refused forward: -R is asked again its back-off later (link.rs `backoff`)
     pub(super) refused_at: Option<Instant>,
+    /// refusals in a row since the link was last up
+    pub(super) refusals: u32,
     /// the host's $HOME, from the probe
     pub(super) home: Option<String>,
     task: Option<tokio::task::JoinHandle<()>>,
@@ -114,8 +116,9 @@ async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>, timeout: 
         }
         drop(input);
     });
-    let out = tokio::time::timeout(timeout, child.wait_with_output()).await.map_err(|_| format!("ssh timed out after {} s", timeout.as_secs()))?.map_err(|e| e.to_string())?;
-    let _ = feed.await;
+    let out = super::bounded::output(&mut child, super::bounded::ANSWER_MAX, timeout).await;
+    feed.abort();
+    let out = out?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(if out.stderr.is_empty() { &out.stdout } else { &out.stderr }).trim().lines().last().unwrap_or("").to_string();
         return Err(if err.is_empty() { format!("ssh exited {}", out.status) } else { err });
@@ -226,11 +229,11 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&supe
     let token = crate::auth::crypto::random_hex::<16>();
     let mut stdin = child.stdin.take().expect("piped");
     stdin.write_all(format!("{token}\n").as_bytes()).await.map_err(|e| e.to_string())?;
-    let mut out = BufReader::new(child.stdout.take().expect("piped")).lines();
+    let mut out = BufReader::new(child.stdout.take().expect("piped"));
     let mut said = None;
     let ready = tokio::time::timeout(Duration::from_secs(20), async {
         for _ in 0..50 {
-            match out.next_line().await {
+            match super::bounded::line(&mut out, super::bounded::LINE_MAX).await {
                 Ok(Some(l)) if l == MISSING => return Some(String::new()),
                 Ok(Some(l)) if super::link::said(&l).is_some() => said = super::link::said(&l),
                 Ok(Some(l)) => {
@@ -245,11 +248,13 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&supe
         None
     }).await.ok().flatten();
     let Some(agent_id) = ready else {
-        let mut err = String::new();
-        if let Some(mut e) = child.stderr.take() {
-            let _ = tokio::time::timeout(Duration::from_millis(500), e.read_to_string(&mut err)).await;
-        }
+        // ended first, so its stderr reaches its end and the tail read is whole
         let _ = child.kill().await;
+        let mut err = Vec::new();
+        if let Some(e) = child.stderr.take() {
+            let _ = tokio::time::timeout(Duration::from_millis(500), async { err = super::bounded::tail(e, super::bounded::ERR_TAIL).await }).await;
+        }
+        let err = String::from_utf8_lossy(&err);
         return Err(err.trim().lines().last().map_or_else(|| "the helper did not start".to_string(), str::to_string));
     };
     if !current(&agent_id) {
@@ -314,14 +319,29 @@ async fn keep(app: Shared, host: String) {
             Ok(mut run) => {
                 set(&app, &host, "up", "");
                 backoff = 1;
-                let _ = run.child.wait().await;
+                let retry = {
+                    let g = app.tunnels.0.lock();
+                    let a = g.get(&host);
+                    super::link::retry_in(super::link::wanted(&app, &host), a.map_or("", |a| a.agents.as_str()), a.and_then(|a| a.refused_at), a.map_or(0, |a| a.refusals), Instant::now())
+                };
+                // -R refused: this connection (only this ssh) ends at the retry time, so a fixed
+                // sshd brings agents back without waiting for Files' connection to break
+                let again = super::link::closed_or_retry(run.child.wait(), retry).await;
+                if again {
+                    tracing::info!(event = "agent.link_retry", host);
+                    let _ = run.child.kill().await;
+                }
                 crate::remote::register(&app, &host, None);
                 if link.is_some() && app.links.path(&host).is_some() {
                     app.links.stop(&app, &host);
                     super::link::set_agents(&app, &host, "", false);
                 }
-                set(&app, &host, "down", &format!("{host}: connection closed"));
-                Duration::from_secs(backoff)
+                if again {
+                    Duration::ZERO
+                } else {
+                    set(&app, &host, "down", &format!("{host}: connection closed"));
+                    Duration::from_secs(backoff)
+                }
             }
             Err(e) => {
                 tracing::warn!(event = "agent.failed", host, why = e);

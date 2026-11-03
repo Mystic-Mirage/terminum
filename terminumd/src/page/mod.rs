@@ -16,6 +16,7 @@ pub mod marksfull;
 pub mod plans;
 pub mod projects;
 pub mod quick;
+pub mod reads;
 pub mod search;
 pub mod sent;
 pub mod sessions;
@@ -51,6 +52,10 @@ pub struct Page {
     pub web: bool,
     tx: mpsc::Sender<String>,
     closed: AtomicBool,
+    /// wakes whatever waits on this page (reader, writer, stream, reads) when it closes
+    woke: tokio::sync::Notify,
+    /// history and folder reads off the message loop, one lane per kind
+    pub reads: reads::Lanes,
     pub state: Mutex<client::State>,
     /// its part of the latency trace (AC-38)
     pub tracer: Mutex<trace::Tracer>,
@@ -80,6 +85,22 @@ impl Page {
     pub fn close(&self) {
         self.closed.store(true, Ordering::Relaxed);
         let _ = self.tx.try_send(String::new());
+        self.woke.notify_waiters();
+    }
+
+    /// Returns when the page has closed: one signal for the reader, the writer, the stream
+    /// and the reads, so a stuck socket ends all of them.
+    pub async fn closed(&self) {
+        loop {
+            let woke = self.woke.notified();
+            tokio::pin!(woke);
+            woke.as_mut().enable();
+            if self.is_closed() {
+                return;
+            }
+            // the queue's receiver dropped without close(): looked at again now and then
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(1), woke).await;
+        }
     }
 
     pub fn is_closed(&self) -> bool {
@@ -103,7 +124,7 @@ impl Pages {
         }
         let (tx, rx) = mpsc::channel(BACKLOG);
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        let page = Arc::new(Page { id, web, tx, closed: AtomicBool::new(false), state: Mutex::new(client::State::default()), tracer: Mutex::new(trace::Tracer::new(recorder)) });
+        let page = Arc::new(Page { id, web, tx, closed: AtomicBool::new(false), woke: Default::default(), reads: Default::default(), state: Mutex::new(client::State::default()), tracer: Mutex::new(trace::Tracer::new(recorder)) });
         list.insert(id, page.clone());
         Some((page, rx))
     }

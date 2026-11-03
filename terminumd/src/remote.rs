@@ -149,7 +149,7 @@ async fn forward(host: &str, agent: &Agent, req: Request) -> Result<Response, St
     };
     let wait = RESPONSE_WAIT + Duration::from_secs(body.len() as u64 / (256 << 10));
     let mut out = hyper::Request::builder().method(parts.method.clone()).uri(uri);
-    for name in [header::CONTENT_TYPE, header::IF_MATCH, header::IF_NONE_MATCH] {
+    for name in [header::CONTENT_TYPE, header::IF_MATCH, header::IF_NONE_MATCH, header::RANGE] {
         if let Some(v) = parts.headers.get(&name) {
             out = out.header(name, v);
         }
@@ -164,8 +164,10 @@ async fn forward(host: &str, agent: &Agent, req: Request) -> Result<Response, St
     let (parts, incoming) = res.into_parts();
     let mut response = Response::new(Body::new(Limited::new(finite_body(incoming, connection, BODY_WAIT), BODY_MAX).map_err(axum::Error::new)));
     *response.status_mut() = parts.status;
-    if let Some(v) = parts.headers.get(header::ETAG) {
-        response.headers_mut().insert(header::ETAG, v.clone());
+    for name in [header::ETAG, header::ACCEPT_RANGES, header::CONTENT_RANGE, header::CONTENT_LENGTH] {
+        if let Some(v) = parts.headers.get(&name) {
+            response.headers_mut().insert(name, v.clone());
+        }
     }
     let h = response.headers_mut();
     match raw_of.filter(|_| parts.status.is_success()) {

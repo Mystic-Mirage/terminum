@@ -124,7 +124,9 @@ export class Marks {
         else if (m.mode === "reset") this.jumper.clear();     // its lines are numbered anew: no mark on them
         if (m.mode === "reset" && m.sid !== this.paneSid) this.togglePane(false);
       // falls through
-      case "screen": requestAnimationFrame(() => this.drawRail()); return;   // the pane's range changed
+      case "screen":                               // the pane's range changed: once a frame, however many came
+        if (!this.railFrame) this.railFrame = requestAnimationFrame(() => { this.railFrame = 0; this.drawRail(false); });
+        return;
       case "layout": if ($("marksdlg").open) requestAnimationFrame(() => this.drawList());   // a session closed or came back (the count holds)
     }
   }
@@ -264,8 +266,9 @@ export class Marks {
 
   // ---------- the marks on the terminal's edge ----------
 
-  drawRail() {
-    this.placeFab();
+  /** `place` false (new output): the floating buttons are placed again only if what places them changed. */
+  drawRail(place = true) {
+    if (place || this.fabKey !== this.fabInputs()) this.placeFab();
     const rail = $("markrail"), term = this.term, v = this.view, mine = this.mine();
     const box = railBox(term);
     // a wide window has them on the strip at the left (promptrail.js)
@@ -365,12 +368,20 @@ export class Marks {
 
   // ---------- this session's bookmarks, from the button at the terminal's top right ----------
 
+  /** What placeFab's result depends on, read before anything is written (no forced layout). */
+  fabInputs() {
+    const t = this.term, here = this.sid() ? this.here() : [];
+    return [this.sid(), t.hidden, t.offsetLeft, t.offsetTop, t.clientLeft, t.clientWidth, t.clientHeight, !!this.view.theme, floats(),
+      here.length, here.filter((b) => !b.remind || openReminder(b)).length, here.some(openReminder), this.hereProject() ? 1 : 0,
+      $("planfab").dataset.pct ?? "-", document.body.classList.contains("unfolded")].join();
+  }
   /** The floating buttons stand in one column at the terminal's top right, left of the marks:
    *  find, the split and the sent history; then, set apart, the colored ones: this session's
    *  bookmarks (with their number, while it has one) and the reminders (while one is open). Where
    *  the keyboard's buttons float, ⟨…⟩ stands first and the column, Attach in it (only there), under
    *  it, shown while it is unfolded (fold.js). */
   placeFab() {
+    this.fabKey = this.fabInputs();
     // the bookmarks' pane lists its bookmarks and open reminders (marknav.js): the button counts them
     const term = this.term, here = this.sid() ? this.here() : [], n = here.filter((b) => !b.remind || openReminder(b)).length;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;

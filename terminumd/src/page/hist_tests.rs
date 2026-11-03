@@ -8,7 +8,7 @@ use std::time::Duration;
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
 
-use super::capture;
+use super::{capture, rows_at};
 use crate::testutil::Tmux;
 use crate::tmux::control::Control;
 
@@ -184,4 +184,43 @@ async fn at_tmuxs_limit_top_rows_drawn_over_in_place_keep_the_count() {
     assert!(history >= 90 && now == history, "at the limit, nothing scrolled ({history} → {now})");
     let got: Vec<String> = capture(&c, &pane, 1000, history, 100, &screen, 995, 1000, 80).await.unwrap().iter().map(text).collect();
     assert_eq!(got, above.iter().map(|l| l.trim_end().to_string()).collect::<Vec<_>>(), "the rows above the screen, as the count says");
+}
+
+/// Search reads the history and the screen while numbered output goes on (AC-34): every read
+/// gives the rows that were at those numbers in the frame, never rows that scrolled since.
+#[tokio::test]
+async fn rows_read_for_search_while_output_goes_on_keep_their_numbers() {
+    let script = "i=0; while :; do i=$((i+1)); echo N$i; done";
+    let Some(s) = Tmux::start("hist-find", (80, 10), "sleep 60") else { return };
+    s.read(&["set-option", "-g", "history-limit", "1000000"]);
+    s.read(&["new-window", "-t", "main", &format!("sh -c '{script}'")]);
+    let c = attach(&s);
+    let pane = c.run("display -p -t main:1 '#{pane_id}'").await.unwrap().remove(0);
+    while history_size(&c).await < 200 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let (mut read, mut moved) = (0, 0);
+    for _ in 0..20 {
+        // the frame: history's count, the screen and the 50 rows above it, read at once
+        let mut a = c.run_all(vec![format!("display -p -t {pane} '#{{history_size}}'"), format!("capture-pane -p -e -J -t {pane}"), format!("capture-pane -p -t {pane} -S -50 -E -1")]).await.into_iter();
+        let top: i64 = a.next().unwrap().unwrap()[0].trim().parse().unwrap();
+        let shown = a.next().unwrap().unwrap();
+        let rows = crate::screen::rows::screen_rows(&shown.join("\n"), 80, 10);
+        let screen: Vec<u64> = rows.iter().map(|r| crate::screen::history::hash(&crate::screen::rows::row_text(r))).collect();
+        let mut want: Vec<String> = a.next().unwrap().unwrap().iter().map(|l| l.trim_end().to_string()).collect();
+        want.extend(rows.iter().map(|r| crate::screen::rows::row_text(r).trim_end().to_string()));
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        // the stale offsets alone (what search read before) would land on later rows
+        let naive = c.run(format!("capture-pane -p -t {pane} -S -50 -E -1")).await.unwrap();
+        if naive.first().map(|l| l.trim_end()) != want.first().map(String::as_str) {
+            moved += 1;
+        }
+        let got = rows_at(&c, &pane, top, top, 1_000_000, &screen, top - 50, top + 10, 80).await.unwrap();
+        let got: Vec<String> = got.iter().map(|r| r.as_ref().map(crate::screen::rows::row_text).unwrap_or_default().trim_end().to_string()).collect();
+        // the screen's last rows may have been half written at the frame: the rows above them must match
+        assert_eq!(got[..57], want[..57], "the rows at the frame's numbers");
+        read += 1;
+    }
+    assert_eq!(read, 20);
+    assert!(moved > 0, "the output went on between the frame and the read");
 }

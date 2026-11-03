@@ -176,6 +176,19 @@ fn read_dir_sorted(path: &Path, generation: u64) -> Result<Listing, String> {
     Ok(Listing { entries, dir_mtime: mtime_ns(&meta), generation, read_at: Instant::now(), bytes, filtered: Mutex::new(None), recent: OnceLock::new(), by_ext: OnceLock::new() })
 }
 
+impl Listing {
+    /// What this listing keeps in memory while cached: entries by capacity, names and the
+    /// sort and filter indexes built so far. A listing a reader still holds after eviction is
+    /// the reader's, not the cache's, and is not counted.
+    fn resident_bytes(&self) -> usize {
+        let index = |v: &Vec<u32>| v.capacity() * std::mem::size_of::<u32>() + std::mem::size_of::<Vec<u32>>();
+        let slack = (self.entries.capacity() - self.entries.len()) * std::mem::size_of::<Entry>();
+        let sorts: usize = [&self.recent, &self.by_ext].iter().filter_map(|c| c.get()).map(|v| index(v)).sum();
+        let filtered = self.filtered.lock().as_ref().map_or(0, |(f, _, _, v)| f.capacity() + index(v));
+        std::mem::size_of::<Listing>() + self.bytes + slack + sorts + filtered
+    }
+}
+
 fn entry_name(name: std::ffi::OsString) -> Result<Box<str>, String> {
     name.into_string().map(String::into_boxed_str)
         .map_err(|_| "Folder contains a name that is not UTF-8; cannot address it safely".into())
@@ -203,7 +216,7 @@ impl Cache {
 
     fn slot_bytes(path: &Path, slot: &Slot) -> usize {
         path.as_os_str().len() + std::mem::size_of::<(PathBuf, Slot, Instant)>() + match slot {
-            Slot::Done(Ok(l), _) => l.bytes + std::mem::size_of::<Listing>(),
+            Slot::Done(Ok(l), _) => l.resident_bytes(),
             Slot::Done(Err(e), _) => e.len(),
             Slot::Loading(..) => 0,
         }
@@ -322,8 +335,17 @@ impl Cache {
         };
         // filtering and per-row stat() can block on slow volumes: keep them off the async workers
         let (path, filter, locate) = (path.to_path_buf(), filter.to_string(), locate.map(str::to_string));
-        tokio::task::spawn_blocking(move || Self::build_page(&listing, &path, offset, limit, &filter, hidden, sort, locate.as_deref()))
-            .await
+        let me = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let before = listing.resident_bytes();
+            let page = Self::build_page(&listing, &path, offset, limit, &filter, hidden, sort, locate.as_deref());
+            // a new sort or filter index grows the cache past its limit as much as a new folder does
+            if listing.resident_bytes() > before {
+                me.evict();
+            }
+            page
+        })
+        .await
             .unwrap_or_else(|_| empty("error", Some("internal error".into())))
     }
 
@@ -385,95 +407,5 @@ impl Cache {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn invalidation_during_a_scan_keeps_waiters_until_fresh_publication() {
-        let c = Cache::new(64 << 20);
-        let path = PathBuf::from("/synthetic-folder");
-        let (tx, rx) = watch::channel(None);
-        let dirty = Arc::new(AtomicBool::new(false));
-        c.slots.lock().insert(path.clone(), (Slot::Loading(rx.clone(), dirty.clone()), Instant::now()));
-        let mut second = c.start_read(path.clone());
-        c.invalidate(&path);
-        assert!(!c.finish_read(&path, &dirty, &tx, Err("obsolete scan".into())));
-        assert!(rx.borrow().is_none());
-        assert!(matches!(c.slots.lock().get(&path), Some((Slot::Loading(..), _))));
-        assert_eq!(c.generation.load(AO::Relaxed), 1, "no duplicate worker started");
-        assert!(c.finish_read(&path, &dirty, &tx, Err("fresh scan".into())));
-        assert_eq!(second.wait_for(|v| v.is_some()).await.unwrap().as_ref().unwrap().as_ref().err().unwrap(), "fresh scan");
-        assert_eq!(rx.borrow().as_ref().unwrap().as_ref().err().unwrap(), "fresh scan");
-    }
-
-    #[test]
-    fn lossy_names_are_refused_instead_of_aliasing_another_file() {
-        use std::os::unix::ffi::OsStringExt;
-        assert!(entry_name(std::ffi::OsString::from_vec(b"a\xff.txt".to_vec())).is_err());
-        assert_eq!(&*entry_name("a\u{fffd}.txt".into()).unwrap(), "a\u{fffd}.txt");
-    }
-
-    #[test]
-    fn errors_and_empty_folders_are_evicted_with_their_slot_overhead() {
-        let c = Cache::new(1);
-        c.slots.lock().insert(PathBuf::from("/missing"), (Slot::Done(Err("missing".into()), Instant::now()), Instant::now()));
-        let empty = Listing { entries: vec![], dir_mtime: 0, generation: 1, read_at: Instant::now(), bytes: 0, filtered: Mutex::new(None), recent: OnceLock::new(), by_ext: OnceLock::new() };
-        c.slots.lock().insert(PathBuf::from("/empty"), (Slot::Done(Ok(Arc::new(empty)), Instant::now()), Instant::now()));
-        assert!(c.stats().0 > 1);
-        c.evict();
-        assert_eq!(c.stats(), (0, 0));
-    }
-
-    #[test]
-    fn natural_order() {
-        let mut v = vec!["f10.txt", "F2.txt", "f1.txt", "a", "B", "f02b", "Ärger", "z"];
-        v.sort_by(|a, b| natural_cmp(a, b));
-        assert_eq!(v, vec!["a", "B", "f1.txt", "F2.txt", "f02b", "f10.txt", "z", "Ärger"]);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn pages_and_filter() {
-        let dir = std::env::temp_dir().join(format!("fbd-test-{}", std::process::id()));
-        fs::create_dir_all(dir.join("sub")).unwrap();
-        for i in 0..1200 {
-            fs::write(dir.join(format!("f{i}.txt")), b"x").unwrap();
-        }
-        fs::write(dir.join(".hidden"), b"").unwrap();
-        let c = Cache::new(64 << 20);
-        let p = c.page(&dir, 0, 3, "", true, Sort::Name, Some("f10.txt")).await;
-        assert_eq!(p.total, 1202);
-        assert_eq!(p.entries[0].n, "sub");
-        assert_eq!(p.entries[1].n, ".hidden");
-        assert_eq!(p.entries[2].n, "f0.txt");
-        assert_eq!(p.entries[2].s, Some(1));
-        assert_eq!(p.located, Some(2 + 10)); // sub, .hidden, f0..f9, then f10
-        let beyond = c.page(&dir, usize::MAX, 500, "", true, Sort::Name, None).await;
-        assert_eq!(beyond.status, "ready");
-        assert!(beyond.entries.is_empty());
-        let p = c.page(&dir, 0, 500, "f119", false, Sort::Name, None).await;
-        assert_eq!(p.total, 11); // f119, f1190..f1199
-        let p = c.page(&dir.join("missing"), 0, 10, "", true, Sort::Name, None).await;
-        assert_eq!(p.status, "error");
-        fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn pages_filter_and_locate_follow_the_order() {
-        let dir = std::env::temp_dir().join(format!("tm-ls-sort-{}", std::process::id()));
-        fs::create_dir_all(dir.join("sub")).unwrap();
-        for n in ["b.txt", "a.md", "c.rs", "d.txt", ".env"] { fs::write(dir.join(n), b"x").unwrap(); }
-        let c = Cache::new(64 << 20);
-        let names = |p: &Page| p.entries.iter().map(|r| r.n.clone()).collect::<Vec<_>>();
-        let p = c.page(&dir, 0, 10, "", true, Sort::Ext, Some("b.txt")).await;
-        assert_eq!(names(&p), ["sub", ".env", "a.md", "c.rs", "b.txt", "d.txt"]);
-        assert_eq!(p.located, Some(4));
-        let p = c.page(&dir, 1, 2, "", false, Sort::Ext, Some("c.rs")).await;
-        assert_eq!((names(&p), p.total, p.located), (vec!["a.md".into(), "c.rs".into()], 5, Some(2)), "hidden left out, a page of the order");
-        let p = c.page(&dir, 0, 10, "t", true, Sort::Ext, None).await;
-        assert_eq!(names(&p), ["b.txt", "d.txt"], "filtered in the order");
-        let p = c.page(&dir, 0, 10, "t", true, Sort::Name, None).await;
-        assert_eq!(names(&p), ["b.txt", "d.txt"]);
-        assert_eq!(names(&c.page(&dir, 0, 10, "", true, Sort::Name, None).await), ["sub", ".env", "a.md", "b.txt", "c.rs", "d.txt"]);
-        fs::remove_dir_all(&dir).unwrap();
-    }
-}
+#[path = "listing_tests.rs"]
+mod tests;

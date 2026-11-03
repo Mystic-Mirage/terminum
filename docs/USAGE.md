@@ -413,7 +413,7 @@ The events ride on the Files helper's ssh as a reverse Unix-socket forward, so d
 allow it: `AllowStreamLocalForwarding yes` (the default) and, on Alpine, `AllowTcpForwarding yes`
 (its stock value is `no`). When only this reverse forward is refused (`AllowStreamLocalForwarding
 local`), the host menu and `terminum hosts` say "forwarding refused by devbox's sshd", Files keep
-working, and the forward is tried again every 10 minutes. `DisableForwarding yes` or
+working, and the forward is tried again after 10 minutes, then less and less often (up to every 2 h 40 min) while it stays refused. `DisableForwarding yes` or
 `AllowStreamLocalForwarding no` refuse the Files tunnel too (it forwards a socket the other way);
 Dropbear forwards no Unix socket in either direction, so neither Files nor agents work there:
 Files say "forwarding refused by devbox's sshd (…)" and "Files cannot reach the helper". Only agents in devbox's default tmux server are
@@ -422,7 +422,11 @@ lines in the host menu instead.
 
 A host is its ssh string (options `-p -l -i -J -4 -6 -C`); terminumd holds its tmux session
 `terminum` over ssh (and the host's other sessions you attach, above), reconnects after a drop, and browses its files through a helper it copies
-only after you enable it.
+only after you enable it. A lost network shows as "reconnecting" within about 30 s (ssh's keepalive:
+15 s × 2); copying the helper may take up to 300 s, so `terminum hosts enable` waits up to 6 minutes
+and `hosts agents … on` up to 10½. The remote command is always on ssh's command line: a
+`RemoteCommand` for the host in your `~/.ssh/config` makes ssh refuse to connect: give terminum a
+`Host` alias without one.
 
 ## Configure
 

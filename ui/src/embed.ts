@@ -42,13 +42,14 @@ export const emptiedOutside = () => tell({ type: "fb-empty", path: "" });
 /** Esc in View: the page hides it and shows the terminal (AC-70); false without a page around. */
 export const escapedOutside = () => tell({ type: "fb-esc", path: "" });
 
-/** Take what the page around sends (files to open or reveal, its theme, Files' folder), and nothing from anywhere else. */
-export function acceptFromPage(handlers: { open: (path: string) => void; reveal: (path: string) => void; theme: (t: Theme) => void; root: (path: string, host: string | null) => void }) {
+/** Take what the page around sends (files to open or reveal, its theme, Files' folder, View parked or shown), and nothing from anywhere else. */
+export function acceptFromPage(handlers: { open: (path: string) => void; reveal: (path: string) => void; theme: (t: Theme) => void; root: (path: string, host: string | null) => void; park: (on: boolean) => void }) {
   if (!around) return;
   addEventListener("message", (e) => {
     if (e.source !== around || e.origin !== location.origin) return;
     const d = e.data;
     if (d?.type === "fb-theme" && d.theme && typeof d.theme === "object") return handlers.theme(d.theme);
+    if (d?.type === "fb-park" && typeof d.park === "boolean") return handlers.park(d.park);
     if (typeof d?.path !== "string") return;
     if (d.type === "fb-open") handlers.open(d.path);
     if (d.type === "fb-reveal") handlers.reveal(d.path);

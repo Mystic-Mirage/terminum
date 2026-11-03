@@ -37,6 +37,7 @@ mod release;
 mod panel_api;
 mod panel_ws;
 mod plans;
+mod raw_body;
 mod remote;
 mod lastlines;
 mod links;

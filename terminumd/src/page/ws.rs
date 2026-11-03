@@ -2,7 +2,9 @@
 //! `GET /ws`: the page's WebSocket (spec §9). The guard checked the sign-in and the Origin
 //! before the upgrade; the page's secret came as the subprotocol pair ["tm", secret], so the
 //! answer names "tm". The first message is the build (a page of another build reloads,
-//! AC-16), then the list, its bookmarks and settings. Messages are handled in order.
+//! AC-16), then the list, its bookmarks and settings. Messages are handled in order; reads
+//! that wait on tmux or ssh run beside the loop (`reads`). A closed page ends the reader, the
+//! writer, the stream and its reads at once (`Page::closed`).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,6 +52,7 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
                 let msg = tokio::select! {
                     m = rx.recv() => match m { Some(text) => Message::Text(text.into()), None => break },
                     _ = ping.tick() => Message::Ping(Default::default()),
+                    _ = page.closed() => break,
                 };
                 if page.is_closed() {
                     break;
@@ -67,17 +70,21 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
                 }
             }
             page.close();
-            let _ = tx.send(Message::Close(None)).await;
+            // a peer that stopped reading never takes the Close: it is not waited for
+            let _ = tokio::time::timeout(SEND_WAIT, tx.send(Message::Close(None))).await;
         })
     };
     // `mac`: this is the Mac's own browser (not through a proxy), which alone may use Finder (AC-36)
     page.send_json(&json!({"t": "build", "id": crate::config::build_id(), "date": crate::config::BUILD_DATE, "mac": !page.web}));
     hello(&app, &page);
     tokio::spawn(super::timing::follow(page.clone()));
-    while let Some(Ok(m)) = incoming.next().await {
-        if page.is_closed() {
-            break;
-        }
+    // the writer closes the page when the peer stops reading: the loop ends then even though
+    // the peer never sends again, so the shown pane is released (`left` below)
+    loop {
+        let m = tokio::select! {
+            m = incoming.next() => match m { Some(Ok(m)) => m, _ => break },
+            _ = page.closed() => break,
+        };
         let text = match m {
             Message::Text(t) => t.to_string(),
             Message::Close(_) => break,
@@ -88,6 +95,8 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
             continue;
         };
         let (began, kind) = (std::time::Instant::now(), msg["t"].as_str().unwrap_or("").to_string());
+        // never cut part-way (a pane switch takes `shown` before handing the old size back): each
+        // tmux command it waits on gives up on its own (ANSWER_WAIT)
         client::handle(&app, &page, msg).await;
         page.tracer.lock().handled(&kind, began);
     }
@@ -95,7 +104,8 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
     writer.abort();
     let shown = page.state.lock().shown.take();
     if let Some(old) = shown {
-        super::sizing::left(&app, &page, &old).await;
+        // handing the size back waits on tmux: bounded, and the pane is released either way
+        let _ = tokio::time::timeout(SEND_WAIT, super::sizing::left(&app, &page, &old)).await;
     }
     app.pages.remove(page.id);
     tracing::info!(event = "page.close", page = page.id, pages = app.pages.count());

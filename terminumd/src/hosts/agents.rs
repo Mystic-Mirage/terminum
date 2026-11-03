@@ -11,7 +11,10 @@ use crate::app::Shared;
 
 type Got = Vec<(String, String)>;
 
-/// The steps that reach the host or settings.json.
+/// Said when the host's record changed while an operation ran on the recipe it started with.
+pub(super) const CHANGED: &str = "the host's record changed meanwhile; nothing was saved, try again";
+
+/// The steps that reach the host or settings.json, all over the recipe read once at the start.
 pub(crate) trait Ops {
     async fn install(&self) -> Result<Got, String>;
     async fn remove(&self) -> Result<Got, String>;
@@ -19,6 +22,8 @@ pub(crate) trait Ops {
     fn save(&self, f: &mut dyn FnMut(&mut Map<String, Value>)) -> Result<(), String>;
     /// The link follows the stored setting (link::changed).
     fn changed(&self);
+    /// The recipe this operation started with.
+    fn recipe(&self) -> &[String];
 }
 
 /// Each agent's line: `<agent>: <result as shown>`.
@@ -36,6 +41,9 @@ fn files_use_helper(rec: &Value) -> bool {
     matches!(rec["files"].as_str(), Some("enabled" | "wanted"))
 }
 
+/// On: nothing is saved when the record changed during the ssh steps (a stale operation never
+/// writes over a newer record). Off: saved and the link closed first, so /hook and /agent stop at
+/// once; the host's entries go after that, bounded, with their own result.
 pub(crate) async fn set_with(ops: &impl Ops, host: &str, on: bool) -> Result<Vec<String>, String> {
     if on {
         let got = ops.install().await.map_err(|e| format!("Could not set up coding agents' progress on {host}: {e}"))?;
@@ -43,15 +51,20 @@ pub(crate) async fn set_with(ops: &impl Ops, host: &str, on: bool) -> Result<Vec
         if !took(&got) {
             return Err(format!("No coding agent on {host} took terminum's hooks: {}", shown.join("; ")));
         }
+        // judged under the settings file's write lock: the record a newer edit left is kept
+        let mut saved = false;
         ops.save(&mut |h| {
-            if let Some(r) = h.get_mut(host) {
+            if let Some(r) = h.get_mut(host).filter(|r| r["ssh"] == Value::from(ops.recipe())) {
                 r["agents"] = Value::from("enabled");
+                saved = true;
             }
         })?;
+        if !saved {
+            return Err(format!("Could not set up coding agents' progress on {host}: {CHANGED}"));
+        }
         ops.changed();
         return Ok(shown);
     }
-    let got = ops.remove().await;
     let mut keep_helper = true;
     ops.save(&mut |h| {
         if let Some(r) = h.get_mut(host) {
@@ -60,39 +73,43 @@ pub(crate) async fn set_with(ops: &impl Ops, host: &str, on: bool) -> Result<Vec
         }
     })?;
     ops.changed();
-    let got = got.map_err(|e| format!("Turned off here; could not take terminum's hooks out of {host}: {e}"))?;
+    let got = ops.remove().await.map_err(|e| format!("Turned off here; could not take terminum's hooks out of {host}: {e}"))?;
     let mut shown = lines(host, &got);
     if !keep_helper {
         match ops.remove_helper().await {
             Ok(()) => shown.push(format!("helper removed from {host}")),
-            Err(e) => return Err(format!("{}; could not remove the helper from {host}: {e}", shown.join("; "))),
+            Err(e) => return Err(format!("Turned off here; {}; could not remove the helper from {host}: {e}", shown.join("; "))),
         }
     }
     Ok(shown)
 }
 
-/// The running terminumd's steps for `host`.
+/// The running terminumd's steps for `host`, over the recipe read when the operation began.
 struct Live<'a> {
     app: &'a Shared,
     host: &'a str,
+    recipe: Vec<String>,
 }
 
 impl Ops for Live<'_> {
     async fn install(&self) -> Result<Got, String> {
-        super::agentsinstall::install(self.app, self.host, |recipe| async move { super::tunnel::update(&recipe).await }).await
+        let current = || super::recipe_of(self.app, self.host).is_some_and(|r| r == self.recipe);
+        super::agentsinstall::install(&self.recipe, |recipe| async move { super::tunnel::update(&recipe).await }, current).await
     }
     async fn remove(&self) -> Result<Got, String> {
-        super::agentsinstall::remove(self.app, self.host).await
+        super::agentsinstall::remove_on(&self.recipe).await
     }
     async fn remove_helper(&self) -> Result<(), String> {
-        let recipe = super::recipe_of(self.app, self.host).ok_or_else(|| format!("{} is not attached", self.host))?;
-        super::tunnel::remove_helper(&recipe).await
+        super::tunnel::remove_helper(&self.recipe).await
     }
     fn save(&self, f: &mut dyn FnMut(&mut Map<String, Value>)) -> Result<(), String> {
         super::save(self.app, f)
     }
     fn changed(&self) {
         super::link::changed(self.app, self.host);
+    }
+    fn recipe(&self) -> &[String] {
+        &self.recipe
     }
 }
 
@@ -101,7 +118,8 @@ pub async fn set_agents(app: &Shared, host: &str, on: bool) -> Result<Vec<String
     if !super::records(app).contains_key(host) {
         return Err(format!("no host named {host}"));
     }
-    set_with(&Live { app, host }, host, on).await
+    let recipe = super::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
+    set_with(&Live { app, host, recipe }, host, on).await
 }
 
 /// After AC-84 updated the helper: the host's agents' entries rewritten where they differ.

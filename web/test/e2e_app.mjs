@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { check } from "./check.mjs";
 import { webAppScreen } from "./e2e_appscreen.mjs";
+import { webViewPark } from "./e2e_viewpark.mjs";
 
 const STATIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../static");
 const ORIGIN = "http://web.test";
@@ -309,5 +310,6 @@ export async function webApp(browser) {
   const goneClean = !(await parkedNow(null));
   check("AC-70 web app: a closed session's waiting View goes with it, but not while it holds unsaved edits", keptDirty && goneClean,
     JSON.stringify({ keptDirty, goneClean }));
+  await webViewPark({ page, tell, win });
   await page.close();
 }

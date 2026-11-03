@@ -261,14 +261,39 @@ fn a_tag_must_look_like_one_and_a_missing_release_says_so() {
 // install.sh: the same checks before the package's terminumd runs `install`.
 
 fn install_sh(t: &T, signers: &str) -> std::process::Output {
+    let url = format!("file://{}", t.home.path("releases").display());
+    install_sh_from(t, signers, &url, |s| s)
+}
+
+fn install_sh_from(t: &T, signers: &str, url: &str, edit: impl Fn(String) -> String) -> std::process::Output {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    let text = std::fs::read_to_string(repo.join("scripts/install.sh")).unwrap();
+    let text = edit(std::fs::read_to_string(repo.join("scripts/install.sh")).unwrap());
     let start = text.find("\nSIGNERS='").unwrap() + 1;
     let end = start + text[start..].find('\n').unwrap();
     let sh = t.home.path("install.sh");
     std::fs::write(&sh, format!("{}SIGNERS='{signers}'{}", &text[..start], &text[end..])).unwrap();
     Command::new("/bin/sh").arg(&sh).env_clear().env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin").env("HOME", &t.home.dir)
-        .env("TM_RELEASE_URL", format!("file://{}", t.home.path("releases").display())).output().unwrap()
+        .env("TM_RELEASE_URL", url).output().unwrap()
+}
+
+#[test]
+fn install_sh_gives_up_on_a_stalled_server() {
+    let src = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/upgrade.rs")).unwrap();
+    assert!(src.contains(r#""--max-time", "300""#), "install.sh keeps the deadline of `terminum upgrade`");
+    let t = T::new();
+    let signers = std::fs::read_to_string(t.signers()).unwrap().trim().to_string();
+    // a server that accepts and never answers; the listener lives until the test ends
+    let stalled = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", stalled.local_addr().unwrap());
+    let deadline = "--connect-timeout 30 --max-time 300";
+    let started = std::time::Instant::now();
+    let r = install_sh_from(&t, &signers, &url, |s| {
+        assert!(s.contains(deadline), "install.sh downloads with a connect timeout and the upgrade's deadline");
+        s.replace(deadline, "--connect-timeout 2 --max-time 2")
+    });
+    assert!(!r.status.success());
+    assert!(String::from_utf8_lossy(&r.stderr).contains("download failed"), "{}", String::from_utf8_lossy(&r.stderr));
+    assert!(started.elapsed() < std::time::Duration::from_secs(20), "took {:?}", started.elapsed());
 }
 
 #[test]

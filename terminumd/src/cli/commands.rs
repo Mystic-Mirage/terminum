@@ -17,20 +17,39 @@ fn checked(ctx: &Ctx, method: &str, path: &str, body: Option<Value>) -> Result<V
     waited(ctx, method, path, body, Duration::from_secs(5))
 }
 
-/// How long `hosts <action>` waits for terminumd: enabling coding agents' progress copies the
-/// helper to the host and installs it there (AC-99), which takes far longer than an answer.
+/// How long `hosts <action>` waits for terminumd: the sum of the server's stages for that
+/// action plus an answer's 5 s. enable: probe 30 + copy 300 + connect (ready 20, forward 5,
+/// answer 5); files-remove: its ssh 60; agents-on: the helper brought up to date (probe 30 +
+/// copy 300) and the install 300; agents-off: the hooks' removal 90 and the helper's 60 (AC-99).
 pub fn host_budget(action: &str) -> Duration {
-    Duration::from_secs(if action == "agents-on" { 300 } else { 5 })
+    Duration::from_secs(5 + match action {
+        "enable" => 30 + 300 + 30,
+        "files-remove" => 60,
+        "agents-on" => 30 + 300 + 300,
+        "agents-off" => 90 + 60,
+        _ => 0,
+    })
 }
 
 fn waited(ctx: &Ctx, method: &str, path: &str, body: Option<Value>, budget: Duration) -> Result<Value, String> {
-    let (status, answer) = sockhttp::call(&ctx.sock(), method, path, body.as_ref(), budget)
-        .map_err(|_| format!("{} (see: terminum status)", launch::describe(ctx, None, None)))?;
+    let start = std::time::Instant::now();
+    let (status, answer) = sockhttp::call(&ctx.sock(), method, path, body.as_ref(), budget).map_err(|_| {
+        if start.elapsed() >= budget {
+            timed_out(path, budget)
+        } else {
+            format!("{} (see: terminum status)", launch::describe(ctx, None, None))
+        }
+    })?;
     let refused = answer.as_ref().and_then(|a| a.get("error")).and_then(Value::as_str).is_some_and(|s| !s.is_empty());
     if status >= 400 || refused {
         return Err(sockhttp::message(answer.as_ref(), status));
     }
     Ok(answer.filter(Value::is_object).unwrap_or_else(|| json!({})))
+}
+
+/// The message when terminumd took the whole budget: the work may still finish there.
+pub fn timed_out(path: &str, budget: Duration) -> String {
+    format!("no answer from terminumd to {path} within {} s; it may still be working (see: terminum hosts)", budget.as_secs())
 }
 
 // ── status ──────────────────────────────────────────────────────────────────

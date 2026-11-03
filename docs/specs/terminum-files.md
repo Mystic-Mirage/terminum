@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.8.1 |
-| Date | 2026-10-28 |
+| Version | 0.8.2 |
+| Date | 2026-11-03 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.8.2 | 2026-11-03 | An audit of 7e5c220: four held 64 MB raw answers took 262 MB and a Range got the whole file: raw files stream in 64 KiB parts with one `Range` (206, 416), through a host's Agent too, the 64 MB limit judged from the size first. The listing cache counts its sorting and filter indexes and evicts after they grow. The Panel says when saving its tree, tabs or preferences fails (once until a save works again) and sends them again on the next change or reconnect; an answer lost for a write that landed is recognized by its pane and content. A View waiting for its session pauses its event stream and rechecks on coming back (unloading waiting Views was left out: it would lose their tabs). bench_ls: 20 runs, p50/p95/max, the largest RSS (AC-64, AC-67, AC-70). |
 | 0.8.1 | 2026-11-02 | New File… and New Folder… did nothing when the selection kept with the pane named a path whose folder does not open in the tree (in another folder, or under a closed one): the name's field had no row to stand on. Such a selection makes it in the root (AC-57); found as a rare failure of `web/test/e2e_live.mjs` in WebKit. |
 | 0.8.0 | 2026-10-28 | Owner: the tree's context menu has Sorting › Recent First, Alphabetical, By Extension (folders always first); terminumd sorts, so a 500,000-entry folder still pages; a finger held on the tree opens its menu (iOS Safari sends no contextmenu); the menu has a second level (AC-52). Pragmatic review applied: an order made under its own once-cell (Recent's 500,000 lstat() held the listing's lock, name order waiting behind it); Recent's times read on up to 8 threads (3.7 s cold for 500,000 by `SORT=recent scripts/bench_ls.sh`, now 2.1 s); a finger never starts a row's drag (iOS lifts a draggable row on a long press); no hold in the rename field; a menu opened over another closes it (its keys' listener stayed). Rejected: three flat items instead of a second level (the owner asked for Sorting → three choices). |
 | 0.7.2 | 2026-10-26 | An audit's findings fixed. A JSON or YAML root of 100,000 values drew 100,000 rows at once: the top level is paged as a folder's children; Expand all and Collapse all kept every tree drawn before in memory. YAML: a key named `__proto__` vanished (it set the object's prototype), a key twice in one mapping kept the last silently, `\UFFFFFFFF` threw and left Rendered blank: each key is a member of its own, a key twice and an escape past Unicode are errors with their line and column. CSV: a last record `""` with no line end was dropped, and a column first met after row 5000 was never shown (AC-94). A video or a sound no longer shown played on, detached: it is stopped and let go as soon as its element leaves the page; a picture's `blob:` address lives while it is shown (it was revoked once drawn, so Open Image in New Tab failed); MIDI renders run two at a time, and one whose tab closed or file changed is called off, its WAV never made (AC-64). Keep Both was refused when the name was taken by a link to a file outside the roots: the new file is judged in its folder, and saved beside the link (AC-95). |
@@ -589,6 +590,7 @@ Scenario: AC-70 edge — View belongs to its session
   Then View is closed (the terminal of "docs" is shown, or "docs"'s own View if it had one open) and the View button is enabled only when "docs" has files open
   When the user shows "api" again
   Then its View is back as it was: its tabs, unsaved edits and scroll, open or closed as the user left it
+  And while it waited it heard nothing from terminumd (its event stream paused) and on coming back it rechecks its files and folders
   When session "api" closes
   Then its View goes with it, unless it holds unsaved edits (then it waits until they are saved or the page closes); a host that is only reconnecting keeps its sessions' Views
 
@@ -728,7 +730,7 @@ All `/fb/api/*` need the sign-in header (`terminum.md` AC 09); a remote host's r
 |---|---|---|
 | `GET /fb/api/ls?path&offset&limit&filter&hidden&locate` (every path below under `/fb/api/`) | a page of a folder, `writable`, `located` | AC-52, AC-63, AC-65 |
 | `GET /api/file?path` (`If-None-Match`) | text and meta; 304 when unchanged | AC-53, AC-54, AC-61 |
-| `GET /api/raw?path` | bytes with MIME (the sign-in in the header only: shown from `blob:`) | AC-64, AC-67 |
+| `GET /api/raw?path` | bytes with MIME, streamed, never read whole; one `Range: bytes=` answers 206 with `Content-Range` (416 when past the end; several ranges get the whole file), also through a host's Agent (the sign-in in the header only: shown from `blob:`) | AC-64, AC-67 |
 | `PUT /api/file?path` (`If-Match`) | save | AC-56 |
 | `POST /api/fs/{mkdir,touch,rename,trash}` | operations | AC-57–AC-59, AC-66 |
 | `POST /api/os/{reveal,open}` | Finder, default app (loopback page only) | AC-60 |
@@ -772,7 +774,7 @@ The etag is `<mtime ns>-<inode>-<size>`. Unsaved edits live in the panel's memor
 | Operation | Target | Measured by |
 |---|---|---|
 | cd → tree re-rooted | p95 < 1 s | `web/test/e2e_files.mjs` (20 cds) |
-| First page of a 500K folder, warm | p95 < 2.5 s | `scripts/bench_ls.sh /tmp/fb-big` |
+| First page of a 500K folder, not in terminumd's cache (the OS's disk cache warm) | p95 < 2.5 s; RSS < 150 MB in every run | `scripts/bench_ls.sh /tmp/fb-big` (20 fresh terminumds; p50, p95, max) |
 | Later page of a cached folder | p95 < 50 ms | same |
 | Filter a 500K folder | p95 < 500 ms | same, `filter=f49999` |
 | Scroll | no frame over 50 ms | Web Inspector timeline |
@@ -851,3 +853,4 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 - [x] 0.6.1 (2026-10-24) — AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` 111/111 (Chromium and WebKit: a file opened from the tree, Esc in the tree hides View, the page's keys on Files and Files' on the tree) → pass.
 - [x] 0.7.2 (2026-10-26) — AC-94 `node --test ui/test/dataparse.test.mjs` (`__proto__`, `constructor`, `toString` as members, copied; a key twice an error at the second, the same key in two mappings none; `\UFFFFFFFF` an error at its string, `\U0010FFFF` read; `""` a record with and without a line end) and `cd ui && node test/e2e_panel.mjs` 157/157 (a root of 100,000 values: 1,000 rows and "… 99,000 more", 2,000 after a press; a column first met at row 5001 shown); AC-64 the same run (a picture's blob: address opens while shown; a video no longer shown paused, its src gone); `cargo test midi` (a request gone sets its flag; a render asked to stop is not made: with `TM_TEST_SOUNDFONT` only); AC-95 `cargo test ops` (a name taken by a link to a file outside the roots: exists, Keep Both beside it, link and target unchanged; a folder linked outside refused) → pass. Not covered: an aborted MIDI request through `tailscale serve` (its connection may stay open, so the render runs to its end).
 - [x] 0.8.0 (2026-10-28) — AC-52 `cargo test listing` 10/10 (by extension and recent first with folders first, ties and an unreadable entry by name; pages, filter and locate in the order; the name order unchanged); `cd ui && node test/e2e_panel.mjs` 160/160 (Sorting › with Alphabetical checked, By Extension orders the rows and is kept in the prefs; a finger held 0.5 s on a row selects it and opens the menu, its lift no click; a tap opens Sorting, Recent First orders newest first; → ↓ ↩ choose Alphabetical); `SORT=recent scripts/bench_ls.sh` on 500,000 entries: cold first page 2104 ms (3662 ms before the threads), pages 6 ms; name 312 ms, ext 328 ms; `scripts/e2e_remote.py` 32/32; `scripts/security_check.sh` PASS (its terminumd refusals skipped: no private terminumd given) → pass. Not verified: a long press on a real iPhone (synthetic touch events in Chromium).
+- [x] 0.8.2 (2026-11-03) — audit fixes: AC-64 `cargo test raw_body` (one range, 206 across a chunk boundary, 416, a file that shrinks while read), `cargo test remote` (Range through a host's Agent), the audit's raw repro 4 × 64 MB held: +262 MB → +4.3 MB (+0.34 MB with a Range); AC-52 `cargo test listing` (the indexes counted, eviction after they grow); AC-71 `ui/test/e2e_panel_saves.mjs` (a refused workspace or preferences write says so once and the next change saves; a write whose answer was lost after it landed: the newer change is kept: it failed before the keys were compared sorted); AC-70 `e2e_viewpark.mjs` (a waiting View pauses its event stream, every one stays loaded, shown again it resumes); bench_ls 20 runs: cold p50 337, p95 1006 ms, page p95 18 ms, RSS 36 MB. On the delivered tree (uncommitted, on 7e5c220): `make test` (Rust 725 + 1, Python 69, Panel unit 52, Page unit 175), clippy `-D warnings`, `ui/test/e2e_panel.mjs` 171/171, `web/test/e2e_live.mjs` 233/233, `web/test/e2e_all.mjs` 1691/1691 in Chromium and WebKit, `scripts/security_check.sh`. Pragmatic review: must-fix (a handler cut part-way on close) and should-fix (lanes' order, the -R back-off, the sign-in wait, toasts once and the lost write by pane, the CLI budgets) applied.

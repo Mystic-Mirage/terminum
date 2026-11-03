@@ -177,6 +177,23 @@ pub fn archive_of(sums: &str, mac: bool) -> Result<&'static str, String> {
     }
 }
 
+/// The file's SHA-256 in lowercase hex, read in fixed chunks (a package is never held whole in memory).
+fn sha256_file(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
 /// Downloads, checks and installs a release; the installer's exit status.
 pub fn upgrade(ctx: &Ctx, tag: Option<&str>) -> Result<i32, String> {
     if let Some(t) = tag.filter(|t| !is_tag(t)) {
@@ -201,8 +218,7 @@ pub fn upgrade(ctx: &Ctx, tag: Option<&str>) -> Result<i32, String> {
     let tarball = archive_of(&sums, cfg!(target_os = "macos"))?;
     fetch(&format!("{base}/{tarball}"), &tmp.0.join(tarball)).map_err(|e| format!("download failed ({base}): {e}"))?;
     let want = sums.lines().find(|l| l.ends_with(&format!("  {tarball}"))).and_then(|l| l.split_whitespace().next());
-    let data = std::fs::read(tmp.0.join(tarball)).map_err(|e| e.to_string())?;
-    let got: String = Sha256::digest(&data).iter().map(|b| format!("{b:02x}")).collect();
+    let got = sha256_file(&tmp.0.join(tarball)).map_err(|e| format!("{tarball}: {e}"))?;
     if want != Some(got.as_str()) {
         return Err(format!("checksum mismatch for {tarball}: nothing installed"));
     }
@@ -216,6 +232,22 @@ pub fn upgrade(ctx: &Ctx, tag: Option<&str>) -> Result<i32, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_hashes_in_chunks_to_its_whole_digest() {
+        let dir = std::env::temp_dir().join(format!("tm-sha-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // larger than the 64 KiB buffer, so several chunks and a partial last one are hashed
+        let data: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
+        let f = dir.join("pkg.tar.gz");
+        std::fs::write(&f, &data).unwrap();
+        let whole: String = Sha256::digest(&data).iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(sha256_file(&f).unwrap(), whole);
+        std::fs::write(&f, b"").unwrap();
+        assert_eq!(sha256_file(&f).unwrap(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert!(sha256_file(&dir.join("missing")).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn the_package_of_every_os_else_the_macs_only_on_a_mac() {

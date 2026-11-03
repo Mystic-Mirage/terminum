@@ -80,6 +80,7 @@ const conn = connection({ parse: (data) => trace.parse(data), onMessage: (m) => 
     trace.connected(send, ws);
     active = true;                                 // a new connection streams until told otherwise:
     syncActive();                                  // a hidden page says so before it shows a pane (AC-93: it reads nothing)
+    if ($("term").hidden) send({ t: "screens", on: false });   // a terminal behind Files or View gets no frames (AC-02)
     if (st.sid) select(st.sid, true);
     if (!embedded || focusAsked) focusTerminal();  // a computer types into the chat at once; a phone opens no keyboard
   } });
@@ -124,7 +125,7 @@ const shownFiles = paneFiles(() => views.paneInfo());
 // Addresses and paths get a dotted underline (linkmarks.js).
 const marks = linkMarks($("term"), [$("hist"), $("screen")], shownFiles);
 const asked = askedMarks({ term: $("term"), boxes: [$("hist"), $("screen")], view, send, sid: () => st.sid });
-const views = new Views({ send, store, onShow: () => { view.keepBottom(applyFit); marks(); }, onBack: () => focusTerminal() });
+const views = new Views({ send, store, onShow: () => { view.resume(); view.keepBottom(applyFit); marks(); }, onBack: () => focusTerminal() });
 // the sessions shown last, ⌘[ and ⌘] through them; ⌘F the history's search, ⌘B Files (AC-07)
 const recent = recentSessions({ store, exists: (id) => !!findItem(st.groups, id), show: (id) => pick(id) });
 if (!embedded) ideKeys({ back: recent.back, forward: recent.forward, files: () => views.toggleFiles(), undo: undoRedo, cut: () => editMenu.cut() && (input.focus(), true),

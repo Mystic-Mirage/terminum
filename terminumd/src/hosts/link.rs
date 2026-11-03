@@ -107,9 +107,38 @@ pub fn refused_why(host: &str) -> String {
     format!("forwarding refused by {host}'s sshd (AllowTcpForwarding/AllowStreamLocalForwarding/DisableForwarding, or Dropbear)")
 }
 
-/// Whether to ask for -R now: never refused, or refused at least RETRY ago.
-pub fn try_forward(refused_at: Option<Instant>, now: Instant) -> bool {
-    refused_at.is_none_or(|t| now.duration_since(t) >= RETRY)
+/// How long after its `refusals`-th refusal in a row -R is asked again: RETRY, then twice as
+/// long each time up to 16 times (2 h 40 min), so a host whose sshd keeps refusing does not cut
+/// a healthy Files connection every 10 minutes for good.
+pub fn backoff(refusals: u32) -> Duration {
+    RETRY * (1 << refusals.saturating_sub(1).min(4))
+}
+
+/// Whether to ask for -R now: never refused, or refused at least its back-off ago.
+pub fn try_forward(refused_at: Option<Instant>, refusals: u32, now: Instant) -> bool {
+    refused_at.is_none_or(|t| now.duration_since(t) >= backoff(refusals))
+}
+
+/// When a connection whose agents' -R was refused must end so -R is asked again: its back-off
+/// after the refusal (AC-85: 10 minutes first), even while Files keeps the connection healthy.
+pub fn retry_in(wanted: bool, agents: &str, refused_at: Option<Instant>, refusals: u32, now: Instant) -> Option<Duration> {
+    let t = refused_at.filter(|_| wanted && agents.starts_with("refused"))?;
+    Some(backoff(refusals).saturating_sub(now.duration_since(t)))
+}
+
+/// Waits for `closed` (the ssh child's end) or, with `retry`, that long; true when the retry
+/// time came first.
+pub async fn closed_or_retry(closed: impl std::future::Future, retry: Option<Duration>) -> bool {
+    match retry {
+        None => {
+            closed.await;
+            false
+        }
+        Some(d) => tokio::select! {
+            _ = closed => false,
+            () = tokio::time::sleep(d) => true,
+        },
+    }
 }
 
 /// The probe's command: a marker line, then `uname -sm` and $HOME, so rc noise before it
@@ -150,6 +179,9 @@ pub(super) fn set_agents(app: &Shared, host: &str, state: &str, refused: bool) {
     a.agents = state.to_string();
     if refused {
         a.refused_at = Some(Instant::now());
+        a.refusals += 1;
+    } else if state == "up" {
+        a.refusals = 0;
     }
     drop(g);
     app.dirty.notify_one();
@@ -162,8 +194,8 @@ pub(super) async fn link_for(app: &Shared, host: &str, recipe: &[String]) -> Opt
         app.links.stop(app, host);
         return None;
     }
-    let (refused_at, home) = app.tunnels.0.lock().get(host).map(|a| (a.refused_at, a.home.clone())).unwrap_or_default();
-    if !try_forward(refused_at, Instant::now()) {
+    let (refused_at, refusals, home) = app.tunnels.0.lock().get(host).map(|a| (a.refused_at, a.refusals, a.home.clone())).unwrap_or_default();
+    if !try_forward(refused_at, refusals, Instant::now()) {
         return None;
     }
     let home = match home {

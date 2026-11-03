@@ -74,3 +74,15 @@ fn cap_is_not_stretched_by_a_child_holding_stdout() {
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "got answer");
     assert!(t.elapsed() < std::time::Duration::from_secs(2), "took {:?}", t.elapsed());
 }
+
+#[test]
+fn install_stops_after_the_helper_when_the_recipe_changed() {
+    let recipe = vec!["alex@devbox.example".to_string()];
+    let copied = std::cell::Cell::new(None);
+    let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let e = rt.block_on(install(&recipe, |r| { copied.set(Some(r)); async { Ok(()) } }, || false)).unwrap_err();
+    assert_eq!(e, crate::hosts::agents::CHANGED);
+    assert_eq!(copied.take(), Some(recipe.clone()), "the helper went over the pinned recipe");
+    let e = rt.block_on(install(&recipe, |_| async { Err("copy failed".to_string()) }, || panic!("not asked"))).unwrap_err();
+    assert_eq!(e, "copy failed");
+}

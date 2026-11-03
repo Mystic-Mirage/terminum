@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use serde::Serialize;
-use tokio::sync::{mpsc, oneshot, Notify};
+use tokio::sync::{mpsc, oneshot, watch, Notify};
 
 use super::control::{Answer, Control, Notice};
 pub use super::command::{host_attach_command, host_command, plain};
@@ -61,7 +61,7 @@ pub struct Server {
     pub socket: String,
     pub link: Link,
     inner: Mutex<Inner>,
-    wakes: Mutex<HashMap<String, Arc<Notify>>>,
+    wakes: Mutex<HashMap<String, watch::Sender<u64>>>,
     printed: Mutex<HashMap<String, u64>>,
     /// the list must be read again (a window, pane, session or layout changed)
     pub dirty: Arc<Notify>,
@@ -218,10 +218,20 @@ impl Server {
         self.inner.lock().panes = panes;
     }
 
-    /// The pane `%N`'s wake-up: notified on each of its `%output` (a permit is kept when
-    /// nobody waits, so an output between two captures is never missed).
-    pub fn wake(&self, pane: &str) -> Arc<Notify> {
-        self.wakes.lock().entry(pane.to_string()).or_insert_with(|| Arc::new(Notify::new())).clone()
+    /// The pane `%N`'s wake-up, one per viewer: its revision goes up on each `%output`, so every
+    /// viewer wakes, and one that was capturing meanwhile sees the change on its next wait.
+    pub fn wake(&self, pane: &str) -> Wake {
+        Wake::new(self.wakes.lock().entry(pane.to_string()).or_insert_with(|| watch::channel(0).0).subscribe())
+    }
+
+    /// Wakes the viewers of `pane`, or of every shown pane.
+    pub fn woke(&self, pane: Option<&str>) {
+        let wakes = self.wakes.lock();
+        let bump = |tx: &watch::Sender<u64>| tx.send_modify(|r| *r = r.wrapping_add(1));
+        match pane {
+            Some(p) => wakes.get(p).into_iter().for_each(bump),
+            None => wakes.values().for_each(bump),
+        }
     }
 
     /// `%output`s of the pane `%N` so far: a long run of keys goes on once it printed (typing.rs).
@@ -231,7 +241,7 @@ impl Server {
 
     /// Forgets wake-ups nobody holds any more.
     pub fn prune_wakes(&self) {
-        self.wakes.lock().retain(|_, n| Arc::strong_count(n) > 1);
+        self.wakes.lock().retain(|_, tx| tx.receiver_count() > 0);
         self.printed.lock().retain(|p, _| self.wakes.lock().contains_key(p));
     }
 
@@ -474,7 +484,7 @@ impl Server {
 #[path = "notices.rs"]
 mod notices;
 use notices::notices;
-pub use notices::OnCopy;
+pub use notices::{OnCopy, Wake};
 
 #[cfg(test)]
 #[path = "server_tests.rs"]

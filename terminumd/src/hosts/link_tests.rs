@@ -46,9 +46,13 @@ fn link_lines_and_retry_timing() {
     assert_eq!(said("terminumd-agent link: refused"), Some(Said::Refused));
     assert_eq!(said("terminumd-agent ready x"), None);
     let now = Instant::now();
-    assert!(try_forward(None, now));
-    assert!(!try_forward(Some(now), now + Duration::from_secs(599)));
-    assert!(try_forward(Some(now), now + RETRY));
+    assert!(try_forward(None, 0, now));
+    assert!(!try_forward(Some(now), 1, now + Duration::from_secs(599)));
+    assert!(try_forward(Some(now), 1, now + RETRY));
+    // refused again and again: 10, 20, 40, 80, then 160 minutes for good
+    assert!(!try_forward(Some(now), 2, now + RETRY));
+    assert!(try_forward(Some(now), 2, now + RETRY * 2));
+    assert_eq!((1..=7).map(|n| backoff(n).as_secs() / 60).collect::<Vec<_>>(), [10, 20, 40, 80, 160, 160, 160]);
     assert!(refused_why("devbox.example").contains("devbox.example's sshd"));
 }
 
@@ -63,4 +67,27 @@ fn the_mac_id_is_made_once_and_kept() {
     // an id that cannot be kept is refused, never a new one per connection
     let e = mac_id(&d.join("missing")).unwrap_err();
     assert!(e.contains("could not be kept") && e.contains("mac-id"), "{e}");
+}
+
+#[test]
+fn retry_is_scheduled_only_for_a_refused_wanted_link() {
+    let now = Instant::now();
+    let t = now - Duration::from_secs(100);
+    assert_eq!(retry_in(true, "refused: no -R", Some(t), 1, now), Some(RETRY - Duration::from_secs(100)));
+    assert_eq!(retry_in(true, "refused: no -R", Some(t), 3, now), Some(RETRY * 4 - Duration::from_secs(100)), "backed off");
+    assert_eq!(retry_in(true, "refused: no -R", Some(now - RETRY - RETRY), 1, now), Some(Duration::ZERO));
+    assert_eq!(retry_in(true, "up", Some(t), 1, now), None, "a link that came up is not cut");
+    assert_eq!(retry_in(false, "refused: no -R", Some(t), 1, now), None, "agents off: Files is not cut");
+    assert_eq!(retry_in(true, "refused: no -R", None, 0, now), None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_scheduler_ends_a_healthy_connection_at_the_retry_time() {
+    // a Files connection that never closes on its own: the retry time ends the wait
+    let start = tokio::time::Instant::now();
+    assert!(closed_or_retry(std::future::pending::<()>(), Some(RETRY)).await);
+    assert_eq!(start.elapsed(), RETRY);
+    // a connection that closes first is not a retry
+    assert!(!closed_or_retry(async {}, Some(RETRY)).await);
+    assert!(!closed_or_retry(tokio::time::sleep(Duration::from_secs(5)), None).await);
 }

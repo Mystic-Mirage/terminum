@@ -23,6 +23,7 @@ import {
 import { panelMedia } from "./e2e_panel_media.mjs";
 import { panelDrop } from "./e2e_panel_drop.mjs";
 import { panelDocs } from "./e2e_panel_docs.mjs";
+import { panelSaves } from "./e2e_panel_saves.mjs";
 import { NO_SIGNALS } from "./process-stop.mjs";
 
 // playwright-core is a devDependency; PLAYWRIGHT_CORE may point at another copy
@@ -416,6 +417,14 @@ try {
   const n = calls; await op.waitForTimeout(2500);
   check("AC 09 … no retry loop", calls - n <= 1, `${calls - n} requests in 2.5 s`);
   await ctx2.close();
+
+  // AC-71, AC-52 the Panel's own writes refused or their answer lost: last, as it leaves the tree changed
+  const sp = await context.newPage();                  // its own tab: the sign-in kept, the tree as the sandbox has it
+  sp.on("pageerror", (e) => errors.push(`saves: ${e.message}`));
+  await sp.goto(panelUrl());
+  await sp.waitForSelector(row("src"));
+  await panelSaves(sp);
+  await sp.close();
 
   check("no page errors or alerts", errors.length === 0, errors.join("; "));
   await page.screenshot({ path: path.join(os.tmpdir(), "tm-e2e-panel.png") });

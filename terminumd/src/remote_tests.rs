@@ -130,3 +130,28 @@ async fn a_hosts_answer_carries_terminumds_type_and_policy() {
     assert_eq!(res.headers()[header::CONTENT_TYPE], "application/json", "an error is JSON, not a picture");
     std::fs::remove_file(agent.socket).unwrap();
 }
+
+#[tokio::test]
+async fn a_range_goes_to_the_host_and_its_partial_answer_comes_back() {
+    let socket = std::env::temp_dir().join(format!("fbd-peer-range-{}.sock", std::process::id()));
+    let _ = std::fs::remove_file(&socket);
+    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+    let seen = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut bytes = [0; 4096];
+        let n = stream.read(&mut bytes).await.unwrap();
+        let head = "HTTP/1.1 206 Partial Content\r\nAccept-Ranges: bytes\r\nContent-Range: bytes 2-5/10\r\nContent-Length: 4\r\n\r\n2345";
+        stream.write_all(head.as_bytes()).await.unwrap();
+        String::from_utf8_lossy(&bytes[..n]).to_lowercase()
+    });
+    let agent = Agent { socket, token: "synthetic-token".into(), generation: 1 };
+    let req = axum::http::Request::builder().uri("/api/raw?path=%2Fsrv%2Fclip.mp4").header(header::RANGE, "bytes=2-5").body(Body::empty()).unwrap();
+    let res = forward("devbox.example", &agent, req).await.unwrap();
+    assert!(seen.await.unwrap().contains("range: bytes=2-5"), "the Range reached the host");
+    assert_eq!(res.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(res.headers()[header::CONTENT_RANGE], "bytes 2-5/10");
+    assert_eq!(res.headers()[header::ACCEPT_RANGES], "bytes");
+    assert_eq!(res.headers()[header::CONTENT_TYPE], "video/mp4");
+    assert_eq!(&res.into_body().collect().await.unwrap().to_bytes()[..], b"2345");
+    std::fs::remove_file(agent.socket).unwrap();
+}

@@ -10,7 +10,7 @@
 use std::collections::VecDeque;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
@@ -22,6 +22,9 @@ use tokio::sync::{mpsc, oneshot};
 pub const ANSWER_WAIT: Duration = Duration::from_secs(10);
 /// stderr kept to say why a client ended (ssh's "Permission denied (publickey)").
 const STDERR_KEPT: usize = 4096;
+/// Most bytes of commands written to a client and not yet taken by its writer (stdin full: a
+/// slow ssh): a command past it fails at once rather than piling up (the reader never writes).
+const LINES_MAX: usize = 16 << 20;
 
 /// What a control client tells besides answers. `%output` is a wake-up: the screen comes from
 /// `capture-pane`; only a clipboard write in it is read (clip.rs, AC-06).
@@ -48,6 +51,8 @@ struct Pending {
 /// A running control client. Dropping the last handle kills the process.
 pub struct Control {
     lines: mpsc::UnboundedSender<(String, oneshot::Sender<Answer>)>,
+    /// bytes in `lines` (LINES_MAX)
+    queued: Arc<AtomicUsize>,
     alive: Arc<AtomicBool>,
     /// why it ended (ssh's or tmux's last words), once it has
     pub ended: Arc<Mutex<Option<String>>>,
@@ -62,7 +67,10 @@ pub struct Control {
 
 impl Control {
     /// Starts `cmd` (stdin, stdout, stderr piped). Notices go to `notices`; when the process
-    /// ends, `notices` gets nothing more and `done` is fired with the reason.
+    /// ends, `notices` gets nothing more and `done` is fired with the reason. `notices` stays
+    /// unbounded: its reader (notices.rs) never waits on anything but it, so it keeps up, and
+    /// a bound would either stall this reader, which also carries every answer, or drop a
+    /// notice (a layout change, a copy) for good; a copy is at most clip.rs `MOST` bytes.
     pub fn spawn(mut cmd: Command, notices: mpsc::UnboundedSender<Notice>, done: oneshot::Sender<String>) -> std::io::Result<Control> {
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
         // what ended without a word says: a link that never reached tmux says so
@@ -83,12 +91,14 @@ impl Control {
         // writer: the lines queued now (a frame's display and capture, a batch of keys), their
         // waiters in line, one write; once stdin is closed, new lines fail at once (those
         // waiting end with the reader or their timeout)
-        let (p, a) = (pending.clone(), alive.clone());
+        let queued = Arc::new(AtomicUsize::new(0));
+        let (p, a, q) = (pending.clone(), alive.clone(), queued.clone());
         tokio::spawn(async move {
             let mut bytes = Vec::new();
             while let Some(first) = rx.recv().await {
                 let mut next = Some(first);
                 while let Some((line, reply)) = next {
+                    q.fetch_sub(line.len(), Ordering::Relaxed);
                     if a.load(Ordering::Relaxed) {
                         p.lock().push_back(Pending { reply, at: Instant::now() });
                         bytes.extend_from_slice(line.as_bytes());
@@ -215,7 +225,7 @@ impl Control {
             let _ = child.wait().await;
         });
 
-        Ok(Control { lines: tx, alive, ended, attached, clean, pid, pending })
+        Ok(Control { lines: tx, queued, alive, ended, attached, clean, pid, pending })
     }
 
     pub fn alive(&self) -> bool {
@@ -236,7 +246,14 @@ impl Control {
             let _ = tx.send(Err("a tmux command must be one non-empty line".into()));
             return rx;
         }
+        let n = line.len();
+        if self.queued.fetch_add(n, Ordering::Relaxed) + n > LINES_MAX {
+            self.queued.fetch_sub(n, Ordering::Relaxed);
+            let _ = tx.send(Err("tmux is not keeping up: too many commands wait for it".into()));
+            return rx;
+        }
         if self.lines.send((line, tx)).is_err() {
+            self.queued.fetch_sub(n, Ordering::Relaxed);
             let (tx, rx) = oneshot::channel();
             let _ = tx.send(Err("tmux is not connected".into()));
             return rx;

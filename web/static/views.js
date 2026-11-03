@@ -28,6 +28,7 @@ export class Views {
     this.floating = false;         // File is open over the terminal at WIDE
     this.filesSrc = "";            // what the Files frame shows: its pane, folder and host
     this.filesError = null;        // why the pane has no Files
+    this.termShown = true;         // as terminumd knows it: frames are sent while it is shown (AC-02)
     this.filesShown = false;
     this.fileHost = null;          // the host the File frame's files are on
     this.sid = null;               // the shown session, whose View is #file
@@ -100,6 +101,8 @@ export class Views {
     document.body.classList.toggle("docked", wide && this.docked);
     for (const n of NAMES) document.querySelector(`button[data-view="${n}"]`).setAttribute("aria-selected", String(shown[n]));
     $("term").hidden = !shown.term;
+    if (shown.term !== this.termShown) this.send({ t: "screens", on: shown.term });   // hidden: no frames for it; shown: all anew (AC-02)
+    this.termShown = shown.term;
     // a selection left in the hidden terminal would keep it paused, and iOS its Copy menu up
     const sel = getSelection();
     if (!shown.term && sel?.anchorNode && $("term").contains(sel.anchorNode)) sel.removeAllRanges();
@@ -133,11 +136,15 @@ export class Views {
     const old = $("file"), button = document.querySelector('button[data-view="file"]');
     const open = WIDE.matches ? this.floating : this.current === "file";
     // a View with files waits for its session; an empty one (never used, or its last file closed) goes
-    if (old.getAttribute("src") && !button.disabled) Object.assign(old.dataset, { sid: this.sid ?? "", host: this.fileHost ?? "", open: String(open) });
-    else old.remove();
+    // a waiting View's event stream pauses (fb-park) until it is shown again
+    if (old.getAttribute("src") && !button.disabled) {
+      Object.assign(old.dataset, { sid: this.sid ?? "", host: this.fileHost ?? "", open: String(open) });
+      old.contentWindow?.postMessage({ type: "fb-park", park: true }, location.origin);
+    } else old.remove();
     old.removeAttribute("id");
     let next = [...$("filewin").querySelectorAll("iframe[data-sid]")].find((f) => f.dataset.sid === (sid ?? ""));
-    if (!next) {
+    if (next) next.contentWindow?.postMessage({ type: "fb-park", park: false }, location.origin);
+    else {
       next = Object.assign(document.createElement("iframe"), { title: "View" });
       $("backterm").before(next);
       next.addEventListener("load", () => { if (next.id === "file") { this.tellTheme(next); this.tellRoot(); } });

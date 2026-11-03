@@ -3,7 +3,8 @@
 //! pane has been quiet SETTLE (a write that came in parts is whole) when it was idle, else at the
 //! next 33 ms tick, and sends only the rows that changed; rows that scrolled off are appended to
 //! the page's history with their numbers.
-//! A pane nobody shows is never captured.
+//! A pane nobody shows is never captured; one whose terminal its page hides behind Files or View
+//! (`screens` off) only has its folder followed, and is sent anew when shown (AC-02).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,6 +16,7 @@ use tokio::sync::Notify;
 
 use super::{Page, CLOSED};
 use crate::app::Shared;
+use crate::tmux::server::Wake;
 use crate::screen::frame::{Fields, Shown, FIELDS};
 use crate::screen::history::{Numbering, Step};
 use crate::screen::rows;
@@ -57,7 +59,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
     let (name, theme) = crate::looks::theme_of(&app, &server, &pane).await;
     page.tracer.lock().opening(&key, !server.is_local());
     page.send_json(&json!({"t": "theme", "sid": key, "theme": theme, "name": name}));
-    let wake = server.wake(&pane);
+    let mut wake = server.wake(&pane);
     let mut shown = Shown::default();
     // the last frame's rows, cursor columns and encodings: an unchanged row is not encoded again
     let mut encodings: Vec<(rows::Row, Option<usize>, String)> = Vec::new();
@@ -66,7 +68,11 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
     let mut generation = u64::MAX;
     let mut said_lost = false;
     let mut server_pid: Option<u32> = None;
+    let mut stale = false;              // control clients changed or screens were off: everything is sent anew
     loop {
+        if page.is_closed() {
+            return;
+        }
         if ctl.paused.load(Ordering::Relaxed) {
             ctl.resumed.notified().await;
             continue;
@@ -88,15 +94,19 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
         if g != generation {
             // new control clients (a restart, a reconnect): everything is sent anew
             generation = g;
-            ctl.numbering.lock().forget();
-            shown.clear();
+            stale = true;
         }
+        // the terminal hidden behind Files or View (once opened): its fields only, for the folder
+        let hidden = page.state.lock().screens_off && ctl.fields.lock().is_some();
         let started = Instant::now();
         let prev_cursor = ctl.fields.lock().as_ref().map(|f| (f.cx, f.cy));
-        let answers = client.run_all(vec![format!("display -p -t {pane} '{FIELDS}'"), format!("capture-pane -p -e -J -t {pane}")]).await;
-        let (display, capture) = (&answers[0], &answers[1]);
-        let (Ok(display), Ok(capture)) = (display, capture) else {
-            let e = display.as_ref().err().or(capture.as_ref().err()).cloned().unwrap_or_default();
+        let mut cmds = vec![format!("display -p -t {pane} '{FIELDS}'")];
+        if !hidden {
+            cmds.push(format!("capture-pane -p -e -J -t {pane}"));
+        }
+        let answers: Result<Vec<Vec<String>>, String> = client.run_all(cmds).await.into_iter().collect();
+        let Ok(answers) = answers else {
+            let e = answers.err().unwrap_or_default();
             if e.contains("can't find") || e.contains("no such") {
                 page.send_json(&json!({"t": "error", "msg": CLOSED, "sid": key}));
                 tracing::info!(event = "pane.closed", key, error = e);
@@ -106,7 +116,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             tokio::time::sleep(Duration::from_millis(500)).await;
             continue;
         };
-        let Some(f) = display.first().and_then(|l| Fields::parse(l)) else {
+        let Some(f) = answers[0].first().and_then(|l| Fields::parse(l)) else {
             tokio::time::sleep(Duration::from_millis(500)).await;
             continue;
         };
@@ -116,6 +126,20 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             tracing::info!(event = "pane.closed", key, why = "tmux server restarted");
             return;
         }
+        if hidden {
+            stale = true;
+            follow(&app, &page, &server, &key, &ctl, f, &mut agent_dir).await;
+            tokio::select! {
+                _ = ctl.wake.notified() => {}
+                _ = tokio::time::sleep(POLL) => {}
+            }
+            continue;
+        }
+        if std::mem::take(&mut stale) {
+            ctl.numbering.lock().forget();
+            shown.clear();
+        }
+        let capture = &answers[1];
         let opened = ctl.fields.lock().is_none();
         if opened {
             // a pane just opened: the active page's grid first, then its first frame at it, never
@@ -129,12 +153,16 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
         let screen = rows::screen_rows(&capture.join("\n"), f.width, f.height);
         let texts: Vec<String> = screen.iter().map(rows::row_text).collect();
         let step = ctl.numbering.lock().step(f.history, f.width, &texts, f.alt, f.limit);
+        // history captures (up to thousands of rows) go on a local server's bulk client, beside
+        // this pane's typing; a host's bulk client is its main session's, so there the pane's own
+        let bulk = server.is_local().then(|| server.bulk()).flatten();
+        let hist = bulk.as_deref().unwrap_or(&*client);
         match step {
             Step::Reset => {
                 shown.clear();
-                super::hist::reset(&app, &page, &client, &ctl, &key, &pane, &f).await;
+                super::hist::reset(&app, &page, hist, &ctl, &key, &pane, &f).await;
             }
-            Step::Append { from, to } => super::hist::append(&app, &page, &client, &ctl, &key, &pane, &f, from, to).await,
+            Step::Append { from, to } => super::hist::append(&app, &page, hist, &ctl, &key, &pane, &f, from, to).await,
             Step::Same => {}
         }
         let cursor = (f.cursor_on && f.cy < screen.len()).then_some(f.cy);
@@ -158,15 +186,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             && !page.send(msg) {
                 return;
             }
-        // the pane's folder changed (a cd, by Enter, a hot key or a script), or its agent's: Files follows it
-        let agent_now = app.hooks.cwd(&key);
-        let agent_moved = agent_now != agent_dir;
-        agent_dir = agent_now;
-        let moved_to = ctl.fields.lock().as_ref().filter(|old| old.path != f.path || agent_moved).map(|_| f.path.clone());
-        *ctl.fields.lock() = Some(f);
-        if let Some(cwd) = moved_to {
-            page.send_json(&super::client::files_message(&app, &server, &key, &cwd).await);
-        }
+        follow(&app, &page, &server, &key, &ctl, f, &mut agent_dir).await;
         if opened {
             super::sizing::activated(&app, &page);       // its grid came after "sub" (or not yet): sized as it comes
         }
@@ -187,13 +207,26 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
         }
         // then quiet, output that came while it slept too (its wake kept): never 33 ms past the notice
         if how == "output" {
-            settle(&wake, notice + FRAME_GAP).await;
+            settle(&mut wake, notice + FRAME_GAP).await;
         }
     }
 }
 
+/// Keeps the pane's last fields; when its folder changed (a cd, by Enter, a hot key or a script),
+/// or its agent's, Files follows it (AC-51).
+async fn follow(app: &Shared, page: &Page, server: &Arc<Server>, key: &str, ctl: &Ctl, f: Fields, agent_dir: &mut Option<String>) {
+    let agent_now = app.hooks.cwd(key);
+    let agent_moved = agent_now != *agent_dir;
+    *agent_dir = agent_now;
+    let moved_to = ctl.fields.lock().as_ref().filter(|old| old.path != f.path || agent_moved).map(|_| f.path.clone());
+    *ctl.fields.lock() = Some(f);
+    if let Some(cwd) = moved_to {
+        page.send_json(&super::client::files_message(app, server, key, &cwd).await);
+    }
+}
+
 /// Until the pane's output has been quiet SETTLE, or `until`.
-async fn settle(wake: &Notify, until: tokio::time::Instant) {
+async fn settle(wake: &mut Wake, until: tokio::time::Instant) {
     loop {
         let quiet = SETTLE.min(until.saturating_duration_since(tokio::time::Instant::now()));
         if quiet.is_zero() || tokio::time::timeout(quiet, wake.notified()).await.is_err() {
@@ -207,38 +240,45 @@ mod tests {
     use super::*;
     use tokio::time::Instant;
 
+    fn pane() -> (Arc<Server>, Wake) {
+        let link = crate::tmux::server::Link::Local { tmux: "tmux".into(), socket: "tm-test".into(), conf: "/dev/null".into() };
+        let server = Server::new("local", "tm-test", link, Arc::new(Notify::new()));
+        let wake = server.wake("%1");
+        (server, wake)
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_write_in_parts_is_waited_for_never_past_a_frame() {
-        let wake = Arc::new(Notify::new());
+        let (server, mut wake) = pane();
         let t0 = Instant::now();
-        settle(&wake, t0 + FRAME_GAP).await;
+        settle(&mut wake, t0 + FRAME_GAP).await;
         assert_eq!(t0.elapsed(), SETTLE, "no more output: the quiet alone");
 
-        let parts = wake.clone();
+        let parts = server.clone();
         tokio::spawn(async move {
             for _ in 0..3 {
                 tokio::time::sleep(Duration::from_millis(3)).await;
-                parts.notify_one();
+                parts.woke(Some("%1"));
             }
         });
         let t0 = Instant::now();
-        settle(&wake, t0 + FRAME_GAP).await;
+        settle(&mut wake, t0 + FRAME_GAP).await;
         assert_eq!(t0.elapsed(), Duration::from_millis(9) + SETTLE, "each part 3 ms after the last: quiet after the third");
 
-        wake.notify_one();                                  // output while the frame gap was slept
+        server.woke(Some("%1"));                            // output while the frame gap was slept
         let t0 = Instant::now();
-        settle(&wake, t0 + FRAME_GAP).await;
+        settle(&mut wake, t0 + FRAME_GAP).await;
         assert_eq!(t0.elapsed(), SETTLE, "that output kept: quiet after it");
 
-        let stream = wake.clone();
+        let stream = server.clone();
         let busy = tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_millis(1)).await;
-                stream.notify_one();
+                stream.woke(Some("%1"));
             }
         });
         let t0 = Instant::now();
-        settle(&wake, t0 + FRAME_GAP).await;
+        settle(&mut wake, t0 + FRAME_GAP).await;
         busy.abort();
         assert_eq!(t0.elapsed(), FRAME_GAP, "output that never stops: a frame at the gap");
     }

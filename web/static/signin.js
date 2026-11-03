@@ -47,12 +47,16 @@ function proving() {
     const mine = proof = hello(s, realFetch).catch(() => ({ state: "bad" }));
     mine.then((r) => {
       if (proof !== mine) return;
+      slow = r.waited ?? 0;
       if (r.state === "ok") token = r.cred;
       else proof = null;                             // asked again next time
     });
   }
   return proof;
 }
+let slow = 0;
+/** The ms the last proof waited for an answer that never came (0: it answered, or nothing took the request). */
+export const unanswered = () => slow;
 /** The proof's state for the current connection: "ok", "bad", "unknown" or "down". */
 export const prove = () => proving().then((r) => r.state);
 /** The connection dropped: prove the server again, and make a new credential, before a request goes out. */

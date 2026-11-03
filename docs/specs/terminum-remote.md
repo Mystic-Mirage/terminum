@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core). This spec holds remote hosts: their tmux se
 
 | Field | Value |
 |---|---|
-| Version | 0.8.4 |
-| Date | 2026-10-29 |
+| Version | 0.8.5 |
+| Date | 2026-11-03 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.8.5 | 2026-11-03 | An audit of 7e5c220: setting up agents could go on over another recipe saved meanwhile: the recipe read at the start is used for every step and checked before the install and the save (a stale operation saves nothing). Agents off is saved and the link closed first, then the hooks go within 90 s ("Turned off here; …" when that fails). A refused -R was retried only when the ssh ended: it is retried after 10 minutes, then 20, 40, 80, 160 while refused. ssh answers are bounded (1 MB, the last 4 KB of stderr, a 4 KB ready line), only that ssh ended past them. The CLI waits the sum of the server's stages (enable 365 s, agents on 635, off 155, files-remove 65) and says when it gave up. The limits say what the code does: helper copy 300 s, network loss about 30 s, `RemoteCommand=none` not passed (AC-81, AC-82, AC-85, AC-99). |
 | 0.8.4 | 2026-11-01 | Owner, from a review of the open bookmarks: a host whose sshd sent no banner kept the link waiting without end and the row then said "tmux exited": the control client's ssh has `ConnectTimeout=10` (as Files' and the agents' ssh), unless the user's ssh configuration sets its own (`ssh -G`, read once per recipe off the async workers: a slow ProxyJump keeps its longer wait), and a link that ends before tmux answered with nothing said says "ssh: no answer from the host" (AC-81). A recipe edited by hand in settings.json dropped an attached host at once, also for a typo; asked to make it more reliable: an attached host keeps its link while the new recipe is invalid, or until the new one answers over ssh, and says why (AC-87). |
 | 0.8.3 | 2026-10-29 | Owner: a host group's menu (⋯) near the list's end went past the window's bottom (Off, Attach tmux sessions… and the agents' item cut off); it opens under its button where it fits, else above it, always inside the window, scrolling in a window shorter than it (AC-81). |
 | 0.8.2 | 2026-10-26 | Owner: the first "terminum hosts agents <host> on" printed only "terminumd answers (see: terminum status)": the CLI waited 5 s, the install takes longer. It says what it does and waits up to 5 minutes (AC-99). |
@@ -105,7 +106,7 @@ Scenario: AC-81 happy path — add a host
 
 Scenario: AC-81 happy path — the link drops and comes back
   When the network drops
-  Then within 20 s (ServerAliveInterval × 2) the control client ends, the group "devbox" says "reconnecting (2 s)" on a line of its own under its name (a long state wraps there, never cut), a shown pane keeps its last screen with "Connection to devbox lost" over it, typing is refused with that message; terminumd reconnects after 1, 2, 4 … 30 s
+  Then within about 30 s (ssh's ServerAliveInterval 15 s × ServerAliveCountMax 2 unanswered) the control client ends, the group "devbox" says "reconnecting (2 s)" on a line of its own under its name (a long state wraps there, never cut), a shown pane keeps its last screen with "Connection to devbox lost" over it, typing is refused with that message; terminumd reconnects after 1, 2, 4 … 30 s
   When ssh succeeds again
   Then the group is back within 5 s, the shown pane's screen is captured anew (its history too), and the notice goes; the tmux session on the host never noticed
 
@@ -262,6 +263,7 @@ Scenario: AC-99 happy path — enable
   And runs "~/.terminum/bin/terminum-host hooks install --host-mode" there, with hook and MCP entries calling terminum-host by absolute path; the host's own "~/.terminum/bin/terminum" is never touched
   And records "agents": "enabled" for devbox and shows one result line per agent: "installed", "not found", "needs Codex trust (/hooks)", "uses devbox's own terminum", "refused: a terminum entry of another command", or "failed: <why>"
   And nothing is installed in devbox's ~/.claude or ~/.codex before that action; Add host has no tick for it in v1
+  And the whole action runs over the ssh recipe read when it began; when devbox's record changes or goes meanwhile, the install is not started after the helper copy, nothing is saved and it says "the host's record changed meanwhile; nothing was saved, try again"
 
   And "terminum hosts agents devbox on" first says "Enabling coding agents' progress on devbox… (copying the helper and installing)" and waits up to 5 minutes for the result lines (other host commands: 5 s)
 
@@ -281,7 +283,7 @@ Scenario: AC-99 happy path — events and MCP from a host pane
 Scenario: AC-99 failure — the host refuses the forward
   Given devbox's sshd refuses "-R" alone ("AllowStreamLocalForwarding local")
   When the helper says "link: refused"
-  Then the same ssh keeps running without the link (it asked for "-R" with "ExitOnForwardFailure=no"), devbox's files keep working, the host menu and "terminum hosts" say "forwarding refused by devbox's sshd (AllowTcpForwarding/AllowStreamLocalForwarding/DisableForwarding, or Dropbear)", and the forward is tried again after 10 minutes
+  Then the same ssh keeps running without the link (it asked for "-R" with "ExitOnForwardFailure=no"), devbox's files keep working, the host menu and "terminum hosts" say "forwarding refused by devbox's sshd (AllowTcpForwarding/AllowStreamLocalForwarding/DisableForwarding, or Dropbear)", and the forward is tried again after 10 minutes (that ssh ends then and connects anew, even while files keep it busy), then after 20, 40, 80 and 160 minutes while the host keeps refusing; once the link is up the next refusal starts at 10 minutes again
   When devbox's sshd has "DisableForwarding yes" or "AllowStreamLocalForwarding no", or devbox runs Dropbear
   Then the Files tunnel's own "-L" is refused too: its trial request through the forward gets no answer, and devbox's Files say the same "forwarding refused by devbox's sshd (…)" and "Files cannot reach the helper": a limit of the ssh server that terminumd cannot work around (AS-84 a)
 
@@ -309,7 +311,7 @@ Scenario: AC-99 edge — upgrade
 
 Scenario: AC-99 edge — disable or remove the host
   When the user picks the menu item again and turns it off, runs "terminum hosts agents devbox off", or removes devbox
-  Then "hooks remove --host-mode" runs on devbox and removes only entries whose command is terminum-host, the link stops, "<app>/links/<host id>.sock" is removed, "agents" is cleared, and the helper is removed only when files are off
+  Then "agents" is cleared and the link stops first ("<app>/links/<host id>.sock" removed: no event from devbox is taken any more), then "hooks remove --host-mode" runs on devbox within 90 s and removes only entries whose command is terminum-host, and the helper is removed only when files are off; a failure there says "Turned off here; could not take terminum's hooks out of devbox: <why>"
 
 Scenario: AC-99 edge — a host with its own terminum
   Given devbox runs its own terminum whose hooks are installed
@@ -363,7 +365,7 @@ A shown pane keeps its last screen while reconnecting; typing is refused with th
 | AC-86 | `scripts/agents.py`, `release.py`, the runner workflows. | Rename. | `iterm-enhancer/scripts/agents.py:1`, `release.py:1` |
 | AC-87 | Hosts keyed by ssh args in `agents.json`. | `settings.json` hosts; a CLI. | `iterm-enhancer/bridge/fbbridge/hosts.py:1` |
 | AC-99 | terminumd drops a host's hook and MCP events: `/hook` and `/agent` take only local panes by socket name; a hook prompt is kept under "local". | A link per host (`-R` on the helper's ssh), a router with limits, socket-path matching, host-mode install, the host passed to `sent::keep`. | `terminumd/src/sock.rs:113`, `sock.rs:132`, `terminumd/src/agentapi.rs:34` |
-| AC-82 | Noticed, not fixed: the helper's ssh passes no `RemoteCommand=none`, which §9 Security claims. | Pass it, or correct §9. | `terminumd/src/hosts/tunnel.rs:88` |
+| AC-82 | No ssh of terminumd passes `RemoteCommand=none` (OpenSSH before 7.6 refuses the option); §9 Security says so: a `RemoteCommand` in the user's ssh config makes ssh refuse to start. | — | `terminumd/src/hosts/mod.rs:62` |
 | AC-83 | Noticed, not fixed: the probe reads the first two words of stdout, so a host's rc file that prints (bash sources `.bashrc` for sshd commands on Debian) breaks the `uname -sm` parse. | Frame the probe's output with a random marker. | `terminumd/src/hosts/tunnel.rs:124` |
 | AC-82, AC-83 | Noticed, not fixed: every remote script is POSIX sh handed to the login shell, so fish and rbash hosts fail Files. | `exec /bin/sh -c '…'` (fixes fish, csh, nu); rbash and ForceCommand stated unsupported. | `terminumd/src/hosts/tunnel.rs:137` |
 
@@ -419,13 +421,18 @@ Control client command: `ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o Se
 | Reconnect back-off | 1, 2, 4 … 30 s | — |
 | ssh connections per host | 1 + one per attached session (AC 89) + one helper ssh while files or agents are enabled (agents' `-R` rides on it, AC-99) | sessions start one at a time, back-off 1 … 30 s each |
 | Agents link (AC-99) | the host's socket path ≤ 100 bytes; 64 KB a request; 50 requests a second in a burst, 20 sustained, per link; 16 connections at once, one request each, its head within 5 s and its body and answer within 5 s; a disable ends its open connections | agents refused with why; 413; 429 (never queued); over 16 closed unread; 408 or closed |
-| Refused forward (AC-99) | retried with `-R` after 10 min | files keep running without it |
+| Refused forward (AC-99) | retried with `-R` after 10 min, then 20, 40, 80, 160 min while refused (that ssh reconnects: files pause a moment) | files keep running without it |
 | Agent answers | 64 MB; 30 s idle, 120 s total | request fails, connection freed |
-| Helper copy | 60 s | failure shown, retry later |
+| Helper copy (enable, update, agents on) | 300 s | failure shown, retry later |
+| Helper removal (files remove; agents off with files off) | 60 s | failure shown |
+| Agents off (AC-99) | saved here first, then the host's hooks removed within 90 s | "Turned off here; could not take terminum's hooks out of devbox: <why>" |
+| A host's answers to terminumd's ssh (probe, install, agents) | 1 MB of stdout, the last 4 KB of stderr, a helper's ready line 4 KB | the step fails with ssh's last words |
+| Network loss | ~30 s (ServerAliveInterval 15 × ServerAliveCountMax 2) on the control client; ~45 s on the helper's ssh (ServerAliveInterval 15, ssh's default count of 3) | reconnect with back-off |
+| `terminum hosts <action>` wait | 5 s + enable 360 s, agents-on 630 s, agents-off 150 s, files-remove 60 s | "no answer from terminumd to /hosts/<action> within <n> s; it may still be working (see: terminum hosts)" |
 
 ### Security
 
-The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no remote command but tmux or the agent, each shell-quoted for the host; `BatchMode=yes`, `RemoteCommand=none` for the agent tunnel); a host is its record, never a name it reports; the agent's token on stdin; on a host terminumd ends only the user's orphaned tmux control clients (AC-81: listed by that tmux with `ignore-size` and still a tmux process, or on Linux named `tmux: client` with terminum's command line; a parent that is init or a shell of init's; never the server; one with `ignore-size` that init runs on purpose is taken for one, an accepted risk); answers untrusted; nothing copied to a host before Enable; releases signed on the Mac only; a host's other sessions are never typed into or sized until the user attaches them (AC 89), attached by session id with `-E` (no name in the host's shell, no environment copied into them). Denied: `terminum hosts add x 'alex@h -o ProxyCommand=…'` → `option not allowed: -o`.
+The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no remote command but tmux or the agent, each shell-quoted for the host; `BatchMode=yes`; the remote command is always on ssh's command line, so a `RemoteCommand` of the user's ssh config makes ssh refuse to start, never run, and `RemoteCommand=none` is not passed: ssh older than OpenSSH 7.6 refuses that option); a host is its record, never a name it reports; the agent's token on stdin; on a host terminumd ends only the user's orphaned tmux control clients (AC-81: listed by that tmux with `ignore-size` and still a tmux process, or on Linux named `tmux: client` with terminum's command line; a parent that is init or a shell of init's; never the server; one with `ignore-size` that init runs on purpose is taken for one, an accepted risk); answers untrusted; nothing copied to a host before Enable; releases signed on the Mac only; a host's other sessions are never typed into or sized until the user attaches them (AC 89), attached by session id with `-E` (no name in the host's shell, no environment copied into them). Denied: `terminum hosts add x 'alex@h -o ProxyCommand=…'` → `option not allowed: -o`.
 
 Agents' link (AC-99): nothing is written to a host's `~/.claude` or `~/.codex` before the user turns agents on, and remove takes off only entries whose command is terminum-host. A process on the host (the user, or root) can, only for that host's rows: post status, plan and prompt events for panes of the host's default server, write and read their plans and notes, and receive reminder text; it cannot reach other routes, local or other hosts' keys, or the Mac's files (a note's file is shown as text). Other users of the host cannot connect: sshd binds the socket 0600 in a 0700 folder; root can, an accepted risk. The Mac-side socket `<app>/links/<host id>.sock` (0600, folder 0700) has two routes only, `POST /hook` and `POST /agent`, with the limits of §9 Constraints; the host is the listener's, never a name in the body; the body's socket path must equal that server's `#{socket_path}`; a prompt is kept under that host. The helper, not shell glue, checks `~/.terminum/run` (the user's, 0700, not a symlink) and the socket's owner before linking, and the hook checks the folder the same way before connecting. A host's notes shown in a project mixing local panes carry the host's name.
 
@@ -474,3 +481,4 @@ Evidence of 2026-10-15: `scripts/e2e_remote.py` runs a private terminumd whose s
 - [x] 0.7.3 (2026-10-26) — AC-81 `cargo test tmux::orphans` (each sweep's option its own, random) and `python3 scripts/e2e_remote.py` 32/32 → pass. Not run: `scripts/e2e_remote_sshd.py` (Docker and the Linux helper).
 - [x] 0.8.3 (2026-10-29) — AC-81 `web/test/e2e_tmux.mjs` (Chromium and WebKit, 1400 px wide: the window shortened until its group's button, in the list's view, has under 100 px below it: the menu opens above the button, whole inside the window) 102/102 → pass.
 - [x] 0.8.4 (2026-11-01) — AC-81 `cargo test tmux::control` (an ssh that ends silently before tmux answered: "ssh: no answer from the host"; its stderr's last line when it said one); AC-87 `scripts/e2e_remote.py` 37/37 against a private terminumd with the fake ssh: settings.json edited by hand under the attached devbox: an invalid recipe keeps the link (typing reaches it), a failing one keeps it and says ssh's words, the old link dropped then takes the new record, a recipe that answers takes over, and back. On the delivered tree (uncommitted, on ed902db): `make test` (Rust 692 + 1, Python 54, Panel unit 47, Page unit 154), Clippy `-D warnings` clean, `cd ui && node test/e2e_panel.mjs` PASS 165, `node web/test/e2e_all.mjs` PASS 1609, `node web/test/e2e_live.mjs` PASS 191, `scripts/e2e_remote.py` 37/37, `scripts/e2e_remote_agents.py` 22/22, `scripts/e2e_hooks.py` 32/32, `scripts/security_check.sh` PASS. Pragmatic review: approve with conditions, applied (a key's value holding '=' inside a word leaked up to it; a held host whose old link dropped stayed on the old recipe; `off` with a typo; Make's `:=`/`?=`; `=>` and `::` not hidden; signal handlers before the child; `alt` decided by terminumd).
+- [x] 0.8.5 (2026-11-03) — audit fixes: AC-99 `cargo test hosts::agents` (a record changed during the install: nothing saved, the newer kept; off saved and the link stopped before the host's removal); AC-85 `cargo test hosts::link` (the retry scheduled only for a refused wanted link, backed off 10…160 min, a paused-clock scheduler ends a healthy connection at its time); `cargo test hosts::bounded` (answer, stderr tail and ready line bounds, only its own ssh ended). On the delivered tree (uncommitted, on 7e5c220): `make test` (Rust 725 + 1, Python 69, Panel unit 52, Page unit 175), clippy `-D warnings`, `ui/test/e2e_panel.mjs` 171/171, `web/test/e2e_live.mjs` 233/233, `web/test/e2e_all.mjs` 1691/1691 in Chromium and WebKit, `scripts/security_check.sh`. Pragmatic review: must-fix (a handler cut part-way on close) and should-fix (lanes' order, the -R back-off, the sign-in wait, toasts once and the lost write by pane, the CLI budgets) applied.

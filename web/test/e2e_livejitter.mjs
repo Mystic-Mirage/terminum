@@ -30,8 +30,24 @@ export async function liveJitter(page, { tmux, work }) {
   fs.writeFileSync(prog, PROGRAM);
   // a window named claude (-n: tmux renames it no more): its pane is a coding agent's (titles.rs); its row found by its pane
   const pane = tmux("new-window", "-P", "-F", "#{pane_id}", "-n", "claude", `node ${prog}`);
+  // right after the restart checks (e2e_live.mjs): the page settled first (status line clear), then the row shown
+  await page.waitForFunction(() => !document.getElementById("status").innerText.trim(), null, { timeout: 8000 }).catch(() => {});
   await page.click(`#sessions .item[data-id$=":${pane}"]`);
-  await page.waitForFunction(() => document.querySelector("#screen .blk.inbox .cur"), null, { timeout: 8000 }).catch(() => {});
+  const ready = await page.waitForFunction(() => document.querySelector("#screen .blk.inbox .cur"), null, { timeout: 8000 }).then(() => "", (e) => e.message);
+  if (ready) {
+    // the precondition failed: what the page showed, to tell a wrong row, a hidden page or a lost link from a redraw bug
+    const state = await page.evaluate(() => {
+      const on = document.querySelector("#sessions .item.on");
+      return { row: on?.dataset.id, title: on?.innerText.split("\n")[0], focus: document.hasFocus(), visibility: document.visibilityState,
+        status: document.getElementById("status").innerText.trim(), hasbox: document.getElementById("term").classList.contains("hasbox"),
+        screen: [...document.querySelectorAll("#screen .ln")].map((l) => l.textContent).filter((t) => t.trim()).slice(0, 6).map((t) => t.slice(0, 40)) };
+    });
+    state.tmux = tmux("capture-pane", "-p", "-t", pane).split("\n").filter(Boolean).slice(0, 4);
+    check("AC-02 the coding agent's input box with the cursor in it is shown (precondition)", false, `${ready} ${JSON.stringify(state)}`);
+    tmux("kill-window", "-t", pane);
+    fs.rmSync(prog, { force: true });
+    return;
+  }
   await page.waitForTimeout(500);                          // sized for the view and drawn again
   const got = await page.evaluate(() => new Promise((done) => {
     const screen = document.getElementById("screen"), seen = { frames: 0, lost: 0, away: 0, boxes: new Set(), tops: new Set() };

@@ -73,11 +73,25 @@ function snapshot(): Pane | null {
 }
 
 /** What a PUT would change (rev and timestamp excluded). */
-const content = (p: Pane) => JSON.stringify({ ...p, rev: 0, updated: 0 });
+/** A pane's state without its revision and time, its keys sorted: terminumd answers with sorted
+ *  keys, a snapshot has them in the order it built them. */
+const content = (p: Pane) => JSON.stringify({ ...p, rev: 0, updated: 0 }, (_k, v: unknown) =>
+  v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : v);
 
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => void saveNow(), 300);
+}
+
+/** The pane and content of a PUT that failed without an answer (a network error): it may have landed. */
+let ambiguous: { key: string; content: string } | null = null;
+
+/** A failed save says so once until that kind of save works again: saves follow every scroll and
+ *  expand, and a stopped terminumd would stack a toast for each over its banner. */
+const warned = new Set<string>();
+function failed(kind: string, text: string) {
+  if (!warned.has(kind)) toast(text);
+  warned.add(kind);
 }
 
 async function saveNow() {
@@ -85,15 +99,26 @@ async function saveNow() {
   const snap = snapshot(), k = key;
   if (!snap || !k || content(snap) === content(ws!)) return;
   const previous = ws, run = workspaceRun;
+  const current = () => key === k && ws === previous && run === workspaceRun;
   try {
     const r = await api<{ rev: number }>("PUT", "/api/workspace", { query: { key: k }, body: snap });
-    if (key === k && ws === previous && run === workspaceRun) { workspaceRun++; ws = { ...snap, rev: r.rev }; }
+    ambiguous = null;
+    warned.delete("workspace");
+    if (current()) { workspaceRun++; ws = { ...snap, rev: r.rev }; }
   } catch (e) {
-    // another page showing this pane, or a cd, won the race: take the server's version
-    if (e instanceof ApiError && e.code === "stale_rev" && key === k && ws === previous && run === workspaceRun) {
+    if (e instanceof ApiError && e.code === "stale_rev" && current()) {
       workspaceRun++;
-      await applyWorkspace(e.body.current as Pane);
+      const theirs = e.body.current as Pane;
+      // our own earlier write landed although its answer was lost: keep what changed since, on its rev
+      if (ambiguous?.key === k && content(theirs) === ambiguous.content) { ambiguous = null; ws = theirs; scheduleSave(); return; }
+      ambiguous = null;
+      // another page showing this pane, or a cd, won the race: take the server's version
+      await applyWorkspace(theirs);
+      return;
     }
+    // fail loud; the snapshot stays unsaved (ws unchanged): the next change or reconnect retries
+    if (!(e instanceof ApiError) || e.code === "network") ambiguous = { key: k, content: content(snap) };   // api() wraps a network error
+    failed("workspace", `Panel state not saved: ${(e as Error).message}`);
   }
 }
 
@@ -144,6 +169,9 @@ function onState(s: TermState) {
   upgrade.build(s.build);
   term = { ...term, bridge: true };
   if (!VIEW) renderHeader(term);
+  // terminumd is back: send what a failed save left behind
+  void saveNow();
+  if (prefsUnsaved) savePrefs();
 }
 
 /** A host's pane: its files offer (AC 83), read when the panel connects and whenever terminumd
@@ -168,6 +196,15 @@ function onFsChange(c: FsChange) {
 }
 
 let lastUnproven = false;
+// a View waiting hidden for its session (the page's fb-park) listens to nothing until shown again
+let parked = false, resumed = false;
+function connectStream() { if (!parked) void stream.connect(); }
+function park(on: boolean) {
+  if (on === parked) return;
+  parked = on;
+  if (on) stream.close();
+  else { resumed = true; connectStream(); }
+}
 /** The event stream's handlers; it opens after terminumd proved itself (stream.ts, AC 09). */
 const stream = new Stream({
   on: {
@@ -180,7 +217,8 @@ const stream = new Stream({
   },
   open() {
     notice("", "");
-    if (upgrade.back()) { // terminumd was away: what changed meanwhile was not announced
+    if (upgrade.back() || resumed) { // terminumd was away, or this View waited parked: what changed meanwhile was not announced
+      resumed = false;
       refreshScope(scope, scope, tree, viewer);
     }
     if (VIEW) return;
@@ -243,7 +281,15 @@ const terminal = (action: "insert" | "cd", body: object) =>
 
 // ── layout ───────────────────────────────────────────────────────────────────
 
-const savePrefs = () => void api("PUT", "/api/prefs", { body: prefs }).catch(() => {});
+/** Preferences not yet saved (a failed PUT): the next change or reconnect sends them again. */
+let prefsUnsaved = false, prefsSent = 0;
+const savePrefs = () => {
+  prefsUnsaved = true;
+  const sent = ++prefsSent;   // only the newest PUT's answer says whether they are saved
+  void api("PUT", "/api/prefs", { body: prefs }).then(
+    () => { if (sent === prefsSent) prefsUnsaved = false; warned.delete("prefs"); },
+    (e: Error) => failed("prefs", `Preferences not saved: ${e.message}`));
+};
 
 function setSplit(r: number) {
   prefs.split = Math.min(0.85, Math.max(0.15, r));
@@ -388,11 +434,11 @@ function startViewer(path: string) {
   viewer.setHost(scope);
   pathBar = new PathBar($("pathbar"), copyPaths);
   pathBar.show(path);
-  void stream.connect();
+  connectStream();
   viewer.open(path, "auto");
 }
 
-acceptFromPage({ open: (p) => viewer.open(p), reveal: revealInTree, root: (path, host) => { pageRoot = path ? { path, host } : null; viewer.refreshTools(); }, theme: (t) => { if (applyTheme(t)) { if (!VIEW) tree.themeChanged(); void redrawDiagrams(); } } });
+acceptFromPage({ open: (p) => viewer.open(p), reveal: revealInTree, root: (path, host) => { pageRoot = path ? { path, host } : null; viewer.refreshTools(); }, theme: (t) => { if (applyTheme(t)) { if (!VIEW) tree.themeChanged(); void redrawDiagrams(); } }, park });
 if (!PROXIED) notice("Not served by terminumd", "Open Files from terminum's page.");
 
 (async () => {
@@ -413,5 +459,5 @@ if (!PROXIED) notice("Not served by terminumd", "Open Files from terminum's page
   tree.sort = prefs.sort;
   $("hidden").classList.toggle("on", !prefs.hidden);
   tree.themeChanged();
-  void stream.connect();
+  connectStream();
 })().catch((e) => toast(String(e)));

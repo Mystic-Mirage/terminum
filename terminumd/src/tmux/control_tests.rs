@@ -133,3 +133,19 @@ async fn an_ssh_link_that_never_reached_tmux_says_so() {
         assert_eq!(drx.await.unwrap(), want, "{name}");
     }
 }
+
+#[tokio::test]
+async fn commands_past_the_bound_fail_at_once_while_stdin_is_full() {
+    // a client that never reads its stdin: the writer blocks once the pipe is full
+    let mut cmd = Command::new("/bin/sleep");
+    cmd.arg("30");
+    let (ntx, _nrx) = mpsc::unbounded_channel();
+    let (dtx, _drx) = oneshot::channel();
+    let c = Control::spawn(cmd, ntx, dtx).unwrap();
+    let line = format!("display -p {}", "x".repeat(64 << 10));
+    let waiting: Vec<_> = (0..(LINES_MAX / line.len()) + 64).map(|_| c.send(line.clone())).collect();
+    let refused = c.send(line.clone()).await.unwrap();
+    assert_eq!(refused, Err("tmux is not keeping up: too many commands wait for it".into()));
+    assert!(c.queued.load(Ordering::Relaxed) <= LINES_MAX, "queued bytes stay bounded");
+    drop(waiting);
+}

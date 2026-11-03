@@ -36,6 +36,13 @@ const UNFOLD_MAX: i64 = 20_000;
 /// error, never rows of another place shown as these (AC-02).
 #[allow(clippy::too_many_arguments)]
 pub async fn capture(client: &Control, pane: &str, top: i64, history: i64, limit: i64, screen: &[u64], from: i64, to: i64, width: usize) -> Result<Vec<Value>, String> {
+    let rows = rows_at(client, pane, top, history, limit, screen, from, to, width).await?;
+    Ok(rows.iter().map(|r| r.as_ref().map_or_else(|| json!({"r": [], "e": true}), |r| rows::encode(r, None))).collect())
+}
+
+/// `capture`'s rows as parsed, `None` for those tmux no longer has (search reads their text, AC-34).
+#[allow(clippy::too_many_arguments)]
+pub async fn rows_at(client: &Control, pane: &str, top: i64, history: i64, limit: i64, screen: &[u64], from: i64, to: i64, width: usize) -> Result<Vec<Option<rows::Row>>, String> {
     if from >= to {
         return Ok(Vec::new());
     }
@@ -78,17 +85,22 @@ pub async fn capture(client: &Control, pane: &str, top: i64, history: i64, limit
         }
         // the capture's first row: s rows back from tmux's end then (never past its oldest)
         let first = top + moved + s.max(-before.0);
-        let rows = rows::capture_rows(&lines.join("\n"), width);
+        // a search's tens of thousands of rows: parsed off the async workers, beside typing and frames
+        let rows = tokio::task::spawn_blocking(move || rows::capture_rows(&lines.join("\n"), width)).await.map_err(|e| e.to_string())?;
         // rows tmux no longer has (its oldest came after `from`) are empty, before those it has
-        let lead = ((first - from).max(0) as usize).min(want);
-        let mut out: Vec<Value> = vec![json!({"r": [], "e": true}); lead];
-        out.extend(rows.iter().skip((from - first).max(0) as usize).take(want - lead).map(|r| rows::encode(r, None)));
-        while out.len() < want {
-            out.push(json!({"r": [], "e": true}));
-        }
-        return Ok(out);
+        return Ok(placed(rows, first, from, want));
     }
     Err("the pane's history kept moving while its lines were read".into())
+}
+
+/// `want` rows from `from` out of captured `rows` whose first is `first`: rows tmux no longer
+/// has (its oldest came after `from`) are `None`, before those it has.
+fn placed(rows: Vec<rows::Row>, first: i64, from: i64, want: usize) -> Vec<Option<rows::Row>> {
+    let lead = ((first - from).max(0) as usize).min(want);
+    let mut out: Vec<Option<rows::Row>> = std::iter::repeat_with(|| None).take(lead).collect();
+    out.extend(rows.into_iter().skip((from - first).max(0) as usize).take(want - lead).map(Some));
+    out.resize_with(want, || None);
+    out
 }
 
 /// The pane's history_size and width, as the probe beside a capture said them.
@@ -116,8 +128,8 @@ const ANCHOR_ROWS: usize = 6;
 /// is an error; found below the capture's reach while tmux still has the rows, it reaches
 /// further once more.
 #[allow(clippy::too_many_arguments)]
-async fn anchored(client: &Control, probe: &str, pane: &str, top: i64, screen: &[u64], from: i64, to: i64, width: usize) -> Result<Vec<Value>, String> {
-    let lost = || Err::<Vec<Value>, String>("the pane's history was trimmed while its lines were read, and its rows were not found".into());
+async fn anchored(client: &Control, probe: &str, pane: &str, top: i64, screen: &[u64], from: i64, to: i64, width: usize) -> Result<Vec<Option<rows::Row>>, String> {
+    let lost = || Err::<Vec<Option<rows::Row>>, String>("the pane's history was trimmed while its lines were read, and its rows were not found".into());
     let n = screen.len().min(ANCHOR_ROWS);
     if n == 0 {
         return lost();
@@ -152,14 +164,7 @@ async fn anchored(client: &Control, probe: &str, pane: &str, top: i64, screen: &
             margin += first - from + MARGIN;              // rows tmux still has above the capture's reach
             continue;
         }
-        let want = (to - from) as usize;
-        let lead = ((first - from).max(0) as usize).min(want);
-        let mut out: Vec<Value> = vec![json!({"r": [], "e": true}); lead];
-        out.extend(rows.iter().skip((from - first).max(0) as usize).take(want - lead).map(|r| rows::encode(r, None)));
-        while out.len() < want {
-            out.push(json!({"r": [], "e": true}));
-        }
-        return Ok(out);
+        return Ok(placed(rows, first, from, (to - from) as usize));
     }
     lost()
 }

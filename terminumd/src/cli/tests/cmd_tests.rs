@@ -251,7 +251,11 @@ fn hosts_agents_on_off_post_their_action_and_print_the_result_lines() {
 #[test]
 fn hosts_agents_on_waits_for_the_whole_enable() {
     // the install on the host outlasts every other answer's 5 s: its first run prints the result (AC-99)
-    assert_eq!((commands::host_budget("agents-on").as_secs(), commands::host_budget("on").as_secs()), (300, 5));
+    let b = |a| commands::host_budget(a).as_secs();
+    assert_eq!((b("agents-on"), b("agents-off"), b("on"), b("off")), (635, 155, 5, 5));
+    assert_eq!((b("enable"), b("files-remove")), (365, 65), "the sum of the server's stages, not their maximum");
+    let m = commands::timed_out("/hosts/enable", commands::host_budget("enable"));
+    assert!(m.contains("/hosts/enable within 365 s") && !m.contains("answers"), "{m}");
     let t = T::new();
     let _s = t.serve(routes(vec![("POST /hosts/agents-on", Box::new(|_: &Option<Value>| {
         std::thread::sleep(std::time::Duration::from_secs(6));

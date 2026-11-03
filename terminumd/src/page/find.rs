@@ -15,13 +15,13 @@ use crate::tmux::Server;
 
 /// (row, text, hard end) of rows `from..to` (absolute) of the shown pane, or why not.
 pub async fn rows_of(server: &Server, pane: &str, ctl: &Ctl, keep: i64, around: Option<i64>) -> Result<Vec<(i64, String, bool)>, String> {
-    let (top, oldest, width, height) = {
+    let (top, history, screen, oldest, f) = {
         let n = ctl.numbering.lock();
         let f = ctl.fields.lock();
-        let Some(top) = n.top() else { return Err("the pane is not shown yet".into()) };
-        let (w, h) = f.as_ref().map_or((80, 24), |f| (f.width, f.height));
-        (top, n.oldest(keep), w, h as i64)
+        let (Some(top), Some(f)) = (n.top(), f.as_ref()) else { return Err("the pane is not shown yet".into()) };
+        (top, n.history(), n.screen().to_vec(), n.oldest(keep), (f.width, f.height as i64, f.limit))
     };
+    let (width, height, limit) = f;
     let (mut first, mut end) = (oldest, top + height);
     if let Some(a) = around {
         (first, end) = super::bookmarks::near(first, end, a);
@@ -30,16 +30,10 @@ pub async fn rows_of(server: &Server, pane: &str, ctl: &Ctl, keep: i64, around: 
         return Ok(Vec::new());
     }
     let client = server.bulk().ok_or("tmux is not connected")?;
-    let lines = client.run(format!("capture-pane -p -J -t {pane} -S {} -E {}", first - top, end - top - 1)).await?;
-    // tens of thousands of rows: parsed off the async workers, beside typing and frames
+    // numbered as the page's history is, against output that goes on meanwhile (AC-02)
+    let rows = super::hist::rows_at(&client, pane, top, history, limit, &screen, first, end, width).await?;
     tokio::task::spawn_blocking(move || {
-        let mut out: Vec<(i64, String, bool)> = rows::capture_rows(&lines.join("\n"), width)
-            .iter()
-            .enumerate()
-            .map(|(k, r)| (first + k as i64, rows::row_text(r), r.hard))
-            .collect();
-        out.truncate((end - first) as usize);
-        out
+        rows.into_iter().enumerate().map(|(k, r)| (first + k as i64, r.as_ref().map(rows::row_text).unwrap_or_default(), r.is_none_or(|r| r.hard))).collect()
     })
     .await
     .map_err(|e| e.to_string())

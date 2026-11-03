@@ -3,6 +3,7 @@
 // what a refused one means (the password form; or, while no password is set, how to set
 // one), and the build check that reloads a page of another build once.
 import * as signin from "./signin.js";
+import { deadline } from "./proof.js";
 
 const $ = (id) => document.getElementById(id);
 const RETRY = 2000;          // ms between tries while terminumd is down (AC-14)
@@ -35,7 +36,7 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
       p = await signin.prove();
     } finally { connecting = false; }
     if (stopped) return;
-    if (p === "down") return lost();
+    if (p === "down") return lost(signin.unanswered() ? `No answer from terminum's server within ${signin.unanswered() / 1000} s` : undefined);
     if (p === "unknown") return signedOut();
     if (p === "bad") {                             // asked again later, less and less often
       downSince ||= performance.now();
@@ -58,9 +59,11 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
   /** Signed out (or never signed in): the password form, or how to set a password while
    *  none is set. False when signed in or terminumd does not answer. */
   async function askSignIn() {
-    const r = await fetch("/auth/check").catch(() => null);
+    const signal = deadline();                     // an answer that never ends counts as none
+    const r = await fetch("/auth/check", { signal }).catch(() => null);
     if (r?.status !== 401) return false;
-    const m = await r.json().catch(() => ({}));
+    const m = await r.json().catch(() => (signal.aborted ? null : {}));
+    if (!m) return false;
     const had = signin.held();
     signin.forget();                               // refused: never sent again
     if (m.login === "none") showLogin(m.message || "No password is set yet. On the Mac, run: terminum password", true);

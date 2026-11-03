@@ -4,6 +4,7 @@ import { addBlocks, MAX_BLOCK } from "./blocks.js";
 import { lineRec, palette } from "./render.js";
 import { openEnd } from "./openend.js";
 import { glued, inputWraps, wrapsInto } from "./rejoin.js";
+import { queueHist } from "./histq.js";
 
 const LOAD_OLDER_AT = 300;   // px from the top that triggers loading older lines
 // blocks.js adds to TermView the rows' blocks and the agent's input box (addBlocks: blockCuts,
@@ -81,7 +82,7 @@ export class TermView {
     const show = frozen && !!(this.queued.length || this.pending);
     if (show && this.paused.hidden) this.paused.style.top = `${this.term.offsetTop + 8}px`;   // under the header, whatever its height
     this.paused.hidden = !show;
-    if (frozen) return;
+    if (frozen || this.term.hidden) return;
     const q = this.queued; this.queued = [];
     for (const m of q) this.onHist(m);
     if (this.pending) this.flush();
@@ -189,13 +190,14 @@ export class TermView {
     const stick = this.atBottom();
     this.sticking = stick;
     try { fn(); } finally { this.sticking = false; }
-    if (stick) this.term.scrollTop = this.term.scrollHeight;
-    this.updateBottom();
+    // at the end it stays there: the button hides without measuring the page a second time
+    if (stick) { this.term.scrollTop = this.term.scrollHeight; this.bottomBtn.hidden = true; } else this.updateBottom();
   }
 
   onHist(m) {
     if (!this.theme) return;
-    if (this.frozen() && m.mode !== "reset") { this.queued.push(m); this.resume(); return; }
+    // frozen, or behind Files or View on a phone: drawn when the terminal shows again (resume)
+    if ((this.frozen() || this.term.hidden) && m.mode !== "reset") { this.queued = queueHist(this.queued, m); this.resume(); return; }
     const rows = m.lines.map((data, i) => this.make(data, m.first + i));
     this.oldest = m.oldest;
     this.truncated = m.truncated;
@@ -246,8 +248,10 @@ export class TermView {
   trim(follow) {
     let drop = 0;
     while (drop < this.hist.length && this.hist[drop].n < this.oldest) drop++;
-    for (const l of this.hist.slice(0, drop)) l.el.remove();
-    this.hist = this.hist.slice(drop);
+    if (drop) {
+      for (let i = 0; i < drop; i++) this.hist[i].el.remove();
+      this.hist = this.hist.slice(drop);
+    }
     let cut = 0;
     for (let b = this.histEl.firstElementChild; b?.classList.contains("blk"); b = this.histEl.firstElementChild) {
       const n = b.childElementCount;
@@ -255,7 +259,7 @@ export class TermView {
       b.remove();
       cut += n;
     }
-    this.hist = this.hist.slice(cut);
+    if (cut) this.hist = this.hist.slice(cut);
   }
 
   showNote() {
@@ -277,6 +281,7 @@ export class TermView {
 
   flush() {
     this.raf = null;
+    if (this.term.hidden) return;                  // kept in pending: resume() draws it when shown
     if (this.frozen()) { this.resume(); return; }
     const p = this.pending; this.pending = null;
     if (!p || !this.theme) return;

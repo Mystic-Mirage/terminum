@@ -7,6 +7,7 @@ and no subshell.
 
     python3 scripts/e2e_sizing.py      (needs terminumd built and mc on PATH)
 """
+import json
 import os
 import shutil
 import sys
@@ -71,6 +72,39 @@ def hidden(t, pid, pane):
           settle(pane, "160x30") == "160x30", window_of(pane))
     phone.close()
     mac.close()
+    time.sleep(0.5)
+
+
+def collect(ws, seconds):
+    """Every message the page gets in `seconds`."""
+    got, end = [], time.time() + seconds
+    while (m := ws.until(lambda _: True, max(0.1, end - time.time()))) is not None and time.time() < end:
+        got.append(m)
+    return got
+
+
+def screens_off(t, pid, pane, work):
+    phone = open_pane(t, pid, 70, 20, typing=True)
+    settle(pane, "70x20")
+    phone.send({"t": "screens", "on": False})
+    time.sleep(0.5)
+    collect(phone, 0.3)
+    tmux("send-keys", "-t", pane, f"cd {work} && for i in $(seq 1 60); do echo row$i; sleep 0.03; done", "Enter")
+    got = collect(phone, 3)
+    frames = [m["t"] for m in got if m["t"] in ("screen", "hist")]
+    files = [m for m in got if m["t"] == "files"]
+    check("AC-02 a terminal hidden behind Files gets no screen or history frames while its pane prints",
+          not frames, frames[:5])
+    check("AC-02 its Files still follows the pane's folder", any(m["cwd"] == os.path.realpath(work) or m["cwd"] == work for m in files),
+          [m.get("cwd") for m in files])
+    check("AC-13 hiding the terminal keeps the pane's size (no handover)", window_of(pane) == "70x20", window_of(pane))
+    phone.send({"t": "screens", "on": True})
+    reset = phone.until(lambda m: m["t"] == "hist" and m["mode"] == "reset", 5)
+    screen = phone.until(lambda m: m["t"] == "screen", 5)
+    rows = text_of((screen or {}).get("ch", []))
+    check("AC-02 shown again: a whole history and screen with what was printed meanwhile",
+          reset is not None and screen is not None and "row60" in rows + json.dumps((reset or {}).get("lines")), [bool(reset), bool(screen)])
+    phone.close()
     time.sleep(0.5)
 
 
@@ -161,6 +195,7 @@ def main():
         ws.close()
         first_frame(t, pid, pane)
         hidden(t, pid, pane)
+        screens_off(t, pid, pane, work)
         split(t, pid, pane)
         drag(t, pid, pane)
         mc(t, pid, pane, work)

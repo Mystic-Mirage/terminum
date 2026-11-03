@@ -7,6 +7,7 @@
 
 pub mod agents;
 pub mod agentsinstall;
+pub mod bounded;
 pub mod link;
 pub mod recipe;
 pub mod tunnel;

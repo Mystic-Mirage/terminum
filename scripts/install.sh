@@ -33,9 +33,11 @@ main() {
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
     echo "Downloading terminum …"
-    curl -q -fsSL "$base/terminum.tar.gz" -o "$tmp/package.tar.gz" || fail "download failed: $base"
-    curl -q -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS" || fail "download failed: $base/SHA256SUMS"
-    curl -q -fsSL "$base/SHA256SUMS.sig" -o "$tmp/SHA256SUMS.sig" || fail "download failed: $base/SHA256SUMS.sig"
+    # a stalled server fails the install instead of hanging it (the same deadline as `terminum upgrade`)
+    get() { curl -q -fsSL --connect-timeout 30 --max-time 300 "$1" -o "$2"; }
+    get "$base/terminum.tar.gz" "$tmp/package.tar.gz" || fail "download failed: $base"
+    get "$base/SHA256SUMS" "$tmp/SHA256SUMS" || fail "download failed: $base/SHA256SUMS"
+    get "$base/SHA256SUMS.sig" "$tmp/SHA256SUMS.sig" || fail "download failed: $base/SHA256SUMS.sig"
     case $SIGNERS in *ssh-*) ;; *) fail "this installer carries no release key: nothing installed" ;; esac
     printf '%s\n' "$SIGNERS" > "$tmp/signers"
     ssh-keygen -Y verify -f "$tmp/signers" -I terminum-release -n terminum-release \

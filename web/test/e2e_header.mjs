@@ -74,6 +74,16 @@ export async function webHeader(browser, name) {
     if (size.startsWith("390")) {
       const files = await tap('#views [data-view="files"]', true);
       check("AC-01 a phone: a tap at the Files tab's top centre opens Files, not the folder's Copy", files.files === "true" && !files.copied, JSON.stringify(files));
+      // the terminal behind Files gets no frames from terminumd; shown again, all anew (AC-02)
+      const screens = () => f.sent.filter((m) => m.t === "screens").map((m) => m.on);
+      const off = screens();
+      await page.click('#views [data-view="term"]');
+      await pause(page, 200);
+      const on = screens();
+      await page.click('#views [data-view="files"]');
+      await pause(page, 200);
+      check("AC-02 a phone: Files hides the terminal and the page says so once; the Terminal tab says it is shown",
+        JSON.stringify(off) === "[false]" && JSON.stringify(on) === "[false,true]" && JSON.stringify(screens()) === "[false,true,false]", JSON.stringify({ off, on }));
       const before = await page.evaluate(() => document.getElementById("app").className);
       const look = () => page.evaluate(() => {
         const r = (id) => document.getElementById(id).getBoundingClientRect(), full = document.getElementById("curfull");

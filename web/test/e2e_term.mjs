@@ -208,6 +208,35 @@ export async function webTerm(browser) {
   });
   check("AC-52 web: without HTTPS the text is copied by the older copy command, line ends kept",
     byCommand.insecure && byCommand.got === "line one\n  line two" && byCommand.left === "", JSON.stringify(byCommand));
+  // a long selection holds at most one history limit's worth of lines (audit #3): 1201 appends
+  // with a limit of 500 queue as one message of 500 lines, and the release shows exactly those
+  const long = await run(() => {
+    getSelection().selectAllChildren([...document.querySelectorAll("#hist .ln")].at(-1));
+    const start = t.view.hist.at(-1).n + 1;
+    for (let k = 0; k < 1201; k++) t.view.onHist({ mode: "append", first: start + k, oldest: Math.max(0, start + k + 1 - 500), truncated: true,
+      lines: [{ r: [["held " + (start + k), null, null, 0]], e: true }] });
+    const q = t.view.queued.map((m) => [m.first, m.lines.length]);
+    const t0 = performance.now();
+    getSelection().removeAllRanges(); t.view.resume();
+    return { q, start, ms: performance.now() - t0, first: t.view.hist[0]?.n, last: t.view.hist.at(-1)?.n, broken: t.broken() };
+  });
+  check("AC-52 web: a selection held over 1201 appends queues one message within the 500-line limit, and the release catches up",
+    long.q.length === 1 && long.q[0][1] === 500 && long.last === long.start + 1200 && long.first >= long.start + 701 && !long.broken.length, JSON.stringify(long));
+  // a terminal hidden behind Files or View (a phone) draws nothing until shown (audit #16)
+  const behind = await run(async () => {
+    const term = document.getElementById("term"), rows = () => [...document.querySelectorAll("#screen .ln")].map((el) => el.textContent);
+    term.hidden = true;
+    const before = rows(), last = t.view.hist.at(-1).n;
+    t.view.onScreen({ full: true, n: 3, cols: 80, rows: 3, ch: [0, 1, 2].map((i) => [i, { r: [[i ? "row " + i : "behind files", null, null, 0]], e: true }]) });
+    t.view.onHist({ mode: "append", first: last + 1, oldest: t.view.oldest, truncated: true, lines: [{ r: [["hidden line", null, null, 0]], e: true }] });
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const hidden = { same: rows().join() === before.join(), histLast: t.view.hist.at(-1).n, queued: t.view.queued.length, banner: !document.getElementById("paused").hidden };
+    term.hidden = false; t.view.resume();
+    return { hidden, last, after: rows()[0], histLast: t.view.hist.at(-1).n, queued: t.view.queued.length, broken: t.broken() };
+  });
+  check("AC-52 web: a terminal hidden behind Files draws nothing, without the paused note, and shows the latest screen and lines when shown",
+    behind.hidden.same && behind.hidden.histLast === behind.last && behind.hidden.queued === 1 && !behind.hidden.banner &&
+    behind.after === "behind files" && behind.histLast === behind.last + 1 && !behind.queued && !behind.broken.length, JSON.stringify(behind));
   check("AC-52 web: no page errors", !errors.length, errors.join("; "));
   await page.close();
 }

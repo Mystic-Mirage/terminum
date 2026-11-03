@@ -23,6 +23,10 @@ const PASTE_MAX: usize = 1 << 20;
 const BUFFER_PART: usize = 64 << 10;
 /// How long the part of a long run of keys waits for the pane to print before the next goes.
 const PART_WAIT: std::time::Duration = std::time::Duration::from_millis(250);
+/// Most bytes and items typed but not yet handed to tmux (a slow host): more is refused, loud.
+const QUEUE_BYTES: usize = 4 << 20;
+const QUEUE_ITEMS: usize = 10_000;
+pub const OVERLOAD: &str = "tmux is not keeping up: more than 4 MB of typing waits for it — this input was not sent";
 
 /// Typed data not yet handed to tmux.
 pub struct Typed {
@@ -40,16 +44,42 @@ pub struct Typed {
 #[derive(Default)]
 pub struct Queue {
     items: VecDeque<Typed>,
+    /// bytes of `items`
+    bytes: usize,
     running: bool,
 }
 
+impl Typed {
+    fn size(&self) -> usize {
+        self.data.len() + self.mouse.len()
+    }
+}
+
 impl Queue {
+    /// Takes `item` unless the queue is full (QUEUE_BYTES, QUEUE_ITEMS); false: refused.
+    fn push(&mut self, item: Typed) -> bool {
+        if self.items.len() >= QUEUE_ITEMS || self.bytes + item.size() > QUEUE_BYTES {
+            return false;
+        }
+        self.bytes += item.size();
+        self.items.push_back(item);
+        true
+    }
+
+    /// Drops what waits (its page closed).
+    fn clear(&mut self) {
+        self.items.clear();
+        self.bytes = 0;
+    }
+
     fn batch(&mut self) -> Option<Vec<Typed>> {
         let first = self.items.front()?;
         let (key, server) = (first.key.clone(), first.server.clone());
         let mut out = Vec::new();
         while self.items.front().is_some_and(|t| t.key == key && Arc::ptr_eq(&t.server, &server)) {
-            out.push(self.items.pop_front().expect("checked"));
+            let t = self.items.pop_front().expect("checked");
+            self.bytes -= t.size();
+            out.push(t);
         }
         Some(out)
     }
@@ -86,8 +116,16 @@ fn copied_to(page: &Arc<Page>, key: &str) -> OnCopy {
 }
 
 fn queue(app: &Shared, page: &Arc<Page>, item: Typed) {
+    if page.is_closed() {
+        return;
+    }
     let mut st = page.state.lock();
-    st.queue.items.push_back(item);
+    let key = item.key.clone();
+    if !st.queue.push(item) {
+        drop(st);
+        error(page, OVERLOAD, Some(&key));
+        return;
+    }
     if st.queue.running {
         return;
     }
@@ -98,6 +136,10 @@ fn queue(app: &Shared, page: &Arc<Page>, item: Typed) {
 
 /// A paste the page sent as such (`paste` message).
 pub fn paste(app: &Shared, page: &Arc<Page>, data: String, bracket: bool) {
+    if data.len() > PASTE_MAX {
+        error(page, "Paste is larger than 1 MB", None);       // refused before it is copied or queued
+        return;
+    }
     let wrapped = if bracket { format!("{PASTE_START}{data}{PASTE_END}") } else { data };
     typed(app, page, wrapped, None);
 }
@@ -106,6 +148,11 @@ async fn run(app: Shared, page: Arc<Page>) {
     loop {
         let mut batch: Vec<Typed> = {
             let mut st = page.state.lock();
+            if page.is_closed() {
+                st.queue.clear();                      // nobody to type for: what waits is dropped
+                st.queue.running = false;
+                return;
+            }
             let Some(batch) = st.queue.batch() else {
                 st.queue.running = false;
                 return;
@@ -302,13 +349,42 @@ mod tests {
         mouse.key = remote.key.clone();
         mouse.server = remote.server.clone();
         let destinations = [first.server.clone(), remote.server.clone(), replacement.server.clone(), remote.server.clone()];
-        let mut q = Queue { items: VecDeque::from([first, same, remote, replacement, mouse]), running: true };
+        let mut q = Queue::default();
+        for t in [first, same, remote, replacement, mouse] {
+            assert!(q.push(t));
+        }
         for (server, length) in destinations.iter().zip([2, 1, 1, 1]) {
             let batch = q.batch().unwrap();
             assert_eq!(batch.len(), length);
             assert!(batch.iter().all(|t| Arc::ptr_eq(&t.server, server)));
         }
         assert!(q.batch().is_none());
+        assert_eq!(q.bytes, 0);
+    }
+
+    #[test]
+    fn a_flood_past_the_bound_is_refused_and_memory_stays_bounded() {
+        let mut q = Queue::default();
+        let paste = "x".repeat(PASTE_MAX);
+        let mut taken = 0;
+        for _ in 0..100 {
+            taken += usize::from(q.push(item(&paste, b"")));
+        }
+        assert_eq!(taken, QUEUE_BYTES / PASTE_MAX, "a few pastes wait; the rest are refused");
+        assert!(q.bytes <= QUEUE_BYTES);
+        assert!(!q.push(item("a", b"")), "full: even a key is refused until tmux takes some");
+        q.batch().unwrap();                             // one paste handed to tmux (each item its own server here)
+        assert_eq!(q.bytes, QUEUE_BYTES - PASTE_MAX);
+        assert!(q.push(item("a", b"")), "drained: typing goes again");
+    }
+
+    #[test]
+    fn many_small_items_are_bounded_by_count_and_clear_drops_them() {
+        let mut q = Queue::default();
+        let taken = (0..QUEUE_ITEMS + 5).filter(|_| q.push(item("", b"m"))).count();
+        assert_eq!(taken, QUEUE_ITEMS);
+        q.clear();
+        assert!(q.items.is_empty() && q.bytes == 0);
     }
 
     #[test]

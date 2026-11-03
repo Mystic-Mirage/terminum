@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use super::{Notice, Server};
 
@@ -50,23 +50,34 @@ impl Server {
     }
 }
 
+/// One viewer's wake-up of a shown pane (`Server::wake`).
+pub struct Wake(watch::Receiver<u64>);
+
+impl Wake {
+    pub(super) fn new(rx: watch::Receiver<u64>) -> Wake {
+        Wake(rx)
+    }
+
+    /// Until the pane printed since this viewer last woke (at once if it already has).
+    pub async fn notified(&mut self) {
+        if self.0.changed().await.is_err() {
+            std::future::pending::<()>().await;     // its server is gone: only the poll looks again
+        }
+    }
+}
+
 pub(super) async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::UnboundedReceiver<Notice>) {
     while let Some(n) = rx.recv().await {
         let Some(s) = server.upgrade() else { return };
         match n {
             Notice::Output(pane) => {
                 *s.printed.lock().entry(pane.clone()).or_insert(0) += 1;
-                let wake = s.wakes.lock().get(&pane).cloned();
-                if let Some(w) = wake {
-                    w.notify_one();
-                }
+                s.woke(Some(&pane));
             }
             Notice::Changed => {
                 s.dirty.notify_one();
                 // a resize or a zoom redraws shown panes: capture them now
-                for w in s.wakes.lock().values() {
-                    w.notify_one();
-                }
+                s.woke(None);
             }
             Notice::Copy(pane, b64) => s.copied(&pane, &b64),
             Notice::Pause(pane) => {

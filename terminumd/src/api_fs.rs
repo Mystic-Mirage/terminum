@@ -72,23 +72,22 @@ pub fn raw_type(path: &str) -> HeaderValue {
     HeaderValue::from_str(mime_guess::from_path(path).first_or_octet_stream().as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream"))
 }
 
-/// Raw bytes for images; an SVG opened directly never runs script.
-pub async fn raw(Query(q): Query<PathQuery>) -> ApiResult {
+/// Raw bytes for images and media, streamed, one `Range` honored (206, 416); an SVG opened
+/// directly never runs script.
+pub async fn raw(Query(q): Query<PathQuery>, headers: HeaderMap) -> ApiResult {
     let path = abs(&q.path)?;
+    let range = headers.get(header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_string);
     let p = path.clone();
-    let bytes = blocking(move || -> Result<Vec<u8>, OpError> {
-        use std::io::Read;
-        let (f, _) = files::open_regular(&p)?;
-        let mut buf = Vec::new();
-        f.take(RAW_MAX + 1).read_to_end(&mut buf).map_err(|e| ops::io(e, &p))?;
-        Ok(buf)
+    let mut res = blocking(move || -> Result<Result<Response, ()>, OpError> {
+        let (f, meta) = files::open_regular(&p)?;
+        if meta.len() > RAW_MAX {
+            return Ok(Err(()));
+        }
+        Ok(Ok(crate::raw_body::response(f, meta.len(), range.as_deref())))
     })
     .await?
-    .map_err(op_err)?;
-    if bytes.len() as u64 > RAW_MAX {
-        return Err(err(StatusCode::BAD_REQUEST, "too_large", "Larger than 64 MB"));
-    }
-    let mut res = Response::new(Body::from(bytes));
+    .map_err(op_err)?
+    .map_err(|()| err(StatusCode::BAD_REQUEST, "too_large", "Larger than 64 MB"))?;
     let h = res.headers_mut();
     h.insert(header::CONTENT_TYPE, raw_type(&path.to_string_lossy()));
     h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(RAW_CSP));

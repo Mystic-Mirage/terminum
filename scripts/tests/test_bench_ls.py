@@ -89,7 +89,7 @@ elif 'limit=1' in args[-1]:
 
     def test_ten_samples_p95_includes_the_slowest_sample(self):
         out = self.run_benchmark(last_cold="3.0")
-        self.assertIn("cold_p95_ms=3000", out.stdout)
+        self.assertIn("cold_ms p50=1 p95=3000 ", out.stdout)
         self.assertNotEqual(out.returncode, 0, out.stdout)
 
     def test_timeout_ends_the_owned_benchmark_group(self):

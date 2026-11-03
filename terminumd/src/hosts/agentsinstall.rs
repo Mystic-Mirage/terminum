@@ -19,6 +19,8 @@ pub const KNOWN: [&str; 7] = ["$HOME/.local/bin", "$HOME/.claude/local", "$HOME/
                               "$HOME/.bun/bin", "/usr/local/bin", "/opt/homebrew/bin"];
 /// One whole run's limit: two shell probes per question of 10 s each, then `claude plugin …` calls.
 const LIMIT: Duration = Duration::from_secs(300);
+/// Taking the entries out runs after agents are already off here: kept short, reported on its own.
+const REMOVE_LIMIT: Duration = Duration::from_secs(90);
 
 /// `s` as one single-quoted /bin/sh word.
 fn sq(s: &str) -> String {
@@ -105,11 +107,15 @@ pub fn shown(host: &str, result: &str) -> String {
 /// `command` run on the host over its recipe; stdout (also when ssh failed after the helper
 /// answered), or ssh's last words. As tunnel.rs's `ssh`, with ControlPath=none.
 pub(super) async fn ssh(recipe: &[String], command: &str, marker: &str) -> Result<String, String> {
+    ssh_within(recipe, command, marker, LIMIT).await
+}
+
+async fn ssh_within(recipe: &[String], command: &str, marker: &str, limit: Duration) -> Result<String, String> {
     let mut c = super::ssh_command(super::ssh_bin(), recipe, &["-o", "ControlPath=none"]);
     c.args(super::recipe::argv(recipe)).arg(command);
     c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
-    let out = tokio::time::timeout(LIMIT, c.output()).await.map_err(|_| format!("ssh timed out after {} s", LIMIT.as_secs()))?
-        .map_err(|e| format!("ssh: {e}"))?;
+    let mut child = c.spawn().map_err(|e| format!("ssh: {e}"))?;
+    let out = super::bounded::output(&mut child, super::bounded::ANSWER_MAX, limit).await?;
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     if !out.status.success() && !stdout.contains(marker) {
         let err = String::from_utf8_lossy(&out.stderr).trim().lines().last().unwrap_or("").to_string();
@@ -120,31 +126,31 @@ pub(super) async fn ssh(recipe: &[String], command: &str, marker: &str) -> Resul
 
 async fn run(app: &Shared, host: &str, action: &str, refresh: bool) -> Result<Vec<(String, String)>, String> {
     let recipe = super::recipe_of(app, host).ok_or_else(|| format!("no host {host}"))?;
-    run_on(&recipe, action, refresh).await
+    run_on(&recipe, action, refresh, LIMIT).await
 }
 
-async fn run_on(recipe: &[String], action: &str, refresh: bool) -> Result<Vec<(String, String)>, String> {
+async fn run_on(recipe: &[String], action: &str, refresh: bool, limit: Duration) -> Result<Vec<(String, String)>, String> {
     let marker = new_marker()?;
-    let out = ssh(recipe, &remote_command(&script(&marker, action, refresh)), &marker).await?;
+    let out = ssh_within(recipe, &remote_command(&script(&marker, action, refresh)), &marker, limit).await?;
     parse(&out, &marker)
 }
 
-/// [`remove`] over a recipe kept from a host being removed.
+/// terminum's entries (only those running terminum-host) taken out over `recipe` (kept from
+/// before the record changed: agents turned off, the host removed), within [`REMOVE_LIMIT`].
 pub async fn remove_on(recipe: &[String]) -> Result<Vec<(String, String)>, String> {
-    run_on(recipe, "remove", false).await
+    run_on(recipe, "remove", false, REMOVE_LIMIT).await
 }
 
-/// Install on `host`: `helper` first puts the helper at ~/.terminum/bin/terminumd-agent (given the recipe).
-pub async fn install<F, Fut>(app: &Shared, host: &str, helper: F) -> Result<Vec<(String, String)>, String>
+/// Install over `recipe`, pinned by the caller for the whole operation: `helper` first puts the
+/// helper at ~/.terminum/bin/terminumd-agent, then the hooks go in only while `current` says the
+/// host's record still has that recipe.
+pub async fn install<F, Fut>(recipe: &[String], helper: F, current: impl Fn() -> bool) -> Result<Vec<(String, String)>, String>
 where F: FnOnce(Vec<String>) -> Fut, Fut: Future<Output = Result<(), String>> {
-    let recipe = super::recipe_of(app, host).ok_or_else(|| format!("no host {host}"))?;
-    helper(recipe).await?;
-    run(app, host, "install", false).await
-}
-
-/// terminum's entries (only those running terminum-host) taken out of `host`'s agents.
-pub async fn remove(app: &Shared, host: &str) -> Result<Vec<(String, String)>, String> {
-    run(app, host, "remove", false).await
+    helper(recipe.to_vec()).await?;
+    if !current() {
+        return Err(super::agents::CHANGED.into());
+    }
+    run_on(recipe, "install", false, LIMIT).await
 }
 
 /// After the helper was updated: rewritten only where the content differs.

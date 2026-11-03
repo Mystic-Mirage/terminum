@@ -19,7 +19,7 @@ fn script_runs_under_sh_with_marker_known_paths_and_caps() {
     assert!(!s.contains("--refresh"));
     assert!(script("TMH-0123456789abcdef", "install", true).contains("--marker \"$M\" --refresh \"$@\""));
     assert!(script("TMH-0123456789abcdef", "remove", false).contains("hooks remove --host-mode"));
-    let cmd = remote_command(&s);
+    let cmd = crate::hosts::recipe::remote_command(&s);
     assert!(cmd.starts_with("exec /bin/sh -c '") && cmd.ends_with('\''));
     // every single quote of the script closed, escaped and reopened
     assert_eq!(cmd.matches("'\\''").count(), s.matches('\'').count());

@@ -109,6 +109,23 @@ pub fn argv(recipe: &[String]) -> Vec<String> {
     out
 }
 
+/// `c` given the recipe's arguments and `script` as its remote command, run by /bin/sh whatever
+/// the host's login shell: zsh's nomatch aborted an unmatched glob (issue #8), fish and csh
+/// read no POSIX sh (AC-83). Every script terminumd runs on a host goes through here.
+pub fn with_command(c: &mut tokio::process::Command, recipe: &[String], script: &str) {
+    c.args(argv(recipe)).arg(remote_command(script));
+}
+
+/// The remote command: `script` under /bin/sh.
+pub fn remote_command(script: &str) -> String {
+    format!("exec /bin/sh -c {}", sq(script))
+}
+
+/// `s` as one single-quoted /bin/sh word.
+pub fn sq(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// A recipe typed as one string, as after `ssh` in a shell (a leading "ssh" is dropped).
 pub fn parse(text: &str) -> Result<Vec<String>, String> {
     let mut w = words(text)?;

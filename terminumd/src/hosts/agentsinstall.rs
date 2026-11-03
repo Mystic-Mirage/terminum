@@ -22,11 +22,6 @@ pub(crate) const LIMIT: Duration = Duration::from_secs(300);
 /// Taking the entries out runs after agents are already off here: kept short, reported on its own.
 pub(crate) const REMOVE_LIMIT: Duration = Duration::from_secs(90);
 
-/// `s` as one single-quoted /bin/sh word.
-fn sq(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
 /// A fresh marker: `TMH-` and 16 hex digits from the system's random source.
 pub fn new_marker() -> Result<String, String> {
     use std::io::Read;
@@ -83,11 +78,6 @@ const CAP: &str = r#"cap() {
   cat "$t"; rm -f "$t"; return $r
 }"#;
 
-/// The remote command: the script under /bin/sh, whatever the login shell is.
-pub fn remote_command(script: &str) -> String {
-    format!("exec /bin/sh -c {}", sq(script))
-}
-
 /// Each agent's result from the helper's lines after `marker` (rc noise, `\r` and other lines
 /// ignored); Err when no agent answered (`out`'s last line said).
 pub fn parse(out: &str, marker: &str) -> Result<Vec<(String, String)>, String> {
@@ -122,7 +112,7 @@ pub(super) async fn ssh(recipe: &[String], command: &str, marker: &str) -> Resul
 
 async fn ssh_within(recipe: &[String], command: &str, marker: &str, limit: Duration) -> Result<String, String> {
     let mut c = super::ssh_command(super::ssh_bin(), recipe, &["-o", "ControlPath=none"]);
-    c.args(super::recipe::argv(recipe)).arg(command);
+    super::recipe::with_command(&mut c, recipe, command);
     c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     let mut child = c.spawn().map_err(|e| format!("ssh: {e}"))?;
     // open while this waits: its close (this dropped, the ssh killed) ends the script (WATCH)
@@ -138,7 +128,7 @@ async fn ssh_within(recipe: &[String], command: &str, marker: &str, limit: Durat
 
 async fn run_on(recipe: &[String], action: &str, refresh: bool, limit: Duration) -> Result<Vec<(String, String)>, String> {
     let marker = new_marker()?;
-    let out = ssh_within(recipe, &remote_command(&script(&marker, action, refresh)), &marker, limit).await?;
+    let out = ssh_within(recipe, &script(&marker, action, refresh), &marker, limit).await?;
     parse(&out, &marker)
 }
 

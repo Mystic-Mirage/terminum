@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
+use super::recipe::with_command;
 use crate::app::Shared;
 
 /// The agent's folder under the host's $HOME.
@@ -105,10 +106,6 @@ fn ssh_cmd(recipe: &[String]) -> Command {
     crate::hosts::ssh_command(crate::hosts::ssh_bin(), recipe, &[])
 }
 
-/// The recipe's options, then `--`, the destination and the remote command.
-fn with_command(c: &mut Command, recipe: &[String], command: &str) {
-    c.args(crate::hosts::recipe::argv(recipe)).arg(command);
-}
 
 /// Runs `command` on the host; its stdout, or ssh's last words.
 async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>, timeout: Duration) -> Result<String, String> {
@@ -480,12 +477,15 @@ pub async fn remove(app: &Shared, host: &str) -> Result<(), String> {
 
 /// The helper and its log taken off a host (Files' remove, agents off with Files off).
 pub(super) async fn remove_helper(recipe: &[String]) -> Result<(), String> {
-    let script = format!(
+    ssh(recipe, &remove_script(), None, HELPER_REMOVE_LIMIT).await.map(drop)
+}
+
+fn remove_script() -> String {
+    format!(
         "d=\"$HOME/{HOME_DIR}\"; rm -f \"$d/bin/terminumd-agent\" \"$d/bin/terminumd-agent-\"* \"$d/bin/.terminumd-agent.\"* \
          \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/logs/agent.log\"*; \
          rmdir \"$d/bin\" \"$d/logs\" \"$d/run\" \"$d\" 2>/dev/null; true"
-    );
-    ssh(recipe, &script, None, HELPER_REMOVE_LIMIT).await.map(drop)
+    )
 }
 
 #[cfg(test)]

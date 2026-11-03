@@ -43,3 +43,27 @@ async fn a_forward_counts_only_when_the_helper_answers() {
     assert!(answers(tokio::net::UnixStream::connect(&refused).await.unwrap()).await.is_err());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Issue #8 (AC-83): what reaches the host's login shell, run by zsh as sshd does (`$SHELL -c`):
+/// the helper's removal with no old helper to match, which zsh's nomatch aborted.
+#[test]
+fn a_zsh_login_shell_runs_the_helpers_scripts_as_sh() {
+    if std::process::Command::new("zsh").arg("-c").arg("true").output().is_err() {
+        return eprintln!("skipped: zsh is not on PATH");
+    }
+    let home = crate::testutil::fresh_dir("zsh-host");
+    std::fs::create_dir_all(home.join(".terminum/bin")).unwrap();
+    std::fs::write(home.join(".terminum/bin/terminumd-agent-0123abcd"), "x").unwrap();
+    let mut c = Command::new("ssh");
+    with_command(&mut c, &["alex@devbox.example".to_string()], &remove_script());
+    let remote = c.as_std().get_args().last().unwrap().to_str().unwrap().to_string();
+    assert!(remote.starts_with("exec /bin/sh -c '"), "{remote}");
+    let out = std::process::Command::new("zsh").arg("-c").arg(&remote).env("HOME", &home).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!home.join(".terminum").exists(), "the helper and its folders went");
+    // as it was: the script itself in zsh stops at the first glob that matches nothing
+    std::fs::create_dir_all(home.join(".terminum/bin")).unwrap();
+    let old = std::process::Command::new("zsh").arg("-c").arg(remove_script()).env("HOME", &home).output().unwrap();
+    assert!(String::from_utf8_lossy(&old.stderr).contains("no matches found"), "{old:?}");
+    let _ = std::fs::remove_dir_all(&home);
+}

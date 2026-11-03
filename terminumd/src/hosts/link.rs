@@ -83,8 +83,7 @@ pub fn ssh_args(link: Option<(&str, &Path)>) -> Vec<String> {
 /// The helper's flags for the link, each value one single-quoted word of the login shell
 /// (`remote` is also limited to safe characters by [`remote_path`]).
 pub fn helper_args(remote: &str, mac: &str) -> String {
-    let sq = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
-    format!(" --link {} --mac {}", sq(remote), sq(mac))
+    format!(" --link {} --mac {}", super::recipe::sq(remote), super::recipe::sq(mac))
 }
 
 /// What the helper said about the link.

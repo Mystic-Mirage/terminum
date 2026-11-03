@@ -303,8 +303,8 @@ export async function webMarks(browser, name = "") {
   await page.keyboard.press("Escape");
   check(`${at} "Bookmarks / Reminders" opens a large window on the right (not in the session list); Esc closes it`,
     win.open && win.right <= 16 && win.tall && win.wide && !win.inNav && !await page.evaluate(() => document.getElementById("marksdlg").open), JSON.stringify(win));
-  check(`${at} "Bookmarks / Reminders" below the sessions lists only the orphaned ones, its count theirs`,
-    JSON.stringify(left.items) === '["closed one"]' && left.count === "1" && /^Bookmarks \/ Reminders/.test(left.label), JSON.stringify(left));
+  check(`${at} "Bookmarks / Reminders" below the sessions lists them all (the orphaned too), its count theirs`,
+    left.items.length > 1 && left.items.includes("closed one") && left.count === String(left.items.length) && /^Bookmarks \/ Reminders/.test(left.label), JSON.stringify(left));
   check(`${at} its button: the bookmark orange, the bell pink, before "Reminders" on a computer, both in one blob on a phone`,
     left.colors.length === 2 && left.colors[0] !== left.colors[1] && (left.bellFirst === null ? left.icons.join() === "two" : left.icons.join() === "one,bell" && left.bellFirst), JSON.stringify(left));
 
@@ -421,7 +421,6 @@ export async function webMarks(browser, name = "") {
     && head === "Bookmarks and reminders of Work" && await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id === "S1"), JSON.stringify({ m, head }));
   say({ t: "projects", items: [] });                // the project gone (deleted, or its last session closed): terminumd orphans its bookmark
   say({ t: "mark", item: { ...ITEMS[0], project: "P", orphaned: at0 + 10 } });
-  await page.waitForFunction(() => document.getElementById("markcount").textContent === "2");
   await page.waitForFunction(() => !document.querySelector('#msgrail .dot[title*="Bookmark: ask about the retry loop"]'), null, { timeout: 3000 }).catch(() => {});   // the strip: at the next frame
   check(`${at} its project gone, the bookmark is orphaned: off the session, in the list below the sessions`,
     await page.evaluate(() => !document.querySelector('#msgrail .dot[title*="Bookmark: ask about the retry loop"]')), "");

@@ -85,10 +85,10 @@
     <!-- Tip of the day (AC-101, tips.js): a computer's only, above the list's tools -->
     <section id="tip" aria-labelledby="tiphead" hidden>
       <div class="tiphead"><h2 id="tiphead">Tip of the day</h2>
-        <button id="tipclose" class="icon x" type="button" title="Close until tomorrow" aria-label="Close until tomorrow"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:13px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        <button id="tipclose" class="icon x" type="button" title="Close until tomorrow (Settings shows it again)" aria-label="Close until tomorrow"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:13px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <p id="tiptext"></p>
-      <div class="tipacts"><button id="tipnext" type="button">Next</button><button id="tipoff" type="button" title="Turn tips off (Settings turns them on)">Turn off</button></div>
+      <div class="tipacts"><button id="tipoff" type="button" title="Turn tips off (Settings turns them on)">Turn off</button><button id="tipnext" type="button">Next</button></div>
     </section>
     <!-- the foot (AC-07): on a computer folded to one row of its buttons' icons, a toggle (foot.css; foot.js copies them) -->
     <div class="nav-foot">
@@ -231,7 +231,7 @@
     <div id="findrail" aria-label="Matches in this session" hidden></div>
     <div id="markbar" class="box" role="region" aria-label="Bookmark" hidden>
       <div class="mbhead"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span id="mbnote"></span>
-        <span class="mbnav"><button id="mbprev" class="icon" type="button" title="The bookmark above" aria-label="The bookmark above"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m18 15-6-6-6 6"/></svg></button><span id="mbpos"></span><button id="mbnext" class="icon" type="button" title="The bookmark below" aria-label="The bookmark below"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m6 9 6 6 6-6"/></svg></button></span><span class="mbacts"><button id="mbdone" type="button">Resolve</button><button id="mbsend" class="tochat" type="button" title="Paste the note and the text quoted into the input, no Enter">Quote in chat</button><button id="mbedit" type="button">Edit</button><button id="mbdel" type="button">Delete</button></span>
+        <span class="mbnav"><button id="mbprev" class="icon" type="button" title="The bookmark above" aria-label="The bookmark above"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m18 15-6-6-6 6"/></svg></button><span id="mbpos"></span><button id="mbnext" class="icon" type="button" title="The bookmark below" aria-label="The bookmark below"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m6 9 6 6 6-6"/></svg></button></span><span class="mbacts"><button id="mbdone" type="button">Resolve</button><button id="mbsend" class="tochat" type="button" title="Quote in chat: paste the note and the text quoted into the input, no Enter">Quote<span class="more"> in chat</span></button><button id="mbedit" type="button">Edit</button><button id="mbdel" type="button">Delete</button></span>
         <button id="mbclose" class="icon" type="button" aria-label="Close the bookmark"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <p id="mbwhy" hidden></p>
@@ -296,6 +296,7 @@
     <label class="row"><span>Follow the agent's folder<small>The header and Files show where the coding agent works (a worktree it moved to), not where it started</small></span><input id="followagent" type="checkbox" role="switch" checked></label>
     <label class="row"><span>Side marks<small>Sent messages, answers, bookmarks and reminders on the terminal's right edge, kept in this browser</small></span><input id="sidemarks" type="checkbox" role="switch" checked></label>
     <label class="row"><span>Tip of the day<small>A tip at the foot of the session list, on a computer</small></span><input id="tipson" type="checkbox" role="switch" checked></label>
+    <button id="tipshow" class="row" type="button" hidden><span>Show today's tip<small>The tip of the day you closed with ×</small></span></button>
     <label class="row"><span>Application cursor keys<small>For apps that ignore the arrow keys</small></span><input id="appcur" type="checkbox" role="switch"></label>
     <label class="row"><span>Bracketed paste<small>Turn off if pasted text shows extra characters</small></span><input id="bracket" type="checkbox" role="switch"></label>
     <label class="row"><span>Shift+Insert and Ctrl+Insert paste and copy<small>Linux and Windows keyboards. Turn off to send them to the program</small></span><input id="insclip" type="checkbox" role="switch" checked></label>

@@ -35,6 +35,21 @@ export async function webMarkNav(browser, name) {
   say({ t: "marks", items: ITEMS, error: null });
   await page.waitForFunction(() => !document.getElementById("marksfab").hidden, null, { timeout: 5000 }).catch(() => {});
   const fab = await page.evaluate(() => document.getElementById("marksfabn").textContent);
+  // a reminder up (C) is said at the terminal's top for 4 s, once; another one up is said again (AC-91)
+  const toast = () => page.evaluate(() => ({ text: document.getElementById("toast").textContent, shown: !document.getElementById("toast").hidden }));
+  const said = await toast();
+  await page.waitForTimeout(4300);
+  const gone = await toast();
+  say({ t: "marks", items: ITEMS.map((i) => ({ ...i })), error: null });
+  await page.waitForTimeout(300);
+  const repeat = await toast();
+  say({ t: "marks", items: [...ITEMS, { id: "E", sid: "S1", n: 120, text: "out 120 lorem ipsum", note: "new up", title: "One", at: at0 + 10, remind: true, due: true }], error: null });
+  await page.waitForTimeout(300);
+  const fresh = await toast();
+  say({ t: "marks", items: ITEMS, error: null });
+  await page.waitForTimeout(300);
+  check(`AC-91 ${at} reminders up are said at the terminal's top ("<where>: 2 reminders, 1 new") for 4 s, once each; a new one up is said again`,
+    said.shown && /^.+: 2 reminders, 1 new$/.test(said.text) && !gone.shown && !repeat.shown && fresh.shown && /: 3 reminders, 2 new$/.test(fresh.text), JSON.stringify({ said, gone, repeat, fresh }));
   await page.click("#marksfab");
   await page.waitForSelector("#markpane .mknav li");
   const list = () => page.evaluate(() => [...document.querySelectorAll("#markpane .mknav li")].map((l) => ({ id: l.dataset.id, cls: l.className,
@@ -42,6 +57,13 @@ export async function webMarkNav(browser, name) {
   const rows = await list();
   check(`AC-33 ${at} the bookmarks' pane lists the session's bookmarks and open reminders together, by line, an agent's (not found yet) after by time; the button counts them`,
     rows.map((r) => r.id).join() === "B,C,A,R,Q" && fab === "5", JSON.stringify({ rows, fab }));
+  const places = await page.evaluate(() => [...document.querySelectorAll("#markpane .mknav li")].map((l) => {
+    const pos = l.querySelector(".mkpos"), meta = l.querySelector(".meta"), item = l.querySelector(".mkitem"), p = pos.getBoundingClientRect(), m = meta.getBoundingClientRect(), b = item.getBoundingClientRect();
+    return { text: pos.textContent, right: Math.round(b.right - parseFloat(getComputedStyle(item).paddingRight) - p.right), line: Math.abs(p.bottom - m.bottom) < 2,
+      type: getComputedStyle(pos).fontSize === getComputedStyle(meta).fontSize && getComputedStyle(pos).fontFamily === getComputedStyle(meta).fontFamily };
+  }));
+  check(`AC-33 ${at} each entry says its place and their count ("1 / 5") at the right of its where-and-when line, in its type`,
+    places.map((p) => p.text).join() === "1 / 5,2 / 5,3 / 5,4 / 5,5 / 5" && places.every((p) => Math.abs(p.right) <= 1 && p.line && p.type), JSON.stringify(places));
   check(`AC-98 ${at} an agent's record has its agent's mark, a reminder a bell, a resolved reminder is not listed`,
     rows.find((r) => r.id === "R").agent && rows.find((r) => r.id === "Q").agent && rows.find((r) => r.id === "C").bell && !rows.some((r) => r.id === "D"), JSON.stringify(rows));
   const focus = await page.evaluate(() => document.activeElement?.id);
@@ -59,6 +81,8 @@ export async function webMarkNav(browser, name) {
         if (!chat) return {}; const pad = parseFloat(getComputedStyle(box).paddingLeft), r = box.getBoundingClientRect();
         return { left: Math.abs(go.left - r.left - pad) < 1.5, right: Math.abs(r.right - parseFloat(getComputedStyle(box).paddingRight) - chat.right) < 1.5 && chat.left - done.right < 16 && done.left - go.right > 16 }; })(),
       wrap: body?.querySelector("pre") ? getComputedStyle(body.querySelector("pre")).whiteSpace : null,
+      // the title, the list's titles and the record's text (its code too) in one size: the window's
+      sizes: [document.querySelector("#markpane .mkvtitle"), document.querySelector("#markpane .mknav .note"), body?.querySelector("pre code")].map((e) => (e ? getComputedStyle(e).fontSize : null)),
       tall: Math.round(document.getElementById("term").getBoundingClientRect().height - document.getElementById("markpane").getBoundingClientRect().height) };
   });
   let from = sent.length;
@@ -68,11 +92,11 @@ export async function webMarkNav(browser, name) {
   await page.keyboard.press("ArrowDown");
   await page.waitForTimeout(500);
   const next = await view();
-  check(`AC-33 ${at} the pane, as tall as the terminal less 28 px, shows the first one's content at once beside the list (a bookmark: the terminal's text exactly, its long lines wrapped); a press or ↓ shows another, an agent's record as Markdown; nothing jumps; three actions`,
+  check(`AC-33 ${at} the pane, as tall as the terminal less 28 px, shows the first one's content at once beside the list (a bookmark: the terminal's text exactly, its long lines wrapped, in the title's and the list's size); a press or ↓ shows another, an agent's record as Markdown; nothing jumps; three actions`,
     shown.open && shown.chosen === "B" && shown.title === "first by line" && shown.pre === "out 100 lorem ipsum" && next.chosen === "R" && next.title.includes("Final report: retry loop fixed")
     && next.strong === "Fixed" && next.items === 2 && !sent.slice(from).some((m) => m.t === "locate") && shown.acts.join() === "Show in terminal,Resolve,Quote in chat"
     && shown.place.left && shown.place.right
-    && shown.wrap === "pre-wrap" && shown.tall === 28, JSON.stringify({ shown, next }));
+    && shown.wrap === "pre-wrap" && shown.tall === 28 && shown.sizes.every((z) => z === shown.sizes[0]), JSON.stringify({ shown, next }));
 
   // the list on top, each its where and when on a line over its title (12 px: the list's meta and 1 px) and its text's start on one line; the view under it past the line
   const layout = () => page.evaluate(() => {
@@ -261,5 +285,16 @@ export async function webMarkNav(browser, name) {
   });
   check(`AC-33 ${at} phone: a sheet, its line 44 px high, its view at least 200 px with its actions inside it`,
     phone.sheet && phone.grip >= 44 && phone.view >= 200 && phone.acts && p.errors.length === 0, JSON.stringify({ phone, errors: p.errors }));
+  // Show in terminal: the bar after the jump takes the terminal's width under ⟨…⟩, every key inside it (beside ⟨…⟩ Delete stood out of it)
+  await p.page.evaluate(() => document.querySelector("#markpane .mkvgo").click());
+  await p.page.waitForFunction(() => !document.getElementById("markbar").hidden, null, { timeout: 5000 }).catch(() => {});
+  const bar = await p.page.evaluate(() => {
+    const b = document.getElementById("markbar").getBoundingClientRect(), fold = document.getElementById("foldfab").getBoundingClientRect();
+    const keys = [...document.querySelectorAll("#markbar button")].filter((k) => k.offsetHeight).map((k) => k.getBoundingClientRect());
+    return { shown: b.height > 0, left: Math.round(b.left), right: Math.round(innerWidth - b.right), underFold: b.top >= fold.bottom, inside: keys.every((k) => k.left >= b.left - 0.5 && k.right <= b.right + 0.5),
+      keys: Math.round(Math.min(...keys.map((k) => k.height))), quote: document.getElementById("mbsend").innerText.trim() };
+  });
+  check(`AC-33 ${at} phone: the bar after Show in terminal spans the terminal under ⟨…⟩, its keys inside it, 44 px, "Quote" for Quote in chat`,
+    bar.shown && bar.left === 12 && bar.right === 12 && bar.underFold && bar.inside && bar.keys >= 44 && bar.quote === "Quote", JSON.stringify(bar));
   await p.page.close();
 }

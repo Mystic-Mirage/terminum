@@ -18,6 +18,7 @@ export function paneMenu({ send, pick, signOut, copy }) {
 
   $("restoreagain").onclick = () => { close(); send({ t: "restore" }); };
   $("planmenu").onclick = () => { close(); document.dispatchEvent(new Event("planopen")); };   // the shown session's (AC-97)
+  $("tipshow").onclick = () => { close(); document.dispatchEvent(new Event("tipshow")); };     // today's tip, closed with × (AC-101)
   $("signout").onclick = () => { close(); signOut(); };
 
   // ---------- the restore report (AC-15) ----------

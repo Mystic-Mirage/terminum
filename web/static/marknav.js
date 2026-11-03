@@ -92,7 +92,7 @@ export class MarkNav {
     const key = JSON.stringify([heading.textContent, this.chosen, others, this.m.rev, all.map((b) => [b.id, this.pending.has(b.id), this.m.alive(b.sid)])]);
     if (key === this.listed) return;
     this.listed = key;
-    list.replaceChildren(...all.map((item) => this.row(item, others)));
+    list.replaceChildren(...all.map((item, i) => this.row(item, others, `${i + 1} / ${all.length}`)));
     this.show(all.find((b) => b.id === this.chosen), others);
     list.querySelector(".chosen")?.scrollIntoView({ block: "nearest" });
   }
@@ -190,13 +190,14 @@ export class MarkNav {
     void markdownView(body, (whole ? `${item.note}\n\n` : "") + recordMarkdown(item));
   }
 
-  row(item, others) {
+  row(item, others, place) {
     const pending = this.pending.has(item.id);
     const li = el("li", [item.remind ? "remind" : "", item.by ? "agent" : "", item.id === this.chosen ? "chosen" : "", pending ? "pending" : ""].filter(Boolean).join(" "));
     li.dataset.id = item.id;
     const b = el("button", "mkitem");
     b.type = "button";
-    // where and when on a line of their own, its title under them across the whole width, then its text's start, one line of words
+    // where and when on a line of their own, its place in the list at its right ("1 / 52"), its title under them across the
+    // whole width, then its text's start, one line of words
     const words = oneLine(item.text, !!item.by);
     const title = el("span", "note" + (item.note ? "" : " quiet"));
     const mark = kindMark(item);
@@ -207,7 +208,9 @@ export class MarkNav {
     const at = item.due && openReminder(item) ? "up now" : when(item.at);   // a reminder up (AC-91)
     const meta = el("span", "meta" + (at === "up now" ? " up" : ""), (theirs ? [now ?? item.title, at] : [at]).join(" · "));
     if (theirs && now === null) meta.append(el("span", "closed", "closed"));
-    b.append(meta, title);
+    const line = el("span", "mkwhen");
+    line.append(meta, el("span", "mkpos", place));
+    b.append(line, title);
     if (item.note && words) b.append(el("span", "snip", words));
     b.onclick = () => this.choose(item);
     li.append(b);

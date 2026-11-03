@@ -14,7 +14,7 @@ const HOOKS = "terminum's hooks are not running in this session (Codex: trust th
 const LIGHT = { ...THEME, bg: "#ffffff", fg: "#1f2328", dark: false };
 
 /** WCAG's ratio of a node's text (or a given color) against the first opaque background under it. */
-const MEASURE = () => {
+export const MEASURE = () => {
   const cv = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
   const rgb = (s) => { cv.clearRect(0, 0, 1, 1); cv.fillStyle = "#000"; cv.fillStyle = s; cv.fillRect(0, 0, 1, 1); const d = cv.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; };   // any CSS color (color-mix's color(srgb …) too)
   const lum = ([r, g, b]) => [r, g, b].map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })

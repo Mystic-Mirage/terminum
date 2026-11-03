@@ -14,6 +14,7 @@
 .markdown pre { background: var(--surface-0); border-radius: var(--r-md); }
 .markdown pre code { background: none; padding: 0; font-size: 12.5px; }
 .markdown.wrap pre { white-space: pre-wrap; overflow-wrap: anywhere; }   /* a record's text (the bookmarks' navigator): long lines wrap, no sideways scroll */
+.markdown.wrap pre code { font-size: 1em; }   /* the window's text size, as its title and the list (the terminal's widgets keep 12.5 px) */
 .body.markdown.wrap { padding: 10px 16px 16px; font: var(--win-md)/var(--win-md-lh) var(--win-font); }   /* a window's record, as the chat's text (tokens.css) */
 .markdown blockquote { margin-left: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: var(--surface-2);
   color: color-mix(in srgb, var(--t-fg) 80%, var(--t-bg)); }   /* a tint, not a bar */

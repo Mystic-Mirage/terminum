@@ -125,7 +125,7 @@ export class Marks {
         if (m.mode === "reset" && m.sid !== this.paneSid) this.togglePane(false);
       // falls through
       case "screen": requestAnimationFrame(() => this.drawRail()); return;   // the pane's range changed
-      case "layout": requestAnimationFrame(() => this.drawList());                  // a session closed or came back
+      case "layout": if ($("marksdlg").open) requestAnimationFrame(() => this.drawList());   // a session closed or came back (the count holds)
     }
   }
 
@@ -219,9 +219,15 @@ export class Marks {
     $("mbtext").textContent = item.text; $("mbtext").hidden = !why;
     $("mbpos").textContent = i >= 0 && mine.length > 1 ? `${i + 1}/${mine.length}` : "";
     $("mbprev").hidden = $("mbnext").hidden = !(i >= 0 && mine.length > 1);
-    $("markbar").style.top = `${this.term.offsetTop + 8}px`;
     $("markbar").hidden = false;
+    this.placeBar();
     this.nav.bar(item);
+  }
+  /** The bar's top: where the buttons fold (a phone, fold.js's body.folding) under ⟨…⟩, the
+   *  terminal's width (marks.css: beside it its keys did not fit); else 8 px in the terminal. */
+  placeBar() {
+    const fold = $("foldfab"), under = document.body.classList.contains("folding");
+    $("markbar").style.top = `${under ? fold.offsetTop + fold.offsetHeight + 8 : this.term.offsetTop + 8}px`;
   }
   hideBar() { this.shown = null; $("markbar").hidden = true; this.jumper.clear(); }
   step(d) {
@@ -285,25 +291,24 @@ export class Marks {
     rail.hidden = false;
   }
 
-  // ---------- those no session shows, below the sessions ----------
+  // ---------- every bookmark and open reminder, below the sessions ----------
 
-  /** Opens or closes the window of those no session shows (a large one on the right). */
+  /** Opens or closes the window of them all (a large one on the right). */
   toggleList(open = !$("marksdlg").open) {
     if (open && !$("marksdlg").open) { $("marksdlg").showModal(); this.drawList(); }
     else if (!open && $("marksdlg").open) $("marksdlg").close();
     $("marksbtn").setAttribute("aria-expanded", String($("marksdlg").open));
   }
 
-  /** The bookmarks or the reminders (the list's segment) no session shows, newest first: orphaned
-   *  (their project or session gone) or of a session not listed now (its host out of reach); Delete
-   *  here is final; "Open all" shows them in full. */
+  /** Every bookmark or open reminder (the list's segment), newest first, with where it is: its
+   *  project or session, closed, orphaned (its project or session gone) or out of reach (its host
+   *  down); Delete here is final; "Open all" shows them in full. */
   drawList() {
-    const panes = this.panes(), of = projectsOf(this.projects());
-    const left = [...this.items.values()].filter((b) => nowhere(b, panes, of));
-    $("markcount").textContent = $("markpeek").textContent = left.length ? String(left.length) : "";   // the button's, the folded foot's
+    const listed = [...this.items.values()].filter((b) => !b.remind || openReminder(b));
+    $("markcount").textContent = $("markpeek").textContent = listed.length ? String(listed.length) : "";   // the button's, the folded foot's
     if (!$("marksdlg").open) return;
     const reminders = this.listKind === "reminder";
-    const all = left.filter((b) => !!b.remind === reminders).sort((a, b) => b.at - a.at);
+    const all = listed.filter((b) => !!b.remind === reminders).sort((a, b) => b.at - a.at);
     const seg = el("div", "seg mkkind");
     for (const [k, label] of [["bookmark", "Bookmarks"], ["reminder", "Reminders"]]) {
       const b = el("button", "", label);
@@ -321,14 +326,14 @@ export class Marks {
       open.onclick = () => this.openAll(all, reminders ? "Reminders" : "Bookmarks");
       head.append(open);
     }
-    const empty = `None here: a ${reminders ? "reminder" : "bookmark"} shows in its project's sessions, or its own session, and comes here once they are gone.`;
-    $("marklist").replaceChildren(head, all.length ? this.listOf(all, true, "out of reach") : el("p", "empty", empty));
+    const empty = `No ${reminders ? "open reminders" : "bookmarks"} yet: select text in a terminal and press its [+].`;
+    $("marklist").replaceChildren(head, all.length ? this.listOf(all) : el("p", "empty", empty));
   }
 
-  /** A list of bookmarks: note, the start of the text, and (all: its session's title, host, when,
-   *  "orphaned", or `away` when its session is not listed); a press brings one into view, × (twice) deletes it. */
-  listOf(items, all, away = "closed") {
-    const ul = el("ul");
+  /** A list of bookmarks: note, the start of the text, and its project, its session's title,
+   *  host, when, and "closed", "orphaned" or "out of reach"); a press brings one into view, × (twice) deletes it. */
+  listOf(items) {
+    const ul = el("ul"), panes = this.panes(), projects = this.projects(), of = projectsOf(projects), names = new Map(projects.map((p) => [p.id, p.name]));
     for (const item of items) {
       const li = el("li"), b = el("button", "mkitem");
       b.type = "button";
@@ -339,13 +344,13 @@ export class Marks {
       if (item.note) b.append(el("span", "snip", oneLine(item.text, !!item.by)));
       // an open session by its name now (it may have been renamed since), a closed one by its last
       const now = this.alive(item.sid);
-      const meta = el("span", "meta", (all ? [now ?? item.title, item.host, when(item.at)] : [when(item.at)]).filter(Boolean).join(" · "));
-      // orphaned: its project or session is gone (only below the sessions, until deleted); else its session is not listed now:
-      // closed (a project's, shown while the project lives) or out of reach (below the sessions: its host down)
-      if (all && item.orphaned) meta.append(el("span", "closed", "orphaned"));
-      else if (all && now === null) meta.append(el("span", "closed", away));
+      const meta = el("span", "meta", [names.get(item.project), now ?? item.title, item.host, when(item.at)].filter(Boolean).join(" · "));
+      // orphaned: its project or session is gone (until deleted here); else its session is not listed now: closed (a
+      // project's, shown while the project lives) or out of reach (no session shows it: its host down)
+      const away = item.orphaned ? "orphaned" : now !== null ? "" : nowhere(item, panes, of) ? "out of reach" : "closed";
+      if (away) meta.append(el("span", "closed", away));
       b.append(meta);
-      b.onclick = () => { this.togglePane(false); if (all) this.toggleList(false); this.jump(item); };
+      b.onclick = () => { this.togglePane(false); this.toggleList(false); this.jump(item); };
       const del = el("button", "mkdel");
       del.type = "button";
       del.title = "Delete this bookmark";
@@ -389,6 +394,7 @@ export class Marks {
     }
     this.onPlaced?.();                             // first: ⟨…⟩ folds or not (fold.js), which find's field stands by
     this.search.place();
+    if (!$("markbar").hidden) this.placeBar();
     if (!$("markpane").hidden) this.placePane();
   }
   placePane() { placePane($("markpane"), () => this.togglePane(false)); }

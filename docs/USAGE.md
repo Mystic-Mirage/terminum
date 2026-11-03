@@ -141,7 +141,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   it prints open from there. Settings' Follow the agent's folder turns that off for this browser (`page.followAgent`
   in settings.json for every browser that did not choose).
 - **Tip of the day**: on a computer the foot of the session list shows a tip, another each day;
-  Next shows the next one, × closes it until tomorrow, Turn off (or Settings' Tip of the day) turns
+  Next shows the next one, × closes it until tomorrow (Settings' Show today's tip brings it back), Turn off (or Settings' Tip of the day) turns
   tips off for this browser.
 - **Ask**: select text in the terminal and press the blue speech bubble with a question mark (under
   the selection's orange [+]); type a question and Add to Chat puts the selection as a Markdown
@@ -159,20 +159,22 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   **Shift** while dragging to select in the browser instead (Safari, Chrome, Firefox): nothing
   reaches the program.
 - **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when an agent
-  of its project ends a turn, its count filled. It opens the same window as the bookmarks' button,
+  of its project ends a turn, its count filled, and the terminal's top says so for 4 seconds
+  ("iQuantize: 16 reminders, 3 new"; another session's when you open it next). It opens the same window as the bookmarks' button,
   with the open reminders only, those up first: Show in terminal, Resolve (it ends it, with Undo) and
   Quote in chat. Quote in chat, on a reminder or a bookmark, and Insert into chat on a sent message
   paste it (a bookmark's note and its text) into the session's input, without Enter.
   Bookmarks and reminders made in a project's session show in every session of that project;
-  made outside projects, only in their own session. Once their project is gone (deleted, or its
-  last session closed), or a session outside projects closes, they wait under Bookmarks /
-  Reminders below the sessions (Open all).
+  made outside projects, only in their own session. Bookmarks / Reminders below the sessions lists
+  them all, each with its project or session (Open all); once their project is gone (deleted, or
+  its last session closed), or a session outside projects closes, they are only there, "orphaned".
 - **Limits**: you keep up to 300 bookmarks and 100 open reminders (a save past them says so). Coding
   agents' records have their own: 50 bookmarks and 20 open reminders a project (or session); past
   them their oldest go, and a banner over the terminal says so at the end of that agent's turn, with
   a link to review them. A resolved reminder is deleted 30 days after you resolve it.
 - **Going through them**: the bookmarks' button (its count: bookmarks and open reminders) opens a
-  window with the session's bookmarks and reminders on top, top to bottom, each its note and its
+  window with the session's bookmarks and reminders on top, top to bottom ("1 / 52" at each one's
+  right), each its note and its
   text's start on one line, and the chosen one's content under them; drag the line between them to
   share the height (a double click: half). Press one, or ↑ ↓ on a computer, to show it; Show in
   terminal (Enter) goes there; Resolve (or Delete) settles one, a reminder resolved and a bookmark

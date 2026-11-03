@@ -67,7 +67,9 @@ body.wide #msgrail { grid-row: 1 / -1; }
 #markbar :is(.mbnav, .mbacts) { display: flex; align-items: center; gap: var(--icon-gap); }
 /* Insert into chat and its neighbours at a pane's foot (the reminders' cards, the sent history): keys (controls.css) */
 /* a narrow bar: the note, ↑ ↓ and × on the first row, its buttons on a row under them */
-@media (max-width: 600px) { #markbar .mbhead { flex-wrap: wrap; } #markbar .mbacts { order: 1; flex: 1 0 100%; justify-content: flex-end; } }
+@media (max-width: 600px) { #markbar .mbhead { flex-wrap: wrap; } #markbar .mbacts { order: 1; flex: 1 0 100%; flex-wrap: wrap; justify-content: flex-end; }
+  #mbsend .more { display: none; } }   /* "Quote": its title says the rest */
+body.folding #markbar { right: 12px; }   /* under ⟨…⟩, the terminal's width (marks.js placeBar) */
 #mbnote { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 #mbnote.quiet, :is(#marklist, #markpane, #remindpane) :is(.quiet, .note.quiet) { font-weight: 400; color: var(--muted); }   /* over .note's 600 */
 #mbpos { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -111,7 +113,7 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 :is(#marklist, #markpane, #remindpane) :is(.note, .snip, .meta) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :is(#marklist, #markpane, #remindpane) .note { font-weight: 600; font-size: 13px; }
 :is(#marklist, #markpane, #remindpane) .snip { font: 11.5px TermFont, TermFontShipped, Menlo, monospace; color: var(--muted); }
-:is(#marklist, #markpane, #remindpane) .meta { font-size: 11px; color: var(--muted); }
+:is(#marklist, #markpane, #remindpane) :is(.meta, .mkpos) { font-size: 11px; color: var(--muted); }
 :is(#marklist, #markpane, #remindpane) .closed { margin-left: 6px; padding: 0 5px; border-radius: var(--r-xs); background: var(--surface-4); }
 :is(#marklist, #markpane, #remindpane) .mkdel { margin: var(--sp-1); font-size: 12px; }   /* an icon key (controls.css) */
 :is(#marklist, #markpane, #remindpane) .empty { margin: 0; padding: 8px; color: var(--muted); font-size: 12.5px; }
@@ -161,7 +163,10 @@ dialog.dlg.docdlg .dhead { margin: 0; padding: 10px 10px 10px 16px; }
 :is(#markpane, #remindpane) .mkcols { flex: 1; min-height: 0; display: grid; grid-template-rows: fit-content(var(--list, 50%)) auto minmax(min(200px, 50%), 1fr); padding: 0 12px; }
 :is(#markpane, #remindpane) .mkcols[hidden] { display: none; }
 :is(#markpane, #remindpane) .mknav { min-height: 0; overflow: auto; }
-:is(#markpane, #remindpane) .meta { font-size: var(--fs-meta); }   /* where and when: a line of its own over the title, 1 px over the list's */
+:is(#markpane, #remindpane) :is(.meta, .mkpos) { font-size: var(--fs-meta); }   /* where and when: a line of its own over the title, 1 px over the list's */
+:is(#markpane, #remindpane) .mkwhen { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+:is(#markpane, #remindpane) .mkwhen .meta { flex: 1; min-width: 0; }
+:is(#markpane, #remindpane) .mkpos { flex: none; font-variant-numeric: tabular-nums; }   /* "1 / 52", the time's type */
 :is(#markpane, #remindpane) .note { font: 600 var(--win-md)/1.35 var(--win-font); }   /* the chat's font and size (tokens.css) */
 :is(#markpane, #remindpane) .snip { font: var(--win-md)/1.35 var(--win-font); }
 /* the line: a grabber inside the window (one surface: no band of the chrome as the page's splitters), 44 px for a finger */
@@ -172,7 +177,7 @@ dialog.dlg.docdlg .dhead { margin: 0; padding: 10px 10px 10px 16px; }
 :is(#markpane, #remindpane) .mkcols.dragging { cursor: row-resize; user-select: none; }
 :is(#markpane, #remindpane) .mkview { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--r-md); background: var(--surface-1); }
 :is(#markpane, #remindpane) .mkvhead { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 0; }   /* 16 px in: the list takes the window's left */
-:is(#markpane, #remindpane) .mkvtitle { font: 600 calc(var(--win-md) * 1.18)/1.3 var(--win-font); overflow-wrap: anywhere; }
+:is(#markpane, #remindpane) .mkvtitle { font: 600 var(--win-md)/1.35 var(--win-font); overflow-wrap: anywhere; }   /* the list's titles' and the text's size */
 :is(#markpane, #remindpane) .mkvtitle :is(.agmark, .mkbell) { display: inline-flex; vertical-align: -2px; margin-right: 6px; }
 :is(#markpane, #remindpane) .mkvbody { flex: 1; min-height: 0; overflow: auto; }
 :is(#markpane, #remindpane) .pwacts { padding-inline: 16px; }   /* panewin.css: Show in terminal at the left, Resolve and Quote in chat at the right; 16 px in as the view */

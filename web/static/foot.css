@@ -54,18 +54,20 @@
   .nav-foot .footbtn .count:empty { display: none; }
 }
 
-/* Tip of the day (AC-101, tips.js): a computer's only, above the tools, quiet: the list's own
-   background, muted small text, small keys; a short window keeps its room for the sessions */
+/* Tip of the day (AC-101, tips.js): a computer's only, above the tools: a card a step above the
+   list (it stood apart from neither the list nor the tools on the list's own background), small
+   text, small keys; a short window keeps its room for the sessions */
 #tip { display: none; }
 @media (min-width: 861px) and (min-height: 560px) and (pointer: fine) {
-  #tip:not([hidden]) { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2) 14px var(--sp-1); }
+  #tip:not([hidden]) { display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-2) 10px 0; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+    border-radius: var(--r-lg); background: var(--surface-3); box-shadow: var(--m-edge-ctl); }
   .tiphead { display: flex; align-items: center; justify-content: space-between; }
-  .tiphead h2 { margin: 0; font: 600 var(--fs-meta) var(--ui); color: var(--muted-text); }
+  .tiphead h2 { margin: 0; font: 600 var(--fs-meta) var(--ui); color: var(--t-fg); }
   #tipclose { --ik: 20px; }
-  #tiptext { margin: 0; font: var(--fs-meta)/1.4 var(--ui); color: var(--muted-text); overflow-wrap: anywhere; }
+  #tiptext { margin: 0; font: var(--fs-meta)/1.4 var(--ui); color: var(--t-fg); overflow-wrap: anywhere; }   /* muted fell under 4.5:1 on the card */
   #tiptext svg { vertical-align: -2px; }
   .tipring { display: inline-block; width: 11px; height: 11px; vertical-align: -1px; border-radius: 50%;
     border: 1.5px solid color-mix(in srgb, currentColor 30%, transparent); border-top-color: var(--accent); border-right-color: var(--accent); }
-  .tipacts { display: flex; gap: var(--sp-1); }
+  .tipacts { display: flex; justify-content: space-between; gap: var(--sp-1); margin-top: var(--sp-1); }   /* Turn off left, Next right */
   .tipacts button { --key-h: 24px; --key-px: 8px; font-size: var(--fs-meta); }
 }

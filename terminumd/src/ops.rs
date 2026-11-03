@@ -132,9 +132,12 @@ pub fn save(roots: &Roots, path: &Path, text: &str, if_match: &str) -> Result<St
         let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&tmp).map_err(|e| io(e, &tmp))?;
         f.write_all(text.as_bytes()).map_err(|e| io(e, path))?;
         f.sync_all().map_err(|e| io(e, path))?;
-        drop(f);
-        if let Some(m) = &meta {
-            copy_metadata(&real, &tmp, m.permissions());
+        match &meta {
+            Some(m) => {
+                drop(f);
+                copy_metadata(&real, &tmp, m.permissions());
+            }
+            None => user_owned(&f, false),
         }
         fs::rename(&tmp, &real).map_err(|e| io(e, path))
     })();
@@ -181,8 +184,22 @@ pub fn mkdir(roots: &Roots, parent: &Path, name: &str) -> Result<PathBuf, OpErro
         return Err(exists_in(name, parent));
     }
     check_writable(roots, &target)?;
+    let new: Vec<PathBuf> = target.ancestors().take_while(|p| *p != parent && p.symlink_metadata().is_err()).map(Path::to_path_buf).collect();
     fs::create_dir_all(&target).map_err(|e| io(e, &target))?;
+    for d in &new {
+        use std::os::unix::fs::OpenOptionsExt;
+        if let Ok(f) = fs::OpenOptions::new().read(true).custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW).open(d) {
+            user_owned(&f, true);
+        }
+    }
     Ok(target)
+}
+
+/// A new entry of the user's (`dir`: a folder) gets the mode the umask terminumd was started with
+/// gives, not terminumd's own 077 (AC-09): set on the open entry, never through a path.
+fn user_owned(f: &fs::File, dir: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = f.set_permissions(fs::Permissions::from_mode(crate::umask::user_mode(dir)));
 }
 
 /// Create an empty file `name` inside `parent`.
@@ -194,7 +211,10 @@ pub fn touch(roots: &Roots, parent: &Path, name: &str) -> Result<PathBuf, OpErro
     check_writable(roots, parent)?;
     check_entry_writable(roots, &target)?;
     match fs::OpenOptions::new().write(true).create_new(true).open(&target) {
-        Ok(_) => Ok(target),
+        Ok(f) => {
+            user_owned(&f, false);
+            Ok(target)
+        }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(exists_in(name, parent)),
         Err(e) => Err(io(e, &target)),
     }
@@ -218,6 +238,7 @@ pub fn upload(roots: &Roots, dir: &Path, name: &str, data: &[u8], both: bool) ->
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let part = dir.join(format!(".tm-upload-{}-{seq}.part", std::process::id()));
     let mut f = fs::OpenOptions::new().write(true).create_new(true).custom_flags(libc::O_NOFOLLOW).open(&part).map_err(|e| io(e, &first))?;
+    user_owned(&f, false);
     let result = f.write_all(data).and_then(|()| f.sync_all()).map_err(|e| io(e, &first)).and_then(|()| {
         for n in 1..=999 {
             let target = if n == 1 { first.clone() } else { dir.join(numbered(name, n)) };

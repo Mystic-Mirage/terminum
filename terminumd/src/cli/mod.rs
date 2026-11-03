@@ -191,10 +191,9 @@ pub fn refuse_root(euid: u32) -> Result<(), String> {
 
 /// Refused as root, private files from here on (the commands that change the install).
 fn as_user() -> Result<(), String> {
-    // SAFETY: geteuid and umask have no preconditions
+    // SAFETY: geteuid has no preconditions
     refuse_root(unsafe { libc::geteuid() })?;
-    // SAFETY: as above
-    unsafe { libc::umask(0o077) };
+    crate::umask::private();
     Ok(())
 }
 

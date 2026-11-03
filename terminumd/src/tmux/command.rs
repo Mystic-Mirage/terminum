@@ -20,10 +20,18 @@ pub fn host_attach_command(id: &str) -> String {
 }
 
 /// A tmux command with a UTF-8 locale (launchd gives none: tmux would draw `_` for every
-/// wide character) and without the TMUX of a terminal terminumd may run in (tests).
+/// wide character), without the TMUX of a terminal terminumd may run in (tests), and with the
+/// umask terminumd was started with: a server it starts passes it to every terminal (AC-09).
 pub fn plain(tmux: &std::path::Path) -> Command {
     let mut c = Command::new(tmux);
     c.env_remove("TMUX").env_remove("TMUX_PANE");
+    // SAFETY: umask::restore is async-signal-safe
+    unsafe {
+        c.pre_exec(|| {
+            crate::umask::restore();
+            Ok(())
+        });
+    }
     let utf8 = ["LC_ALL", "LC_CTYPE", "LANG"].iter().any(|k| std::env::var(k).is_ok_and(|v| v.to_uppercase().contains("UTF-8") || v.to_uppercase().contains("UTF8")));
     if !utf8 {
         c.env("LANG", "en_US.UTF-8");

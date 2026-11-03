@@ -55,6 +55,7 @@ mod termtext;
 mod testutil;
 mod theme;
 mod tmux;
+mod umask;
 mod update;
 mod watch_web;
 mod watcher;
@@ -188,8 +189,8 @@ fn main() {
 
 /// The server (no argument, or `serve` as launchd's plist says), or `--agent` on a host.
 async fn serve() {
-    // SAFETY: umask has no preconditions; what terminumd writes is the user's alone (AC-09)
-    unsafe { libc::umask(0o077) };
+    // what terminumd writes is the user's alone; terminals and Files' new entries keep the started umask (AC-09)
+    umask::private();
     if let Some(socket) = agent::socket_arg() {
         return run_agent(socket).await;
     }

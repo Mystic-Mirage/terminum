@@ -78,10 +78,12 @@ pub fn start(ctx: &Ctx) -> Result<(), String> {
     let mut cmd = Command::new(&program);
     cmd.arg("serve").stdin(Stdio::null()).stdout(log.try_clone().map_err(|e| e.to_string())?).stderr(log);
     cmd.env_clear().envs(&ctx.env).envs(super::launch::service_env(ctx));
-    // SAFETY: setsid is async-signal-safe; terminumd leaves the installer's session and group
+    // SAFETY: setsid and umask::restore are async-signal-safe; terminumd leaves the installer's
+    // session and group, and starts with the caller's umask, not the CLI's private one (AC-09)
     unsafe {
         cmd.pre_exec(|| {
             libc::setsid();
+            crate::umask::restore();
             Ok(())
         });
     }

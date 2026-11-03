@@ -22,6 +22,8 @@ use tokio::sync::{mpsc, oneshot};
 pub const ANSWER_WAIT: Duration = Duration::from_secs(10);
 /// stderr kept to say why a client ended (ssh's "Permission denied (publickey)").
 const STDERR_KEPT: usize = 4096;
+/// How long the reason waits for stderr's end once stdout ended (a child left holding it).
+const STDERR_WAIT: Duration = Duration::from_secs(1);
 /// Most bytes of commands written to a client and not yet taken by its writer (stdin full: a
 /// slow ssh): a command past it fails at once rather than piling up (the reader never writes).
 const LINES_MAX: usize = 16 << 20;
@@ -117,7 +119,7 @@ impl Control {
 
         // stderr: kept, for the reason an ssh or tmux ended
         let e = errors.clone();
-        tokio::spawn(async move {
+        let stderr_done = tokio::spawn(async move {
             let mut buf = [0u8; 1024];
             while let Ok(n) = stderr.read(&mut buf).await {
                 if n == 0 {
@@ -195,6 +197,11 @@ impl Control {
             }
             a.store(false, Ordering::Relaxed);
             cl.store(exit_reason.as_deref() == Some(""), Ordering::Relaxed);
+            // stdout ended before stderr was read through (ssh's last words come on it): its end
+            // first, so a reason is never "no answer" while the words are on their way
+            if exit_reason.as_deref().is_none_or(str::is_empty) {
+                let _ = tokio::time::timeout(STDERR_WAIT, stderr_done).await;
+            }
             let quiet = if via_ssh && !att.load(Ordering::Relaxed) { "ssh: no answer from the host" } else { "tmux exited" };
             let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).unwrap_or_else(|| quiet.into());
             for w in p.lock().drain(..) {

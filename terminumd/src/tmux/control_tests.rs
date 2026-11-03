@@ -112,6 +112,8 @@ async fn an_ssh_link_that_never_reached_tmux_says_so() {
     for (name, body, want) in [
         ("ssh", "exit 255", "ssh: no answer from the host"),
         ("my-ssh", "echo 'Connection timed out during banner exchange' >&2; exit 255", "Connection timed out during banner exchange"),
+        // stdout ends before the words reach stderr (as they raced on a loaded Linux runner)
+        ("late-ssh", "exec >&-; sleep 0.3; echo 'Permission denied (publickey).' >&2; exit 255", "Permission denied (publickey)."),
         ("tmux-ish", "exit 1", "tmux exited"),
     ] {
         let path = dir.join(name);

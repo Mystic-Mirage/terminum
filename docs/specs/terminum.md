@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.24.33 |
+| Version | 0.24.34 |
 | Date | 2026-11-04 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.34 | 2026-11-04 | Owner: when the shown session closed the selection went to a session elsewhere: the page took the first row of terminumd's list, not of the list it draws (projects first, the browser's order of groups), and terminumd tells that a closed pane left its project before the list without it, so its project was already forgotten. The page keeps the shown session's place in the list: the first session of the same project, outside projects of the same tmux group, else the top of the list as drawn; a project left without sessions went already (AC-92). |
 | 0.24.33 | 2026-11-04 | Owner: the Paste dialog (the field Paste opens where the page may not read the clipboard) sends with ⌘Enter or Ctrl+Enter, as the Bookmark and Ask dialogs since 0.6.33 of terminum-terminal.md; Send's tooltip says the keys (AC-03). |
 | 0.24.32 | 2026-11-04 | Owner: a browser window in sight stopped drawing the terminal while the user typed in another app. A page out of focus sends "pause" with `hidden: false`: terminumd keeps its stream and refreshes the list for it as for a page in front, and it still gives up sizing (AC-13) and does not read a finished turn (AC-93); only a hidden page (`hidden: true`, or a "pause" without it from an older page) stops its stream, also one it opens while hidden (a reconnect): the stream starts once the page is in sight (terminum-terminal.md AC-37). |
 | 0.24.31 | 2026-11-03 | Found in issue #8's review: a group's copied attach command, `tmux -L terminum attach -t =main`, failed in zsh (macOS's shell; "main not found"), and a session named as a program (`ls`) attached to its path: zsh reads a word starting with `=` as a program's path. The target is quoted now, `'=main'`, also inside a host's command (AC-07). |
@@ -933,6 +934,11 @@ Scenario: AC-92 happy path — new sessions, order, names
   When the user picks Rename… in the project's menu (its ⋯, or a right click on its header, as a row's menu) (or double-clicks its name) and types "API" (Enter or Rename), or picks Ungroup
   Then it is named "API" (1–40 characters), or it goes and its sessions are back in their tmux groups
   And the menu also has New Window (as its [+]: a window after its last session, in the project), Move to the Top, Up, Down, to the Bottom (among the projects as the list shows them, off at an end), and Close Project… (red): it asks "Close the project <name> and its N sessions? The programs running in them end." and, confirmed, closes each of its sessions; Cancel closes nothing
+Scenario: AC-92 edge — the shown session closes
+  When the session or pane a page shows closes (from any page, or its program ended)
+  Then the page shows the first session the list has in the same project, top to bottom; outside projects the first of the same tmux group
+  And when none is left there (a project left without sessions goes, below), the first session at the top of the list as the page draws it: the projects first, then the groups in this browser's order, however it was filtered or folded
+  And a session taken out of its project stands in its tmux group from the next list on
 Scenario: AC-92 edge — sessions that close
   When a project's pane closes
   Then it leaves its project when its server's list is read next (one added in the last 5 s is spared: a read on its way may not have it; the list is read again when those 5 s end, so it leaves then without another change); a project left without sessions goes (a server that cannot be read keeps its panes' places)
@@ -1550,3 +1556,4 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] 0.24.31 (2026-11-03) — AC-07 `cargo test tmux::layout` (a local group's command `tmux -L terminum attach -t '=main'`, a host's `ssh -t -p 2222 -- alex@devbox.example "tmux attach -t '=terminum'"`; zsh prints the quoted target as written and refuses a bare `=word` of no program), `scripts/e2e_attach.py` (a user's own tmux: `attach -t '=work'`), `scripts/e2e_remote.py`; `make check`.
 - [x] 0.24.32 (2026-11-04) — AC-13, AC-93 `cargo test page::client` ("pause" with `hidden: false` keeps the stream and the list's refresh and makes the page not the active one; `hidden: true` stops both; one look, `On`, `Away` or `Hidden`, replaces the page's `paused`; a pane opened while hidden starts paused; sizing and unread take only `On` as before); the page's side and a real terminumd: terminum-terminal.md 0.6.32.
 - [x] 0.24.33 (2026-11-04) — AC-03 `web/test/e2e_notes.mjs` webNotes in Chromium and WebKit at both sizes: with no clipboard read the hot keys' Paste opens the field; ⌘Enter (the phone size: Ctrl+Enter) sends its text as one input and closes it. `make check` passes on the delivered tree.
+- [x] 0.24.34 (2026-11-04) — AC-92 `web/test/e2e_listplace.mjs` webListPlace in Chromium and WebKit at both sizes 28/28: the shown session closes, told of the projects before or after the list: its project's first session; outside projects its tmux group's first; a project's or a group's only session: the top of the list as drawn; a session taken out of its project and still listed stays shown. With the old choice (terminumd's first row) 8 of 14 fail in Chromium, the selection on `%1`. `web/test/e2e_livelistplace.mjs` in `e2e_live.mjs` (a real private terminumd and tmux, panes killed in tmux): its project's first session in 113 ms, the only session closed: the top of the list in 94 ms, the project gone from the list and from projects.json. `make check` passes on the delivered tree.

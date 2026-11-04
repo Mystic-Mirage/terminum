@@ -228,7 +228,7 @@ export function hostState(g) {
 // Projects (AC-92) come first, each its sessions with their panes and quick shells, which
 // their tmux groups then leave out; every row has its Clone button (onClone(item)).
 /** Which rows go where: a project's session takes its window's other panes and its quick shells
- *  with it. {byId, kids(top), taken}: taken, the ids a project lists (they leave their group). */
+ *  with it, and they leave their group. {kids(top), topsOf(project), leftOf(group)}. */
 function membership(groups, projects) {
   const all = groups.flatMap((g) => g.items), win = (it) => it.id.slice(0, it.id.lastIndexOf(":") + 1) + it.window;
   const byId = new Map(all.map((it) => [it.id, it]));
@@ -240,16 +240,32 @@ function membership(groups, projects) {
   }
   const kids = (top) => under.get(top.id) ?? [];
   const taken = new Set(projects.flatMap((p) => p.members).flatMap((k) => [k, ...(byId.has(k) ? kids(byId.get(k)).map((it) => it.id) : [])]));
-  return { byId, kids, taken };
+  return { kids, topsOf: (p) => p.members.map((k) => byId.get(k)).filter(Boolean), leftOf: (g) => g.items.filter((it) => !taken.has(it.id)) };
 }
 
-/** The sessions (a window's first pane, not the panes and quick shells under it) the tmux group
- *  `wid` lists, in order, whether it is collapsed or filtered: its menu's New Window and Close Group. */
+const projectKey = (p) => `project\n${p.id}`;
+
+/** The sessions among a group's rows `left`: a window's first pane, not the panes and quick shells under it. */
+const sessionsOf = (left) => left.filter((it) => !(it.pane > 1) && !(it.quickOf && left.some((x) => x.id === it.quickOf)));
+
+/** The sessions the tmux group `wid` lists, in order, whether it is collapsed or filtered: its
+ *  menu's New Window and Close Group. */
 export function groupRows(groups, projects, wid) {
-  const g = groups.find((x) => x.wid === wid);
-  if (!g) return [];
-  const { taken } = membership(groups, projects), left = g.items.filter((it) => !taken.has(it.id));
-  return left.filter((it) => !(it.pane > 1) && !(it.quickOf && left.some((x) => x.id === it.quickOf))).map((it) => it.id);
+  return listParts(groups, projects).find((part) => part.place === `group\n${wid}`)?.tops.map((it) => it.id) ?? [];
+}
+
+/** The list's parts as drawn, projects first (`groups` in this browser's order), whether collapsed
+ *  or filtered: {place, project, tops, rows}: `project` for a project's part, `tops` its sessions,
+ *  `rows` with the panes under them. */
+export function listParts(groups, projects) {
+  const { kids, topsOf, leftOf } = membership(groups, projects);
+  return [...projects.map((p) => {
+    const tops = topsOf(p);
+    return { place: projectKey(p), project: true, tops, rows: tops.flatMap((t) => [t, ...kids(t)]) };
+  }), ...groups.map((g) => {
+    const rows = leftOf(g);
+    return { place: `group\n${g.wid}`, tops: sessionsOf(rows), rows };
+  })].filter((part) => part.rows.length);
 }
 
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
@@ -260,16 +276,16 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   hues = folderHues(groups.flatMap((g) => g.items.map(folderKey)));
   const down = new Map(groups.filter((g) => g.host && !g.attached && g.state && g.state !== "attached").map((g) => [g.host, g.state]));
   let shown = 0;
-  const { byId, kids, taken } = membership(groups, projects);
+  const { kids, topsOf, leftOf } = membership(groups, projects);
   const box = el("div", "projects");
   let above = null, tinted = 0;                    // the hue of the group drawn last; the other groups tinted so far
   for (const p of projects) {
-    const tops = p.members.map((k) => byId.get(k)).filter(Boolean);
+    const tops = topsOf(p);
     if (!tops.length) continue;                    // its sessions closed: terminumd forgets it at its next read
     const rows = tops.filter((t) => [t, ...kids(t)].some((it) => matches(it, q)));
     if (q && !rows.length) continue;
     shown += rows.length;
-    const key = `project\n${p.id}`, closed = !q && collapsed.has(key);
+    const key = projectKey(p), closed = !q && collapsed.has(key);
     const sec = el("section", "grp project");
     sec.dataset.pid = p.id;
     sec.style.setProperty("--proj", projectColor(p));
@@ -316,7 +332,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   }
   if (box.children.length) frag.append(box);
   for (const g of groups) {
-    const left = g.items.filter((it) => !taken.has(it.id)), items = left.filter((it) => matches(it, q));
+    const left = leftOf(g), items = left.filter((it) => matches(it, q));
     const own = g.host || g.attached;            // a host's group, or a session of the user's tmux (AC-89)
     if (!items.length && !(own && !q)) continue;
     shown += items.length;
@@ -338,8 +354,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     else if (g.host && g.host !== g.label) t.append(el("span", "host", g.host));
     if (g.where) t.append(el("span", "where", g.where));
     // its sessions: the rows it lists (a project's are counted there), not the panes and quick shells under them
-    const n = left.filter((it) => !(it.pane > 1) && !(it.quickOf && left.some((x) => x.id === it.quickOf))).length;
-    const count = sessionCount(n);
+    const count = sessionCount(sessionsOf(left).length);
     if (closed && items.some((it) => it.id === current)) count.classList.add("on");   // the shown session is inside
     t.append(count);
     const acts = el("span", "acts");

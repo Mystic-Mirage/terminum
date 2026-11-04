@@ -7,7 +7,7 @@ import "./press.js";                                // a pressed blob's pulse (m
 import "./pop.js";                                  // where a window flies out of (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
-import { findItem, renderNav, seeWaits } from "./nav.js";
+import { findItem, listParts, renderNav, seeWaits } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
 import { sessionDrawer } from "./drawer.js";
@@ -28,6 +28,7 @@ import { embedded, quickShell } from "./quick.js";
 import { paneMenu } from "./menu.js";
 import { paneSizing } from "./sizing.js";
 import { pageSettings } from "./settings.js";
+import { listPlace } from "./listplace.js";
 import { bindReorder, ordered } from "./reorder.js";
 import { linkMarks } from "./linkmarks.js";
 import { paneFiles } from "./panefiles.js";
@@ -269,7 +270,7 @@ function onMessage(m) {
   rail?.seen(m);
   ask.seen(m); asked.seen(m); rowMenu.seen(m);
   switch (m.t) {
-    case "layout": st.groups = m.groups; seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
+    case "layout": st.groups = m.groups; place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
     case "hist":                                    // a reset: another pane, or its scrollback cleared
       if (m.mode === "reset") widgets.folds.reset();
@@ -297,7 +298,7 @@ function onMessage(m) {
     case "trace": trace.onMessage(m); break;
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
-    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; bookmarks.changed(); break;   // the list, and what each session shows
+    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; place.joined(); bookmarks.changed(); break;   // the list, and what each session shows
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }
@@ -343,17 +344,18 @@ const full = marksFull({ box: $("marksfull"), send, open: (b) => {   // that pan
 listFoot({ store });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
 bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };
+const drawnGroups = () => ordered(st.groups, store.get("groupOrder", [])), place = listPlace({ sid: () => st.sid, parts: () => listParts(drawnGroups(), st.projects) });
 function drawNav() {
   if (embedded) return showCurrent(findItem(st.groups, st.sid) || null);
   reminders.show(st.sid);
   if (reorder.dragging()) return;                  // the next layout redraws it
-  renderNav($("sessions"), ordered(st.groups, store.get("groupOrder", [])), st.sid, $("filter").value, pick, st.collapsed, toggleGroup,
+  renderNav($("sessions"), drawnGroups(), st.sid, $("filter").value, pick, st.collapsed, toggleGroup,
     bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true), tools.importTmux,
     { projects: st.projects, onClone: cloneRow, onProjectNew: (p, last) => send({ t: "clone", id: last.id, project: p.id }), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu });
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {
-    const first = st.groups.flatMap((g) => g.items)[0];
-    if (first) select(first.id);
+    const next = place.next();                     // its project's or group's first, else the list's (AC-92)
+    if (next) select(next);
     else showCurrent(null);
     if (!st.sid && narrow.matches) openDrawer();
     return quick.sync();
@@ -374,7 +376,7 @@ const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true)
 
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;
-  st.sid = id; store.set("sid", id); seeWaits(st.groups, id);
+  st.sid = id; store.set("sid", id); place.note(); seeWaits(st.groups, id);
   recent.shown(id);
   status("");                                      // an error about the pane shown before
   if (tools.renaming()) tools.endRename();         // a name being typed was for that pane

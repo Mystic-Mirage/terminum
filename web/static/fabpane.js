@@ -10,17 +10,6 @@ import { columnX } from "./markpick.js";
 
 const GAP = 14;                // px between a button and its pane
 
-/** ⌘Enter or Ctrl+Enter in dialog `box` presses its primary button when it is on (the keyboard's
- *  send, as in a chat); a plain Enter stays a new line in its note. */
-export function sendOnModEnter(box) {
-  box.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.isComposing) return;
-    e.preventDefault();
-    const go = box.querySelector(".actions .primary");
-    if (go && !go.disabled) go.form.requestSubmit(go);
-  });
-}
-
 /** `start` moved so that a box `own` long stays `gap` px inside 0…`max` (the window's width or height). */
 export const inside = (start, own, max, gap = 8) => Math.round(Math.max(gap, Math.min(start, max - own - gap)));
 

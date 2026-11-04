@@ -10,7 +10,8 @@
 // measured as the dialog opens: on a phone its field's keyboard then makes the pane shorter. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
 // coding agent's pane only) puts the same and presses Enter.
 
-import { inside, placeModal, sendOnModEnter } from "./fabpane.js";
+import { inside, placeModal } from "./fabpane.js";
+import { sendOnModEnter } from "./modenter.js";
 
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the number

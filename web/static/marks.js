@@ -6,7 +6,8 @@
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
-import { placeModal, placePane, sendOnModEnter } from "./fabpane.js";
+import { placeModal, placePane } from "./fabpane.js";
+import { sendOnModEnter } from "./modenter.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";

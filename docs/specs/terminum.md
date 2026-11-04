@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.24.32 |
+| Version | 0.24.33 |
 | Date | 2026-11-04 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.33 | 2026-11-04 | Owner: the Paste dialog (the field Paste opens where the page may not read the clipboard) sends with ⌘Enter or Ctrl+Enter, as the Bookmark and Ask dialogs since 0.6.33 of terminum-terminal.md; Send's tooltip says the keys (AC-03). |
 | 0.24.32 | 2026-11-04 | Owner: a browser window in sight stopped drawing the terminal while the user typed in another app. A page out of focus sends "pause" with `hidden: false`: terminumd keeps its stream and refreshes the list for it as for a page in front, and it still gives up sizing (AC-13) and does not read a finished turn (AC-93); only a hidden page (`hidden: true`, or a "pause" without it from an older page) stops its stream, also one it opens while hidden (a reconnect): the stream starts once the page is in sight (terminum-terminal.md AC-37). |
 | 0.24.31 | 2026-11-03 | Found in issue #8's review: a group's copied attach command, `tmux -L terminum attach -t =main`, failed in zsh (macOS's shell; "main not found"), and a session named as a program (`ls`) attached to its path: zsh reads a word starting with `=` as a program's path. The target is quoted now, `'=main'`, also inside a host's command (AC-07). |
 | 0.24.30 | 2026-11-03 | Owner: a session's menu (a right click or a long press on its row) has Close Session as its first item, set apart from the rest by a line; it was the last. The focus a keyboard opening puts on the menu stays on the first item after it (Clone), so Enter never asks to close a session by chance (AC-07). |
@@ -316,6 +317,7 @@ Scenario: AC-03 happy path — paste
   When the user pastes 20 KB of text
   Then terminumd loads it into a tmux buffer ("set-buffer -b tm-<n>" from the control channel, 64 KB a command, more in parts) and pastes it with "paste-buffer -p -d -b tm-<n> -t %3", so a program that asked for bracketed paste gets its markers (the menu's "Bracketed paste" switch turns -p off)
   And a paste holding control characters other than newline and tab is refused with "The text holds control characters and was not sent"
+  And where the page may not read the clipboard (denied, or not HTTPS), Paste opens a field to paste into: Send, or ⌘Enter or Ctrl+Enter in it, sends its text; a plain Enter is a new line
   And a clipboard read or image conversion begun in one pane cannot paste or upload into another pane shown before it completes; the page says that nothing was pasted
   And text that starts with "-" (a paste on a host, a name, a path the Files panel types) is text: tmux takes a word that starts with "-" before the first other word for a flag, so every such argument comes after "--" (a paste of "-x …" said "invalid flag -")
   When the user selects lines in the history, copies them (⌘C) and presses ⌘V with the keys anywhere but a field (the selection, the list, a button)
@@ -1547,3 +1549,4 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] 0.24.30 (2026-11-03) — AC-07 `web/test/e2e_projects.mjs` webProjects in Chromium and WebKit at both sizes: the row's menu is Close Session, Clone, … (a computer's right click and a phone's long press), its focus on Clone; the finger's lift, its click on the row and on Close Session under it, asks nothing. Looked at in Chromium and WebKit: Close Session red first, a line under it. On the delivered tree (uncommitted, on 4659553): `make check` (Rust 733 + 1, Python 69, Panel unit 52, Page unit 175, clippy `-D warnings`, `ui/test/e2e_panel.mjs` 171/171, `web/test/e2e_live.mjs` 233/233, `web/test/e2e_all.mjs` 1707/1707 in Chromium and WebKit, `scripts/security_check.sh`).
 - [x] 0.24.31 (2026-11-03) — AC-07 `cargo test tmux::layout` (a local group's command `tmux -L terminum attach -t '=main'`, a host's `ssh -t -p 2222 -- alex@devbox.example "tmux attach -t '=terminum'"`; zsh prints the quoted target as written and refuses a bare `=word` of no program), `scripts/e2e_attach.py` (a user's own tmux: `attach -t '=work'`), `scripts/e2e_remote.py`; `make check`.
 - [x] 0.24.32 (2026-11-04) — AC-13, AC-93 `cargo test page::client` ("pause" with `hidden: false` keeps the stream and the list's refresh and makes the page not the active one; `hidden: true` stops both; one look, `On`, `Away` or `Hidden`, replaces the page's `paused`; a pane opened while hidden starts paused; sizing and unread take only `On` as before); the page's side and a real terminumd: terminum-terminal.md 0.6.32.
+- [x] 0.24.33 (2026-11-04) — AC-03 `web/test/e2e_notes.mjs` webNotes in Chromium and WebKit at both sizes: with no clipboard read the hot keys' Paste opens the field; ⌘Enter (the phone size: Ctrl+Enter) sends its text as one input and closes it. `make check` passes on the delivered tree.

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The page's notices and keys against a fake terminumd (fake.mjs), at both sizes: an error banner
 // and a stall banner close with their × until they say something new (AC-14, AC-81); a paste with
-// no text sends nothing and says so (AC-03); View's Terminal key is a key as the others (AC-70);
+// no text sends nothing and says so, and the Paste field (no clipboard read) sends with ⌘Enter or
+// Ctrl+Enter (AC-03); View's Terminal key is a key as the others (AC-70);
 // on a phone ⟨…⟩ puts the on-screen keyboard and the hot keys away first (AC-18).
 import { check, runningIn } from "./check.mjs";
 import { drawn, openPage, pause, SIZES } from "./fake.mjs";
@@ -48,6 +49,21 @@ export async function webNotes(browser, name) {
     await pause(page, 150);
     const toast = await page.evaluate(() => document.getElementById("toast").textContent);
     check("AC-03 a paste with no text sends nothing and says so", !f.sent.slice(from).some((m) => m.t === "in") && /no text/.test(toast), JSON.stringify({ toast, sent: f.sent.slice(from) }));
+
+    // no clipboard read (denied, or not HTTPS): the Paste field; ⌘Enter (Ctrl+Enter on the phone size) sends it
+    await page.evaluate(() => {
+      for (const k of ["read", "readText"]) Object.defineProperty(navigator.clipboard, k, { value: () => Promise.reject(new Error("denied")), configurable: true });
+      document.getElementById("hotkeys").hidden = false;
+      document.querySelector('#hotkeys button.key[data-action="paste"]').click();
+    });
+    await page.waitForSelector("#pastebox[open]", { timeout: 3000 });
+    await page.fill("#pastetext", "echo pasted");
+    const before = f.sent.length;
+    await page.press("#pastetext", phone ? "Control+Enter" : "Meta+Enter");
+    await pause(page, 200);
+    const pasted = { open: await page.evaluate(() => document.getElementById("pastebox").open), sent: f.sent.slice(before).filter((m) => JSON.stringify(m).includes("echo pasted")).map((m) => m.t) };
+    check(`AC-03 the Paste field sends with ${phone ? "Ctrl" : "⌘"}+Enter and closes`, !pasted.open && pasted.sent.length === 1, JSON.stringify(pasted));
+    await page.evaluate(() => { document.getElementById("hotkeys").hidden = true; });
 
     if (phone) {
       // ⟨…⟩ puts the keyboard and the hot keys away before the column opens

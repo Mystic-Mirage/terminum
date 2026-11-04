@@ -298,7 +298,7 @@ function onMessage(m) {
     case "trace": trace.onMessage(m); break;
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
-    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; place.joined(); bookmarks.changed(); break;   // the list, and what each session shows
+    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; place.note(); bookmarks.changed(); break;   // the list, and what each session shows
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }

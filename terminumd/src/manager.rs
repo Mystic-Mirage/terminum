@@ -203,6 +203,7 @@ pub async fn refresh(app: &Shared) {
             vec![]
         }
     };
+    crate::page::projects::tell_read(app);                           // after the list without the closed panes (AC-92)
     // a turn ends when its pane stayed done a while, its subagents too (turns.rs)
     let ended = {
         let layout = app.layout.read();

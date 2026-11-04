@@ -57,6 +57,8 @@ pub struct Projects {
     fresh: HashMap<String, Instant>,
     /// when a list read is due for a member kept only for being fresh (`fresh_left`)
     recheck: Option<Instant>,
+    /// a list read changed them and the pages are not told yet (`tell_read`)
+    untold: bool,
 }
 
 /// A project's name as typed (trimmed): a short name (settings::is_short_name).
@@ -76,7 +78,7 @@ impl Projects {
             let servers = serde_json::from_value(v.get("servers").cloned().unwrap_or_else(|| json!({}))).map_err(|e| e.to_string())?;
             Ok((list, servers))
         }).unwrap_or_default();
-        Projects { path, list, servers, fresh: HashMap::new(), recheck: None }
+        Projects { path, list, servers, fresh: HashMap::new(), recheck: None, untold: false }
     }
 
     pub fn list(&self) -> &[Project] {
@@ -240,7 +242,18 @@ pub fn tell(app: &Shared) {
     app.pages.tell(&message(app));
 }
 
-/// A server's list was read with these pane keys: its closed panes leave their projects.
+/// The servers' lists were read and told: the projects those reads changed are told now, after the
+/// list without the closed panes (their rows do not stand in their tmux groups meanwhile). Kept until
+/// told: a read cut short tells them with the next.
+pub fn tell_read(app: &Shared) {
+    let untold = std::mem::take(&mut app.projects.lock().untold);
+    if untold {
+        tell(app);
+    }
+}
+
+/// A server's list was read with these pane keys: its closed panes leave their projects; the
+/// pages are told by `tell_read`.
 pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
     let identity = server.identity().await;
     let live: HashSet<&str> = keys.iter().map(String::as_str).collect();
@@ -248,6 +261,7 @@ pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
     let (changed, closed, left) = {
         let mut p = app.projects.lock();
         let (changed, closed) = p.seen(&prefix, identity.as_deref(), &live);
+        p.untold |= changed;
         (changed, closed, p.fresh_left(&prefix, &live))
     };
     if let Some(wait) = left {
@@ -258,7 +272,7 @@ pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
         });
     }
     if changed {
-        saved(app).await;
+        save(app).await;
     }
     let live: HashSet<String> = keys.iter().cloned().collect();
     orphan(app, move |k| k.starts_with(&prefix) && match closed {
@@ -272,7 +286,8 @@ pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
 /// with themselves): its sessions keep their projects and bookmarks, before its lists are read.
 pub async fn restarted(app: &Shared, prefix: &str, panes: &[(String, String)]) {
     if app.projects.lock().restarted(prefix, panes) {
-        saved(app).await;
+        save(app).await;
+        tell(app);
     }
     let (a, prefix, panes) = (app.clone(), prefix.to_string(), panes.to_vec());
     told(app, tokio::task::spawn_blocking(move || a.bookmarks.lock().restarted(&prefix, &panes)).await);
@@ -303,13 +318,12 @@ fn told(app: &Shared, done: Result<Result<Vec<super::bookmarks::Item>, super::bo
     }
 }
 
-/// projects.json written off the async workers, and every page told.
-async fn saved(app: &Shared) {
+/// projects.json written off the async workers.
+async fn save(app: &Shared) {
     let a = app.clone();
     if let Ok(Err(e)) = tokio::task::spawn_blocking(move || a.projects.lock().save()).await {
         tracing::warn!(event = "projects.unsaved", error = %e);
     }
-    tell(app);
 }
 
 /// `project {action, …}` from the page's session list (AC-92).

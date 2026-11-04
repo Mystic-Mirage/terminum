@@ -255,13 +255,12 @@ export function groupRows(groups, projects, wid) {
 }
 
 /** The list's parts as drawn, projects first (`groups` in this browser's order), whether collapsed
- *  or filtered: {place, project, tops, rows}: `project` for a project's part, `tops` its sessions,
- *  `rows` with the panes under them. */
+ *  or filtered: {place, tops, rows}: `tops` its sessions, `rows` with the panes under them. */
 export function listParts(groups, projects) {
   const { kids, topsOf, leftOf } = membership(groups, projects);
   return [...projects.map((p) => {
     const tops = topsOf(p);
-    return { place: projectKey(p), project: true, tops, rows: tops.flatMap((t) => [t, ...kids(t)]) };
+    return { place: projectKey(p), tops, rows: tops.flatMap((t) => [t, ...kids(t)]) };
   }), ...groups.map((g) => {
     const rows = leftOf(g);
     return { place: `group\n${g.wid}`, tops: sessionsOf(rows), rows };

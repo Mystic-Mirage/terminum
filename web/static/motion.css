@@ -23,19 +23,19 @@
 
 /* ---- blobs: lift on hover, squash on a press, a pulse in their own outline ---- */
 #fabs button { position: relative; }
-:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom) {
+:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom) {
   transition: translate var(--dur-hover) var(--ease-out), scale var(--dur-settle) var(--ease-spring), background-color var(--dur-hover), opacity var(--dur-hover); }
 @media (hover: hover) and (pointer: fine) {
-  :is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom):hover { translate: 0 -2px; scale: 1.12; }
-  :is(#foldfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom):hover > svg { animation: nod var(--dur-pop) var(--ease-out); }
+  :is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom):hover { translate: 0 -2px; scale: 1.12; }
+  :is(#foldfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom):hover > svg { animation: nod var(--dur-pop) var(--ease-out); }
 }
 @keyframes nod { 30% { rotate: -14deg; scale: 1.1; } 60% { rotate: 9deg; } 85% { rotate: -3deg; } }   /* once, as the pointer comes */
-:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom):active { scale: .9; transition-duration: var(--dur-hover), var(--dur-press); }
-:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom)::before {
+:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom):active { scale: .9; transition-duration: var(--dur-hover), var(--dur-press); }
+:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom)::before {
   content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
   box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 40%, transparent); }
-:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom)[data-press="a"]::before { animation: pulse-a var(--dur-settle) var(--ease-out); }
-:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom)[data-press="b"]::before { animation: pulse-b var(--dur-settle) var(--ease-out); }
+:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom)[data-press="a"]::before { animation: pulse-a var(--dur-settle) var(--ease-out); }
+:is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom)[data-press="b"]::before { animation: pulse-b var(--dur-settle) var(--ease-out); }
 @keyframes pulse-a { from { opacity: 1; scale: .8; } to { opacity: 0; scale: 1.4; } }
 @keyframes pulse-b { from { opacity: 1; scale: .8; } to { opacity: 0; scale: 1.4; } }
 /* the footer's blobs on a touch screen: the blob is the icon's own fill */
@@ -91,8 +91,8 @@
 /* ---- the off-switch: no movement, colors change at once ---- */
 @media (prefers-reduced-motion: reduce) {
   :root { --dur-press: 0ms; --dur-hover: 0ms; --dur-out: 0ms; --dur-enter: 0ms; --dur-settle: 0ms; --dur-pop: 0ms; --dur-focus: 0ms; --dur-leave: 0ms; --dur-row: 0ms; --row-lead: 0ms; --row-step: 0ms; }
-  :is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom), .nav-foot .footbtn > svg { scale: none !important; translate: none !important; }
-  :is(#foldfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom) > svg { animation: none !important; }
-  :is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom)::before { animation: none !important; }
+  :is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom), .nav-foot .footbtn > svg { scale: none !important; translate: none !important; }
+  :is(#foldfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom) > svg { animation: none !important; }
+  :is(#foldfab, #planfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom)::before { animation: none !important; }
   .item.on.fresh, .item.on.fresh .pbar:not(.busy) { animation: none; }   /* a working bar's pulse is a state: it stays */
 }

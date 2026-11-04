@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* Search of the session's history (AC-58): the magnifier (in the colors of a phone's floating
    buttons, and their shape), its field, its matches' white marks, the match shown. */
-:is(#foldfab, #findfab, #splitfab, #sentfab, #tasksfab, #attachfab) { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
+:is(#foldfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #attachfab) { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
   border-radius: var(--blob-a); animation: blob 7s ease-in-out infinite;   /* one shape and phase for the whole column */
   background: var(--surface-3); color: var(--t-fg);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: var(--shadow-near); }
 /* the split: the header's button on a computer, this one on a phone (quick.js) */
 @media (min-width: 861px) { #splitfab { display: none !important; } }
-#sentfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
-body:has(#findbox[data-under]:not([hidden])) :is(#splitfab, #sentfab) { visibility: hidden; }   /* the field opens under the magnifier */
+:is(#sentfab, #linksfab)[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
+body:has(#findbox[data-under]:not([hidden])) :is(#splitfab, #sentfab, #linksfab) { visibility: hidden; }   /* the field opens under the magnifier */
 #findfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
 #findbox { position: absolute; z-index: 8; width: min(400px, calc(100% - 24px)); display: flex; flex-wrap: wrap; align-items: center;
   padding: var(--sp-2); border-radius: var(--r-lg); --fill: var(--chrome-2); }   /* a pane; its field, keys and icon keys: controls.css */
@@ -23,9 +23,9 @@ body:has(#findbox[data-under]:not([hidden])) :is(#splitfab, #sentfab) { visibili
 @media (hover: none) { #findrail .fm { left: -6px; width: 26px; height: 18px; margin-top: -4px; } }
 ::highlight(find) { background-color: #fff; color: #111; }
 #term .find-at { outline: 2px solid #fff; outline-offset: 1px; border-radius: 2px; }
-body:not([data-shown="term"]) :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #sentpane, #taskspane), body:not([data-shown="term"]) #findbox, body:not([data-shown="term"]) #findrail { display: none !important; }
-body.wide :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #tasksfab, #askfab, #attachfab, #sentpane, #taskspane), body.wide #findbox, body.wide #findrail { grid-row: 1 / -1; }
-@media (prefers-reduced-motion: reduce) { :is(#foldfab, #findfab, #splitfab, #sentfab, #tasksfab, #attachfab) { animation: none; } }
+body:not([data-shown="term"]) :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #sentpane, #linkspane, #taskspane), body:not([data-shown="term"]) #findbox, body:not([data-shown="term"]) #findrail { display: none !important; }
+body.wide :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #askfab, #attachfab, #sentpane, #linkspane, #taskspane), body.wide #findbox, body.wide #findrail { grid-row: 1 / -1; }
+@media (prefers-reduced-motion: reduce) { :is(#foldfab, #findfab, #splitfab, #sentfab, #linksfab, #tasksfab, #attachfab) { animation: none; } }
 /* the sent history's pane, a window as View's (panewin.css): its folder as the title (its end in sight),
    which of how many, ↑ ↓, Copy, ×; the time and agent, the text as Markdown; Jump to message, Insert into chat */
 #spwhere { direction: rtl; text-align: left; }

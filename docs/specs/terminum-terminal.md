@@ -1,6 +1,6 @@
 # terminum — Specification (terminal features)
 
-Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, security). This spec holds the terminal view's reading and input features. Cases: AC-31…AC-38, AC-40, AC-90, AC-91. It assumes terminum.md AC-02 (screens), terminum.md AC-03 (typing) and terminum.md AC-04 (Lines modes). Coding agents' states, plans and records are in `terminum-agents.md`.
+Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, security). This spec holds the terminal view's reading and input features. Cases: AC-31…AC-38, AC-40, AC-90, AC-91, AC-154. It assumes terminum.md AC-02 (screens), terminum.md AC-03 (typing) and terminum.md AC-04 (Lines modes). Coding agents' states, plans and records are in `terminum-agents.md`.
 
 ## 0. Metadata
 
@@ -70,6 +70,7 @@ Open questions:
 | AC-38 | [SHOULD / P1] | With `?trace=1` terminumd and the page record each key's stages and session opens for 15 minutes into a log a script sums up; with `?trace=2` the page keeps a ring of events and input-box snapshots a button copies for a coding agent. |
 | AC-90 | [SHOULD / P1] | Every message or command the user sends in a pane is kept per project (its host and folder) and read back as Markdown from a button under the magnifier: the last first, older and newer. |
 | AC-91 | [SHOULD / P1] | A bookmark can be a reminder: a pale fuchsia bell stands, its count filled, over its session when that session's coding agent ends a turn, until pressed; its pane is the bookmarks' navigator of the session's open reminders; Resolve ends one. |
+| AC-154 | [SHOULD / P1] | Links, a window from the floating column, lists every web address of the shown pane's Claude Code session (its transcript), the newest or the most named first, each once with how many times and when last; a press opens it in a new tab. |
 | AC-40 | [MUST / P0] | In a coding agent's input box on a phone, a tap puts the cursor on the character under it, ↑ and ↓ move by the page's lines, a slide moves the cursor, held delete deletes words, the box is a panel above the keyboard with its status lines behind ⓘ, and the cursor is drawn in the box when the agent left it below the footer. |
 
 ## 5. BDD scenarios
@@ -517,6 +518,40 @@ Scenario: AC-91 failure — not saved
   Then a reminder does not come up and terminumd's log says why; a save in the dialog says why (AC-33)
 ```
 
+### AC-154 — The session's links [SHOULD / P1]
+
+```gherkin
+Scenario: AC-154 happy path — every link of a Claude Code session in one window
+  Given the pane runs Claude Code on this Mac (its full-screen TUI leaves tmux no history), its session named by its hooks or, before its first event since terminumd started, by its process's record (`sessions/<pid>.json` of the pane's process or one below it, its `sessionId` alone read; the process found is asked first again while the pane's process is the same and it still runs that session)
+  And its conversation named "https://ci.example/run/7" twice and "docs: https://docs.example/a."
+  When the user presses the link button in the floating column (under the sent history's)
+  Then a floating buttons' window "Links" opens (as Sent's: a sheet on a phone)
+  And terminumd reads that session's transcript (`$CLAUDE_CONFIG_DIR`, else `~/.claude`, `projects/*/<session>.jsonl`, its newest 128 MB) and answers each http or https address of the conversation once, the newest first, with how many times and when it was last named: the user's and the agent's messages; not of its tool calls and their output (code it wrote or read, commands), the agent's thinking, meta lines or a compaction's summary (a summary of the work before it: its addresses again, with its time)
+  And the window says "2 links", each row one line: its address, right after it "×2" when more than once, and at the row's right when last named, by its entry's time in the reader's time zone: "14:32" today, "Nov 1" this year, else "Nov 1, 2025", the whole date and time on hover; "https://docs.example/a" has no final "."
+  And a read again takes only the lines added since (a line still being written once whole); the addresses found are kept in memory for the 8 transcripts read last
+  When the user presses a row
+  Then the address opens in a new tab of the reader's browser (noopener), as AC-35's click does
+
+Scenario: AC-154 happy path — order, filter and new output
+  When the user presses Most named beside the filter
+  Then terminumd answers the most named first (of all, before the 500 are cut), the newest of those named as often first; Newest goes back; the choice is kept in this browser
+  When the user types "ci" into the window's filter
+  Then only rows whose address holds "ci", case aside, stay; the count says "1 of 2 links"
+  When the pane prints new output while the window is open
+  Then it is asked for again, at most once in 5 s, and a new address comes first; Refresh asks at once
+  When another pane is shown
+  Then the list is that pane's
+
+Scenario: AC-154 edge — what is not a link
+  Then sentence punctuation after an address is not part of it; a backslash ends it (a command's written-out "\n": "[Claude Code](https://claude.com/claude-code)\nEOF" is https://claude.com/claude-code); a "|" or a "]" ends it (a table cell, Markdown's "[docs](https://docs.example/a)"; not an IPv6 host's), and Markdown's "**" after it is taken off; a template, a shell variable or text cut short is no address ("{owner}", "$TOKEN", "=$i", "/[slug]/", "https://**x**", "…"); another scheme (javascript:, file:, ftp:) or an address over 2,048 characters or with a control or bidi character is not listed
+  And at most the newest 500 distinct addresses are told; the count says "500 of 812 links"; of a transcript the 5,000 named last are kept
+  And with none: "No web addresses in this session."
+
+Scenario: AC-154 failure — no transcript
+  When no pane is shown, the pane runs no Claude Code session of this Mac (a shell, Codex, a host's agent), tmux does not say the pane's process or its transcript is not found or unreadable
+  Then the window says why in place of its rows ("No Claude Code session runs in this pane.", "tmux did not say the pane's process: …", "Claude Code's transcript could not be read: not found."); after 30 s with no answer it says "The Mac did not answer." and Refresh asks again
+```
+
 ### AC-40 — Editing a coding agent's input on a phone [MUST / P0]
 
 ```gherkin
@@ -628,7 +663,7 @@ Widgets are drawn over the first row of a region and removed when the region's l
 
 ### Interfaces
 
-WebSocket messages, page → terminumd: `more {before, to}`, `unfold {n, to}`, `find {q, ref}`, `mark {text, note, n, remind?, ref}` (a changed note: `mark {id, note, ref}`), `unmark {id}`, `locate {id}` (a sent message's: `locate {id, text, n?}`), `remind {id, action: "close"|"resolve"}` (the page sends only `resolve`), `trace {…}`, `sent {text, agent, line}`, `sentget {n}`, `sentmarks`, `askno`, `asked {n, text, line}`, `askedmarks`.
+WebSocket messages, page → terminumd: `more {before, to}`, `unfold {n, to}`, `find {q, ref}`, `links {ref, by?: "count"}` → `linklist {ref, sid, items: [{u, c, w}], total}` or `{ref, error}` (AC-154: address, times, the transcript's time of the last or null), `mark {text, note, n, remind?, ref}` (a changed note: `mark {id, note, ref}`), `unmark {id}`, `locate {id}` (a sent message's: `locate {id, text, n?}`), `remind {id, action: "close"|"resolve"}` (the page sends only `resolve`), `trace {…}`, `sent {text, agent, line}`, `sentget {n}`, `sentmarks`, `askno`, `asked {n, text, line}`, `askedmarks`.
 
 terminumd → page: `hist {mode: "reset"|"append"|"prepend", sid, first, oldest, truncated, lines, folds?}`, `folds {sid, items: [{n, to, label}]}`, `lines {sid, first, lines, error?}`, `found {ref, sid, q, hits: [[row, k]…], total}` or `{ref, error}`, `marks {items}`, `marked {ref, id}` or `{ref, error}`, `located {id, sid, n, start, size}` or `{id, n: null, why}`, `trace {…}`, `sentone {sid, n, total, item, host, path}` or `{error}`, `sentnew {host, path, key}`, `sentmarks {sid, items: [{n, text}], ends: [{n, text}]}`, `endnew {key}`, `askno {sid, n}` or `{sid, error}`, `askedmarks`.
 
@@ -685,6 +720,7 @@ Limits a scenario states are in §5. Only these are not:
 |---|---|---|
 | Widget region | 2000 lines | stays text |
 | An asked quote's text | 4000 characters | cut |
+| Links (AC-154) | 500 distinct addresses told, the newest; an address 2,048 characters; a transcript's newest 128 MB, then what was added; the addresses of 8 transcripts kept in memory, of each the 5,000 named last (past 6,250 the others are left out); asked again at most once in 5 s while open | "500 of N links"; a longer address is not listed |
 
 ### Security
 
@@ -695,6 +731,7 @@ Limits a scenario states are in §5. Only these are not:
 - Pasted files: the name is terminumd's (AC-36).
 - Traces: AC-38.
 - Sent history: AC-90; the threat: `SECURITY.md`.
+- Links: AC-154; the threat: `SECURITY.md`.
 
 Denied request: `{"t":"unfold","n":5,"to":40000}` → `{"t":"lines","sid":"tmux:local:default:%3","first":5,"lines":[],"error":"Not a fold terminumd told of"}`.
 
@@ -727,4 +764,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-38 — `cargo test page::trace`, `web/test/trace.test.mjs`, `web/test/tracereplay.test.mjs`, `web/test/e2e_trace.mjs`, `web/test/e2e_ctxtrace.mjs`, `scripts/e2e_core.py`
 - [x] AC-90 — `cargo test sent::`, `web/test/sent.test.mjs`, `web/test/e2e_sent.mjs`, `web/test/e2e_panewin.mjs`, `scripts/e2e_hooks.py`
 - [x] AC-91 — `cargo test page::bookmarks`, `web/test/e2e_sent.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_marks.mjs`, `scripts/e2e_hooks.py`
+- [x] AC-154 — `cargo test page::linklist`, `cargo test page::agentlinks`, `web/test/linklist.test.mjs`, `web/test/e2e_livelinks.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_phonerow.mjs`. Not verified: Safari on an iPhone and a Mac.
 - [x] AC-40 — `web/test/boxnav.test.mjs`, `web/test/agentbox.test.mjs`, `web/test/rejoin.test.mjs`, `web/test/heldelete.test.mjs`, `web/test/kbdtouch.test.mjs`, `web/test/e2e_boxnav.mjs`, `web/test/e2e_codex.mjs`, `web/test/e2e_touch.mjs`

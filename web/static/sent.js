@@ -9,6 +9,7 @@
 // chat pastes it into the shown pane's input.
 import { typedEnd } from "./cursor.js";
 import { fabPane } from "./fabpane.js";
+import { LinkList } from "./linklist.js";
 import { when } from "./listparts.js";
 import { agentName } from "./nav.js";
 import { markdownInto } from "./widgetui.js";
@@ -113,6 +114,7 @@ export function sentHistory({ view, send, item, copy, toast, toChat, jump }) {
   });
 
   return {
+    links: new LinkList({ send, sid: item }),   // the session's links (AC-154), the window under this one's button
     /** Enter goes to the shown pane now: what it sends. */
     enter() {
       const it = item();

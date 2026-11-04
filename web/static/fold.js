@@ -17,7 +17,7 @@ let floatsQuery = null;
 export const floats = () => (floatsQuery ??= matchMedia(FLOATING)).matches;
 // the folded buttons in their column's order: the plan's progress, the plain ones, then set apart the colored ones (marks.js placeFab)
 // the plan's progress; the plain ones, each hidden by its owner with `data-off` while it has nothing to show; the colored ones
-export const PLAN = ["planfab"], PLAIN = ["findfab", "splitfab", "sentfab", "tasksfab", "attachfab"], COLORED = ["marksfab", "remindfab"];
+export const PLAN = ["planfab"], PLAIN = ["findfab", "splitfab", "sentfab", "linksfab", "tasksfab", "attachfab"], COLORED = ["marksfab", "remindfab"];
 export const FOLDED = [...PLAN, ...PLAIN, ...COLORED];
 const FOR = 3000;              // ms the column stays unfolded
 const SCROLL = 10;             // px a finger moves before it scrolls
@@ -83,7 +83,7 @@ export function fabFold({ away }) {
   // (body.scrolled) until BACK ms without a scroll, the pointer near it or the focus on it; never
   // while a pane they opened is open, never for the page's own scroll (output followed)
   let asked = 0, back = 0, px = -1, py = -1;
-  const PANES = ["sentpane", "remindpane", "markpane", "findbox", "planpane"];
+  const PANES = ["sentpane", "linkspane", "remindpane", "markpane", "findbox", "planpane"];
   const ask = () => { asked = Date.now(); };
   const show = () => { clearTimeout(back); body.classList.remove("scrolled"); };
   for (const t of ["wheel", "pointerdown"]) document.addEventListener(t, (e) => { if (mine(e) && e.pointerType !== "touch") ask(); }, { passive: true, capture: true });

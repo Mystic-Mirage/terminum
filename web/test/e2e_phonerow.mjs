@@ -13,7 +13,7 @@ const SID = "tmux:local:terminum:%1", DIR = "/Users/alex/api";
 const RULE = "─".repeat(60);
 const MARKS = [{ id: "R1", sid: SID, key: SID, n: 1, text: "x", note: "check it", title: "api", host: null, dir: DIR, at: 1792000000, remind: true },
   { id: "M1", sid: SID, key: SID, n: 2, text: "y", note: "here", title: "api", host: null, dir: DIR, at: 1792000000 }];
-const IDS = ["foldfab", "findfab", "splitfab", "sentfab", "attachfab", "marksfab", "remindfab", "fabs", "kbdbtn"];
+const IDS = ["foldfab", "findfab", "splitfab", "sentfab", "linksfab", "attachfab", "marksfab", "remindfab", "fabs", "kbdbtn"];
 
 async function opened(browser, device) {
   const f = await openPage(browser, { device, layout: [group("main", [item(SID, "api", { agent: "claude", shell: false, sub: ["2.1", "~/api"], dir: DIR })])] });
@@ -34,7 +34,7 @@ export async function webPhoneRow(browser, name) {
   const f = await opened(browser, PHONE);
   const { page } = f;
   // folded: ⟨…⟩ at the top right where find stood, the keyboard's buttons at the bottom right; the rest out of sight
-  const column = ["findfab", "splitfab", "sentfab", "attachfab", "marksfab", "remindfab"];
+  const column = ["findfab", "splitfab", "sentfab", "linksfab", "attachfab", "marksfab", "remindfab"];
   const b = await boxes(page);
   check("AC-18 a phone: every floating button but the keyboard's folds under ⟨…⟩ at the terminal's top right",
     b.foldfab.seen && b.foldfab.x > 300 && b.foldfab.y < 200 && column.every((id) => !b[id].seen) && b.fabs.seen && b.kbdbtn.seen, JSON.stringify(b));

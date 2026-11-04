@@ -30,7 +30,7 @@ body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibi
 }
 @media (prefers-reduced-motion: reduce) { #markadd, #markcopy, #askfab, #marksfab, #remindfab { animation: none; } }
 /* only the tab's own page shows the floating buttons: a split's embedded page shows its shell alone */
-body.embed :is(#foldfab, #planfab, #findfab, #splitfab, #attachfab, #sentfab, #tasksfab, #askfab, #marksfab, #remindfab, #findbox, #sentpane, #taskspane, #remindpane, #markpane) { display: none !important; }
+body.embed :is(#foldfab, #planfab, #findfab, #splitfab, #attachfab, #sentfab, #linksfab, #tasksfab, #askfab, #marksfab, #remindfab, #findbox, #sentpane, #linkspane, #taskspane, #remindpane, #markpane) { display: none !important; }
 /* one Copy beside a selection: the floating one of a touch screen waits while this one shows */
 body:has(#markcopy:not([hidden])) #fabs #copyfab { display: none !important; }
 #markrail { position: absolute; z-index: 4; width: 16px; pointer-events: none; }

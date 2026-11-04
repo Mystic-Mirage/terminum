@@ -70,7 +70,7 @@ Open questions:
 | AC-38 | [SHOULD / P1] | With `?trace=1` terminumd and the page record each key's stages and session opens for 15 minutes into a log a script sums up; with `?trace=2` the page keeps a ring of events and input-box snapshots a button copies for a coding agent. |
 | AC-90 | [SHOULD / P1] | Every message or command the user sends in a pane is kept per project (its host and folder) and read back as Markdown from a button under the magnifier: the last first, older and newer. |
 | AC-91 | [SHOULD / P1] | A bookmark can be a reminder: a pale fuchsia bell stands, its count filled, over its session when that session's coding agent ends a turn, until pressed; its pane is the bookmarks' navigator of the session's open reminders; Resolve ends one. |
-| AC-154 | [SHOULD / P1] | Links, a window from the floating column, lists every web address of the shown pane's Claude Code session (its transcript), the newest or the most named first, each once with how many times and when last; a press opens it in a new tab. |
+| AC-154 | [SHOULD / P1] | Links, a window from the floating column, lists every web address of the shown pane's Claude Code or Codex session (its transcript), the newest or the most named first, each once with how many times and when last; a press opens it in a new tab. |
 | AC-40 | [MUST / P0] | In a coding agent's input box on a phone, a tap puts the cursor on the character under it, ↑ and ↓ move by the page's lines, a slide moves the cursor, held delete deletes words, the box is a panel above the keyboard with its status lines behind ⓘ, and the cursor is drawn in the box when the agent left it below the footer. |
 
 ## 5. BDD scenarios
@@ -532,6 +532,11 @@ Scenario: AC-154 happy path — every link of a Claude Code session in one windo
   When the user presses a row
   Then the address opens in a new tab of the reader's browser (noopener), as AC-35's click does
 
+Scenario: AC-154 happy path — a Codex session
+  Given the pane runs Codex on this Mac, its session named by its hooks or, with no hook event since terminumd started, the transcript a process under the pane's shell (down to 3 levels) has open under its `sessions/` (Codex writes no record of its process)
+  When the user opens Links
+  Then terminumd reads that session's transcript (`$CODEX_HOME`, else `~/.codex`, `sessions/YYYY/MM/DD/rollout-*-<session>.jsonl`, the newest day first) and lists the addresses of the user's and the agent's messages (its `response_item` messages of role `user` or `assistant`, or an older Codex's `event_msg` `user_message` and `agent_message`, each message once); not of the developer's messages, the context Codex adds to the user's input (environment, AGENTS.md, a skill), its reasoning, tool calls and their output or a compaction's summary
+
 Scenario: AC-154 happy path — order, filter and new output
   When the user presses Most named beside the filter
   Then terminumd answers the most named first (of all, before the 500 are cut), the newest of those named as often first; Newest goes back; the choice is kept in this browser
@@ -548,8 +553,8 @@ Scenario: AC-154 edge — what is not a link
   And with none: "No web addresses in this session."
 
 Scenario: AC-154 failure — no transcript
-  When no pane is shown, the pane runs no Claude Code session of this Mac (a shell, Codex, a host's agent), tmux does not say the pane's process or its transcript is not found or unreadable
-  Then the window says why in place of its rows ("No Claude Code session runs in this pane.", "tmux did not say the pane's process: …", "Claude Code's transcript could not be read: not found."); after 30 s with no answer it says "The Mac did not answer." and Refresh asks again
+  When no pane is shown, the pane runs no Claude Code or Codex session of this Mac (a shell, a host's agent), tmux does not say the pane's process or its transcript is not found or unreadable
+  Then the window says why in place of its rows ("No Claude Code or Codex session runs in this pane.", "tmux did not say the pane's process: …", "Codex's transcript could not be read: not found."); after 30 s with no answer it says "The Mac did not answer." and Refresh asks again
 ```
 
 ### AC-40 — Editing a coding agent's input on a phone [MUST / P0]
@@ -764,5 +769,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-38 — `cargo test page::trace`, `web/test/trace.test.mjs`, `web/test/tracereplay.test.mjs`, `web/test/e2e_trace.mjs`, `web/test/e2e_ctxtrace.mjs`, `scripts/e2e_core.py`
 - [x] AC-90 — `cargo test sent::`, `web/test/sent.test.mjs`, `web/test/e2e_sent.mjs`, `web/test/e2e_panewin.mjs`, `scripts/e2e_hooks.py`
 - [x] AC-91 — `cargo test page::bookmarks`, `web/test/e2e_sent.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_marks.mjs`, `scripts/e2e_hooks.py`
-- [x] AC-154 — `cargo test page::linklist`, `cargo test page::agentlinks`, `web/test/linklist.test.mjs`, `web/test/e2e_livelinks.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_phonerow.mjs`. Not verified: Safari on an iPhone and a Mac.
+- [x] AC-154 — `cargo test page::linklist`, `cargo test page::agentlinks`, `web/test/linklist.test.mjs`, `web/test/e2e_livelinks.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_phonerow.mjs`. Not verified: Safari on an iPhone and a Mac; a real Codex's answer in its transcript.
 - [x] AC-40 — `web/test/boxnav.test.mjs`, `web/test/agentbox.test.mjs`, `web/test/rejoin.test.mjs`, `web/test/heldelete.test.mjs`, `web/test/kbdtouch.test.mjs`, `web/test/e2e_boxnav.mjs`, `web/test/e2e_codex.mjs`, `web/test/e2e_touch.mjs`

@@ -240,3 +240,98 @@ fn line_of_other_shape() {
     assert_eq!(urls, vec![("https://b.example/", None), ("https://a.example/", None)]);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// AC-154: a Codex session's transcript is found by its id under its day's folder; another id or no id is not.
+#[test]
+fn codex_transcript_by_id() {
+    let d = dir();
+    let day = d.join("sessions/2026/11/04");
+    std::fs::create_dir_all(&day).unwrap();
+    let id = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
+    let p = day.join(format!("rollout-2026-11-04T09-30-00-{id}.jsonl"));
+    std::fs::write(&p, "").unwrap();
+    std::fs::write(day.join("rollout-2026-11-04T09-31-00-other.jsonl"), "").unwrap();
+    assert_eq!(codex_transcript(&d, id), Some(p));
+    assert_eq!(codex_transcript(&d, "0199a1b2"), None, "a part of an id");
+    assert_eq!(codex_transcript(&d, "../x"), None);
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// AC-154: with no hook event, the Codex session a process of the pane writes: the transcript under
+/// the Codex folder it has open; a file of another name there, or one outside, names none.
+#[test]
+fn codex_session_from_open_transcript() {
+    let d = dir();
+    let day = d.join("sessions/2026/11/09");
+    std::fs::create_dir_all(&day).unwrap();
+    let me = std::process::id();
+    let other = std::fs::File::create(day.join("notes.jsonl")).unwrap();
+    let outside = std::fs::File::create(d.join("rollout-2026-11-09T11-32-01-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl")).unwrap();
+    assert_eq!(codex_session_of(&d, me), None);
+    let id = "019a1bf6-7b64-7711-a8c3-271acc4b81fc";
+    let open = std::fs::File::create(day.join(format!("rollout-2026-11-09T11-32-01-{id}.jsonl"))).unwrap();
+    assert_eq!(codex_session_of(&d, me).as_deref(), Some(id));
+    drop(open);
+    assert_eq!(codex_session_of(&d, me), None, "closed: Codex ended");
+    drop((other, outside));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// AC-154: of an older Codex's transcript, the user's and the agent's messages alone, each once
+/// (written as an event and as a response item): not the injected context, reasoning, tool calls
+/// and their output, or a compaction's summary.
+#[test]
+fn codex_reads_conversation_only() {
+    let d = dir();
+    let p = d.join("codex.jsonl");
+    let at = |t: &str, kind: &str, payload: Value| json!({"timestamp": t, "type": kind, "payload": payload});
+    std::fs::write(&p, lines(&[
+        at("2026-11-04T09:00:00.000Z", "session_meta", json!({"id": "s", "cwd": "/Users/alex/api", "instructions": "see https://instructions.example/"})),
+        at("2026-11-04T09:00:01.000Z", "response_item", json!({"type": "message", "role": "user", "content": [{"type": "input_text", "text": "<environment_context>https://env.example/</environment_context>"}]})),
+        at("2026-11-04T09:00:02.000Z", "response_item", json!({"type": "message", "role": "user", "content": [{"type": "input_text", "text": "look at https://ci.example/run/7"}]})),
+        at("2026-11-04T09:00:02.000Z", "event_msg", json!({"type": "user_message", "message": "look at https://ci.example/run/7", "images": []})),
+        at("2026-11-04T09:00:03.000Z", "response_item", json!({"type": "reasoning", "summary": [{"type": "summary_text", "text": "maybe https://thought.example/"}]})),
+        at("2026-11-04T09:00:04.000Z", "event_msg", json!({"type": "agent_reasoning", "text": "maybe https://thought.example/"})),
+        at("2026-11-04T09:00:05.000Z", "response_item", json!({"type": "function_call", "name": "shell", "arguments": "{\"command\":[\"curl\",\"https://api.example/\"]}"})),
+        at("2026-11-04T09:00:06.000Z", "response_item", json!({"type": "function_call_output", "output": "https://out.example/"})),
+        at("2026-11-04T09:00:07.000Z", "event_msg", json!({"type": "agent_message", "message": "The PR: https://git.example/pr/4."})),
+        at("2026-11-04T09:00:08.000Z", "response_item", json!({"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "The PR: https://git.example/pr/4."}]})),
+        at("2026-11-04T09:00:09.000Z", "compacted", json!({"message": "Summary: https://git.example/pr/4"})),
+        at("2026-11-04T09:00:10.000Z", "event_msg", json!({"type": "user_message", "message": "and https://ci.example/run/7"})),
+    ])).unwrap();
+    let (got, total) = read(&p, false).unwrap();
+    let got: Vec<(&str, usize, Option<&str>)> = got.iter().map(|l| (l.url.as_str(), l.count, l.when.as_deref())).collect();
+    assert_eq!((got, total), (vec![
+        ("https://ci.example/run/7", 2, Some("2026-11-04T09:00:10.000Z")),
+        ("https://git.example/pr/4", 1, Some("2026-11-04T09:00:07.000Z")),
+    ], 2));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// AC-154: of a current Codex's transcript (its messages as response items alone), the user's and
+/// the agent's text: not the developer's, the context added to the user's input, a refusal, or
+/// the same message as a completed item; a message said again is counted again.
+#[test]
+fn codex_reads_response_items() {
+    let d = dir();
+    let p = d.join("codex.jsonl");
+    let at = |t: &str, payload: Value| json!({"timestamp": t, "type": "response_item", "payload": payload});
+    let msg = |role: &str, kind: &str, text: &str| json!({"type": "message", "role": role, "content": [{"type": kind, "text": text}]});
+    std::fs::write(&p, lines(&[
+        at("2026-11-06T09:00:01.000Z", msg("developer", "input_text", "Never list https://developer.example/")),
+        at("2026-11-06T09:00:02.000Z", msg("user", "input_text", "# AGENTS.md instructions for /Users/alex/api\nhttps://agents.example/")),
+        at("2026-11-06T09:00:03.000Z", msg("user", "input_text", "  <environment_context>https://env.example/</environment_context>")),
+        at("2026-11-06T09:00:04.000Z", msg("user", "input_text", "<skill>https://skill.example/</skill>")),
+        at("2026-11-06T09:00:05.000Z", msg("user", "input_text", "Now https://user.example/a")),
+        json!({"timestamp": "2026-11-06T09:00:05.000Z", "type": "event_msg", "payload": {"type": "item_completed", "item": {"type": "UserMessage", "content": [{"type": "text", "text": "Now https://user.example/a"}]}}}),
+        at("2026-11-06T09:00:06.000Z", json!({"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Done: https://assistant.example/a."}, {"type": "refusal", "refusal": "https://refusal.example/"}]})),
+        at("2026-11-06T09:00:07.000Z", msg("user", "input_text", "Now https://user.example/a")),
+    ])).unwrap();
+    let (got, total) = read(&p, false).unwrap();
+    let got: Vec<(&str, usize, Option<&str>)> = got.iter().map(|l| (l.url.as_str(), l.count, l.when.as_deref())).collect();
+    assert_eq!((got, total), (vec![
+        ("https://user.example/a", 2, Some("2026-11-06T09:00:07.000Z")),
+        ("https://assistant.example/a", 1, Some("2026-11-06T09:00:06.000Z")),
+    ], 2));
+    let _ = std::fs::remove_dir_all(&d);
+}

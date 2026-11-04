@@ -96,7 +96,7 @@ let ended = false;
 async function start() {
   if (ended) throw new Error("the run was ended");   // a signal ended it while a browser ran
   // as the build the Files panel was bundled for: another one makes the panel reload itself (AC-34)
-  const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(tmp, "claude"), TM_TEST_CLOCK_SCALE: process.env.TM_TEST_CLOCK_SCALE ?? "300", TM_TEST_HOOKS: "1", TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: path.join(tmp, "claude"), CODEX_HOME: path.join(tmp, "codex"), TM_TEST_CLOCK_SCALE: process.env.TM_TEST_CLOCK_SCALE ?? "300", TM_TEST_HOOKS: "1", TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
   delete env.TMUX;
   proc = spawn(BIN, [], { env, stdio: ["ignore", "ignore", "inherit"] });
   for (let i = 0; i < 100; i++) {
@@ -242,7 +242,7 @@ async function wide(browser, name) {
   await liveView(page, { work: WORK });
   if (await page.isVisible("#fileclose")) await page.click("#fileclose");   // liveView may have hidden it (Esc)
   await liveFolds(page, { tmux, work: WORK });
-  await liveLinks(page, { work: WORK, onSocket, socket: SOCKET, claude: path.join(tmp, "claude") });
+  await liveLinks(page, { work: WORK, onSocket, socket: SOCKET, claude: path.join(tmp, "claude"), codex: path.join(tmp, "codex") });
   await liveLimit(page, { tmux, work: WORK });
   await liveFocus(page, { tmux, work: WORK });
   await liveListPlace(page, { tmux, work: WORK, app: APP });

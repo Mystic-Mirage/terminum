@@ -6,7 +6,11 @@
 //! https addresses are taken, of the conversation alone: the user's and the agent's messages, not
 //! its tool calls and their output (code it wrote or read, commands), its thinking or a
 //! compaction's summary. Only the addresses found are kept, in memory, so a read again takes only
-//! what was added.
+//! what was added. Codex's transcript, `<codex dir>/sessions/YYYY/MM/DD/rollout-*-<session>.jsonl`
+//! (the session as the pane's hooks last said, else of the transcript a process of the pane has
+//! open), is read as well: its user's and agent's messages
+//! (`response_item` user and assistant messages, or an older Codex's `event_msg` `user_message` and
+//! `agent_message`, each once) alone, not the context Codex adds to the user's input.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -52,6 +56,11 @@ pub fn claude_dir() -> PathBuf {
     std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).unwrap_or_else(|| crate::config::home().join(".claude"))
 }
 
+/// Codex's folder: `CODEX_HOME`, else `~/.codex`.
+pub fn codex_dir() -> PathBuf {
+    std::env::var_os("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| crate::config::home().join(".codex"))
+}
+
 /// The session Claude Code runs as process `pid` or one below it (3 levels: a wrapper, a shell),
 /// with the process whose record says it.
 pub fn session_of(dir: &Path, pid: u32) -> Option<(u32, String)> {
@@ -95,6 +104,44 @@ fn running(pid: u32, start: Option<&str>) -> bool {
     }
 }
 
+/// The Codex session a process under the pane's process `pid` (down to 3 levels) writes: the
+/// transcript it has open, `<dir>/sessions/…/rollout-*-<session>.jsonl` (Codex writes no record of
+/// its process).
+pub fn codex_session_of(dir: &Path, pid: u32) -> Option<String> {
+    let sessions = dir.join("sessions");
+    let sessions = sessions.canonicalize().unwrap_or(sessions);
+    let mut level = vec![pid];
+    for _ in 0..3 {
+        for &p in &level {
+            if let Some(id) = open_files(p).iter().find_map(|f| rollout_id(&sessions, f)) {
+                return Some(id);
+            }
+        }
+        level = level.iter().flat_map(|p| children(*p)).collect();
+        if level.is_empty() {
+            return None;
+        }
+    }
+    None
+}
+
+/// The session of a Codex transcript under `sessions`: its name's UUID.
+fn rollout_id(sessions: &Path, f: &Path) -> Option<String> {
+    let name = f.strip_prefix(sessions).ok()?.file_name()?.to_str()?;
+    let stem = name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;
+    stem.get(stem.len().checked_sub(36)?..).map(str::to_string)
+}
+
+/// The files process `pid` has open: `/proc/<pid>/fd` on Linux, else `lsof`.
+fn open_files(pid: u32) -> Vec<PathBuf> {
+    if let Ok(fds) = std::fs::read_dir(format!("/proc/{pid}/fd")) {
+        return fds.flatten().filter_map(|e| std::fs::read_link(e.path()).ok()).collect();
+    }
+    std::process::Command::new("lsof").args(["-a", "-n", "-P", "-p", &pid.to_string(), "-d", "0-1023", "-Fn"]).output().ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).lines().filter_map(|l| l.strip_prefix('n')).map(PathBuf::from).collect())
+        .unwrap_or_default()
+}
+
 /// The processes whose parent is `pid` (`pgrep -P`: macOS and Linux).
 fn children(pid: u32) -> Vec<u32> {
     std::process::Command::new("pgrep").args(["-P", &pid.to_string()]).output().ok()
@@ -102,9 +149,30 @@ fn children(pid: u32) -> Vec<u32> {
         .unwrap_or_default()
 }
 
-/// The transcript of session `id` under `dir`, None when there is none (or the id is no id): where
-/// it was found last while it is there, else looked for in each project's folder.
+/// Claude Code's transcript of session `id` under `dir`: `projects/*/<id>.jsonl`.
 pub fn transcript(dir: &Path, id: &str) -> Option<PathBuf> {
+    let name = format!("{id}.jsonl");
+    remembered(dir, id, || std::fs::read_dir(dir.join("projects")).ok()?.flatten().map(|e| e.path().join(&name)).find(|p| p.is_file()))
+}
+
+/// Codex's transcript of session `id` under `dir`: `sessions/YYYY/MM/DD/rollout-*-<id>.jsonl`, the
+/// newest day first.
+pub fn codex_transcript(dir: &Path, id: &str) -> Option<PathBuf> {
+    let end = format!("-{id}.jsonl");
+    let below = |p: &Path| -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = std::fs::read_dir(p).into_iter().flatten().flatten().map(|e| e.path()).collect();
+        v.sort_unstable_by(|a, b| b.cmp(a));
+        v
+    };
+    remembered(dir, id, || {
+        below(&dir.join("sessions")).iter().flat_map(|y| below(y)).flat_map(|m| below(&m)).flat_map(|d| below(&d))
+            .find(|f| f.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("rollout-") && n.ends_with(&end)) && f.is_file())
+    })
+}
+
+/// The transcript of session `id` under `dir`, None when there is none (or the id is no id): where
+/// it was found last while it is there, else as `look` finds it.
+fn remembered(dir: &Path, id: &str, look: impl FnOnce() -> Option<PathBuf>) -> Option<PathBuf> {
     if id.is_empty() || id.len() > 100 || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
         return None;
     }
@@ -113,8 +181,7 @@ pub fn transcript(dir: &Path, id: &str) -> Option<PathBuf> {
     if let Some(p) = last.filter(|p| p.is_file()) {
         return Some(p);
     }
-    let name = format!("{id}.jsonl");
-    let found = std::fs::read_dir(dir.join("projects")).ok()?.flatten().map(|e| e.path().join(&name)).find(|p| p.is_file());
+    let found = look();
     let mut g = FOUND.lock().unwrap_or_else(|e| e.into_inner());
     let paths = g.get_or_insert_default();
     if paths.len() >= PATHS {
@@ -205,6 +272,21 @@ struct Entry<'a> {
     timestamp: Option<Cow<'a, str>>,
     #[serde(borrow)]
     message: Option<Message<'a>>,
+    #[serde(borrow)]
+    payload: Option<Payload<'a>>,
+}
+
+/// A Codex line's payload: an event's type and its message's text.
+#[derive(Deserialize)]
+struct Payload<'a> {
+    #[serde(rename = "type", borrow)]
+    kind: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    role: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    message: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    content: Option<Content<'a>>,
 }
 
 #[derive(Deserialize)]
@@ -253,22 +335,60 @@ impl<'de: 'a, 'a> Deserialize<'de> for Content<'a> {
     }
 }
 
-/// One line of a transcript: a user's or the agent's message, its text alone.
+/// One line of a transcript: a user's or the agent's message, its text alone (Claude Code's
+/// "user" and "assistant" lines, Codex's event messages or response items).
 fn entry(e: Entry, found: &mut Found) {
-    let texts: Vec<&str> = match &e.message.as_ref().and_then(|m| m.content.as_ref()) {
-        Some(Content::Text(s)) => vec![s],
-        Some(Content::Blocks(blocks)) => blocks.iter().filter(|b| b.kind.as_deref() == Some("text")).filter_map(|b| b.text.as_deref()).collect(),
-        None => Vec::new(),
+    let texts: Vec<&str> = match e.kind.as_deref() {
+        Some("event_msg") => match &e.payload {
+            Some(p) if matches!(p.kind.as_deref(), Some("user_message" | "agent_message")) => p.message.as_deref().into_iter().collect(),
+            _ => return,
+        },
+        Some("response_item") => match &e.payload {
+            Some(p) if p.kind.as_deref() == Some("message") && matches!(p.role.as_deref(), Some("user" | "assistant")) => match &p.content {
+                Some(Content::Text(s)) => vec![s.as_ref()],
+                Some(Content::Blocks(blocks)) => blocks.iter()
+                    .filter(|b| matches!(b.kind.as_deref(), Some("input_text" | "output_text")))
+                    .filter_map(|b| b.text.as_deref()).collect(),
+                None => Vec::new(),
+            }
+            .into_iter().filter(|t| !injected(t)).collect(),
+            _ => return,
+        },
+        _ => match &e.message.as_ref().and_then(|m| m.content.as_ref()) {
+            Some(Content::Text(s)) => vec![s],
+            Some(Content::Blocks(blocks)) => blocks.iter().filter(|b| b.kind.as_deref() == Some("text")).filter_map(|b| b.text.as_deref()).collect(),
+            None => Vec::new(),
+        },
     };
+    if let Some(form @ ("event_msg" | "response_item")) = e.kind.as_deref() {
+        // an older Codex writes each message twice, as an event and as a response item
+        let text = texts.join("\n");
+        if found.twin.as_ref().is_some_and(|(f, t)| f != form && *t == text) {
+            found.twin = None;
+            return;
+        }
+        found.twin = Some((form.to_string(), text));
+    }
     said(found, e.kind.as_deref(), e.meta == Some(true) || e.summary == Some(true), e.timestamp.as_deref(), &texts);
+}
+
+/// Whether a Codex message's text is context Codex added to the user's input: the environment,
+/// AGENTS.md, a skill, a shell command's output.
+fn injected(text: &str) -> bool {
+    const ADDED: &[&str] = &["<environment_context>", "<user_instructions>", "# AGENTS.md instructions for", "<skill>",
+        "<user_shell_command>", "<turn_aborted>", "<subagent_notification>"];
+    let t = text.trim_start();
+    ADDED.iter().any(|a| t.starts_with(a))
 }
 
 /// `entry` of a line of another shape: a field of another type is left out.
 fn loose(v: &serde_json::Value, found: &mut Found) {
     let content = &v["message"]["content"];
-    let texts: Vec<&str> = match content.as_str() {
-        Some(s) => vec![s],
-        None => content.as_array().into_iter().flatten().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect(),
+    let texts: Vec<&str> = match (v["type"].as_str(), content.as_str()) {
+        (Some("event_msg"), _) if matches!(v["payload"]["type"].as_str(), Some("user_message" | "agent_message")) => v["payload"]["message"].as_str().into_iter().collect(),
+        (Some("event_msg"), _) => return,
+        (_, Some(s)) => vec![s],
+        (_, None) => content.as_array().into_iter().flatten().filter(|b| b["type"] == "text").filter_map(|b| b["text"].as_str()).collect(),
     };
     let aside = v["isMeta"].as_bool() == Some(true) || v["isCompactSummary"].as_bool() == Some(true);
     said(found, v["type"].as_str(), aside, v["timestamp"].as_str(), &texts);
@@ -277,7 +397,7 @@ fn loose(v: &serde_json::Value, found: &mut Found) {
 /// The addresses of a user's or the agent's message (`kind`), not a meta line's or a summary's
 /// (`aside`), at its time.
 fn said(found: &mut Found, kind: Option<&str>, aside: bool, time: Option<&str>, texts: &[&str]) {
-    if !matches!(kind, Some("user" | "assistant")) || aside {
+    if !matches!(kind, Some("user" | "assistant" | "event_msg" | "response_item")) || aside {
         return;
     }
     found.when = time.filter(|t| t.len() <= 40).map(str::to_string);

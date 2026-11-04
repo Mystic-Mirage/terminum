@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The session's links (AC-154), from the floating column under the sent history: terminumd reads
-// its Claude Code transcript (linklist.rs) and answers each web address once, the newest or the
+// its Claude Code or Codex transcript (linklist.rs) and answers each web address once, the newest or the
 // most named first; the window filters them, a row opens its address in a new tab and says when
 // it was last named.
 import { fabPane } from "./fabpane.js";

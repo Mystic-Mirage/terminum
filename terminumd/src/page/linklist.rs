@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The shown pane's links (AC-154): every http or https address its Claude Code session's
+//! The shown pane's links (AC-154): every http or https address its Claude Code or Codex session's
 //! transcript names (agentlinks.rs: a full-screen agent leaves tmux no history), each once, the
 //! newest first; sentence punctuation after an address is not part of it.
 
@@ -40,6 +40,9 @@ pub struct Found {
     seq: usize,
     /// The time of what is read now: given to the addresses seen in it.
     pub when: Option<String>,
+    /// The last Codex message's form (its line's type) and text: the same text next in the other
+    /// form is not counted again.
+    pub twin: Option<(String, String)>,
 }
 
 impl Found {
@@ -149,9 +152,9 @@ pub fn start(app: &Shared, page: &Arc<Page>, msg: &Value) {
         page.send_json(&refused(&r, "No session is shown."));
         return;
     };
-    // a Claude Code session of this machine: its transcript is here (a host's is on the host)
+    // a Claude Code or Codex session of this machine: its transcript is here (a host's is on the host)
     let local = key.starts_with("tmux:local:");
-    let hooked = app.hooks.session(&key).filter(|(a, _)| *a == "claude" && local).map(|(_, s)| s);
+    let hooked = app.hooks.session(&key).filter(|(a, _)| matches!(*a, "claude" | "codex") && local);
     let page = page.clone();
     tokio::spawn(async move {
         let t0 = std::time::Instant::now();
@@ -163,11 +166,14 @@ pub fn start(app: &Shared, page: &Arc<Page>, msg: &Value) {
         };
         let read = match session {
             Err(e) => Err(e),
-            Ok(None) => Err("No Claude Code session runs in this pane.".to_string()),
-            Ok(Some(session)) => tokio::task::spawn_blocking(move || {
-                let path = super::agentlinks::transcript(&dir, &session)
-                    .ok_or_else(|| "Claude Code's transcript could not be read: not found.".to_string())?;
-                super::agentlinks::read(&path, by_count).map_err(|e| format!("Claude Code's transcript could not be read: {e}."))
+            Ok(None) => Err("No Claude Code or Codex session runs in this pane.".to_string()),
+            Ok(Some((agent, session))) => tokio::task::spawn_blocking(move || {
+                let (name, path) = match agent {
+                    "codex" => ("Codex", super::agentlinks::codex_transcript(&super::agentlinks::codex_dir(), &session)),
+                    _ => ("Claude Code", super::agentlinks::transcript(&dir, &session)),
+                };
+                let path = path.ok_or_else(|| format!("{name}'s transcript could not be read: not found."))?;
+                super::agentlinks::read(&path, by_count).map_err(|e| format!("{name}'s transcript could not be read: {e}."))
             }).await.unwrap_or_else(|e| Err(e.to_string())),
         };
         match read {
@@ -189,11 +195,12 @@ static RAN: Mutex<Option<HashMap<String, Ran>>> = Mutex::new(None);
 /// Panes remembered, at most.
 const RAN_MOST: usize = 256;
 
-/// The session the pane's Claude Code process runs, or why the pane's process is not known: the
-/// hooks name a session only after its next event (none since terminumd started). The process
-/// found last for the same pane process (a new pane with an old one's id has another) is asked
-/// first; only when it no longer runs that session are the pane's processes looked through again.
-async fn process_session(key: &str, server: &Arc<crate::tmux::server::Server>, pane: &str, dir: &std::path::Path) -> Result<Option<String>, String> {
+/// The session the pane's Claude Code process runs, else the Codex session a process of the pane
+/// writes, or why the pane's process is not known: the hooks name a session only after its next
+/// event (none since terminumd started). The Claude Code process found last for the same pane
+/// process (a new pane with an old one's id has another) is asked first; only when it no longer
+/// runs that session are the pane's processes looked through again.
+async fn process_session(key: &str, server: &Arc<crate::tmux::server::Server>, pane: &str, dir: &std::path::Path) -> Result<Option<(&'static str, String)>, String> {
     let lines = server.run(format!("display-message -p -t {pane} '#{{pane_pid}}'")).await.map_err(|e| format!("tmux did not say the pane's process: {e}"))?;
     let pid = lines.first().and_then(|l| l.trim().parse::<u32>().ok()).ok_or("tmux did not say the pane's process.")?;
     let last = RAN.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_default().get(key).cloned();
@@ -202,21 +209,27 @@ async fn process_session(key: &str, server: &Arc<crate::tmux::server::Server>, p
         Some(s) => Some((None, s)),
         None => super::agentlinks::session_of(&d, pid).map(|(rec, s)| (Some(rec), s)),
     }).await.ok().flatten();
-    let mut g = RAN.lock().unwrap_or_else(|e| e.into_inner());
-    let ran = g.get_or_insert_default();
-    match &found {
-        Some((Some(rec), session)) => {
-            if ran.len() >= RAN_MOST {
-                ran.clear();
+    {
+        let mut g = RAN.lock().unwrap_or_else(|e| e.into_inner());
+        let ran = g.get_or_insert_default();
+        match &found {
+            Some((Some(rec), session)) => {
+                if ran.len() >= RAN_MOST {
+                    ran.clear();
+                }
+                ran.insert(key.to_string(), (pid, *rec, session.clone()));
             }
-            ran.insert(key.to_string(), (pid, *rec, session.clone()));
-        }
-        Some((None, _)) => {}
-        None => {
-            ran.remove(key);
+            Some((None, _)) => {}
+            None => {
+                ran.remove(key);
+            }
         }
     }
-    Ok(found.map(|(_, s)| s))
+    if let Some((_, s)) = found {
+        return Ok(Some(("claude", s)));
+    }
+    let codex = super::agentlinks::codex_dir();
+    Ok(tokio::task::spawn_blocking(move || super::agentlinks::codex_session_of(&codex, pid)).await.ok().flatten().map(|s| ("codex", s)))
 }
 
 /// The session found last (`last`) when the pane's process is still `pid` and the process with

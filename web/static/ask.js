@@ -10,7 +10,7 @@
 // measured as the dialog opens: on a phone its field's keyboard then makes the pane shorter. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
 // coding agent's pane only) puts the same and presses Enter.
 
-import { inside, placeModal } from "./fabpane.js";
+import { inside, placeModal, sendOnModEnter } from "./fabpane.js";
 
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the number
@@ -68,6 +68,7 @@ export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast, clo
   const fail = (text) => { $("askerr").textContent = text; $("askerr").hidden = !text; };
   const ready = (on) => { add.disabled = now.disabled = !on; };
   q.addEventListener("input", () => ready(q.value.trim()));
+  sendOnModEnter(box);                                             // ⌘Enter: Add to Chat
   // centered on the terminal, not on the window (the list and Files beside it); the window's middle without one
   const place = () => {
     const r = $("term").getBoundingClientRect();

@@ -6,7 +6,7 @@
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
-import { placeModal, placePane } from "./fabpane.js";
+import { placeModal, placePane, sendOnModEnter } from "./fabpane.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";
@@ -79,6 +79,7 @@ export class Marks {
     this.picker = markPicker({ term, main: $("main"), button: $("markadd"), copyButton: $("markcopy"), askButton: $("askfab"), view,
       onPick: (sel) => this.edit(null, sel), onCopy: copy, onAsk: (text, line) => this.onAsk?.(text, line) });
     $("markbox").querySelector("form").addEventListener("submit", (e) => this.submit(e));
+    sendOnModEnter($("markbox"));                                // ⌘Enter: Save
     $("markbox").addEventListener("close", () => { this.editing = null; });
     for (const b of $("markkind").querySelectorAll("button")) b.onclick = () => this.setKind(b.dataset.kind);
     $("markbox").addEventListener("cancel", (e) => { if (this.saving) e.preventDefault(); });   // Esc while saving

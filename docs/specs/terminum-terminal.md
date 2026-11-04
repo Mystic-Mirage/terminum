@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.6.32 |
+| Version | 0.6.33 |
 | Date | 2026-11-04 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.33 | 2026-11-04 | Owner: the Bookmark (and Reminder) and Ask dialogs are sent from the keyboard: ⌘Enter or Ctrl+Enter is Save, Add to Chat; a plain Enter stays a new line; nothing while the button is off. Save's and Add to Chat's tooltips say the keys (AC-33, AC-37). |
 | 0.6.32 | 2026-11-04 | Owner: with focus in another app the terminal in a browser window still in sight stopped at its last line, and jumped to the end when clicked: a page out of focus on a computer paused its stream, so a window watched beside another app showed nothing new. Only a hidden page (another tab, a minimized window, a locked phone) pauses its stream now; a page in sight without focus keeps drawing the output and the list, while sizing and unread marks still need focus (AC 13, AC 93) (AC-37). |
 | 0.6.31 | 2026-11-03 | Owner: a reminder just made got the bookmarks' orange wavy line beside its text, as did one brought into view; the line had the orange in its picture. It is drawn in the entry's color now, a reminder's pink (AC-33, AC-91). |
 | 0.6.30 | 2026-11-03 | Audit #19, measured: a computer kept every history line on the page while following the output, and each frame's scroll to the bottom lays them all out (Chromium, 100 lines/s and 20 frames/s: 2.9 ms a frame and 10% CPU at 1000 lines, 7.7 ms and 25% at 5000, 39 ms and 97% at 20,000). A computer now keeps about 5000 lines while following, as a touch screen keeps 2000 (older ones load again on scrolling up). Found while measuring: at the cap every append cut the oldest block, and WebKit lays out every line below a removal (33 ms a frame at 5000 lines against 6 ms uncut; a phone's 2000: 14 ms); the page now cuts only once a fifth over the cap, down to it. At 20,000 lines: Chromium 6.5 ms a frame and 22% CPU, WebKit 8 ms (was 15 ms); WebKit at a phone's 2000: 6 ms (AC-37, AC-52). |
@@ -284,7 +285,7 @@ Scenario: AC-32 failure — lines terminumd cannot send
 Scenario: AC-33 happy path — a selection becomes a bookmark
   When the user selects text in the history, the screen or a widget's rendered text
   Then a gray Copy and an orange [+] under it stand in the floating buttons' column (in one line with find and the sent history), Copy level with the selection's first line (kept inside the terminal, following the view), the column's other buttons hidden meanwhile, while the selection lasts (and 600 ms after); Copy, [+] and Ask one gap apart (--sp-3), the same gap between the terminal's top or end and the first or the last; on a phone or a narrow window they stand instead at the terminal's top right, Copy first, in place of the folded floating buttons (terminum.md AC-18); not for a selection in an agent's input box or status lines
-  When the user presses [+], types a note and saves
+  When the user presses [+], types a note and saves (Save, or ⌘Enter or Ctrl+Enter in the dialog; a plain Enter is a new line of the note)
   Then the dialog, 80% of the terminal's width (480 px at least, the window's less 32 px at most), shows the text it keeps (a longer one: its first 2000 characters, never half an emoji, then "… (the first 2,000 characters are kept)") and the bookmark holds that text, the note (up to 1000), its line, and, stamped by terminumd, the pane's key (OQ-31), title, host and time, in "web-bookmarks.json" (0600) on the Mac, seen by every signed-in client at once
 
 Scenario: AC-33 happy path — marks, the way back, the lists
@@ -468,7 +469,7 @@ Scenario: AC-37 happy path — Ask about a selection
   But the Enter goes only to the pane the quote went to while it still runs its agent: another pane shown by then, or the agent ended, and it is not pressed and a toast says so; the agent ending while the dialog is open hides Send to Agent and the dialog says so (Add to Chat still puts the quote in)
   And a number that does not come within 10 s is said in the dialog, and Add to Chat or Send to Agent pressed again asks again
   And however the dialog closes (Add to Chat, Send to Agent, Cancel, Esc), the keys go back to the terminal: what the user types next reaches the pane, also when a Shift selection in a full-screen program had taken them from it
-  And Cancel or Esc closes the dialog and pastes nothing; Add to Chat and Send to Agent are off while the question is empty
+  And ⌘Enter or Ctrl+Enter in the dialog is Add to Chat (a plain Enter a new line of the question); Cancel or Esc closes the dialog and pastes nothing; Add to Chat and Send to Agent (and the keys) are off while the question is empty
 
 Scenario: AC-37 happy path — an asked quote stays marked
   Given the user asked about a selection (Add to Chat or Send to Agent; terminumd gave it its number)
@@ -1112,3 +1113,4 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] 0.6.30 (2026-11-03) — AC-52 `e2e_hold.mjs` webHold (8000 lines appended while following on a computer: 5000–6000 kept, the newest last: fails on the old code with 8000), `e2e_term.mjs` webTerm (at the cap, appends up to a fifth over cut nothing, past it whole blocks go down to the cap: fails on the old code); the audit's measurement (a page against fakes, 100 lines/s and 20 frames/s, 10 s) on the real page: Chromium 20,000 lines 6.5 ms p50 a frame, 22% CPU (was 39 ms, 97%), WebKit 8 ms (was 15 ms). Not verified: a phone's Safari (the 2000-line cap's cut now amortized; measured in desktop WebKit only).
 - [x] 0.6.31 (2026-11-03) — AC-33 `web/test/e2e_marks.mjs` webMarks in Chromium and WebKit 63/63: a bookmark just saved has the bookmarks' orange line, a reminder just saved the reminders' pink, and brought into view from the strip a bookmark's is orange and a reminder's pink (fails on the old code: the picture's orange for both). On the delivered tree (uncommitted, on 4659553): `make check` (Rust 733 + 1, Python 69, Panel unit 52, Page unit 175, clippy `-D warnings`, `ui/test/e2e_panel.mjs` 171/171, `web/test/e2e_live.mjs` 233/233, `web/test/e2e_all.mjs` 1707/1707 in Chromium and WebKit, `scripts/security_check.sh`).
 - [x] 0.6.32 (2026-11-04) — AC-37 `web/test/e2e_livefocus.mjs` in `e2e_live.mjs` (a real private terminumd and tmux, Chromium and WebKit: a page in sight out of focus draws `echo` output within 3 s (76 ms), a hidden one draws none in 1.5 s, in sight again out of focus it gets it (19–35 ms); the page's own blur, focus and visibility handlers played, a test cannot take the window's focus); `e2e_appscreen.mjs` webApp in Chromium and WebKit (out of focus: "pause" with `hidden: false`, hidden: `hidden: true`, back in sight: `hidden: false`, focus: "resume"; the Files frame's focus is the page's); `cargo test page::client` (out of focus the stream and the list go on, hidden they stop, in sight again the stream is back). `make check` passes on the delivered tree. Not verified: the owner's own Safari and Chrome with another app in front.
+- [x] 0.6.33 (2026-11-04) — AC-33, AC-37 `web/test/e2e_marks.mjs` webMarks in Chromium and WebKit 64/64: ⌘Enter in the note saves a bookmark (line, text, note sent, the dialog closed), Ctrl+Enter a reminder; in Ask ⌘Enter with Add to Chat off sends nothing and a plain Enter is a new line, ⌘Enter is Add to Chat in a shell, Ctrl+Enter in a coding agent's box. `make check` passes on the delivered tree.

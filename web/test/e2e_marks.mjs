@@ -190,10 +190,10 @@ export async function webMarks(browser, name = "") {
     want: Math.round(Math.min(Math.max(480, document.getElementById("term").clientWidth * 0.8), innerWidth - 32)) }));
   check(`${at} the dialog is 80% of the terminal's width (480 px at least, the window's less 32 px at most)`, Math.abs(wide.dlg - wide.want) <= 1, JSON.stringify(wide));
   await page.fill("#marknote", "look again");
-  await page.click('#markbox button[value="save"]');
+  await page.press("#marknote", "Meta+Enter");                   // as Save
   await page.waitForFunction(() => !document.getElementById("markbox").open, null, { timeout: 5000 }).catch(() => {});
   const mark = sent.find((m) => m.t === "mark" && !m.id);
-  check(`${at} Save sends the line, the text and the note; the dialog closes`,
+  check(`${at} ⌘Enter saves: it sends the line, the text and the note; the dialog closes`,
     mark?.sid === "S1" && mark.n === 2500 && mark.text.startsWith("out 2500 lorem ipsum") && mark.note === "look again" && !await page.evaluate(() => document.getElementById("markbox").open), JSON.stringify(mark));
   const back = await page.evaluate(() => ({ add: document.getElementById("markadd").hidden, others: ["findfab", "sentfab"].map((id) => getComputedStyle(document.getElementById(id)).visibility) }));
   check(`${at} the selection gone, its buttons go and the column's own are back`, back.add && back.others.every((v) => v === "visible"), JSON.stringify(back));
@@ -465,10 +465,10 @@ export async function webMarks(browser, name = "") {
   await page.click("#markadd");
   await page.click('#markkind button[data-kind="reminder"]');
   await page.fill("#marknote", "check this later");
-  await page.click('#markbox button[value="save"]');
+  await page.press("#marknote", "Control+Enter");                // Ctrl+Enter saves as ⌘Enter
   await page.waitForFunction(() => !document.getElementById("markbox").open, null, { timeout: 5000 }).catch(() => {});
   const pink = await lineColor(page);
-  check(`${at} a reminder just saved has its wavy line in the reminders' pink`, pink.shown && pink.fill === pink.remind, JSON.stringify(pink));
+  check(`${at} a reminder just saved (Ctrl+Enter) has its wavy line in the reminders' pink`, pink.shown && pink.fill === pink.remind, JSON.stringify(pink));
   // brought into view from its mark on the strip, after a bookmark's: pink again, the bookmark's orange
   await page.click("#mbclose").catch(() => {});
   await page.waitForFunction(() => document.querySelector('#msgrail .dot[title*="check this later"]'), null, { timeout: 3000 }).catch(() => {});

@@ -23,16 +23,23 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
     return { width: box.offsetWidth, dx: Math.round(b.left + b.width / 2 - (t.left + t.width / 2)), dy: Math.round(b.top + b.height / 2 - (t.top + t.height / 2)), termLeft: Math.round(t.left) }; });
   check(`${at} Ask: its dialog 600 px wide (a quarter larger), centered on the terminal, not on the window`,
     placed.width === 600 && Math.abs(placed.dx) <= 1 && Math.abs(placed.dy) <= 1 && placed.termLeft > 0, JSON.stringify(placed));
-  await page.fill("#askq", "why does it never reset?");
+  // ⌘Enter while Add to Chat is off does nothing; a plain Enter is a new line in the field
   let k = sent.length;
+  await page.press("#askq", "Meta+Enter");
+  await page.press("#askq", "Enter");
+  const keys = await page.evaluate(() => ({ open: document.getElementById("askbox").open, value: document.getElementById("askq").value }));
+  check(`${at} Ask: ⌘Enter with Add to Chat off sends nothing, a plain Enter is a new line in the field`,
+    keys.open && keys.value === "\n" && !sent.slice(k).some((x) => x.t === "askno"), JSON.stringify(keys));
+  await page.fill("#askq", "why does it never reset?");
+  k = sent.length;
   const top = () => page.evaluate(() => Math.round(document.getElementById("term").scrollTop));
   let was = await top();
-  await page.click('#askbox button[value="add"]');
+  await page.press("#askq", "Meta+Enter");                       // as Add to Chat (AC-37)
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(300);
   let stayed = await top();
   const asked = sent.slice(k), quoted = asked.filter((x) => x.t === "in").map((x) => x.data).join("");
-  check(`${at} Ask: a dialog with the selection, Add to Chat off until a question, no Send to Agent in a shell; the quote numbered by terminumd on its first line and the question pasted, no Enter; the view stays where it was`,
+  check(`${at} Ask: a dialog with the selection, Add to Chat (⌘Enter) off until a question, no Send to Agent in a shell; the quote numbered by terminumd on its first line and the question pasted, no Enter; the view stays where it was`,
     dialog.text.includes("out 2500 lorem ipsum") && dialog.off && dialog.noSend && dialog.focused === "askq" && dialog.gone && asked.some((x) => x.t === "askno")
     && quoted.startsWith("\x1b[200~> Quote #0007\r> out 2500 lorem ipsum") && quoted.endsWith("\r\rwhy does it never reset?\r\r\x1b[201~") && was > 0 && stayed === was,
     JSON.stringify({ dialog, quoted, was, stayed }));
@@ -75,12 +82,12 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.fill("#askq", "and now?");
   k = sent.length;
   was = await top();
-  await page.click('#askbox button[value="add"]');
+  await page.press("#askq", "Control+Enter");                    // Ctrl+Enter as ⌘Enter
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(300);
   stayed = await top();
   const typed = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data), typedFocus = await page.evaluate(() => document.activeElement?.id);
-  check(`${at} Ask in a coding agent's box: typed, not pasted (shown whole, not folded), new lines as Ctrl+J, a blank line after the quote and after the question; nothing sent; the view stays where it was; the keys go back to the terminal`,
+  check(`${at} Ask in a coding agent's box (Ctrl+Enter): typed, not pasted (shown whole, not folded), new lines as Ctrl+J, a blank line after the quote and after the question; nothing sent; the view stays where it was; the keys go back to the terminal`,
     typed.length === 1 && typed[0].startsWith("> Quote #0007\n> out 2500 lorem") && typed[0].endsWith("\n\nand now?\n\n") && !typed[0].includes("\x1b[200~") && was > 0 && stayed === was && typedFocus === "kbd", JSON.stringify({ typed, was, stayed, typedFocus }));
   // Send to Agent (a coding agent's pane only): the same paste, then Enter a moment after
   await selectRow(page, "out 2500 lorem");

@@ -17,7 +17,7 @@ const MARKS = [{ id: "R1", sid: SID, key: SID, n: 1, text: "reminder text here",
 const SENT = { at: now - 600, text: "fix the tests", agent: "claude", title: "api", key: SID, line: 2 };
 const PLAN = { plan: { title: "Unify the panes", doing: "Measuring", items: [{ text: "one", status: "completed" }, { text: "two", status: "in_progress" }],
   done: 1, total: 2, pct: 50, eta: null, eta_given: null, updated: now - 60, source: "mcp", partial: false, agent: "claude" }, hooks: true };
-const PANES = [["Bookmarks", "#marksfab", "#markpane"], ["Reminders", "#remindfab", "#remindpane"], ["Sent", "#sentfab", "#sentpane"], ["Plan", "#planfab", "#planpane"]];
+const PANES = [["Bookmarks", "#marksfab", "#markpane"], ["Reminders", "#remindfab", "#remindpane"], ["Sent", "#sentfab", "#sentpane"], ["Links", "#linksfab", "#linkspane"], ["Plan", "#planfab", "#planpane"]];
 
 /** A pane's place against the terminal and the floating column, its look, its head and its type. */
 const measure = (sel) => {
@@ -59,9 +59,9 @@ export async function webPaneWin(browser, name) {
   }
   const first = Object.values(got)[0];
   const [left, top, right, end, width] = first.place;
-  check(`AC-33 AC-90 AC-91 AC-97 [${name}] Bookmarks, Reminders, Sent and Plan are one window, placed as View's and with its chrome, corners and shadow: 12 px under the terminal's top, 16 px over its end, 14 px left of the floating buttons, 820 px at most`,
+  check(`AC-33 AC-90 AC-91 AC-97 AC-102 [${name}] Bookmarks, Reminders, Sent, Links and Plan are one window, placed as View's and with its chrome, corners and shadow: 12 px under the terminal's top, 16 px over its end, 14 px left of the floating buttons, 820 px at most`,
     Object.values(got).every((g) => g.place.join() === first.place.join() && g.look === g.view) && top === 12 && end === 16 && right === 14 && left >= 16 && width <= 820, JSON.stringify(got));
-  check(`AC-33 AC-90 AC-91 AC-97 [${name}] each has View's head (36 px, its title 14 px 600 12 px in, 24 px keys) and the chat's type (the terminal's font at its size, line height 1.5, whatever the menu's Markdown size; the navigators' content too); the actions' first at the left, the last at the right`,
+  check(`AC-33 AC-90 AC-91 AC-97 AC-102 [${name}] each has View's head (36 px, its title 14 px 600 12 px in, 24 px keys) and the chat's type (the terminal's font at its size, line height 1.5, whatever the menu's Markdown size; the navigators' content too); the actions' first at the left, the last at the right`,
     Object.values(got).every((g) => g.head === 36 && g.title === "14px 600 12" && g.keys.length && g.keys.every((k) => k === 24) && (g.lh === 1.5 && g.size === g.term && /^TermFont/.test(g.family)) && g.acts),
     JSON.stringify(got));
   await page.close();

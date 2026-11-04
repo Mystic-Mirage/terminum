@@ -268,7 +268,7 @@ function onMessage(m) {
   trace.received(m);
   bookmarks.seen(m);
   rail?.seen(m);
-  ask.seen(m); asked.seen(m); rowMenu.seen(m);
+  ask.seen(m); asked.seen(m); rowMenu.seen(m); sent.links.seen(m);
   switch (m.t) {
     case "layout": st.groups = m.groups; place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;

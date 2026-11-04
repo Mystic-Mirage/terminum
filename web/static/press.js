@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A pressed blob's pulse (motion.css): a fresh name for its animation (a, b) so each press
 // restarts it. Keys have no pulse: they sink into the panel while pressed (shapes.css).
-const BLOBS = "#foldfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom";
+const BLOBS = "#foldfab, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #linksfab, #askfab, #attachfab, #remindfab, #fabs button, #bottom";
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 
 const blob = (e) => (!calm.matches && e.target instanceof Element && e.target.closest(BLOBS)) || null;

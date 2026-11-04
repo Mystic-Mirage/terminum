@@ -7,7 +7,7 @@ import { check, runningIn } from "./check.mjs";
 import { drawn, line, openPage, pause, PHONE, WIDE } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1";
-const COLUMN = ["findfab", "splitfab", "sentfab", "attachfab", "marksfab"];
+const COLUMN = ["findfab", "splitfab", "sentfab", "linksfab", "attachfab", "marksfab"];
 const MARKS = [{ id: "B1", sid: SID, key: null, n: 1, text: "line 3", note: "", title: "api", host: null, at: 1792000000 },
   { id: "B2", sid: SID, key: null, n: 5, text: "line 5", note: "", title: "api", host: null, at: 1792000001 }];
 const seen = (page, ids) => page.evaluate((ids) => Object.fromEntries(ids.map((id) => {

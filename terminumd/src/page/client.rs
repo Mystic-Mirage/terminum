@@ -95,6 +95,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
             read(app, page, "unfold", move |a, p| async move { super::hist::unfold(&a, &p, n, to).await });
         }
         "find" => super::find::start(app, page, &msg),
+        "links" => super::linklist::start(app, page, &msg),
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => read(app, page, "files", |a, p| async move { files(&a, &p).await }),
         "size" | "mouse" => super::sizing::handle(app, page, t, &msg).await,

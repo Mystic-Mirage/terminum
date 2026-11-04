@@ -5,10 +5,10 @@
    edges), its Markdown type (ui/src/style.css html.viewer-mode .md-body: 16 px, 1.65, 22 px in), its
    actions at the foot, the first at the left. On a phone each is a sheet (sheets.css). Find's field
    is not one of them. */
-:is(#markpane, #remindpane, #sentpane, #planpane) { position: absolute; z-index: 8; box-sizing: border-box; padding: 0; overflow: hidden;
+:is(#markpane, #remindpane, #sentpane, #linkspane, #planpane) { position: absolute; z-index: 8; box-sizing: border-box; padding: 0; overflow: hidden;
   border-radius: var(--r-xl); --fill: var(--chrome); box-shadow: var(--shadow-far); }
-:is(#markpane, #remindpane, #sentpane, #planpane):not([hidden]) { display: flex; flex-direction: column; }
-:is(#markpane, #remindpane, #sentpane, #planpane):focus { outline: none; }   /* focused to take the keys, not to be pointed at */
+:is(#markpane, #remindpane, #sentpane, #linkspane, #planpane):not([hidden]) { display: flex; flex-direction: column; }
+:is(#markpane, #remindpane, #sentpane, #linkspane, #planpane):focus { outline: none; }   /* focused to take the keys, not to be pointed at */
 .pwhead { flex: none; display: flex; align-items: center; gap: var(--icon-gap); min-height: 36px; box-sizing: border-box;
   padding: 6px 6px 6px 12px; font-size: 14px; font-weight: 600; line-height: var(--lh-ui); color: var(--t-fg); }
 .pwhead .pwtitle { flex: 1 1 auto; min-width: 0; margin: 0; padding: 0; font: inherit; letter-spacing: normal; text-transform: none; color: inherit;

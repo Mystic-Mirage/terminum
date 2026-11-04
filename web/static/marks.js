@@ -21,7 +21,7 @@ const MOUSE = globalThis.matchMedia?.("(hover: hover) and (pointer: fine)");   /
 // the floating buttons at the terminal's top right, top down: the plan's progress (while there is a plan,
 // planpane.js), the plain ones, then the colored ones together; where the keyboard's buttons float (a
 // phone, a narrow window) they fold under ⟨…⟩ (fold.js)
-const PLAN = FOLDED.slice(0, 1), PLAIN = FOLDED.slice(1, 5), COLORED = FOLDED.slice(5);
+const PLAN = FOLDED.slice(0, 1), PLAIN = FOLDED.slice(1, 6), COLORED = FOLDED.slice(6);
 
 export const el = (tag, cls, text) => {
   const e = document.createElement(tag);

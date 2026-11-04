@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="projects.css">
 <link rel="stylesheet" href="listdrag.css">
 <link rel="stylesheet" href="dock.css">
+<link rel="stylesheet" href="linklist.css">
 <link rel="stylesheet" href="fold.css">
 <link rel="stylesheet" href="peek.css">
 <link rel="stylesheet" href="controls.css">
@@ -202,6 +203,8 @@
     <button id="attachfab" type="button" hidden title="Attach files: upload them and type their paths" aria-label="Attach files"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></svg></button>
     <!-- Sent history (AC-90): what was sent in this folder, under the split. -->
     <button id="sentfab" type="button" hidden title="Sent in this folder" aria-label="Sent in this folder" aria-expanded="false" aria-controls="sentpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg></button>
+    <!-- The session's links (AC-102): every web address its Claude Code transcript names, under the sent history. -->
+    <button id="linksfab" type="button" hidden title="Links in this session" aria-label="Links in this session" aria-expanded="false" aria-controls="linkspane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></button>
     <!-- Ask (AC-37): while text is selected; on a wide window under the sent history's button, else above the selection's Copy. -->
     <button id="askfab" type="button" hidden title="Ask about the selected text" aria-label="Ask about the selected text"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
     <div id="sentpane" class="box" role="region" aria-label="Sent in this folder" tabindex="-1" hidden>
@@ -212,6 +215,14 @@
         <div id="spbody" class="markdown"></div>
         <p id="spwhy" role="status" hidden></p></div>
       <div class="pwacts"><button id="spjump" type="button" title="Show where it was sent in this session's history">Jump to message</button><button id="spinsert" class="tochat" type="button" title="Paste it into the input, no Enter">Insert into chat</button></div>
+    </div>
+    <div id="linkspane" class="box" role="region" aria-label="Links in this session" tabindex="-1" hidden>
+      <div class="pwhead"><h2 class="pwtitle">Links</h2><button id="linkrefresh" class="icon" type="button" title="Read the links again" aria-label="Refresh the links"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></button><button id="linksclose" class="icon" type="button" title="Close" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+      <div class="pwbody"><div class="lkbar"><label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+          <input id="linkq" type="search" placeholder="Filter" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Filter links"></label>
+          <div id="linkby" class="seg" role="group" aria-label="Order"><button type="button" data-by="new" aria-pressed="true" title="The last named first">Newest</button><button type="button" data-by="count" aria-pressed="false" title="The most named first">Most named</button></div></div>
+        <p id="linkn" role="status"></p>
+        <ul id="linkrows"></ul></div>
     </div>
     <!-- Reminders (AC-91): up when their session's agent ends a turn, under the sent history. -->
     <button id="remindfab" type="button" hidden title="Reminders" aria-label="Reminders" aria-expanded="false" aria-controls="remindpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg><span id="remindfabn"></span></button>

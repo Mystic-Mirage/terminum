@@ -197,9 +197,9 @@ impl Control {
             }
             a.store(false, Ordering::Relaxed);
             cl.store(exit_reason.as_deref() == Some(""), Ordering::Relaxed);
-            // stdout ended before stderr was read through (ssh's last words come on it): its end
-            // first, so a reason is never "no answer" while the words are on their way
-            if exit_reason.as_deref().is_none_or(str::is_empty) {
+            // no %exit, stdout ended before stderr was read through (ssh's last words come on it):
+            // its end first, so a reason is never "no answer" while the words are on their way
+            if exit_reason.is_none() {
                 let _ = tokio::time::timeout(STDERR_WAIT, stderr_done).await;
             }
             let quiet = if via_ssh && !att.load(Ordering::Relaxed) { "ssh: no answer from the host" } else { "tmux exited" };

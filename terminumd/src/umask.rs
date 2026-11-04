@@ -17,9 +17,9 @@ pub fn private() {
 }
 
 /// The umask the process was started with, once `private` ran.
-fn started() -> Option<libc::mode_t> {
+fn started() -> Option<u32> {
     let m = STARTED.load(Ordering::Relaxed);
-    (m != UNSET).then_some(m as libc::mode_t)
+    (m != UNSET).then_some(m)
 }
 
 /// In a child before exec (`pre_exec`): the umask the process was started with. Only an atomic
@@ -27,15 +27,14 @@ fn started() -> Option<libc::mode_t> {
 pub fn restore() {
     if let Some(m) = started() {
         // SAFETY: umask has no preconditions
-        unsafe { libc::umask(m) };
+        unsafe { libc::umask(m as libc::mode_t) };
     }
 }
 
 /// The mode a new file (`dir` false) or folder of the user's gets: as its creation under the
 /// started umask would give it (022 when none was kept).
-#[allow(clippy::unnecessary_cast)] // mode_t is u16 on macOS, u32 on Linux
 pub fn user_mode(dir: bool) -> u32 {
-    (if dir { 0o777 } else { 0o666 }) & !(started().unwrap_or(0o022) as u32)
+    (if dir { 0o777 } else { 0o666 }) & !started().unwrap_or(0o022)
 }
 
 /// Tests: the started umask as if `private` had found `m` (the process's own is not changed).

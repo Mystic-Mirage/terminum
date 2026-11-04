@@ -53,6 +53,11 @@ impl Ctl {
             self.resumed.notify_one();
         }
     }
+
+    #[cfg(test)]
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
+    }
 }
 
 pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String, key: String, ctl: Arc<Ctl>) {

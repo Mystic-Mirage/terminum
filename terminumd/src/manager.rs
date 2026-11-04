@@ -273,7 +273,7 @@ pub async fn run(app: Shared) {
     tokio::spawn(stalls(app.clone()));
     loop {
         refresh(&app).await;
-        let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_active() { EVERY } else { Duration::from_secs(30) };
+        let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_in_sight() { EVERY } else { Duration::from_secs(30) };
         let wait = app.turns.due_in(Instant::now()).map_or(wait, |d| wait.min(d + Duration::from_millis(50)));   // a turn's end, settled
         tokio::select! {
             _ = app.dirty.notified() => tokio::time::sleep(Duration::from_millis(100)).await,

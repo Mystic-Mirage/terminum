@@ -23,6 +23,14 @@ export const within = async (name, fn, ms = 5000) => {
   const t0 = Date.now();
   try { await fn(ms); check(name, true, `${Date.now() - t0} ms`); } catch (e) { check(name, false, e.message.split("\n")[0]); }
 };
+/** In the page (page.evaluate's function): the browser's focus and visibility played, then `ev`
+    fired where the browser fires it (visibilitychange on the document); a test cannot take the
+    window's focus away. */
+export function playLook([focused, hidden, ev]) {
+  document.hasFocus = () => focused;
+  Object.defineProperty(document, "hidden", { get: () => hidden, configurable: true });
+  (ev === "visibilitychange" ? document : window).dispatchEvent(new Event(ev));
+}
 /** Nothing to stop: the web checks run against fakes in the browser (no server, no tmux). */
 export const cleanup = () => {};
 /** playwright-core, ui/'s devDependency (PLAYWRIGHT_CORE may name another copy). */

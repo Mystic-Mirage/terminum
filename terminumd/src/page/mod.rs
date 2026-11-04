@@ -143,9 +143,9 @@ impl Pages {
         self.all().len()
     }
 
-    /// Whether any page is looking (not hidden): the list is refreshed only then.
-    pub fn any_active(&self) -> bool {
-        self.all().iter().any(|p| !p.state.lock().paused)
+    /// Whether any page is in sight (not hidden, focused or not): the list is refreshed only then.
+    pub fn any_in_sight(&self) -> bool {
+        self.all().iter().any(|p| p.state.lock().look != client::Look::Hidden)
     }
 
     /// The same message to every page (encoded once).

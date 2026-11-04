@@ -34,8 +34,8 @@ pub struct State {
     pub shown: Option<Shown>,
     /// the view's grid at the chosen text size (`size`)
     pub view: Option<(u16, u16)>,
-    /// the page is hidden: no stream, no list refresh for it
-    pub paused: bool,
+    /// how the page is looked at (AC-13, AC-37)
+    pub look: Look,
     /// its terminal is hidden behind Files or View (a phone): no screens captured or sent for it
     pub screens_off: bool,
     /// when this page last made a window, session or split (one a second, AC-07)
@@ -44,6 +44,23 @@ pub struct State {
     pub queue: super::typing::Queue,
     /// the window this page last resized and when (a window at most once a second, AC-13)
     pub resized_at: Option<((String, String), Instant)>,
+}
+
+/// How a page is looked at: `On` is the active page (in sight and, on a computer, focused), which
+/// sizes its pane and reads its turns; `Away` is in sight out of focus (its stream and the list go
+/// on); `Hidden` has neither (AC-13, AC-37, AC-93).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Look {
+    #[default]
+    On,
+    Away,
+    Hidden,
+}
+
+impl State {
+    pub fn active(&self) -> bool {
+        self.look == Look::On
+    }
 }
 
 /// What the page sent cannot be done: say why, on the page and in the log.
@@ -106,7 +123,8 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "diag" => super::diag::show(app, page, &s("id")).await,
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
-            pause(page, true);
+            // a page before 0.24.32 sends no `hidden`: it was hidden
+            look(page, if msg["hidden"] == false { Look::Away } else { Look::Hidden });
             super::sizing::handover(app, page).await;
         }
         "resume" => resume(app, page),
@@ -138,20 +156,24 @@ pub async fn subscribe(app: &Shared, page: &Arc<Page>, key: &str) {
         return;
     };
     let ctl = Arc::new(Ctl::default());
+    let mut st = page.state.lock();
+    ctl.pause(st.look == Look::Hidden);            // a hidden page showing a pane (its reconnect) streams once in sight
     let task = tokio::spawn(super::stream::run(app.clone(), page.clone(), server.clone(), pane.clone(), key.to_string(), ctl.clone()));
-    page.state.lock().shown = Some(Shown { key: key.to_string(), server, pane, ctl, task });
-    if !page.state.lock().paused {
+    st.shown = Some(Shown { key: key.to_string(), server, pane, ctl, task });
+    let active = st.active();
+    drop(st);
+    if active {
         super::unread::read(app, key);
     }
 }
 
-fn pause(page: &Page, on: bool) {
+/// The page's new look: only a hidden page's stream pauses (AC-37).
+fn look(page: &Page, look: Look) {
     let mut st = page.state.lock();
-    st.paused = on;
-    if on
-        && let Some(s) = &st.shown {
-            s.ctl.pause(true);
-        }
+    st.look = look;
+    if let Some(s) = &st.shown {
+        s.ctl.pause(look == Look::Hidden);
+    }
 }
 
 /// The terminal hidden behind Files or View, or shown again: unlike `pause`, Files and the pane's
@@ -165,15 +187,10 @@ fn screens(page: &Page, on: bool) {
         }
 }
 
-/// Back from hidden: the stream goes on, sending only what changed meanwhile.
+/// The active page again: a stream it paused goes on, sending only what changed meanwhile.
 fn resume(app: &Shared, page: &Arc<Page>) {
-    pause(page, false);
-    let st = page.state.lock();
-    if let Some(s) = &st.shown {
-        s.ctl.pause(false);
-    }
-    let shown = st.shown.as_ref().map(|s| s.key.clone());
-    drop(st);
+    look(page, Look::On);
+    let shown = page.state.lock().shown.as_ref().map(|s| s.key.clone());
     if let Some(k) = shown {
         super::unread::read(app, &k);
     }
@@ -218,24 +235,50 @@ mod tests {
     use super::*;
     use crate::page::{trace, Pages};
 
+    /// A page that shows pane "k" of a server on `socket` (never started), and its stream's control.
+    fn shown(page: &Page, socket: &str) -> Arc<Ctl> {
+        let link = crate::tmux::server::Link::Local { tmux: "tmux".into(), socket: socket.into(), conf: "/dev/null".into() };
+        let server = Server::new("local", socket, link, Arc::new(tokio::sync::Notify::new()));
+        let ctl = Arc::new(Ctl::default());
+        page.state.lock().shown = Some(Shown { key: "k".into(), server, pane: "%1".into(), ctl: ctl.clone(), task: tokio::spawn(async {}) });
+        ctl
+    }
+
     #[tokio::test]
     async fn a_hidden_terminal_stops_screens_only_and_showing_it_wakes_the_stream() {
         let dir = std::env::temp_dir().join(format!("tm-screens-{}", std::process::id()));
         let (page, _rx) = Pages::default().add(true, trace::Recorder::new(dir)).unwrap();
         screens(&page, true);                                // nothing shown yet: only the state
         assert!(!page.state.lock().screens_off);
-        let link = crate::tmux::server::Link::Local { tmux: "tmux".into(), socket: "tm-test-screens".into(), conf: "/dev/null".into() };
-        let server = Server::new("local", "tm-test-screens", link, Arc::new(tokio::sync::Notify::new()));
-        let ctl = Arc::new(Ctl::default());
-        let task = tokio::spawn(async {});
-        page.state.lock().shown = Some(Shown { key: "k".into(), server, pane: "%1".into(), ctl: ctl.clone(), task });
+        let ctl = shown(&page, "tm-test-screens");
         let woken = |ctl: Arc<Ctl>| async move { tokio::time::timeout(Duration::from_millis(50), ctl.wake.notified()).await.is_ok() };
 
         screens(&page, false);
-        assert!(page.state.lock().screens_off && !page.state.lock().paused, "hidden behind Files: screens off, not paused");
+        assert!(page.state.lock().screens_off && page.state.lock().active(), "hidden behind Files: screens off, not paused");
         assert!(!woken(ctl.clone()).await, "hiding wakes nothing");
         screens(&page, true);
         assert!(!page.state.lock().screens_off);
         assert!(woken(ctl.clone()).await, "shown again: the stream is woken to send all anew");
+    }
+
+    #[tokio::test]
+    async fn a_page_out_of_focus_keeps_its_stream_and_only_a_hidden_one_pauses_it() {
+        let dir = std::env::temp_dir().join(format!("tm-pause-{}", std::process::id()));
+        let pages = Pages::default();
+        let (page, _rx) = pages.add(true, trace::Recorder::new(dir)).unwrap();
+        let ctl = shown(&page, "tm-test-pause");
+        let state = || {
+            let active = page.state.lock().active();
+            (active, ctl.is_paused(), pages.any_in_sight())
+        };
+
+        look(&page, Look::Away);
+        assert_eq!(state(), (false, false, true), "out of focus: not the active page, the stream and the list go on");
+        look(&page, Look::Hidden);
+        assert_eq!(state(), (false, true, false), "hidden: the stream pauses, the list slows");
+        look(&page, Look::Away);
+        assert_eq!(state(), (false, false, true), "in sight again, still out of focus: the stream is back");
+        look(&page, Look::On);
+        assert_eq!(state(), (true, false, true));
     }
 }

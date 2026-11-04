@@ -100,8 +100,8 @@ async fn resize(app: &Shared, page: &Arc<Page>, opening: bool) -> bool {
     if let Some(w) = wait {
         tokio::time::sleep(w).await;
     }
-    let (view, paused) = { let st = page.state.lock(); (st.view, st.paused) };
-    if paused {
+    let (view, inactive) = { let st = page.state.lock(); (st.view, !st.active()) };
+    if inactive {
         return false; // hidden while it waited: a hidden page sizes nothing
     }
     let (Some((server, pane, f)), Some(grid)) = (shown_window(page), view) else { return false };
@@ -125,7 +125,7 @@ async fn resize(app: &Shared, page: &Arc<Page>, opening: bool) -> bool {
     win.by = Some(page.id);
     {
         let mut g = app.sizes.0.lock();
-        if page.state.lock().paused {
+        if !page.state.lock().active() {
             return false; // hidden meanwhile (pause is set before handover): its handover saw nothing to give
         }
         g.insert(key, win);
@@ -146,7 +146,7 @@ async fn resize(app: &Shared, page: &Arc<Page>, opening: bool) -> bool {
             s.ctl.wake.notify_one();
         }
     }
-    if page.state.lock().paused {
+    if !page.state.lock().active() {
         Box::pin(handover(app, page)).await;   // hidden while it resized: its handover came first and saw nothing to give
     }
     true
@@ -164,18 +164,18 @@ fn shown_key(page: &Page) -> String {
 /// user's own tmux as any (AC-89).
 async fn claim(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
     let Some((server, _, f)) = shown_window(page) else { return false };
-    let (has_view, paused) = {
+    let (has_view, inactive) = {
         let st = page.state.lock();
-        (st.view.is_some(), st.paused)
+        (st.view.is_some(), !st.active())
     };
-    if !has_view || paused {
+    if !has_view || inactive {
         return false;
     }
     let key = (server.id(), f.window.clone());
     let by = app.sizes.0.lock().get(&key).and_then(|w| w.by);
     let mine = by == Some(page.id);
     // free: nobody sizes it, or the page that does no longer shows it or is hidden (a locked phone, a tab in the background)
-    let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && !v.state.lock().paused));
+    let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && v.state.lock().active()));
     let view = page.state.lock().view.map(|(c, r)| (c as usize, r as usize));
     if mine && view == Some((f.width, f.height)) {
         return false;                                         // it has this page's grid already: the once-a-second slot stays free
@@ -199,7 +199,7 @@ pub async fn handover(app: &Shared, page: &Arc<Page>) {
     if app.sizes.0.lock().get(&key).and_then(|w| w.by) != Some(page.id) {
         return;
     }
-    let others: Vec<_> = viewers(app, &server, &f.window).into_iter().filter(|v| v.id != page.id && !v.state.lock().paused).collect();
+    let others: Vec<_> = viewers(app, &server, &f.window).into_iter().filter(|v| v.id != page.id && v.state.lock().active()).collect();
     if others.is_empty() && users_pane(&server, &pane) {
         // awaited: the page's next message (its resume) comes after it
         if app.sizes.0.lock().remove(&key).is_some_and(|w| w.manual) {
@@ -249,7 +249,7 @@ pub async fn typed(app: &Shared, page: &Arc<Page>) {
 pub async fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
     let Some(f) = old.ctl.fields.lock().clone() else { return };
     let key = (old.server.id(), f.window.clone());
-    let others = viewers(app, &old.server, &f.window).into_iter().any(|p| p.id != page.id && !p.state.lock().paused);
+    let others = viewers(app, &old.server, &f.window).into_iter().any(|p| p.id != page.id && p.state.lock().active());
     let win = {
         let mut g = app.sizes.0.lock();
         let Some(w) = g.get_mut(&key) else { return };

@@ -145,7 +145,7 @@ pub fn restarted(app: &Shared, prefix: &str, old: Option<&str>, new: Option<&str
 pub fn ended(app: &Shared, keys: &[String]) {
     let looking: Vec<String> = app.pages.all().iter().filter_map(|p| {
         let st = p.state.lock();
-        st.shown.as_ref().filter(|_| !st.paused).map(|s| s.key.clone())
+        st.shown.as_ref().filter(|_| st.active()).map(|s| s.key.clone())
     }).collect();
     let mut unread = app.unread.lock();
     let more: Vec<&String> = keys.iter().filter(|k| !looking.contains(k) && unread.keys.insert((*k).clone())).collect();

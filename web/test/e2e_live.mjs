@@ -24,6 +24,7 @@ import { liveFolds } from "./e2e_livefolds.mjs";
 import { liveJitter } from "./e2e_livejitter.mjs";
 import { liveLinks } from "./e2e_livelinks.mjs";
 import { liveLimit } from "./e2e_livelimit.mjs";
+import { liveFocus } from "./e2e_livefocus.mjs";
 import { liveClip } from "./e2e_liveclip.mjs";
 import { livePrograms } from "./e2e_liveprogs.mjs";
 import { liveKeys } from "./e2e_livekeys.mjs";
@@ -183,6 +184,7 @@ async function wide(browser, name) {
   await liveFolds(page, { tmux, work: WORK });
   await liveLinks(page, { work: WORK });
   await liveLimit(page, { tmux, work: WORK });
+  await liveFocus(page, { tmux, work: WORK });
   await liveKeys(page, { tmux, work: WORK });
   await liveClip(page, { tmux, work: WORK });
   await livePrograms(page, { tmux, work: WORK });

@@ -78,7 +78,7 @@ const conn = connection({ parse: (data) => trace.parse(data), onMessage: (m) => 
   busy: () => [$("files"), ...$("filewin").querySelectorAll("iframe")].some((f) => { try { return f.contentWindow?.fbBusy?.(); } catch { return false; } }),
   onOpen: (ws) => {
     trace.connected(send, ws);
-    active = true;                                 // a new connection streams until told otherwise:
+    look = "on";                                   // a new connection streams until told otherwise:
     syncActive();                                  // a hidden page says so before it shows a pane (AC-93: it reads nothing)
     if ($("term").hidden) send({ t: "screens", on: false });   // a terminal behind Files or View gets no frames (AC-02)
     if (st.sid) select(st.sid, true);
@@ -236,17 +236,19 @@ addEventListener("focus", () => { if (termHadKeys) focusTerminal(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden && termHadKeys) focusTerminal(); });
 for (const b of [document.querySelector('button[data-view="term"]'), $("backterm"), $("fileclose")]) b.addEventListener("click", () => focusTerminal());
 
-// A hidden page (another app, a locked phone) costs the Mac nothing: its stream pauses, and the
-// panes' captures with it. On a computer so does a page out of focus (the user works in another
-// window); focus in the Files frame is still this page's.
-let active = true;                             // as terminumd takes a page that connects
+// A hidden page (another tab, a minimized window, a locked phone) costs the Mac nothing: its stream
+// pauses, and the panes' captures with it. On a computer a page out of focus (the user types in
+// another app beside it) keeps its stream but is not the active page: it sizes nothing and reads no
+// turn (AC-13, AC-93); focus in the Files frame is still this page's.
+let look = "on";                               // on, away or hidden; as terminumd takes a page that connects
 let parentActive = true;                       // embed mode: its pane's page is looked at
 let focusAsked = false;                        // embed mode: its pane's page gave it the keys
 function syncActive() {
-  const now = !document.hidden && (!computer.matches || document.hasFocus() || (!!embedded && parentActive));
-  if (now !== active) send({ t: now ? "resume" : "pause" });
-  active = now;
-  quick.active(now);
+  const now = document.hidden ? "hidden"
+    : !computer.matches || document.hasFocus() || (!!embedded && parentActive) ? "on" : "away";
+  if (now !== look) send(now === "on" ? { t: "resume" } : { t: "pause", hidden: now === "hidden" });
+  look = now;
+  quick.active(now === "on");
 }
 addEventListener("message", (e) => {
   if (e.origin !== location.origin) return;

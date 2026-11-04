@@ -2,9 +2,9 @@
 // AC-52 / AC-04 / AC-05 / AC-39 / AC-07 checks of the web app that e2e_app.mjs runs on its page and
 // fake bridge, after its dropped files: a coding agent's input box and its footer behind a button on a
 // phone, empty rows below the screen, a full-screen program wider than the view, the arrows on the
-// alternate screen, a tab's other panes as children (and their Clone), and a page out of focus.
+// alternate screen, a tab's other panes as children (and their Clone), and a page out of focus or hidden.
 
-import { check } from "./check.mjs";
+import { check, playLook } from "./check.mjs";
 
 /** ctx: e2e_app.mjs's page, the messages it sent, tell (a message from the bridge), $eval, and its
  *  layout, item and run builders. */
@@ -179,16 +179,19 @@ export async function webAppScreen({ page, sent, tell, $eval, layout, item, run 
   check("AC-07 web app: a pane under its window has no Clone, the pointer over it shows the window's none; over the window's row its Clone is on that row's middle",
     overKid?.shown === "0" && overKid.kids === 0 && overOwn?.shown !== "0" && Math.abs(overOwn.mid) <= 1, JSON.stringify({ overKid, overOwn }));
 
-  // on a computer a page out of focus pauses its stream; the Files frame's focus is the page's
-  const flow = async (focused, ev) => {
+  // on a computer a page out of focus is not the active page but keeps its stream; only a hidden
+  // one pauses it; the Files frame's focus is the page's
+  const flow = async (focused, ev, hidden = false) => {
     const before = sent.length;
-    await $eval(([f, e]) => { document.hasFocus = () => f; dispatchEvent(new Event(e)); }, [focused, ev]);
+    await $eval(playLook, [focused, hidden, ev]);
     await $eval(() => new Promise((r) => setTimeout(r, 0)));   // after the page's own deferred look (its blur waits a turn)
     await page.waitForTimeout(50);
-    return sent.slice(before).filter((m) => m.t === "pause" || m.t === "resume").map((m) => m.t).join();
+    return sent.slice(before).filter((m) => m.t === "pause" || m.t === "resume").map((m) => m.t === "pause" ? (m.hidden ? "hidden" : "away") : m.t).join();
   };
   const away = await flow(false, "blur"), inFrame = await flow(true, "blur"), still = await flow(true, "focus");
-  const again = await flow(false, "blur"), returned = await flow(true, "focus");
-  check("AC-52 web app: on a computer a page out of focus pauses its stream and resumes in focus; focus in the Files frame does not pause",
-    away === "pause" && inFrame === "resume" && still === "" && again === "pause" && returned === "resume", JSON.stringify({ away, inFrame, still, again, returned }));
+  const again = await flow(false, "blur"), hid = await flow(false, "visibilitychange", true), back = await flow(false, "visibilitychange");
+  const returned = await flow(true, "focus");
+  check("AC-37 web app: on a computer a page out of focus says it is away (its stream goes on), a hidden one pauses it, focus resumes; focus in the Files frame is the page's",
+    away === "away" && inFrame === "resume" && still === "" && again === "away" && hid === "hidden" && back === "away" && returned === "resume",
+    JSON.stringify({ away, inFrame, still, again, hid, back, returned }));
 }

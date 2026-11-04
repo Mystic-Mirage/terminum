@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.24.31 |
-| Date | 2026-11-03 |
+| Version | 0.24.32 |
+| Date | 2026-11-04 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.32 | 2026-11-04 | Owner: a browser window in sight stopped drawing the terminal while the user typed in another app. A page out of focus sends "pause" with `hidden: false`: terminumd keeps its stream and refreshes the list for it as for a page in front, and it still gives up sizing (AC-13) and does not read a finished turn (AC-93); only a hidden page (`hidden: true`, or a "pause" without it from an older page) stops its stream, also one it opens while hidden (a reconnect): the stream starts once the page is in sight (terminum-terminal.md AC-37). |
 | 0.24.31 | 2026-11-03 | Found in issue #8's review: a group's copied attach command, `tmux -L terminum attach -t =main`, failed in zsh (macOS's shell; "main not found"), and a session named as a program (`ls`) attached to its path: zsh reads a word starting with `=` as a program's path. The target is quoted now, `'=main'`, also inside a host's command (AC-07). |
 | 0.24.30 | 2026-11-03 | Owner: a session's menu (a right click or a long press on its row) has Close Session as its first item, set apart from the rest by a line; it was the last. The focus a keyboard opening puts on the menu stays on the first item after it (Clone), so Enter never asks to close a session by chance (AC-07). |
 | 0.24.29 | 2026-11-03 | Owner: a site went down after a deploy from a terminal of terminum: the new files were 0600 and the service in the container (another uid) could not read them; again after a fix in the project alone. terminumd sets umask 077 for its own files, and every process it started inherited it: the tmux server, so every shell, agent and build in it (`umask` said 0077 even in `env -i bash --norc`), and the files and folders Files made. Now terminumd keeps the umask it was started with and gives it back to the tmux it starts (before exec) and to Files' new entries (set on the open entry); in direct mode the CLI starts terminumd with the caller's umask, not its own 077. A tmux server already running keeps 077 until it restarts. Pragmatic review applied: new folders set through a descriptor opened without following links, a folder that was there keeps its mode (tested), the test reads the shell's answer as a number (zsh says 027) (AC-09). |
@@ -950,7 +951,7 @@ Scenario: AC-93 happy path — a finished turn nobody saw
   Then %3's row is hatched over its whole box: pale see-through diagonal lines one whole pixel wide (none blurred over two) in the color of the session's name, its text and the shown row's fill readable through them, hover or not; "Unread: its agent finished" for a screen reader, on every page, while no page in sight showed %3 at that moment
   When a page in sight shows %3 (opened, or a hidden page showing it comes back)
   Then the mark goes on every page; a turn that ends while a page in sight shows it leaves none
-  And "in sight" is as for streaming (AC-13): a page in front and, on a computer, focused; a window on another display while the user types elsewhere is not looking, so a turn that ends there is unread
+  And "in sight" is as for sizing (AC-13): a page in front and, on a computer, focused (one out of focus still streams); a window on another display while the user types elsewhere is not looking, so a turn that ends there is unread
   And the marks are kept in state/unread.json with each tmux server's identity (`@terminum-id`): a restart of terminumd (an upgrade) keeps them; a pane gone takes its mark with it; a tmux server started anew (a reboot, a killed tmux; its pane ids start again at %0) keeps the marks of the panes its restore makes again (AC-15), each on the pane made in its place, and loses the others
   And a row that is busy again (working, waiting, its subagents running) shows no mark while it is: its work goes on
 
@@ -1545,3 +1546,4 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] 0.24.29 (2026-11-03) — AC-09 `cargo test umask` (027 kept as started: a new file, a nested folder each 0750, a drop and a new file saved 0640, a folder that was there and a file saved over keep their modes; the tmux `plain()` starts gives its shell 027; both fail on the old code: 0600 and 0077); `scripts/e2e_install.sh` PASS (direct mode); `scripts/e2e_remote.py` 37/37. On the delivered tree (uncommitted, on 4659553): `make check` (Rust 733 + 1, Python 69, Panel unit 52, Page unit 175, clippy `-D warnings`, `ui/test/e2e_panel.mjs` 171/171, `web/test/e2e_live.mjs` 233/233, `web/test/e2e_all.mjs` 1707/1707 in Chromium and WebKit, `scripts/security_check.sh`). Not verified: the user's running tmux server keeps 077 until it restarts, not restarted here.
 - [x] 0.24.30 (2026-11-03) — AC-07 `web/test/e2e_projects.mjs` webProjects in Chromium and WebKit at both sizes: the row's menu is Close Session, Clone, … (a computer's right click and a phone's long press), its focus on Clone; the finger's lift, its click on the row and on Close Session under it, asks nothing. Looked at in Chromium and WebKit: Close Session red first, a line under it. On the delivered tree (uncommitted, on 4659553): `make check` (Rust 733 + 1, Python 69, Panel unit 52, Page unit 175, clippy `-D warnings`, `ui/test/e2e_panel.mjs` 171/171, `web/test/e2e_live.mjs` 233/233, `web/test/e2e_all.mjs` 1707/1707 in Chromium and WebKit, `scripts/security_check.sh`).
 - [x] 0.24.31 (2026-11-03) — AC-07 `cargo test tmux::layout` (a local group's command `tmux -L terminum attach -t '=main'`, a host's `ssh -t -p 2222 -- alex@devbox.example "tmux attach -t '=terminum'"`; zsh prints the quoted target as written and refuses a bare `=word` of no program), `scripts/e2e_attach.py` (a user's own tmux: `attach -t '=work'`), `scripts/e2e_remote.py`; `make check`.
+- [x] 0.24.32 (2026-11-04) — AC-13, AC-93 `cargo test page::client` ("pause" with `hidden: false` keeps the stream and the list's refresh and makes the page not the active one; `hidden: true` stops both; one look, `On`, `Away` or `Hidden`, replaces the page's `paused`; a pane opened while hidden starts paused; sizing and unread take only `On` as before); the page's side and a real terminumd: terminum-terminal.md 0.6.32.

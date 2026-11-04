@@ -5,7 +5,7 @@
 // and Ask with its text; the same write printed with no release before it shows nothing.
 import fs from "node:fs";
 import path from "node:path";
-import { check, within } from "./check.mjs";
+import { check, shownPane, within } from "./check.mjs";
 
 // the stand-in: the alternate screen, every mouse event (SGR); on a left release it writes its
 // selection as OSC 52, on "x" it writes one unasked, on "q" it ends
@@ -29,9 +29,7 @@ finally:
 export async function liveClip(page, { tmux, work }) {
   const file = path.join(work, "clip.py");
   fs.writeFileSync(file, PROGRAM);
-  // the pane shown, where the keys go (another pane may be in the same folder: a split, the other browser's)
-  const pane = await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id?.split(":").pop())
-    ?? tmux("list-panes", "-a", "-F", "#{pane_id} #{pane_current_path}").split("\n").map((l) => l.split(" ")).find((p) => p[1] === work)?.[0];
+  const pane = await shownPane(page, { tmux, work });
   tmux("send-keys", "-t", pane, `python3 ${file}`, "Enter");
   await within("AC-06 the stand-in has the alternate screen and the mouse", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("selected words here"), null, { timeout: 8000 }));
   await page.waitForTimeout(300);

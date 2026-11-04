@@ -23,6 +23,8 @@ export const within = async (name, fn, ms = 5000) => {
   const t0 = Date.now();
   try { await fn(ms); check(name, true, `${Date.now() - t0} ms`); } catch (e) { check(name, false, e.message.split("\n")[0]); }
 };
+/** Whether `ok()` comes true within `ms`. */
+export const until = async (ok, ms = 8000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 150))) if (await ok()) return true; return false; };
 /** In the page (page.evaluate's function): the browser's focus and visibility played, then `ev`
     fired where the browser fires it (visibilitychange on the document); a test cannot take the
     window's focus away. */
@@ -31,6 +33,10 @@ export function playLook([focused, hidden, ev]) {
   Object.defineProperty(document, "hidden", { get: () => hidden, configurable: true });
   (ev === "visibilitychange" ? document : window).dispatchEvent(new Event(ev));
 }
+/** The pane the page shows, where the keys go (another pane may be in the same folder: a split, the
+ *  other browser's); none shown: the first in folder `work`. */
+export const shownPane = async (page, { tmux, work }) => await page.evaluate(() => document.querySelector('#sessions .item[aria-current="true"]')?.dataset.id?.split(":").pop())
+    ?? tmux("list-panes", "-a", "-F", "#{pane_id} #{pane_current_path}").split("\n").map((l) => l.split(" ")).find((p) => p[1] === work)?.[0];
 /** Nothing to stop: the web checks run against fakes in the browser (no server, no tmux). */
 export const cleanup = () => {};
 /** playwright-core, ui/'s devDependency (PLAYWRIGHT_CORE may name another copy). */

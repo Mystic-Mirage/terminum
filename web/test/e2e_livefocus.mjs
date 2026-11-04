@@ -3,10 +3,10 @@
 // (the user types in another app beside it) keeps drawing the pane's output; a hidden page gets
 // none until it is in sight again. The page's own focus and visibility handlers send what it says;
 // the browser's focus and visibility are played, as a test cannot take the window's focus away.
-import { check, playLook, within } from "./check.mjs";
+import { check, playLook, shownPane, within } from "./check.mjs";
 
 export async function liveFocus(page, { tmux, work }) {
-  const shown = tmux("list-panes", "-a", "-F", "#{pane_id} #{pane_current_path}").split("\n").map((l) => l.split(" ")).find((p) => p[1] === work)?.[0];
+  const shown = await shownPane(page, { tmux, work });
   const pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", "focus", "-c", work);
   await page.waitForSelector(`#sessions .item[data-id$=":${pane}"]`, { timeout: 5000 });
   await page.click(`#sessions .item[data-id$=":${pane}"]`);

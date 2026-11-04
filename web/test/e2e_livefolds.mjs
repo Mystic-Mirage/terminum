@@ -4,12 +4,10 @@
 // reads the screen after it), not only once that scrolled off too.
 import fs from "node:fs";
 import path from "node:path";
-import { check } from "./check.mjs";
+import { check, shownPane } from "./check.mjs";
 
 export async function liveFolds(page, { tmux, work }) {
-  // the pane shown, where the keys go (another pane may be in the same folder: a split, the other browser's)
-  const pane = await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id?.split(":").pop())
-    ?? tmux("list-panes", "-a", "-F", "#{pane_id} #{pane_current_path}").split("\n").map((l) => l.split(" ")).find((p) => p[1] === work)?.[0];
+  const pane = await shownPane(page, { tmux, work });
   const rows = Number(tmux("display", "-p", "-t", pane, "#{pane_height}"));
   // a tool's call and output, blank rows, then the next call whose output fills the screen but a few
   // rows (the shell's prompt takes some): the screen's top falls among the blank rows

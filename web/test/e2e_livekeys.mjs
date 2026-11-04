@@ -6,12 +6,12 @@
 // in reads of at most 800 characters, which Claude Code would fold as a paste.
 import fs from "node:fs";
 import path from "node:path";
-import { check } from "./check.mjs";
+import { check, shownPane } from "./check.mjs";
 
 const KEYS = 1000;
 
 export async function liveKeys(page, { tmux, work }) {
-  const shown = tmux("list-panes", "-a", "-F", "#{pane_id} #{pane_current_path}").split("\n").map((l) => l.split(" ")).find((p) => p[1] === work)?.[0];
+  const shown = await shownPane(page, { tmux, work });
   let r = await typedInto(page, { tmux, work }, "\x1b[D".repeat(KEYS));
   check("AC-03 a long run of keys reaches a busy program whole: no read ends inside a key (\"[D\" typed)", !!r.id && r.total === KEYS * 3 && r.cut === 0, JSON.stringify(r));
   const quote = Array.from({ length: 40 }, (_, i) => `> line ${i} of the quote Ask types, as long as an agent's answer`).join("\n");

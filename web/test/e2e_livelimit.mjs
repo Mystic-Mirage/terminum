@@ -5,10 +5,10 @@
 // so an agent's answer showed twice.
 import fs from "node:fs";
 import path from "node:path";
-import { check, within } from "./check.mjs";
+import { check, shownPane, within } from "./check.mjs";
 
 export async function liveLimit(page, { tmux, work }) {
-  const shown = tmux("list-panes", "-a", "-F", "#{pane_id} #{pane_current_path}").split("\n").map((l) => l.split(" ")).find((p) => p[1] === work)?.[0];
+  const shown = await shownPane(page, { tmux, work });
   const limit = tmux("show", "-gv", "history-limit");
   // a tenth (100) past the screen's rows, as at the default 12000; tmux applies it to panes made from now on
   tmux("set", "-g", "history-limit", "1000");

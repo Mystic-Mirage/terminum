@@ -16,13 +16,12 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { check } from "./check.mjs";
+import { check, until } from "./check.mjs";
 
 const found = (cmd) => { try { return execFileSync("sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" }).trim(); } catch { return ""; } };
 const skip = (what, why) => console.log(`SKIP real program ${what}: ${why}`);
 const text = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 const waitText = (page, t, ms = 15000) => page.waitForFunction((t) => document.getElementById("screen").innerText.includes(t), t, { timeout: ms }).then(() => true, () => false);
-const until = async (ok, ms = 8000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 150))) if (await ok()) return true; return false; };
 const SHELLS = /^-?(zsh|bash|sh|fish|dash)$/;
 // the header's full-screen mark is in sight (AC-05), and beside it a coding agent's orange ! (turn its full screen off)
 const inSight = (page, id) => page.evaluate((id) => document.getElementById(id).getBoundingClientRect().width > 0, id);

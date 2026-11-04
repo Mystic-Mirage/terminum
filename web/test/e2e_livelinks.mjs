@@ -2,8 +2,8 @@
 // AC-35 against a real private terminumd and tmux (e2e_live.mjs): a link a program printed with a
 // text of its own (OSC 8, as Claude Code prints "⧉ Attack and Compromise Detection — MR !318")
 // reaches the page with its address, is underlined and opens that address with ⌘ (Ctrl elsewhere);
-// a javascript: one stays plain text. AC-102: Links lists a Claude Code session's addresses from
-// its transcript.
+// a javascript: one stays plain text. AC-102: Links lists a Claude Code or Codex session's
+// addresses from its transcript.
 import fs from "node:fs";
 import path from "node:path";
 import { check } from "./check.mjs";
@@ -11,7 +11,7 @@ import { check } from "./check.mjs";
 const MR = "https://git.example/a/-/merge_requests/318";
 const LONG = Array.from({ length: 40 }, (_, i) => `part${i}`).join(" ");   // wider than the pane: tmux wraps it
 
-export async function liveLinks(page, { work, onSocket, socket, claude }) {
+export async function liveLinks(page, { work, onSocket, socket, claude, codex }) {
   const file = path.join(work, "links.txt");
   fs.writeFileSync(file, `see \x1b]8;id=a1;${MR}\x1b\\Attack and Compromise Detection — MR !318\x1b]8;;\x1b\\ and \x1b]8;;javascript:alert(1)\x1b\\evil\x1b]8;;\x1b\\ end\n\x1b]8;;${MR}\x1b\\${LONG}\x1b]8;;\x1b\\ after\n`);
   await page.evaluate(() => { window.opened = []; window.open = (u) => { window.opened.push(u); return null; }; });
@@ -43,6 +43,7 @@ export async function liveLinks(page, { work, onSocket, socket, claude }) {
   check("AC-35 an OSC 8 link wider than the pane is a link on its first row; the text after it is not",
     halves.length === 2 && LONG.startsWith(halves[1]) && halves[1].length > 20 && !halves.some((t) => t.includes("after")), JSON.stringify(halves));
   await liveLinkList(page, { work, onSocket, socket, claude });
+  await liveCodex(page, { work, onSocket, socket, codex });
   fs.rmSync(file, { force: true });
 }
 
@@ -58,7 +59,7 @@ async function liveLinkList(page, { work, onSocket, socket, claude }) {
   const pane = fs.readFileSync(where, "utf8").trim();
   await page.click("#linksfab");
   const none = await page.waitForFunction(() => /Claude Code/.test(document.getElementById("linkn").textContent) && document.getElementById("linkn").textContent, null, { timeout: 8000 }).then((h) => h.jsonValue(), () => null);
-  check("AC-102 a pane with no Claude Code session says so", none === "No Claude Code session runs in this pane.", JSON.stringify(none));
+  check("AC-102 a pane with no Claude Code or Codex session says so", none === "No Claude Code or Codex session runs in this pane.", JSON.stringify(none));
   await page.click("#linksfab");
   await page.waitForSelector("#linkspane", { state: "hidden", timeout: 2000 }).catch(() => {});
   fs.mkdirSync(path.join(claude, "projects/-work"), { recursive: true });
@@ -134,11 +135,43 @@ async function liveProcessRecord(page, { work, claude }) {
       JSON.stringify(first?.hrefs) === JSON.stringify([PROC]), JSON.stringify(first));
     process.kill(pid);
     for (let i = 0; i < 50 && alive(); i++) await new Promise((r) => setTimeout(r, 100));
-    const ended = await rows("No Claude Code session runs in this pane.");
-    check("AC-102 its process ended, the session found before is not kept", ended?.n === "No Claude Code session runs in this pane.", JSON.stringify(ended));
+    const ended = await rows("No Claude Code or Codex session runs in this pane.");
+    check("AC-102 its process ended, the session found before is not kept", ended?.n === "No Claude Code or Codex session runs in this pane.", JSON.stringify(ended));
   } finally {
     if (alive()) process.kill(pid);
     fs.rmSync(got, { force: true });
     fs.rmSync(path.join(claude, `sessions/${pid}.json`), { force: true });
+  }
+}
+
+/** A Codex session the pane's hooks named: its transcript (CODEX_HOME, this run's own,
+ *  sessions/YYYY/MM/DD/rollout-*-<id>.jsonl), the user's and the agent's messages alone. */
+async function liveCodex(page, { work, onSocket, socket, codex }) {
+  const SAID = "https://codex.example/said", TOOL = "https://codex.example/tool", ID = "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b";
+  const where = path.join(work, "pane.txt");
+  await page.click("#term");
+  await page.keyboard.type(`clear; echo $TMUX_PANE > ${where}`);
+  await page.keyboard.press("Enter");
+  for (let i = 0; i < 50 && !fs.existsSync(where); i++) await new Promise((r) => setTimeout(r, 100));
+  const pane = fs.readFileSync(where, "utf8").trim();
+  const day = path.join(codex, "sessions/2026/11/04");
+  fs.mkdirSync(day, { recursive: true });
+  const line = (type, payload) => JSON.stringify({ timestamp: new Date().toISOString(), type, payload }) + "\n";
+  fs.writeFileSync(path.join(day, `rollout-2026-11-04T09-30-00-${ID}.jsonl`),
+    line("event_msg", { type: "user_message", message: `see ${SAID}` }) + line("response_item", { type: "function_call_output", output: TOOL }));
+  const ev = (event) => onSocket("POST", "/hook", { agent: "codex", socket, pane, event, session: ID, turn: "t1", cwd: work });
+  await ev("UserPromptSubmit");
+  try {
+    await page.click("#linksfab");
+    const got = await page.waitForFunction((s) => {
+      const hrefs = [...document.querySelectorAll("#linkrows a.lk")].map((a) => a.getAttribute("href"));
+      return hrefs.includes(s) ? hrefs : null;
+    }, SAID, { timeout: 8000 }).then((h) => h.jsonValue(), () => page.evaluate(() => document.getElementById("linkn").textContent));
+    check("AC-102 a Codex pane's links are its transcript's messages, not a tool's output", JSON.stringify(got) === JSON.stringify([SAID]), JSON.stringify(got));
+    await page.click("#linksfab");
+    await page.waitForSelector("#linkspane", { state: "hidden", timeout: 2000 }).catch(() => {});
+  } finally {
+    await ev("SessionEnd");
+    fs.rmSync(where, { force: true });
   }
 }

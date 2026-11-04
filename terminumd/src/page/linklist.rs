@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The shown pane's links (AC-102): every http or https address its Claude Code session's
+//! The shown pane's links (AC-102): every http or https address its Claude Code or Codex session's
 //! transcript names (agentlinks.rs: a full-screen agent leaves tmux no history), each once, the
 //! newest first; sentence punctuation after an address is not part of it.
 
@@ -40,6 +40,9 @@ pub struct Found {
     seq: usize,
     /// The time of what is read now: given to the addresses seen in it.
     pub when: Option<String>,
+    /// The last Codex message's form (its line's type) and text: the same text next in the other
+    /// form is not counted again.
+    pub twin: Option<(String, String)>,
 }
 
 impl Found {
@@ -149,25 +152,28 @@ pub fn start(app: &Shared, page: &Arc<Page>, msg: &Value) {
         page.send_json(&refused(&r, "No session is shown."));
         return;
     };
-    // a Claude Code session of this machine: its transcript is here (a host's is on the host)
+    // a Claude Code or Codex session of this machine: its transcript is here (a host's is on the host)
     let local = key.starts_with("tmux:local:");
-    let hooked = app.hooks.session(&key).filter(|(a, _)| *a == "claude" && local).map(|(_, s)| s);
+    let hooked = app.hooks.session(&key).filter(|(a, _)| matches!(*a, "claude" | "codex") && local);
     let page = page.clone();
     tokio::spawn(async move {
         let t0 = std::time::Instant::now();
         let dir = super::agentlinks::claude_dir();
         let session = match (hooked, local) {
             (Some(s), _) => Ok(Some(s)),
-            (None, true) => process_session(&key, &server, &pane, &dir).await,
+            (None, true) => process_session(&key, &server, &pane, &dir).await.map(|s| s.map(|s| ("claude", s))),
             (None, false) => Ok(None),
         };
         let read = match session {
             Err(e) => Err(e),
-            Ok(None) => Err("No Claude Code session runs in this pane.".to_string()),
-            Ok(Some(session)) => tokio::task::spawn_blocking(move || {
-                let path = super::agentlinks::transcript(&dir, &session)
-                    .ok_or_else(|| "Claude Code's transcript could not be read: not found.".to_string())?;
-                super::agentlinks::read(&path, by_count).map_err(|e| format!("Claude Code's transcript could not be read: {e}."))
+            Ok(None) => Err("No Claude Code or Codex session runs in this pane.".to_string()),
+            Ok(Some((agent, session))) => tokio::task::spawn_blocking(move || {
+                let (name, path) = match agent {
+                    "codex" => ("Codex", super::agentlinks::codex_transcript(&super::agentlinks::codex_dir(), &session)),
+                    _ => ("Claude Code", super::agentlinks::transcript(&dir, &session)),
+                };
+                let path = path.ok_or_else(|| format!("{name}'s transcript could not be read: not found."))?;
+                super::agentlinks::read(&path, by_count).map_err(|e| format!("{name}'s transcript could not be read: {e}."))
             }).await.unwrap_or_else(|e| Err(e.to_string())),
         };
         match read {

@@ -487,7 +487,7 @@ Scenario: AC-95 edge — a name taken, a folder, a read-only place
 Scenario: AC-95 failure — too large, refused, gone
   When a file is over 100 MB, the host does not answer or terminumd refuses it
   Then the toast names the file and terminumd's reason; the files before it stay, those after it are not sent
-  And with two uploads running a third is refused before its body is read: 429 "Two uploads are running already"
+  And a third upload while two run is refused with a 429 (`terminum-terminal.md` AC-36)
 ```
 
 ### AC-68 — Expand and collapse all [SHOULD / P1]
@@ -752,7 +752,7 @@ A tab's `view` is `auto`, `rendered` or `source`. `prefs.hidden` true shows dot 
 
 ### Security
 
-Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; `Referrer-Policy: no-referrer`; CSP `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' ws://{host} wss://{host}; frame-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`; `/api/raw` answers with `default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox`; no address ever carries the sign-in; a `blob:` has the page's origin, hence what may be shown from one (AC-64, AC-67).
+Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; CSP `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' ws://{host} wss://{host}; frame-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`; `/api/raw` answers with `default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox`; a `blob:` has the page's origin, hence what may be shown from one (AC-64, AC-67).
 
 Denied request:
 
@@ -767,7 +767,7 @@ curl -s -X POST -H "X-TM-Session: …" -H "Content-Type: application/json" -d '{
 
 ### Logging and observability
 
-terminumd logs to stderr through `tracing` (level by `TM_LOG`, default `info`); no metrics are exported. Events: `ls.done {path, entries, ms}`, `ls.error {path, error}`, `save {path}`, `save.conflict {path}`, `mkdir`, `touch`, `upload {path}`, `rename {from, to}`, `trash {count, failed}`, `workspace.reset {reason, backup}`, `workspace.write_failed {path}`, `ws.lagged {missed}`.
+Logs as `terminum.md` §9 Logging and observability; no metrics are exported. Events: `ls.done {path, entries, ms}`, `ls.error {path, error}`, `save {path}`, `save.conflict {path}`, `mkdir`, `touch`, `upload {path}`, `rename {from, to}`, `trash {count, failed}`, `workspace.reset {reason, backup}`, `workspace.write_failed {path}`, `ws.lagged {missed}`.
 
 ## 10. Delivery stages
 

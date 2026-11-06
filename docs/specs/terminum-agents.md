@@ -166,7 +166,7 @@ Scenario: AC-93 happy path — a finished turn nobody saw
   Then %3's row is hatched over its whole box: pale see-through diagonal lines one whole pixel wide (none blurred over two) in the color of the session's name, its text and the shown row's fill readable through them, hover or not; "Unread: its agent finished" for a screen reader, on every page, while no page in sight showed %3 at that moment
   When a page in sight shows %3 (opened, or a hidden page showing it comes back)
   Then the mark goes on every page; a turn that ends while a page in sight shows it leaves none
-  And "in sight" is as for sizing (AC-13): a page in front and, on a computer, focused (one out of focus still streams); a window on another display while the user types elsewhere is not looking, so a turn that ends there is unread
+  And "in sight" is as for sizing (AC-13): a page in front and, on a computer, focused (its stream: terminum.md AC-02); a window on another display while the user types elsewhere is not looking, so a turn that ends there is unread
   And the marks are kept in state/unread.json with each tmux server's identity (`@terminum-id`): a restart of terminumd (an upgrade) keeps them; a pane gone takes its mark with it; a tmux server started anew (a reboot, a killed tmux; its pane ids start again at %0) keeps the marks of the panes its restore makes again (AC-15), each on the pane made in its place, and loses the others
   And a row that is busy again (working, waiting, its subagents running) shows no mark while it is: its work goes on
 
@@ -407,7 +407,7 @@ Limits a scenario states are not repeated.
 
 ### Security
 
-- Hooks: `terminum hook` sends only to terminumd's private socket (0600 in a 0700 folder: only the user's own processes reach it), or a Mac's link on a host. A process of the user can post a made-up event, which can only change a pane's shown state, its tool and wait texts and add a sent entry for a pane terminumd lists; nothing from a hook runs or reaches tmux.
+- Hooks: `terminum hook` sends only to terminumd's private socket (0600 in a 0700 folder: only the user's own processes reach it), or a Mac's link on a host. What a made-up event can do: `SECURITY.md`.
 - The installer writes only terminum's plugin folder, Codex's `hooks.json` and `config.toml` and its own marker.
 - Plan items, the current step, titles and records are model-written text: cleaned and shown as AC-97 and AC-98 say, never run. `SECURITY.md` has the threat.
 

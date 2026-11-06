@@ -1,6 +1,6 @@
 # terminum — Specification (remote hosts)
 
-Sibling of `terminum.md` (the core). This spec holds remote hosts: their tmux sessions over ssh, their files through an agent, helpers that follow the Mac's build, and the builds and releases. Cases are AC-81…AC-87 and AC-99. A case of another spec is written `AC nn` (a space); `AC-nn` is this spec's own.
+Sibling of `terminum.md` (the core). This spec holds remote hosts: their tmux sessions over ssh, their files through an agent, helpers that follow the Mac's build, and the builds and releases. Cases are AC-81…AC-87 and AC-99.
 
 ## 0. Metadata
 
@@ -190,13 +190,13 @@ Scenario: AC-84 failure — the update fails
 Scenario: AC-85 happy path — an image into a remote pane
   Given the page shows a devbox pane whose files are enabled
   When the user pastes an image
-  Then terminumd writes it through the agent to "~/.terminum/tmp/<utc>-<8 hex>.png" on devbox (0700, 0600) and the page pastes that path quoted, no Enter (AC-36)
+  Then terminumd writes it on devbox through the agent, and the page pastes its path: place, name, modes and quoting as `terminum-terminal.md` AC-36
 
 Scenario: AC-85 failure — not enabled or too slow
-  When devbox's files are not enabled
+  When devbox's files are not enabled (it has no helper)
   Then nothing is typed and the toast says "Enable the files of devbox in Files to paste there"
-  When the agent does not take the bytes within 30 s plus 1 s per 256 KB
-  Then nothing is typed, the toast says why, and no partial file is left under the name
+  When ssh fails, or the agent does not take the bytes within 30 s plus 1 s per 256 KB
+  Then nothing is typed, the toast shows ssh's message or says why, and no partial file is left under the name
 ```
 
 ### AC-86 — Builds and releases [SHOULD / P1]
@@ -209,7 +209,7 @@ Scenario: AC-86 happy path — build on the Mac
 
 Scenario: AC-86 security — signed releases, a public repository
   When the maintainer runs "make release TAG=vX.Y.Z" (only on their request, CLAUDE.md §10)
-  Then it refuses unless the tree is clean, the version is above every v* tag and HEAD is origin/main (no Developer ID: `terminum-lifecycle.md` AC-08); builds with "npm ci" and "cargo --locked"; refuses a package without both Linux builds; signs SHA256SUMS through ssh-agent with the release key (loaded 2 minutes, passphrase from the login Keychain, never prompting); refuses when HEAD moved during the build ("nothing is public; release again"); only then tags, pushes the tag, fills a draft and publishes it; release notes come from "docs/releases/vX.Y.Z.md" (refused when empty, unreadable or a symlink out of the tree)
+  Then it refuses unless the tree is clean, the version is above every v* tag and HEAD is origin/main (no Developer ID: `terminum-lifecycle.md` AC-08); builds with "npm ci --ignore-scripts" and "cargo --locked"; refuses a package without both Linux builds (a Linux server installs from the same package); signs SHA256SUMS through ssh-agent with the release key (loaded 2 minutes, passphrase from the login Keychain, never prompting, removed after) and checks the signature; refuses when HEAD moved during the build (another session's `make install` fast-forwards a clean main; "nothing is public; release again"); only then tags, pushes the tag, fills a draft and publishes it once all its files are attached; release notes come from "docs/releases/vX.Y.Z.md" (refused when empty, unreadable or a symlink out of the tree)
   And the CI workflow runs on the owner's runner only, on pushes and manual dispatch, with no permissions and pinned actions; it has no pull-request trigger and fork pull requests' workflows wait for approval; install.sh and "terminum upgrade" verify the signature with the key they carry before the checksum, and an older signed manifest never replaces a newer install
 
 Scenario: AC-86 failure — a build or check fails
@@ -362,7 +362,7 @@ stateDiagram-v2
 | AC-84 | The Files header's "(helper updated to <build>)" for 60 s is absent: the page shows only the toast. | `ui/src/host-offer.ts:19` |
 | AC-84 | "updating the helper on devbox…" and "Could not update the helper on devbox: <reason>" (AC-82's no-helper case too) never reach the page or `terminum hosts`: a host's note is sent only for a failed ticked enabling. | `terminumd/src/hosts/tunnel.rs:407`, `terminumd/src/hosts/mod.rs:460` |
 | AC-84 | The 10-minute retry after a failed copy has no test. | `terminumd/src/hosts/tunnel.rs:31` |
-| AC-99 | Never run: a macOS host over real sshd, Dropbear, a ForceCommand account, two Macs on one host over real sshd, real Claude Code and Codex on a host. | `docs/specs/history/terminum-remote.md:72` |
+| AC-99 | Never run: a macOS host over real sshd, Dropbear, a ForceCommand account, two Macs on one host over real sshd, real Claude Code and Codex on a host. | no run on record |
 | AC-81 | Key echo over a LAN host and remote file open have targets (§9 Performance) and no measurement: `bench_echo.py` has no host mode. | `scripts/bench_echo.py:30` |
 | AC-81 | The metrics `hosts_attached` and `host_reconnects` do not exist; only the log events of §9 do. | `terminumd/src/hosts/mod.rs:251` |
 
@@ -413,7 +413,7 @@ Control client: AC-81's command; `refresh-client -f pause-after=2` after attach.
 | ssh connections per host | 1 + one per attached session (AC-89) + one helper ssh while files or agents are enabled (agents' `-R` rides on it, AC-99) | sessions start one at a time, back-off 1 … 30 s each |
 | Agents link (AC-99) | 64 KB a request; 50 requests a second in a burst, 20 sustained, per link; 16 connections at once, one request each, its head within 5 s and its body and answer within 5 s; a disable ends its open connections | 413; 429 (never queued); over 16 closed unread; 408 or closed |
 | Refused forward (AC-99) | at each retry files pause a moment as that ssh reconnects | — |
-| Upload or paste to a host | 100 MB; 2 at once | "Larger than 100 MB"; "Two uploads are running already" |
+| Upload or paste to a host | 100 MB (two at once: `terminum-terminal.md` AC-36) | "Larger than 100 MB" |
 | Helper copy (enable, update, agents on) | 300 s | failure shown, retry later |
 | Helper removal (files remove; agents off with files off) | 60 s | failure shown |
 | A host's answers to terminumd's ssh (probe, install, agents) | 1 MB of stdout, the last 4 KB of stderr, a helper's ready line 4 KB | the step fails with ssh's last words |

@@ -12,6 +12,7 @@
 // on macOS; TM_USER_TMPDIR under check_step.py, whose TMPDIR changes per run: one folder, one entry),
 // checked to be this user's and 0700, emptied each run and removed when the run exits, which it is
 // asked once to trust: what it leaves is that folder's trust entry in ~/.claude.json and its state files.
+// One folder for every run, so one run at a time uses it (its lock beside it): another's cleanup would delete it.
 // TM_TEST_NO_CLAUDE=1 leaves it out.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -19,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { check, until } from "./check.mjs";
 import { watch } from "./e2e_widgetsteady.mjs";
+import { holdLock } from "./testrun.mjs";
 
 const found = (cmd) => { try { return execFileSync("sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" }).trim(); } catch { return ""; } };
 const skip = (what, why) => console.log(`SKIP real program ${what}: ${why}`);
@@ -92,10 +94,10 @@ const DIR = path.join(process.env.TM_USER_TMPDIR ?? os.tmpdir(), "terminum-claud
 function ownDir() {
   fs.rmSync(DIR, { recursive: true, force: true });
   fs.mkdirSync(DIR, { mode: 0o700 });
-  process.once("exit", () => fs.rmSync(DIR, { recursive: true, force: true }));
   const st = fs.lstatSync(DIR);
   if (!st.isDirectory() || st.uid !== process.getuid() || (st.mode & 0o777) !== 0o700) throw new Error(`${DIR} is not this user's 0700 folder`);
 }
+const CLAUDE_WAIT_MS = 10 * 60000;   // its checks take about two minutes
 const PASTE = "alpha one\nbeta two\ngamma three";
 
 /** Claude Code in its `tui` mode in a new window, past the trust question: {pane, stubLog}. */
@@ -303,6 +305,13 @@ export async function livePrograms(page, ctx) {
   if (found("mc")) await mc(page, ctx); else skip("mc", "not on PATH");
   if (process.env.TM_TEST_NO_CLAUDE === "1") skip("claude", "TM_TEST_NO_CLAUDE=1");
   else if (!found("claude")) skip("claude", "not on PATH");
-  else { await claudeDefault(page, ctx); await selectionCut(page, ctx); await claudeFullscreen(page, ctx); }
+  else {
+    const release = await holdLock(`${DIR}.lock`, CLAUDE_WAIT_MS, () => fs.rmSync(DIR, { recursive: true, force: true }));
+    if (!release) skip("claude", `another run has held ${DIR}.lock for ${CLAUDE_WAIT_MS / 60000} minutes`);
+    else {
+      try { await claudeDefault(page, ctx); await selectionCut(page, ctx); await claudeFullscreen(page, ctx); }
+      finally { release(); }
+    }
+  }
   if (back) await page.click(`#sessions .item[data-id="${back}"]`).catch(() => {});
 }

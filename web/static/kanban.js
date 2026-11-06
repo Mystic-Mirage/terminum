@@ -74,7 +74,7 @@ async function more(column) {
 
 const projectOf = (id) => meta.projects.find((p) => p.id === id);
 
-/** What a session's row cannot say (AC-132): an agent gone quiet with its task open, why it failed, a closed one. */
+/** What a session's row cannot say (AC-136): an agent gone quiet with its task open, why it failed, a closed one. */
 function sessionLine(t) {
   const s = t.session;
   if (!s) return null;

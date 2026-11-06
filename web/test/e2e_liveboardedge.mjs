@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What breaks a board's flow, against a real private terminumd and tmux (e2e_live.mjs; terminum-kanban.md
-// AC-132, AC-133): an agent that stops, runs out of limits or dies with its task open; a card dragged
+// AC-136, AC-133): an agent that stops, runs out of limits or dies with its task open; a card dragged
 // and straight back, answers out of order, a drag under another's change, the network or terminumd
 // gone in a move, an edit over another's, a file dropped beside, odd text. Each probe stands alone.
 import { execFileSync } from "node:child_process";
@@ -330,7 +330,7 @@ ${"z".repeat(400)}
     },
   };
   for (const [name, f] of Object.entries(probes)) {
-    tag = AGENT.has(name) ? "AC-132" : "AC-133";
+    tag = AGENT.has(name) ? "AC-136" : "AC-133";
     await nap(200);                                // a window closed just now goes Back in its own time
     try { await f(); } catch (e) { check(`${name} ran to its end`, false, e.message.split("\n").slice(0, 6).join(" | ")); await page.unroute("**/*").catch(() => {}); }
     await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); }).catch(() => {});

@@ -116,6 +116,7 @@ Scenario: AC-01 happy path — sessions, windows and panes
 Scenario: AC-01 happy path — what runs in a pane
   Given rows running Claude Code (its process named by its version, "2.1.302", whatever the window's title), Codex (also as npm's "node", by its screen), OpenCode (its program "opencode") and a shell
   Then a row's line under its title names Claude Code's program "claude", never its version
+  And a subagent Claude Code runs in its own pane shows the name it was started with, its command's --agent-name ("simplify-altitude"), not its pane's title, which only says its type ("✳ general-purpose", the same for all of them): the type stays on the line under it; a window the user named keeps that name, and another program started with the same flag shows its own title
   And each row, before its title, and the header, before the shown pane's title, show Claude Code's mark, Codex's mark, OpenCode's mark (their owners' trademarks, outside terminum's licenses: NOTICE) or the terminal icon (`docs/UI-GUIDELINES.md`); a build without the marks' files shows the terminal icon for them
 Scenario: AC-01 happy path — a folder's color
   Given rows in ~/work/api, ~/work/web, ~/notes and two in ~/tools, and a row in ~/work/api/db
@@ -818,7 +819,6 @@ stateDiagram-v2
 | AC-20 | "Open a pane, p95 < 1 s" has no measurement: `e2e_term.mjs` checks what history pages draw and times nothing. | `web/test/e2e_term.mjs:114` |
 | AC-20 | "Page heap under 150 MB" is read by hand from `?trace=2`'s state, and only where the browser has `performance.memory`. | `web/static/tracebuf.js:280` |
 | AC-20 | The budgets run by hand: `Makefile` has no bench target, and `make test` tests the bench scripts, not the budgets. | `scripts/bench_load.py:7` |
-| AC-92 | An empty project goes, projects live in `projects.json` and Ungroup is the way out; `terminum-kanban.md` AC-110 and AC-119 replace these. | `terminumd/src/page/projects.rs:127`, `terminumd/src/page/projects.rs:155` |
 
 ## 8. Recommendation and ownership
 
@@ -893,7 +893,7 @@ A screen frame: `{"t":"screen","sid":"tmux:local:terminum:%3","full":false,"n":5
 | Typing | text and named keys as AC-03 says (`S-Enter`, `C-Enter`: AS-10), `send-keys -H` only for mouse reports built from terminumd's own tables (SGR when `#{mouse_sgr_flag}`, else X10) and for Shift/Ctrl+Enter where AC-03 and AS-10 say, never for bytes from the page; a queue per client, one command in flight, later keys coalesced |
 | Paste | a paste between the bracketed-paste markers goes through a buffer (the commands: AC-03; the Mac's 0600 file is in `TM_APP_DIR`). Text without the markers goes as typed keys, in AC-03's parts |
 | Sizing | `set-option -w -t @W window-size manual` then `resize-window -t @W -x C -y R`; which windows, who and how often: AC-13; a window of the user's own tmux: AC-89 |
-| Sessions | `list-panes -a -F '#{session_name}␉#{window_index}␉#{window_id}␉#{window_name}␉#{automatic-rename}␉#{pane_id}␉#{pane_index}␉#{pane_title}␉#{pane_current_command}␉#{pane_current_path}␉#{alternate_on}␉#{pane_active}␉#{host}␉#{@tm-quick}␉#{@tm-quick-side}␉#{session_id}␉#{@tm-title}'` every 2 s while a page looks and at once (coalesced 100 ms) on `%window-*`, `%layout-change`, `%session*` notices; the agent's state from the last 25 rows of its screen, read only when its title changed or 6 s passed |
+| Sessions | `list-panes -a -F '#{session_name}␉#{window_index}␉#{window_id}␉#{window_name}␉#{automatic-rename}␉#{pane_id}␉#{pane_index}␉#{pane_title}␉#{pane_current_command}␉#{pane_current_path}␉#{alternate_on}␉#{pane_active}␉#{host}␉#{@tm-quick}␉#{@tm-quick-side}␉#{session_id}␉#{@tm-title}␉` plus `--agent-name` taken from `#{pane_start_command}` by tmux's own format (only that value, a name of at most 64 characters, reaches terminumd; the rest of the command, which may hold the pane's environment, never does) every 2 s while a page looks and at once (coalesced 100 ms) on `%window-*`, `%layout-change`, `%session*` notices; the agent's state from the last 25 rows of its screen, read only when its title changed or 6 s passed |
 | Key | `tmux:<host>:<socket>:%N`; `local` for this Mac; the socket name |
 
 ### Data formats

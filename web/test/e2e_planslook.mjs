@@ -129,12 +129,12 @@ export async function planLook(browser, name, size, device) {
   const back = await page.evaluate(() => ({ open: !document.getElementById("planpane").hidden, focus: document.activeElement?.id }));
   check(`${at} Esc closes the pane and gives the focus back to the header's Plan button`, !back.open && back.focus === "curplan", JSON.stringify(back));
 
-  // the empty state: no plan, nothing kept by the agent
+  // the empty state: no plan, no task
   reply = { plan: null };
   await page.click("#curplan", { timeout: 5000 });
   await pause(page, 250);
   const empty = await page.evaluate(() => [...document.querySelectorAll("#planbody p, #planbody h3")].map((e) => e.textContent));
-  check(`${at} the empty state: "No plan: …" and nothing kept by the agent, no hooks line`, empty.some((t) => t.startsWith("No plan: ")) && empty.includes("Nothing kept for you by the agent.") && empty.length === 2, JSON.stringify(empty));
+  check(`${at} the empty state: "No plan: …" and no task (terminum-kanban.md AC-113), no hooks line`, empty.some((t) => t.startsWith("No plan: ")) && empty.includes("No task in this session.") && empty.length === 2, JSON.stringify(empty));
   check(`no page errors (plans look) ${size}`, !f.errors.length, f.errors.join(" | "));
   await f.close();
 }

@@ -23,7 +23,7 @@ reach it over your own network.
 ### Keep track of every agent
 
 - **Plan and ETA:** the agent keeps its plan via MCP; the list shows its percent done.
-- **Agent notes:** findings and follow-ups saved per session, never lost in the scroll.
+- **Kanban:** tasks with severities, owners, comments and files; agents and you move them.
 - **Cross-session alerts:** an agent waiting for you shows up in every session.
 - **Status at a glance:** working, waiting, done, subagents.
 

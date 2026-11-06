@@ -28,8 +28,8 @@ export function headerParts(group, item, follow = following()) {
 }
 
 /** copy(text): the page's Copy (input.js), the selection kept. Returns show(found). */
-export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, records, toast }) {
-  const plan = planPane({ send, sid, toChat, records });   // the shown session's plan (AC-97): its progress here, its pane
+export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, tasks, toast }) {
+  const plan = planPane({ send, sid, toChat, tasks });   // the shown session's plan (AC-97): its progress here, its pane
   let peeking = 0, shown = null;
   const unpeek = () => { clearTimeout(peeking); peeking = 0; $("bar").classList.remove("peek"); };
   $("curfull").addEventListener("click", unpeek);

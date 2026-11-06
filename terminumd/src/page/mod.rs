@@ -12,7 +12,6 @@ pub mod folds;
 pub mod pystr;
 pub mod hist;
 pub mod marks;
-pub mod marksfull;
 pub mod plans;
 pub mod projects;
 pub mod quick;

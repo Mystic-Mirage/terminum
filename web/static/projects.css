@@ -2,8 +2,6 @@
 /* The session list's projects (AC-92): a group of its own, tinted and named in its color, its
    rows' bars in it; a row's Clone button (AC-07), its unread hatching (AC-93), its program on the
    right of its second line; the row menu (rowmenu.js). */
-:root { --proj-l: .80; --proj-c: .075; }     /* pastel: light, muted, the hues far apart (nav.js) */
-:root.light { --proj-l: .60; --proj-c: .085; }
 /* every group a tint, no edge line (UI-GUIDELINES §4): a project its color, another group a hue apart from its neighbor's (nav.js groupHue) */
 .grp:is(.project, .tinted) { border-radius: var(--r-lg); background: color-mix(in srgb, var(--proj) 6%, transparent); }
 .grp.project { --name: color-mix(in srgb, var(--proj) 75%, var(--t-fg)); }   /* its name's color: the label, its rows' unread hatching */
@@ -71,4 +69,6 @@
 #rowmenu button:focus-visible { background: var(--surface-4); }
 @media (hover: none) { #rowmenu button { height: 44px; } }
 #sessions .item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-
+/* a row's open task: opens its window on the board (terminum-kanban.md AC-113) */
+.item .taskmark { flex: none; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: 10.5px; font-variant-numeric: tabular-nums; color: var(--muted); background: var(--surface-3); }
+@media (hover: hover) { .item .taskmark:hover { color: var(--t-fg); } }

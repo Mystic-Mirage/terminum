@@ -10,6 +10,10 @@ const BUILD: &str = match option_env!("TM_BUILD") {
     Some(b) => b,
     None => "dev",
 };
+/// Keeps BUILD whole in the binary's bytes, where `scripts/agents.py` looks for it on a target
+/// it cannot run: the optimizer may otherwise build the string from immediates.
+#[used]
+static BUILD_IN_BYTES: &str = BUILD;
 
 /// The day this binary was built (YYYY-MM-DD), set by `make` and the release; "" otherwise.
 pub const BUILD_DATE: &str = match option_env!("TM_BUILD_DATE") {

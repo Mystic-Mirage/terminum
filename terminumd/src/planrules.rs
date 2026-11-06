@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The one source of the plan rules that `terminum mcp` (cli/mcp.rs), terminumd's /agent
-//! (agentapi.rs), agents' records (agentmarks.rs) and the hooks' plan ops (cli/hookplan.rs)
+//! (agentapi.rs), the hooks' plan ops (cli/hookplan.rs)
 //! share: words, limits and the cleaning of model text. Lengths count characters after `clean`.
 
 /// An item's statuses.

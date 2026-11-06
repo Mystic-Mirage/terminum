@@ -11,6 +11,7 @@ import { icon } from "./icons.js";
 import { planPct, planTrack } from "./planrow.js";
 import { arranged } from "./reorder.js";
 import { textForm } from "./render.js";
+import { taskUrl } from "./tasklink.js";
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
 // but a quiet terminal mark while a shell, a monitor or a task it started still runs (terminumd reads
@@ -158,6 +159,13 @@ function iconButton(cls, name, label, title, onClick) {
   return b;
 }
 
+/** Open tasks by session (terminumd's): a row shows them, each opening its window on the board (AC-113). */
+let taskMarks = {}, projectTasks = {};
+/** terminumd's `taskmarks`: open tasks by session, tasks by project. */
+export function setTaskMarks(m) { taskMarks = m.marks ?? {}; projectTasks = m.counts ?? {}; }
+export const taskMarksOf = (id) => taskMarks[id] ?? [];
+export const tasksOfProject = (id) => projectTasks[id] ?? 0;
+
 function row(item, current, onPick, movable, child = false, marked = new Map(), opts = {}) {
   const li = document.createElement("li");
   if (movable) li.dataset.drag = "row";           // dragged by its body (reorder.js); not while a filter shows a subset
@@ -193,6 +201,12 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   }
   const bar = folderBar(item, item.id === current, item.state === "working", opts.project);
   b.append(bar, txt, st);
+  for (const task of taskMarksOf(item.id)) {
+    const t = el("span", "taskmark", task);
+    t.title = `Open ${task} on the board`;
+    t.addEventListener("click", (e) => { e.stopPropagation(); location.href = taskUrl(task); });
+    b.append(t);
+  }
   // its bookmarks and open reminders: a wavy orange and a wavy pink line at the row's right edge
   const has = marked.get(item.id);
   if (has) {
@@ -286,9 +300,8 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   const kindMark = (cls, title, inner = []) => { const k = el("span", `gkind ${cls}`); k.title = title; k.append(...inner); return k; };
   const drawProject = (p, id) => {
     const tops = topsOf(p);
-    if (!tops.length) return;                      // its sessions closed: terminumd forgets it at its next read
     const rows = tops.filter((t) => [t, ...kids(t)].some((it) => matches(it, q)));
-    if (q && !rows.length) return;
+    if (q && !rows.length) return;                 // a project with no session stands unless a filter is on
     shown += rows.length;
     const key = projectKey(p), closed = !q && collapsed.has(key);
     const sec = el("section", "grp project");
@@ -314,7 +327,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     h.append(t, acts);
     if (onProjectNew) acts.append(newButton(p.name, p.dir || "its folder", () => onProjectNew(p, tops.at(-1))));
     if (onProjectMenu) {
-      const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: new session, rename, move, ungroup, close`, (b) => onProjectMenu(p, b));
+      const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: new session, rename, move, delete, close`, (b) => onProjectMenu(p, b));
       m.setAttribute("aria-haspopup", "true");
       acts.append(m);
     }

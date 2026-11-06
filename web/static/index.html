@@ -144,6 +144,7 @@
           <button data-view="files" role="tab" type="button" aria-selected="false" title="Files"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Files</span></button>
           <button data-view="file" role="tab" type="button" aria-selected="false" title="View (open a file from Files)" disabled><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg><span>View</span></button>
         </div>
+        <a id="tokanban" class="icon" href="/kanban/" title="Kanban: tasks and their sessions" aria-label="Kanban"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg></a>
         <button id="menubtn" class="icon" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menu" title="Settings"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="M11 10.27 7 3.34"/><path d="m11 13.73-4 6.93"/><path d="M12 22v-2"/><path d="M12 2v2"/><path d="M14 12h8"/><path d="m17 20.66-1-1.73"/><path d="m17 3.34-1 1.73"/><path d="M2 12h2"/><path d="m20.66 17-1.73-1"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m3.34 7 1.73 1"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="8"/></svg></button>
       </div>
     </header>
@@ -151,7 +152,6 @@
     <div id="restored" class="banner" role="status" hidden></div>
     <div id="stall" class="banner" role="status" hidden></div>
     <div id="sized" class="banner" role="status" hidden></div>
-    <div id="marksfull" role="status" hidden></div>
     <div id="asks" aria-live="polite" hidden></div>
     <!-- No whitespace inside: the terminal uses white-space: pre. -->
     <div id="termrow">
@@ -291,7 +291,8 @@
       <span>History lines<small>For terminals opened from now on</small></span>
       <input id="histlines" class="field" type="number" min="1000" max="1000000" step="1000" inputmode="numeric" value="12000">
     </label>
-    <button id="planmenu" class="row" type="button" hidden><span>Plan and Notes…<small>The shown session's plan and its notes for you</small></span></button>
+    <a id="menukanban" class="row" href="/kanban/"><span>Kanban<small>Tasks and their sessions</small></span></a>
+    <button id="planmenu" class="row" type="button" hidden><span>Plan and Tasks…<small>The shown session's plan and its tasks</small></span></button>
     <button id="restoreagain" class="row" type="button" hidden><span>Restore again<small>Recreates what the last restore could not</small></span></button>
     <label class="row"><span>Follow the agent's folder<small>The header and Files show where the coding agent works (a worktree it moved to), not where it started</small></span><input id="followagent" type="checkbox" role="switch" checked></label>
     <label class="row"><span>Side marks<small>Sent messages, answers, bookmarks and reminders on the terminal's right edge, kept in this browser</small></span><input id="sidemarks" type="checkbox" role="switch" checked></label>
@@ -369,6 +370,7 @@
     <textarea id="marknote" class="field" rows="3" maxlength="1000" autocapitalize="sentences" placeholder="Why come back to this?"></textarea>
     <p id="markerr" role="alert" hidden></p>
     <div class="actions">
+      <button id="marktask" type="button" title="Open the board's new-task window with this text">New task from selection</button>
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button value="save" type="submit" class="primary" title="Save (⌘Enter)">Save</button>
     </div>

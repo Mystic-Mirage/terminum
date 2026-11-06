@@ -5,19 +5,9 @@
 // or as the panel's Markdown (raw HTML off); a diagram is an image, so nothing in it runs.
 import { icon } from "./icons.js";
 import { MERMAID_LANG } from "./outparse.js";
+import { renderers } from "./renderlib.js";
 import { copyTablePng } from "./tablepng.js";
 import { openZoom } from "./zoom.js";
-
-let lib = null, tries = 0;
-/** The renderers: fbd's renderers.js through the page's /fb proxy, loaded on first need. */
-export function renderers() {
-  // a failed module stays failed under its URL: a new try asks under another
-  return (lib ??= import(tries ? `/fb/renderers.js?try=${tries}` : "/fb/renderers.js").catch((e) => {
-    lib = null;                                    // asked again next time (fbd may come back)
-    tries++;
-    throw new Error(`The renderer did not load (${e.message}); is terminum's server running?`);
-  }));
-}
 
 /** `md` drawn as Markdown into `el` by the panel's rules (raw HTML off), as text when the
  *  renderers do not load. */

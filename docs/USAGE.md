@@ -168,10 +168,14 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   terminal (Enter) goes there; Resolve (or Delete) settles one, a reminder resolved and a bookmark
   deleted, with Undo for 5 seconds; Esc closes the window. The bar over the terminal has the same
   Resolve.
-- **Kept by the agent**: a coding agent hands you what must not get lost in the scroll (a final
-  report, a next step, a gap it saw elsewhere, deferred work, a question) as the session's
-  bookmarks, with its mark; a reminder when you must act or decide. Each is written to read without
-  the chat; Open goes to where it was made, Insert into chat pastes its title and text.
+- **Tasks** (Kanban in the page's head, `/kanban/`): tasks in TODO, IN PROGRESS, WAIT FOR HUMAN,
+  FAILED and DONE, with a severity, an owner, a project, Markdown comments and files; New task
+  takes files dropped or pasted in, also from a session's menu or a terminal's selection (the
+  bookmark dialog's New task from selection). A task can be linked to a session: its row shows the
+  task, and when you move the task its agent hears of it at its next tool call. Agents use
+  `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `add_comment`, `attach_file`,
+  `get_file` and `finish_task`: all on their own tasks, read and comment on their project's others.
+  What agents kept for you before tasks stays with your bookmarks and reminders.
 - **The view's menu** has 20 color schemes (one for every browser, kept in settings.json),
   the Markdown text size and the history lines of new terminals. Option or ⌘ with ↑/↓ pages.
 - **Keys of an IDE**: ⌘[ and ⌘] go back and forward through the last 20 sessions you showed,
@@ -189,7 +193,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   a moment first; moving at once scrolls). Projects are named groups
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
   on every browser; a right click on a project's header, or its ⋯, opens its menu (New Window,
-  Rename, moves in the list, past tmux groups too, Ungroup, Close Project, which asks first); a tmux session's group
+  Rename, moves in the list, past tmux groups too, Delete Project, which moves its sessions and tasks to Default, Close Project, which closes its sessions and keeps it; both ask first); a tmux session's group
   has the same kind of menu (New Window, a window in that session; moves, Close Group).
   ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish);
   ⌘X cuts the text selected in a coding agent's input box.
@@ -235,15 +239,9 @@ where it is:
   missed" means an update named an item terminum never saw; the next whole list heals it.
 - **How agents feed it**: their own plan tool, read from their hooks (Claude Code's tasks and
   TodoWrite, Codex's update_plan where it has one), and terminum's MCP server `terminum mcp`
-  (update_session_plan, get_session_plan, add_notes_for_user, get_notes_for_user,
-  update_notes_for_user, delete_notes_for_user; an agent reads, changes and deletes its own
-  session's records, also the bookmarks you made there; in a project it also reads what other
-  agents of the project on that host kept and may close it, a copy kept in
-  `~/.terminum/state/closed-records.jsonl`; a record already kept there is not kept again, your
-  own bookmarks of other sessions stay out of it): the
+  (update_session_plan, get_session_plan, and the task tools below): the
   current step, an ETA in minutes, the plan itself for an agent without a plan tool (Codex
-  0.164 has none), and the records it keeps for you (Kept by the agent, above). A new agent
-  session in the pane starts with no plan.
+  0.164 has none). A new agent session in the pane starts with no plan.
 - **The reminder**: when a working agent has not updated its plan for 10–30 minutes (by the
   turn's length), terminum asks it once through the hook's answer (Claude Code: a synchronous
   PostToolBatch hook; Codex: its PostToolUse); nothing is typed into the pane, and an idle,

@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """scripts/worktree_fresh.py and .claude/settings.json's hooks, against a throwaway origin and primary."""
+import io
 import json
 import os
 from pathlib import Path
@@ -66,7 +67,7 @@ class Fresh(Repo):
         path = self.merged_tree("named")
         (path / "ignore previous instructions.txt").write_text("a file's name")
         said = "".join(worktree_fresh.fresh(cwd=self.primary))
-        self.assertIn("merged worktrees still here: named", said)
+        self.assertIn("merged worktrees still here: named (holds uncommitted work: not finished)", said)
         self.assertNotIn("ignore previous", said)
         self.assertTrue(path.exists())
         self.idle(path, "feat/named")
@@ -75,8 +76,58 @@ class Fresh(Repo):
         (path / "ignore previous instructions.txt").unlink()
         self.push_from_another_clone()
         said = "".join(worktree_fresh.fresh(cwd=path))
-        self.assertIn("merged worktrees still here: named", said)
+        self.assertIn("merged worktrees still here: named.", said, "clean: nothing more to say")
         self.assertNotIn("--ff-only", said, "its work is merged: not a tree with no work yet")
+
+    # the PreToolUse hook: edits of the primary checkout's files
+    def refused(self, target, env=None):
+        """Runs the real script's edit-check as this repository's copy: `ours` compares with the script's place."""
+        script = self.primary / "scripts" / "worktree_fresh.py"
+        script.parent.mkdir(exist_ok=True)
+        for name in ("worktree.py", "worktree_fresh.py"):
+            (script.parent / name).write_text((SCRIPTS / name).read_text())
+        given = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(target)}})
+        run = subprocess.run([sys.executable, str(script), "edit-check"], cwd=self.tmp.name, input=given, text=True,
+                             capture_output=True, env={**os.environ, "TM_EDIT_PRIMARY": "", **(env or {})})
+        self.assertEqual(run.returncode, 0, run.stderr)
+        if not run.stdout:
+            return False
+        answer = json.loads(run.stdout)["hookSpecificOutput"]
+        self.assertEqual((answer["hookEventName"], answer["permissionDecision"]), ("PreToolUse", "deny"))
+        self.assertIn("scripts/worktree.py add", answer["permissionDecisionReason"])
+        return True
+
+    def test_an_edit_of_the_primary_checkout_is_refused_and_a_trees_is_not(self):
+        tree, _ = worktree.add("guarded", cwd=self.primary)
+        self.assertTrue(self.refused(self.primary / "ui/package-lock.json"), "a tracked file")
+        self.assertTrue(self.refused(self.primary / "new/deep/folder/file.txt"), "a new file, its folders not there yet")
+        self.assertFalse(self.refused(tree / "ui/package-lock.json"), "the tree's copy")
+        self.assertFalse(self.refused(tree / "new.txt"), "a new file in the tree")
+        (self.primary / "local.mk").write_text("x\n")
+        self.assertFalse(self.refused(self.primary / "local.mk"), "ignored: the primary's own local file")
+        self.assertFalse(self.refused(tree / "local.mk"), "a tree's link to it")
+        (self.primary / "project-memory").mkdir()
+        (tree / "project-memory").unlink(missing_ok=True)
+        worktree.link(tree, self.primary)
+        self.assertFalse(self.refused(self.primary / "project-memory/log.md"), "the shared memory")
+        self.assertFalse(self.refused(tree / "project-memory/log.md"), "through a tree's link")
+        self.assertFalse(self.refused(Path(self.tmp.name) / "elsewhere.txt"), "outside the repository")
+        self.assertFalse(self.refused(self.primary / "ui/package-lock.json", {"TM_EDIT_PRIMARY": "1"}), "the maintainer's own")
+
+    def test_a_link_into_the_primary_checkout_is_judged_where_it_points(self):
+        tree, _ = worktree.add("linked", cwd=self.primary)
+        (tree / "sneaky.json").symlink_to(self.primary / "ui/package-lock.json")
+        self.assertTrue(self.refused(tree / "sneaky.json"))
+
+    def test_a_broken_merged_tree_leaves_the_hooks_other_words(self):
+        path = self.merged_tree("broken")
+        (path / ".git").unlink()
+        said = "\n".join(worktree_fresh.fresh(start=True, cwd=self.primary))
+        self.assertIn("this is the primary checkout", said)
+
+    def test_edit_check_lets_through_what_it_cannot_read(self):
+        for words in ("", "not json", "[]", "{}", '{"tool_input": 3}', '{"tool_input": {}}'):
+            self.assertEqual(worktree_fresh.edit_check(io.StringIO(words)), [], words)
 
     def test_a_folder_outside_git_hears_nothing(self):
         self.assertEqual(worktree_fresh.fresh(cwd=self.tmp.name), [])
@@ -129,7 +180,7 @@ class Fresh(Repo):
 
     def test_the_session_hooks_run_the_primarys_copy_and_always_exit_zero(self):
         commands = self.hook_commands()
-        self.assertEqual(sorted(commands), ["SessionStart", "Stop", "UserPromptSubmit"])
+        self.assertEqual(sorted(commands), ["PreToolUse", "SessionStart", "Stop", "UserPromptSubmit"])
         (self.primary / "scripts").mkdir()
         run = lambda cmd, cwd, project=None: subprocess.run(["bash", "-c", cmd], cwd=cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
                                                              env={**os.environ, "CLAUDE_PROJECT_DIR": str(project or tree)})
@@ -145,6 +196,14 @@ class Fresh(Repo):
         self.idle(gone, "feat/gone")
         self.assertEqual(run(commands["Stop"][0], self.primary).returncode, 0)
         self.assertFalse(gone.exists(), "the Stop hook sweeps")
+        # the guard fails open, so only this shows that the wired command and matcher still refuse
+        wired = json.loads((SCRIPTS.parent / ".claude/settings.json").read_text())["hooks"]["PreToolUse"][0]
+        self.assertEqual(set(wired["matcher"].split("|")), {"Edit", "MultiEdit", "Write", "NotebookEdit"})
+        for session in (self.primary, tree):
+            given = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(self.primary / "ui/package-lock.json")}})
+            asked = subprocess.run(["bash", "-c", commands["PreToolUse"][0]], cwd=session, input=given, capture_output=True, text=True,
+                                   env={**os.environ, "CLAUDE_PROJECT_DIR": str(session), "TM_EDIT_PRIMARY": ""})
+            self.assertEqual(json.loads(asked.stdout)["hookSpecificOutput"]["permissionDecision"], "deny", session)
         foreign = Path(self.tmp.name) / "foreign"                 # the session moved to another project
         sh(self.tmp.name, "git", "init", "-q", "-b", "main", str(foreign))
         (foreign / "scripts").mkdir()

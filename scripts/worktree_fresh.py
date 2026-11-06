@@ -8,17 +8,24 @@
   freshen         make install, before anything is built: fetch; a clean main behind origin/main is
       fast-forwarded; one behind with uncommitted changes, or diverged, is refused
       (TM_INSTALL_STALE=1: the maintainer's own install as it is); any other branch is left alone
+  edit-check      the PreToolUse hook: reads Claude Code's JSON on stdin and refuses an edit of the
+      primary checkout's files (TM_EDIT_PRIMARY=1: the maintainer's own session may)
 """
 import argparse
+import json
 import os
 from pathlib import Path
 import re
 import sys
 import time
 
-from worktree import count, fetched, finished, git, has_ref, ours, primary_of, Refused, said_name
+from worktree import count, fetched, finished, git, has_ref, ours, primary_of, Refused, said_name, trees
 
 FETCH_EVERY = 300      # seconds between the hooks' fetches, for the whole repository
+EDIT_REFUSED = ("terminum: the primary checkout is the maintainer's; make this change in a worktree: "
+                "python3 scripts/worktree.py add <slug> --kind <kind>, then edit the file there (CLAUDE.md §9). "
+                "Never route around this with a shell command; only the maintainer allows it, by starting "
+                "the session with TM_EDIT_PRIMARY=1.")
 
 
 def commits(n):
@@ -51,6 +58,15 @@ def fetch_failed(primary):
     return failed
 
 
+def holds_work(path):
+    """Uncommitted files in a tree that a parallel sweep may take or a lost .git may have broken: never a
+    reason to lose the hook's other words; no index write, which would put off the sweep's idle hour."""
+    try:
+        return bool(git("--no-optional-locks", "status", "--porcelain", cwd=path, check=False).stdout.strip())
+    except OSError:
+        return False
+
+
 def fresh(start=False, cwd="."):
     """The hooks' words for the agent's context: fixed sentences, counts and checked names, never a
     file's name or git's own words. At a session's start always; at a prompt only what needs saying."""
@@ -74,7 +90,7 @@ def fresh(start=False, cwd="."):
         lines.append(f"{state}: {why}." if why else f"{state}.")
     if failed:
         lines.append("terminum: git fetch failed: origin/main is as last known.")
-    if names := [said_name(path) for path in done]:
+    if names := [said_name(path) + (" (holds uncommitted work: not finished)" if holds_work(path) else "") for path in done]:
         lines.append(f"terminum: merged worktrees still here: {', '.join(names)}. Your own: scripts/worktree.py remove "
                      "<slug> from the primary checkout; clean ones idle for an hour go by themselves.")
     return lines
@@ -103,14 +119,48 @@ def freshen(cwd="."):
     return lines + [f"fast-forwarded main by {commits(behind)}: {before}..{git('rev-parse', '--short', 'HEAD', cwd=cwd)}"]
 
 
+def edit_refused(target):
+    """Whether an agent's edit of `target` (absolute: links resolved, so a tree's link to a shared local
+    file counts where it lives) is one of the primary checkout's files. Judged by the file's repository,
+    not the session's folder: another project's files and the trees' own are none of this."""
+    path = Path(target).expanduser().resolve()
+    folder = next((parent for parent in path.parents if parent.is_dir()), None)
+    if folder is None or not ours(folder):
+        return False
+    primary, *others = trees(folder)
+    if not path.is_relative_to(primary) or any(path.is_relative_to(tree) for tree in others):
+        return False
+    return git("check-ignore", "-q", str(path), cwd=primary, check=False).returncode == 1  # 0 ignored, else git failed
+
+
+def edit_check(stdin):
+    """The hook's answer as JSON, or nothing: what cannot be read or judged is let through, as a hook
+    never stops the agent over its own failure."""
+    if os.environ.get("TM_EDIT_PRIMARY"):
+        return []
+    try:
+        given = json.load(stdin)["tool_input"]
+        target = given.get("file_path") or given.get("notebook_path")
+        if not target or not edit_refused(target):
+            return []
+    except (ValueError, KeyError, TypeError, AttributeError, OSError, Refused):
+        return []
+    return [json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                               "permissionDecisionReason": EDIT_REFUSED}})]
+
+
 def main(argv):
     parser = argparse.ArgumentParser(prog="worktree_fresh.py", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("fresh").add_argument("--start", action="store_true")
     commands.add_parser("freshen")
+    commands.add_parser("edit-check")
     args = parser.parse_args(argv)
-    lines = freshen() if args.command == "freshen" else fresh(args.start) if ours(".") else []
+    if args.command == "edit-check":
+        lines = edit_check(sys.stdin)
+    else:
+        lines = freshen() if args.command == "freshen" else fresh(args.start) if ours(".") else []
     if lines:
         print("\n".join(lines))
     return 0

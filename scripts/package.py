@@ -110,16 +110,11 @@ def binaries(build, given, stage, release=False):
 
 
 def warned(release):
-    """The builds' warnings (CLAUDE.md §8: none ships): a release refuses them unless
-    TM_ALLOW_WARNINGS=1 (said); an install says them."""
+    """The builds' warnings, said: only failing tests block a release (CLAUDE.md §10)."""
     if not agents.WARNINGS:
         return
     lines = "\n  ".join(dict.fromkeys(agents.WARNINGS))
-    if release and os.environ.get("TM_ALLOW_WARNINGS") != "1":
-        raise agents.Failed(f"the builds printed {len(agents.WARNINGS)} warning(s); a release ships none "
-                            f"(fix them, or TM_ALLOW_WARNINGS=1 to release anyway):\n  {lines}")
-    print(f"warning: the builds printed {len(agents.WARNINGS)} warning(s)"
-          f"{' (TM_ALLOW_WARNINGS=1: released anyway)' if release else '; a release refuses them'}:\n  {lines}", file=sys.stderr)
+    print(f"warning: the builds printed {len(agents.WARNINGS)} warning(s):\n  {lines}", file=sys.stderr)
 
 
 def is_macho(path):

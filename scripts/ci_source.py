@@ -11,7 +11,7 @@ import sys
 SOURCE_DIRS = {".github", "docs", "scripts", "skills", "terminumd", "ui", "web"}
 SOURCE_SUFFIXES = {".rs", ".ts", ".js", ".mjs", ".py", ".sh", ".css", ".html", ".md",
                    ".toml", ".json", ".yml", ".yaml", ".txt", ".svg", ".png", ".jpg", ".gif", ".plist"}
-PRIVATE_DIRS = {".git", ".codex", ".claude", ".ssh", ".aws", ".azure", ".gnupg", ".config", ".docker", ".kube",
+PRIVATE_DIRS = {"project-memory", ".git", ".codex", ".claude", ".ssh", ".aws", ".azure", ".gnupg", ".config", ".docker", ".kube",
                 "node_modules", "target", "dist", ".toolchain", "__pycache__"}
 PRIVATE_NAMES = {"local.mk", "claude.local.md", "memory.md", "workspaces.json", ".netrc", ".npmrc",
                  ".pypirc", ".pgpass", "tokens.json", "token.json"}

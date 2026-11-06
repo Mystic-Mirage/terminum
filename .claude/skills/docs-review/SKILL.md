@@ -32,7 +32,7 @@ Do not turn every commit into a scenario. A breakable rule a user or security re
 
 `python3 scripts/check_docs.py` should read `docs: 0 findings`: fix each `FAIL`, read each `WARN`. The report to the maintainer: what was added, what was deleted with proof, gaps opened, questions. Decisions on deleting a requirement that lacks proof are theirs; ask together, in one question.
 
-A release's request covers its commit (CLAUDE.md §10); otherwise commit only when asked. The tree's commits merge to `main`, then `worktree.py remove <slug>`.
+Commit in the tree and land it (`make land SLUG=<slug>`, CLAUDE.md §9).
 
 ## Agents
 

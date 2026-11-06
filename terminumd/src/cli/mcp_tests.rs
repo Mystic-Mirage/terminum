@@ -121,6 +121,10 @@ fn tools_list_has_its_tools_with_schemas_and_hints() {
     assert_eq!(names, TOOLS);
     for t in tools {
         let name = t["name"].as_str().unwrap();
+        if crate::tasks::tools::NAMES.contains(&name) {
+            assert_eq!(t["annotations"]["destructiveHint"], false, "{name}");
+            continue;
+        }
         assert_eq!(t["annotations"], json!({"readOnlyHint": name.starts_with("get_"), "destructiveHint": (["update_notes_for_user", "delete_notes_for_user"].contains(&name)), "idempotentHint": true, "openWorldHint": false}));
         assert_eq!(t["inputSchema"]["type"], "object");
         assert!(t["description"].as_str().unwrap().len() < 500);
@@ -187,7 +191,14 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
                 "add_notes_for_user" => json!({"notes": [{"title": "t", "text": "a"}]}),
                 "update_notes_for_user" => json!({"id": 1, "status": "done"}),
                 "delete_notes_for_user" => json!({"ids": ["n1"]}),
-                _ => json!({}),
+                "list_tasks" | "get_session_plan" | "get_notes_for_user" => json!({}),
+                "create_task" => json!({"title": "t"}),
+                "move_task" => json!({"id": "T-1", "to": "DONE"}),
+                "add_comment" => json!({"id": "T-1", "text": "a"}),
+                "finish_task" => json!({"id": "T-1", "result": "a"}),
+                "attach_file" => json!({"task": "T-1", "name": "a", "text": "b"}),
+                "get_file" => json!({"task": "T-1", "name": "a"}),
+                _ => json!({"id": "T-1"}),
             };
             let (r, sent) = tool(t, args, env, Err(()));
             assert_eq!(r, json!({"content": [{"type": "text", "text": NOT_IN_PANE}], "isError": true}), "{t}");

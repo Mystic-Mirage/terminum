@@ -17,6 +17,7 @@ mod importer;
 mod install;
 mod launch;
 mod mcp;
+mod mcp_tasks;
 mod sinks;
 mod sockhttp;
 mod systemd;

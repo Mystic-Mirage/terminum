@@ -32,7 +32,8 @@ use crate::agentmarks::{self as marks, KINDS};
 use crate::plans::rules::{self, STATUSES};
 pub const DOWN: &str = "terminum is not running; go on without it.";
 
-pub const TOOLS: [&str; 6] = ["update_session_plan", "get_session_plan", "add_notes_for_user", "get_notes_for_user", "update_notes_for_user", "delete_notes_for_user"];
+pub const TOOLS: [&str; 15] = ["update_session_plan", "get_session_plan", "add_notes_for_user", "get_notes_for_user", "update_notes_for_user", "delete_notes_for_user",
+    "list_tasks", "get_task", "create_task", "take_task", "move_task", "add_comment", "attach_file", "get_file", "finish_task"];
 
 /// The agent's environment: TMUX and TMUX_PANE; `known`: whether a sink knows the pane
 /// (None until probed).
@@ -264,6 +265,9 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
     if !args.is_object() {
         return Err("arguments must be an object".into());
     }
+    if crate::tasks::tools::NAMES.contains(&tool) {
+        return super::mcp_tasks::checked(tool, args);
+    }
     let mut out = Map::new();
     match tool {
         "update_session_plan" => {
@@ -348,7 +352,7 @@ pub fn tools() -> Value {
         json!({"name": name, "title": title, "description": description, "annotations": annotations,
                "inputSchema": {"type": "object", "properties": properties, "required": required}})
     };
-    json!([
+    let mut all = json!([
         tool("update_session_plan", "Update the session's plan",
             "Store this session's plan, which terminum shows to the user. Send the whole plan each call, never a patch: \
 every item with status pending, in_progress, completed or blocked. doing: the current step. eta_minutes: your estimate \
@@ -392,7 +396,11 @@ a new title, text or remind; the user's own only when the user asks. Another ses
             "Delete records of this session for good, a reminder too, the user's when the user asks. None if one is not this session's.",
             json!({"ids": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "string"}}}),
             json!(["ids"])),
-    ])
+    ]);
+    if let Some(list) = all.as_array_mut() {
+        list.extend(super::mcp_tasks::tools());
+    }
+    all
 }
 
 #[cfg(test)]

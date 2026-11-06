@@ -78,7 +78,7 @@ pub fn number_of(id: &str) -> Result<i64, String> {
 }
 
 /// The row's key of task `id`.
-fn key_of(tx: &Transaction, id: &str) -> Result<String, String> {
+pub(super) fn key_of(tx: &Transaction, id: &str) -> Result<String, String> {
     let n = number_of(id)?;
     tx.query_row("SELECT id FROM tasks WHERE number = ?1", [n], |r| r.get(0)).optional().map_err(sql)?.ok_or_else(|| format!("No task {id}"))
 }

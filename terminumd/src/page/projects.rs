@@ -69,6 +69,8 @@ pub struct Projects {
     untold: bool,
     /// the session list's order, projects and tmux groups together ("p:<id>", "g:<group>"): every page's
     order: Vec<String>,
+    /// open tasks by project, for the dialog of Delete Project
+    tasks: HashMap<String, i64>,
 }
 
 /// A project's name as typed (trimmed): a short name (settings::is_short_name), and not Default's.
@@ -90,7 +92,31 @@ impl Projects {
             tracing::warn!(event = "projects.unread", error = %e);
             Saved::default()
         });
-        Projects { store: Some(store), list: saved.list, servers: saved.servers, fresh: HashMap::new(), recheck: None, untold: false, order: saved.order }
+        let mut ps = Projects { store: Some(store), list: saved.list, servers: saved.servers, fresh: HashMap::new(), recheck: None, untold: false, order: saved.order, tasks: HashMap::new() };
+        ps.refresh_counts();
+        ps
+    }
+
+    /// Reads the tasks by project again: whether they changed. Off the async workers.
+    pub fn refresh_counts(&mut self) -> bool {
+        let Some(store) = &self.store else { return false };
+        let counts = store.with(|tx| {
+            let mut st = tx.prepare("SELECT project, count(*) FROM tasks WHERE archived_at IS NULL GROUP BY project").map_err(crate::tasks::ops::sql)?;
+            let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(crate::tasks::ops::sql)?;
+            rows.collect::<Result<HashMap<_, _>, _>>().map_err(crate::tasks::ops::sql)
+        }).unwrap_or_default();
+        let changed = counts != self.tasks;
+        self.tasks = counts;
+        changed
+    }
+
+    /// The projects as a page gets them.
+    fn told(&self) -> Vec<Value> {
+        self.list.iter().map(|p| {
+            let mut v = serde_json::to_value(p).unwrap_or_default();
+            v["tasks"] = json!(self.tasks.get(&p.id).copied().unwrap_or(0));
+            v
+        }).collect()
     }
 
     pub fn list(&self) -> &[Project] {
@@ -292,7 +318,7 @@ impl Projects {
 
 fn message(app: &Shared) -> String {
     let projects = app.projects.lock();
-    json!({"t": "projects", "items": projects.list(), "order": projects.list_order()}).to_string()
+    json!({"t": "projects", "items": projects.told(), "order": projects.list_order()}).to_string()
 }
 
 /// A page that connects learns the projects.

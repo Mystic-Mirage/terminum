@@ -216,7 +216,7 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
    *  asked for once (AC-110). */
   async function newInProject(p, last) {
     if (last) return send({ t: "clone", id: last, project: p.id });
-    const dir = p.dir ? "" : (await askName(`The folder of ${p.name}`, "", "Open"))?.trim();
+    const dir = p.dir ? "" : (await askName(`The folder of ${p.name}`, "", "Open", 4096))?.trim();
     if (dir === undefined || (!p.dir && !dir)) return;
     send({ t: "projectwindow", project: p.id, dir });
   }

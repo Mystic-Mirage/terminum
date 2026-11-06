@@ -33,6 +33,7 @@ import { livePrograms } from "./e2e_liveprogs.mjs";
 import { liveKeys } from "./e2e_livekeys.mjs";
 import { livePlans } from "./e2e_liveplans.mjs";
 import { liveNotes } from "./e2e_livenotes.mjs";
+import { liveBoard, liveBoardPhone } from "./e2e_liveboard.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -122,6 +123,7 @@ const signIn = async (page) => {
   // a debug build checks the password at PBKDF2's 600,000 rounds in about a second, longer on a busy Mac
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 30000 });
 };
+const BOARD_ALONE = process.argv.includes("board");
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
@@ -138,7 +140,11 @@ async function wide(browser, name) {
     else errors.push(said);
   });
   await signIn(page);
-  check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/" && !new URL(page.url()).search);
+  if (BOARD_ALONE) {
+    await liveBoard(page, { base: BASE, tmux, work: WORK, shots: process.env.TM_TEST_SHOTS });
+    return ctx;
+  }
+  check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/sessions/" && !new URL(page.url()).search);
   check("AC-09 the sign-in is kept in the origin's storage", await page.evaluate(() => /^[0-9a-f]{64}$/.test(localStorage.getItem("tm.session") ?? "")));
   // a page that sent its secret would be refused at once, not leak it unseen (the browser sends Sec-Fetch-Site)
   // (an XMLHttpRequest: signin.js puts the credential on every fetch)
@@ -198,6 +204,7 @@ async function wide(browser, name) {
   await livePrograms(page, { tmux, work: WORK });
   await livePlans(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, signIn, name });
   await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+  await liveBoard(page, { base: BASE, tmux, work: WORK });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");
@@ -272,6 +279,11 @@ async function phone(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true });
   const page = await ctx.newPage();
   await signIn(page);
+  if (BOARD_ALONE) {
+    await liveBoardPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
+    await ctx.close();
+    return;
+  }
   await page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3, null, { timeout: 8000 });
   const before = tmux("display", "-p", "#{window_width}");
   await page.evaluate(() => { const k = document.getElementById("kbd"); k.focus(); });

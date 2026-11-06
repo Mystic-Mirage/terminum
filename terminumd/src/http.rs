@@ -87,11 +87,16 @@ fn host_of(headers: &HeaderMap) -> String {
 
 /// The page's index with its build.
 pub fn page_index(headers: &HeaderMap) -> Response {
-    let Some(f) = PageFiles::get("index.html") else {
+    page_named("index.html", headers)
+}
+
+/// A page's HTML with its build.
+pub fn page_named(name: &str, headers: &HeaderMap) -> Response {
+    let Some(f) = PageFiles::get(name) else {
         return err(StatusCode::NOT_FOUND, "not_found", "the page is not built into this terminumd");
     };
     let html = String::from_utf8_lossy(&f.data).replace("__BUILD__", crate::config::build_id());
-    file_response("index.html", html.into_bytes(), &host_of(headers), false)
+    file_response(name, html.into_bytes(), &host_of(headers), false)
 }
 
 /// A file of the page (`/app.js`, `/style.css`…), or None.

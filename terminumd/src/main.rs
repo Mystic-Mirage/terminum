@@ -123,6 +123,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         marks_full: Default::default(),
         projects: Mutex::new(projects),
         tasks,
+        task_lines: Default::default(),
         unread: Mutex::new(page::unread::Marks::load(&dir)),
         turns: Default::default(),
         plans: plans::Plans::load(&dir),
@@ -241,7 +242,12 @@ async fn serve() {
     tracing::info!(event = "start", port = env.port, pid = std::process::id(), build = config::build_id(), socket = %env.tmux_socket);
     tokio::spawn(axum::serve(cli, sock::routes(app.clone())).into_future());
     let checked = app.clone();
-    tokio::task::spawn_blocking(move || checked.tasks.quick_check());
+    tokio::task::spawn_blocking(move || {
+        checked.tasks.quick_check();
+        if let Err(e) = tasks::files::sweep(&checked.tasks, &checked.cfg.dir, tasks::ops::now()) {
+            tracing::warn!(event = "tasks.sweep", error = %e);
+        }
+    });
     hosts::sync(&app);
     attach::sync(&app);
     webaccess::apply(&app);

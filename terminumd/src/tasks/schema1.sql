@@ -56,11 +56,13 @@ CREATE TABLE events (
 CREATE INDEX events_task ON events (task, at);
 CREATE TABLE files (
   id TEXT PRIMARY KEY,
-  task TEXT NOT NULL REFERENCES tasks,
+  task TEXT REFERENCES tasks,
   event TEXT REFERENCES events,
   name TEXT NOT NULL,
   bytes INTEGER NOT NULL,
-  mime TEXT NOT NULL
+  mime TEXT NOT NULL,
+  author TEXT NOT NULL,
+  at INTEGER NOT NULL
 );
 CREATE INDEX files_task ON files (task);
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);

@@ -83,7 +83,9 @@ pub fn hook_event(app: &Shared, key: &str, ev: &Value) -> Option<String> {
         app.dirty.notify_one();
         crate::page::plans::tell(&app.pages, &[key.to_string()]);
     }
-    remind
+    // a human's move rides the same event (AC-114): the event the agent reads as context
+    let carries = !ev["sub"].as_str().is_some_and(|s| !s.is_empty()) && ev["event"].as_str() == Some(remind_event(ev["agent"].as_str().unwrap_or("")));
+    if carries { crate::tasks::tell::with_lines(app, key, remind) } else { remind }
 }
 
 /// `ev` applied to the plans: (changed, the reminder due).

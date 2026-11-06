@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<meta name="build" content="__BUILD__">
+<base href="/">
+<title>Kanban · terminum</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="shapes.css">
+<link rel="stylesheet" href="controls.css">
+<link rel="stylesheet" href="markdown.css">
+<link rel="stylesheet" href="kanban.css">
+</head>
+<body class="board-page">
+<header id="boardhead">
+  <nav class="seg" aria-label="Pages">
+    <a id="tosessions" href="/sessions/">Sessions</a>
+    <span class="here" aria-current="page">Kanban</span>
+  </nav>
+  <div id="filters">
+    <input id="find" class="field" type="search" placeholder="Find" aria-label="Find tasks" autocomplete="off" spellcheck="false">
+    <details id="fproject" class="pick"><summary>Projects</summary><div class="box" role="group" aria-label="Projects"></div></details>
+    <details id="fseverity" class="pick"><summary>Severity</summary><div class="box" role="group" aria-label="Severity"></div></details>
+    <details id="fowner" class="pick"><summary>Owner</summary><div class="box" role="group" aria-label="Owner"></div></details>
+    <button id="clearfilters" type="button" hidden>Clear filters</button>
+  </div>
+  <div id="boardacts">
+    <button id="newproject" type="button">New project</button>
+    <button id="newtask" class="primary" type="button">New task</button>
+  </div>
+</header>
+<div id="boardbanner" class="banner" role="status" hidden></div>
+<div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
+<main id="board" aria-label="Tasks"></main>
+<p id="toast" class="box" role="status" hidden></p>
+
+<dialog id="taskbox" class="box dlg" aria-labelledby="tasktitle">
+  <form method="dialog" id="taskform">
+    <div class="dhead"><h2 id="tasktitle"></h2><button id="taskclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
+    <div id="taskbody"></div>
+  </form>
+</dialog>
+
+<dialog id="newbox" class="box dlg" aria-labelledby="newhead">
+  <form method="dialog" id="newform">
+    <div class="dhead"><h2 id="newhead">New task</h2><button id="newclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
+    <label class="fieldrow">Title <input id="newtitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
+    <div class="edithead"><span>Text</span>
+      <div class="seg" role="tablist" aria-label="Text view">
+        <button id="newwrite" type="button" role="tab" aria-selected="true">Write</button>
+        <button id="newpreview" type="button" role="tab" aria-selected="false">Preview</button>
+      </div>
+    </div>
+    <textarea id="newtext" class="field" rows="9" aria-label="Text, Markdown" placeholder="Markdown. Drop or paste files here."></textarea>
+    <div id="newshown" class="md" hidden></div>
+    <ul id="newfiles" class="filelist"></ul>
+    <div class="fieldgrid">
+      <label class="fieldrow">Project <select id="newproj" class="field"></select></label>
+      <label class="fieldrow">Severity <select id="newsev" class="field"><option>P0</option><option>P1</option><option selected>P2</option><option>P3</option></select></label>
+      <label class="fieldrow">Session <select id="newsession" class="field"></select></label>
+    </div>
+    <label class="filebtn"><input id="newpick" type="file" multiple hidden>Add files…</label>
+    <p id="newerror" class="formerror" role="alert" hidden></p>
+    <div class="actions">
+      <button id="newdiscard" type="button">Discard</button>
+      <button id="newcreate" type="button" class="primary">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="confirmbox" class="box dlg" aria-labelledby="confirmtitle">
+  <form method="dialog">
+    <div class="dhead"><h2 id="confirmtitle"></h2></div>
+    <p id="confirmtext"></p>
+    <div class="actions" id="confirmacts">
+      <button value="cancel" type="submit">Cancel</button>
+      <button id="confirmok" value="ok" type="submit" class="primary">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="namebox" class="box dlg" aria-labelledby="nametext">
+  <form method="dialog">
+    <div class="dhead"><h2 id="nametext"></h2></div>
+    <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" spellcheck="false">
+    <p id="nameerror" class="formerror" role="alert" hidden></p>
+    <div class="actions">
+      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="nameok" value="ok" type="submit" class="primary">Create</button>
+    </div>
+  </form>
+</dialog>
+<script type="module" src="kanban.js"></script>
+</body>
+</html>

@@ -63,6 +63,9 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let (hooks, session) = (hooked.is_some(), main.or(asked));
     let caller = Caller { place: place_of(&app, &key), agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
     let (tool, args) = (body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());
+    if crate::tasks::tools::NAMES.contains(&tool.as_str()) {
+        return task_tool(&app, &caller, tool, args).await;
+    }
     let (a, key) = (app.clone(), caller.key.clone());
     let done = tokio::task::spawn_blocking(move || {
         let working = a.hooks.working(&caller.key);
@@ -87,6 +90,29 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
         app.dirty.notify_one();
     }
     answer(&text, error)
+}
+
+/// A task tool (AC-115): every page hears of what it changed.
+async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> Json<Value> {
+    let who = crate::tasks::tools::Who {
+        key: caller.key.clone(),
+        agent: caller.agent.clone(),
+        title: if caller.place.title.is_empty() { "session".into() } else { caller.place.title.clone() },
+        project: caller.place.project.clone(),
+        dir: caller.place.host.is_none().then(|| caller.place.dir.clone()).flatten(),
+    };
+    let a = app.clone();
+    let done = tokio::task::spawn_blocking(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await;
+    match done {
+        Ok(Ok((text, changed))) => {
+            for task in &changed {
+                crate::tasks::api::told(app, task);
+            }
+            answer(&text, false)
+        }
+        Ok(Err(e)) => answer(&e, true),
+        Err(_) => answer("terminum could not answer the call.", true),
+    }
 }
 
 /// Where pane `key`'s records go: its project, its row's title, host and folder, as a bookmark

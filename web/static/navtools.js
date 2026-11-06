@@ -39,10 +39,11 @@ export async function closeSession(item, send) {
 
 /** Asks for a name with a dialog: the text typed (trimmed), or null for Cancel and Esc; `yes`
  *  names its button. Enter in the field is the button (the form's first, Cancel, would be). */
-export function askName(text, value, yes = "Rename") {
+export function askName(text, value, yes = "Rename", most = 40) {
   const box = $("namebox");
   $("nametext").textContent = text;
   $("nameok").textContent = yes;
+  $("namefield").maxLength = most;
   $("namefield").value = value;
   $("namefield").onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); box.close("ok"); } };
   box.returnValue = "";

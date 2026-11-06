@@ -1,4 +1,21 @@
 {
+  "autoMemoryEnabled": false,
+  "env": {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
+  },
+  "permissions": {
+    "deny": [
+      "Bash(rm *project-memory*)",
+      "Bash(/bin/rm *project-memory*)",
+      "Bash(unlink *project-memory*)",
+      "Bash(mv *project-memory*)",
+      "Bash(find *project-memory* -delete*)",
+      "Bash(find *project-memory* -exec*)",
+      "Bash(git clean -*x*)",
+      "Bash(git clean -*X*)",
+      "Bash(git -C * clean *)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -6,6 +23,11 @@
           {
             "type": "command",
             "command": "python3 \"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --path-format=absolute --git-common-dir)/../scripts/worktree_fresh.py\" fresh --start 2>/dev/null || true",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --path-format=absolute --git-common-dir)/../scripts/memory_status.py\" 2>/dev/null; exit 0",
             "timeout": 10
           }
         ]

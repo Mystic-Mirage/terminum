@@ -34,7 +34,7 @@ in restricted modes). The main checkout's uncommitted work is never touched.
 
 ## 2. Audit CLAUDE.md (progressive disclosure)
 
-Read `CLAUDE.md`, `CLAUDE.local.md`, `MEMORY.md`, then only what they point at, by section
+Read `CLAUDE.md`, `CLAUDE.local.md`, `project-memory/INDEX.md`, then only what they point at, by section
 (README, `docs/USAGE.md`, `docs/ARCHITECTURE.md`, `docs/RELEASING.md`, `docs/UI-GUIDELINES.md`
 §6, the specs' §0 and §11, `Makefile`, `.github/workflows/ci.yml`, `scripts/ci_mac.sh`). Check
 every term, path, command and number of CLAUDE.md against the code (`grep` the sources, the
@@ -75,8 +75,7 @@ One `model: "opus"` `general-purpose` agent (same must-nots, writes only its rep
 findings, the audit, `git log` since the last run and the ledger. Per pattern seen in ≥ 2
 sessions, or once at a cost ≥ 3 user turns: sessions, root cause, and the fix in the cheapest
 layer that makes it impossible or visible — a script or `make` target > a test or a check >
-a permission rule or hook > a precise rule in CLAUDE.md, a spec or UI-GUIDELINES > a note in
-MEMORY.md. Ranked by sessions × cost ÷ effort. A rule that restates an existing one is no
+a permission rule or hook > a precise rule in CLAUDE.md, a spec or UI-GUIDELINES > a note in project-memory. Ranked by sessions × cost ÷ effort. A rule that restates an existing one is no
 fix: ask why the rule failed (buried, too long, contradicted, untestable) and fix that. For
 each fix of the ledger: held, recurred (with sessions), or not yet tested.
 
@@ -101,6 +100,5 @@ holds; record rejected advice with reasons in the ledger (CLAUDE.md §7).
 - Append to the ledger: `run` (the start time, UTC), sessions covered, patterns (count,
   sessions), fixes (file; commit once made), proposals left to the maintainer, rejected
   advice, earlier fixes held or recurred.
-- Report: patterns, fixes, what was not fixed and why, the worktree and branch; commit only
-  when asked (§9). Before saying done: `CronDelete` the check, no agent or task left running.
+- Report: patterns, fixes, what was not fixed and why, the worktree and branch; land it (§9). Before saying done: `CronDelete` the check, no agent or task left running.
   End with the global CLAUDE.md status block.

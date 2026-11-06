@@ -5,6 +5,7 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: the tree, 
 ## 0. Metadata
 
 | Field | Value |
+|---|---|
 | Status | current |
 
 A snapshot of what terminum must do, not a record of how it came to be: git holds that.

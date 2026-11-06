@@ -83,6 +83,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .item { width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr) var(--st-w, 18px); column-gap: var(--st-gap, 8px); align-items: start;
   padding: 8px 10px 8px 8px; border-radius: var(--r-sm); text-align: left; }
 @media (hover: hover) { .item:hover { background: color-mix(in srgb, var(--t-fg) 7%, transparent); } .item:hover .pbar { opacity: .85; } }
+.item.offline .txt { opacity: 0.55; }   /* its server cannot be read: as last read (AC-81) */
 .item.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }   /* see-through: a project's tint stays under it */
 /* a session's bar, as tall as its two lines: full for the shown session, half for the others;
    while its agent works it pulses, its color glowing and fading: a state, not motion (nothing
@@ -221,6 +222,9 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #status { background: var(--danger-fill); color: #fff; padding: 6px 12px; }
 #restored { background: var(--ok-fill); color: #fff; padding: 4px 12px; }
 #stall, #sized { background: var(--warn-fill); color: #fff; padding: 6px 12px; }
+/* over the terminal's top rows, taking no room: a line that comes and goes never resizes a
+   pane, which would make its program redraw (AC-132) */
+#over { position: relative; height: 0; z-index: 6; flex: none; }
 /* a banner: its line and an × (banners.js) */
 .banner { display: flex; align-items: center; gap: 8px; }
 .banner[hidden] { display: none; }

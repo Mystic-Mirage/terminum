@@ -7,7 +7,7 @@ import "./press.js";                                // a pressed blob's pulse (m
 import "./pop.js";                                  // where a window flies out of (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
-import { findItem, listParts, renderNav, seeWaits } from "./nav.js";
+import { findItem, listParts, renderNav, seeWaits, serverDown } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
 import { sessionDrawer } from "./drawer.js";
@@ -293,13 +293,13 @@ function onMessage(m) {
     case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg)) status(m.msg); break;   // empty: tmux is back
     case "update": if (!embedded) menu.showUpdate(m.latest); break;
     case "note": toast(m.msg, 4000); break;
-    case "stall": tools.showStall(m); break;
+    case "stall": tools.showStall(m); drawNav(); break;
     case "build": conn.checkBuild(m.id); showBuild(m); st.atMac = m.mac === true; break;
     case "trace": trace.onMessage(m); break;
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
     case "projects": st.projects = Array.isArray(m.items) ? m.items : []; st.listOrder = Array.isArray(m.order) ? m.order : []; place.note(); bookmarks.changed(); break;   // the list, and the projects the list below it names
-    case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
+    case "created": if (!m.stay) pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }
 
@@ -355,7 +355,7 @@ function drawNav() {
       onGroupNew: (g, last) => (last ? cloneRow(last) : send({ t: "new", group: g.wid })), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu });
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {
-    const next = place.next();                     // its project's or group's first, else the list's (AC-92)
+    const next = st.sid && serverDown(st.groups, st.sid) ? null : place.next();   // its project's or group's first, else the list's (AC-92); it stays while its server is away (AC-132)
     if (next) select(next);
     else showCurrent(null);
     if (!st.sid && narrow.matches) openDrawer();
@@ -373,7 +373,7 @@ function toggleGroup(key) {
 
 // The header (header.js): the title, then the folder with its Copy, the window, what runs there.
 const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
-  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), records: () => bookmarks.agentRecords(), toast });
+  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), records: () => bookmarks.agentRecords(), toast, onShown: tools.sayStalls });
 
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;

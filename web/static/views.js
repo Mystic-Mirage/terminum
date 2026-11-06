@@ -213,6 +213,7 @@ export class Views {
    *  root is the folder its coding agent works in when it has one and Files follows it (AC-51). */
   onFiles(m) {
     this.answered(m);
+    if (m.sid && this.sid && m.sid !== this.sid) return;   // a slow server's answer about a pane left meanwhile (AC-132)
     this.filesError = m.error ?? null;
     const cwd = following() && m.agent ? m.agent : m.cwd;
     this.filesRoot = m.error || !cwd ? null : { cwd, host: m.host ?? null };

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""Lands a finished worktree on origin/main (spec AC-104): its targeted checks green, then merged,
-pushed, the primary checkout fast-forwarded and the tree deleted. Several trees land at once: each
-tests alone, and only the merge and push take turns. A tree is merged with what others landed
-meanwhile; its checks run again if they changed the same files, and it builds again if they changed
-any code. During a release the primary checkout stays where it is (scripts/release_turn.py).
+"""Lands a finished worktree on origin/main (spec AC-104): merged with origin/main in the tree, its
+targeted checks green on that result, pushed, the primary checkout fast-forwarded and the tree deleted.
+Several trees land at once: each tests alone, and only the last look and the push take turns. A tree is
+merged with what others landed meanwhile; its checks run again if they changed the same files, and it
+builds again if they changed any code. During a release the primary checkout stays where it is (scripts/release_turn.py).
 
   land.py <slug>    from the primary checkout (`make land SLUG=<slug>`), the work committed;
                     TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code
@@ -126,7 +126,7 @@ def land(tree, check=checks_of, build=lambda tree: builds(tree), say=print, afte
             say(f"merged {BASE} ({base_now[:9]})")
         if tested_at is None or ours & others:
             if not check(tree):
-                raise Stop(1, f"targeted checks failed: {tree} stays, nothing merged")
+                raise Stop(1, f"targeted checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
             tested_at = git("rev-parse", "HEAD", cwd=tree).stdout.strip()
         elif has_code(others) and has_code(ours) and not build(tree):  # a renamed function, a new caller
             raise Stop(1, f"the build fails merged with {BASE}: {tree} stays, nothing pushed")
@@ -151,8 +151,8 @@ def after_push(primary):
     """The primary checkout on the fresh origin/main, and installed if the maintainer asked for that."""
     def run(files):
         sys.path.insert(0, str(primary / "scripts"))
-        import release_turn
-        if release_turn.releasing(primary):
+        from worktree import releasing
+        if releasing(primary):
             print("primary checkout stays where it is: a release is running")
             return
         stuck = update_primary(primary)

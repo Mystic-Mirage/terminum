@@ -14,11 +14,12 @@ SCRIPT = Path(__file__).resolve().parents[1] / "ci_mac.sh"
 SSH = """#!/bin/bash
 for a; do last=$a; done
 echo "ssh ${last//$'\n'/ }" >> "$LOG"
-case $last in *"bash -lc"*) exit "${RUN_RC:-0}" ;; esac
+case $last in *"bash -lc"*) exit "${RUN_RC:-0}" ;; *"mkdir ci/terminum.lock"*) [ -z "${LOCK_RC:-}" ] || exit "$LOCK_RC" ;; esac
 cd "$RUNNER" && bash -c "$last"
 """
 RSYNC = """#!/bin/bash
 echo "rsync" >> "$LOG"
+[ -z "${RSYNC_RC:-}" ] || exit "$RSYNC_RC"
 src=${@: -2:1}
 python3 - "$src" "$STAGED_MANIFEST" <<'PY'
 from pathlib import Path
@@ -37,9 +38,9 @@ esac
 
 
 class CiMacTest(unittest.TestCase):
-    def run_script(self, root, rc=0):
+    def run_script(self, root, rc=0, **stubs):
         env = {**os.environ, "RUN_RC": str(rc), "PATH": f"{root / 'bin'}:{os.environ['PATH']}", "LOG": str(root / "log"),
-               "RUNNER": str(root / "runner"), "TM_MAC_RUNNER": "mac-runner", "STAGED_MANIFEST": str(root / "manifest")}
+               "RUNNER": str(root / "runner"), "TM_MAC_RUNNER": "mac-runner", "STAGED_MANIFEST": str(root / "manifest"), **stubs}
         r = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=30)
         log = (root / "log").read_text().splitlines() if (root / "log").exists() else []
         (root / "log").unlink(missing_ok=True)
@@ -76,9 +77,16 @@ class CiMacTest(unittest.TestCase):
 
     def test_a_dropped_link_leaves_the_lock_and_says_so(self):
         r, log = self.run_script(self.root, 255)
-        self.assertEqual(r.returncode, 255)
+        self.assertEqual(r.returncode, 2, "could not run: it stops no release")
         self.assertIn("remove ~/ci/terminum.lock", r.stderr)
         self.assertTrue((self.root / "runner/ci/terminum.lock").is_dir(), "the run may go on there")
+
+    def test_its_exit_says_what_happened(self):  # AC-104: make release stops on 1 and goes on past 2 and 3
+        for run, code in ((2, 1), (127, 1), (4, 2)):
+            self.assertEqual(self.run_script(self.root, run)[0].returncode, code, f"the run's exit {run}")
+        self.assertEqual(self.run_script(self.root, LOCK_RC="255")[0].returncode, 2, "no answer")
+        self.assertEqual(self.run_script(self.root, LOCK_RC="1")[0].returncode, 2, "its folder could not be made")
+        self.assertEqual(self.run_script(self.root, RSYNC_RC="12")[0].returncode, 2, "the tree did not get there")
 
     def test_rsync_receives_a_staged_source_tree_without_local_files(self):
         r, _ = self.run_script(self.root)

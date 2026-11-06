@@ -66,6 +66,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git -C \"$CLAUDE_PROJECT_DIR\" rev-parse --path-format=absolute --git-common-dir)/../scripts/worktree_fresh.py\" bash-check 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }

@@ -79,6 +79,20 @@ def primary_of(cwd):
     return next(iter(trees(cwd)))
 
 
+def mark_path(cwd):
+    """The file a running release holds (scripts/release_turn.py): landings and installs leave main alone."""
+    return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd)) / "terminum-release"
+
+
+def releasing(cwd):
+    """True while a release of this repository runs: its mark names a live process."""
+    try:
+        os.kill(int(mark_path(cwd).read_text().strip()), 0)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def ours(cwd):
     """Whether `cwd` is in the repository this script is from: a hook runs wherever its session has
     moved to, and another project's trees and remote are not its business."""

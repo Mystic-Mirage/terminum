@@ -43,6 +43,8 @@ pub struct PaneFields {
     /// the title a restore gave the pane (`@tm-title`: its coding agent's, before tmux
     /// restarted, AC-15), shown while a shell runs there
     pub restored_title: String,
+    /// `--agent-name` of the command that started the pane, when tmux can tell it (AC-01).
+    pub agent_name: String,
 }
 
 /// What the list shows for a pane.
@@ -58,22 +60,30 @@ pub struct Item {
     pub shell: bool,
 }
 
+/// tmux's format for `--agent-name` of the command that started a pane; only that value leaves tmux,
+/// and the reader takes it only if `settings::is_name` does: the command may hold the pane's environment.
+macro_rules! agent_name_format {
+    () => { "#{?#{m:*--agent-name *,#{pane_start_command}},#{s/^.*--agent-name ([^ \t\"]+).*/\\1/:pane_start_command},}" };
+}
+pub(crate) use agent_name_format;
+
 /// The `list-panes -F` format [`parse_list_panes`] reads, fields separated by tabs.
-pub const LIST_PANES_FORMAT: &str = "#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t\
+pub const LIST_PANES_FORMAT: &str = concat!("#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t\
 #{automatic-rename}\t#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}\t\
-#{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}\t#{@tm-quick}\t#{@tm-quick-side}\t#{session_id}\t#{@tm-title}\t#{window_activity}";
+#{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}\t#{@tm-quick}\t#{@tm-quick-side}\t#{session_id}\t#{@tm-title}\t\
+", agent_name_format!(), "\t#{window_activity}");
 
 /// Whether `s` is a name tmux could have given a window after its command (`claude`, `zsh`).
 fn auto_name(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_' || ".+@-".contains(c))
 }
 
-/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 17 fields (16 without
-/// the restored title, as tests write them; more: a name holding a tab) or its numbers are not numbers. An empty `#{automatic-rename}` (a tmux that
+/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 19 fields (16 to 18 without
+/// the last ones, as tests write them; more: a name holding a tab) or its numbers are not numbers. An empty `#{automatic-rename}` (a tmux that
 /// does not say) counts as on when the window's name looks like a command.
 pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
     let f: Vec<&str> = line.trim_end_matches(['\r', '\n']).split('\t').collect();
-    if !(16..=18).contains(&f.len()) {
+    if !(16..=19).contains(&f.len()) {
         return None;
     }
     let flag = |s: &str| s == "1";
@@ -95,7 +105,8 @@ pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
         quick_side: f[14].into(),
         session_id: f[15].into(),
         restored_title: f.get(16).copied().unwrap_or_default().into(),
-        window_activity: f.get(17).and_then(|a| a.parse().ok()).unwrap_or(0),
+        agent_name: f.get(17).copied().filter(|n| crate::settings::is_name(n)).unwrap_or_default().into(),
+        window_activity: f.get(18).and_then(|a| a.parse().ok()).unwrap_or(0),
     })
 }
 
@@ -186,20 +197,25 @@ pub fn item(p: &PaneFields, pane_no: usize, panes_in_window: usize, home: &str) 
         p.pane_title.clone()
     };
     let user_named = !window_name.is_empty() && !p.automatic_rename;
+    if job.is_empty() && !user_named {
+        job = window_name.to_string();            // tmux names a window after its program
+    }
+    let agent = agent_of(&job)
+        .or_else(|| AGENTS.iter().copied().find(|a| *a == window_name))
+        .or_else(|| claude_marked(&p.pane_title).then_some("claude"));
+    // a subagent in its own pane: Claude Code's title says only its type, the same for all of them
+    let shown = if agent == Some("claude") && !p.agent_name.is_empty() { p.agent_name.as_str() } else { program_title.as_str() };
     let mut title = if user_named {
         window_name.to_string()
-    } else if !program_title.is_empty() {
-        program_title.clone()
+    } else if !shown.is_empty() {
+        shown.to_string()
     } else if !window_name.is_empty() {
         window_name.to_string()
     } else {
         "tmux window".to_string()
     };
-    if job.is_empty() && !user_named {
-        job = window_name.to_string();            // tmux names a window after its program
-    }
     if pane_no > 1 {
-        title = [&program_title, &job, &path].into_iter().find(|t| !t.is_empty()).cloned()
+        title = [shown, job.as_str(), path.as_str()].into_iter().find(|t| !t.is_empty()).map(str::to_string)
             .unwrap_or_else(|| "Shell".to_string());
     }
     let mut sub = Vec::new();
@@ -212,9 +228,6 @@ pub fn item(p: &PaneFields, pane_no: usize, panes_in_window: usize, home: &str) 
     if !program_title.is_empty() && program_title != title && !sub.contains(&program_title) {
         sub.push(program_title);
     }
-    let agent = agent_of(&job)
-        .or_else(|| AGENTS.iter().copied().find(|a| *a == window_name))
-        .or_else(|| claude_marked(&p.pane_title).then_some("claude"));
     Item {
         title: bare(&title),
         sub: sub.iter().map(|s| bare(s)).collect(),

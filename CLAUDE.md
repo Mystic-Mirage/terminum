@@ -95,7 +95,7 @@ behavior change: tests happy, failure, edge paths
 | `scripts/e2e_*.py` | remote hosts |
 browsers: Chromium and WebKit, a wide and a phone size
 tests, experiments, cleanup: !attach to, !type into, !end what they did not start; end own processes by pid (`Popen.pid`, a pidfile their wrapper writes, a process group they made) or `tmux -L <own socket> kill-server`; !pattern on this machine (`pkill -f`): the installed terminumd's control clients and ssh links and the user's processes can match a test's command line
-one exception: `scripts/leftovers.py`, from `make leftovers END=1` or `make release`: one exact test command, no parent, over 6 h old, read again just before, SIGTERM by pid; dead `tm-*` tmux sockets; folders with a test's prefix in the temporary folders, nothing recent or open in them (AC-102)
+one exception: `scripts/leftovers.py`, from `make leftovers END=1`, `make release` or `make rehearse`: one exact test command, no parent, over 6 h old, read again just before, SIGTERM by pid; dead `tm-*` tmux sockets; folders with a test's prefix in the temporary folders, nothing recent or open in them (AC-102)
 end everything started (terminumd, tmux servers, ssh stand-ins, browsers, containers, temporary folders) on pass, fail or signal (`finally`, SIGTERM/SIGHUP turned into an exit so it runs: `scripts/e2e_ws.py`)
 before delivering: look for leftovers of your runs (`ps`, `tmux -L`/`-S` sockets, `docker ps`), end them as above; a leftover is a test bug to fix, not only to end
 guard: `make check` runs each step under `scripts/check_step.py`, which fails one that leaves something (AC-102)
@@ -120,8 +120,8 @@ plans: order, dependencies, exit criteria; !effort estimates
 task: its worktree passes **targeted checks** (`python3 scripts/check_changed.py`, AC-104): build, tests of what changed, tests citing the cases it touches, critical functions
 new behavior: tests written from its acceptance cases, citing their `AC-nn`
 iterating: only the changed area's checks (`cargo test <module>`, `node web/test/e2e_all.mjs <check…>`)
-**full run = the release's gate, separate from any task:** `make check` (once per tree: `make test`, clippy `-D warnings`, `e2e_panel.mjs`, `e2e_live.mjs`, every `scripts/e2e_*.py` but Docker's, `scripts/e2e_install.sh`, on a Mac `e2e_all.mjs`, `security_check.sh`), from `make release`
-evidence: Docker's `scripts/e2e_remote_sshd*.py` (remote changes); `make test-mac` (macOS-only: launchd, signing, folders, Finder)
+**full run = the release's gate, separate from any task:** `make check` (once per tree: `make test`, clippy `-D warnings`, `e2e_panel.mjs`, `e2e_live.mjs`, every `scripts/e2e_*.py` but Docker's, `scripts/check_docker.py` (Docker's, on Apple's chips when Docker answers), `scripts/e2e_install.sh`, on a Mac `e2e_all.mjs`, `security_check.sh`), then `make test-mac` when `TM_MAC_RUNNER` is set, from `make release`
+outside the gate: a real host, the user's signed-in browser and iPhone (below); while working: Docker's `scripts/e2e_remote_sshd*.py` (remote changes), `make test-mac` (macOS-only: launchd, signing, folders, Finder)
 user-visible change: also on its real target, !only fakes: real programs in a private tmux (`web/test/e2e_liveprogs.mjs`: vim, mc, Claude Code in both TUIs, `default`, `fullscreen`, which copy and paste differently: a change to copy, paste, keys, mouse is checked in both; uses the user's Claude Code login with no model call, leaves a folder's trust entry in `~/.claude.json`, `TM_TEST_NO_CLAUDE=1` skips it); a real host for remote behavior; `make installed` after `make install`
 only the user's signed-in page, browser or iPhone can show it → **Not verified**, in the release notes too
 changed files reviewed and simplified; affected docs and spec updated; a UI change holds `docs/UI-GUIDELINES.md` §6
@@ -129,14 +129,14 @@ delivery states: what changed, why, how verified, excluded scope, **Noticed, not
 install: `make install` from the primary checkout only (a worktree's refused); `make installed` says whose build runs (several checkouts share it)
 
 ### 9. Git hygiene
-every change to the repository's files, however small, checkout clean or not: its own worktree (a hook refuses Claude Code's edits in the primary checkout; `TM_EDIT_PRIMARY=1` is the maintainer's, CONTRIBUTING.md "Hooks")
+every change to the repository's files, however small, checkout clean or not: its own worktree (hooks refuse Claude Code's edits and common shell writes in the primary checkout, git its commits there, a heuristic: !route around it; `TM_EDIT_PRIMARY=1` is the maintainer's, CONTRIBUTING.md "Hooks")
 make: `python3 scripts/worktree.py add <slug> --kind <kind>`: from the `origin/main` it just fetched, refuses when the fetch fails; !raw `git worktree add`
 commit there as you go: small single-concern, says why; only your paths (`git add <paths>`, !`-A`, !`.`)
 before landing: `/simplify` (`simplify` skill) over the tree's changes, unless already run over them; fixes applied, checks run on the result
-**land** when done: `make land SLUG=<slug>` from the primary checkout, no asking (AC-104): targeted checks green > merge with `origin/main` > push > fast-forward the primary checkout > delete the tree (`scripts/delete_worktree.sh`)
-red: nothing lands, tree stays; conflict: stays in the tree to resolve, commit, land again; several trees land at once, each tested alone
+**land** when done: `make land SLUG=<slug>` from the primary checkout, no asking (AC-104): merge with `origin/main` in the tree > targeted checks green on the result > push > fast-forward the primary checkout > delete the tree (`scripts/delete_worktree.sh`)
+red: nothing pushed, tree stays with its merge; conflict: stays in the tree to resolve, commit, land again; several trees land at once, each tested alone
 `make land` is the one standing permission to push: !other push, !force-push, !publish without the user's request in this session
-parallel: a test run takes a free port and its own tmux sockets, so trees run checks at once; except Docker's `e2e_remote_sshd*.py` (`tm-test-sshd` on a fixed port): one tree at a time
+parallel: a test run takes free ports, its own tmux sockets and containers, so trees run checks at once
 nothing to land: `scripts/delete_worktree.sh <slug>` (CONTRIBUTING.md "Worktrees")
 sweep: `worktree.py sweep` (Stop hook, every `worktree.py add`) removes a tree in `.worktrees` left behind: last move its own work, all in `origin/main` or `main`, idle an hour, as `remove` would; else stays, `worktree.py list` says why; !`--discard` a tree you did not make
 fresh `origin/main`: `git fetch origin` at a task's start, > any claim about what `main` has or lacks, > each push; a failed fetch is reported, naming the base used; `.claude/settings.json`'s hooks say checkout, branch, distance at session start and at a prompt when it matters: act on them
@@ -150,7 +150,8 @@ when: only on the maintainer's request in the current session, in their words ("
 request covers, in order: `/simplify` (`simplify` skill) over every change since the newest `v*` tag, fixes applied > on a minor release `/docs-review` (`docs-review` skill) over the same > changes and release notes landed (§9) > `make release`
 **only failing tests block a release:** its full test run is the gate; a docs finding, a skipped review, a build's warning, a leftover is said, !stops it
 version: the number the maintainer names; words without one ("a minor release", "a small one") !choose it. Else: next patch `x.y.Z+1` when all since the newest `v*` tag is fixes or small changes to existing UI (a new button, a label, a look); next minor `x.Y+1.0` for a new feature or screen, a changed protocol, install or upgrade; in doubt the patch; !major unless named. Say the number and why when writing its release notes
-how: only `make release TAG=vX.Y.Z`: clears old leftovers > full checks > builds > signs > tags `HEAD` > pushes the tag > publishes; report the release URL
+try: `make rehearse TAG=vX.Y.Z`, the same chain up to the built package (its macOS builds codesigned with the Developer ID, as `make install`'s): no request needed, no release key, nothing tagged or public; from a tree at `origin/main`
+how: only `make release TAG=vX.Y.Z`: clears old leftovers > full checks > the Mac test runner's (could not run: said, goes on) > builds > signs > tags `HEAD` > pushes the tag > publishes; report the release URL
 fails: report, stop; !sign with `ssh-keygen -Y` by hand; !push, !move, !delete a `v*` tag; !create, !edit, !upload to, !delete a release by hand
 forks: !approve a fork's workflow run
 release key, the maintainer's alone: outside the repository, passphrase in their login Keychain; `scripts/release.py` loads it into `ssh-agent` for two minutes; !read, !print, !copy, !move, !export, !re-encrypt it; !load it otherwise; !ask for or type its passphrase; stop and ask when signing would prompt; releases are trusted because of that key and the maintainer's GitHub account, !this file

@@ -251,6 +251,42 @@ class ReleaseTest(unittest.TestCase):
             build.assert_called_once_with(["--build", "v1.0.0", "--release"])
             self.assertEqual([call[0] for call in order.mock_calls], ["run", "run", "build", "sign", "unmoved", "publish"])
 
+    def test_a_rehearsal_builds_and_signs_tags_pushes_publishes_nothing(self):  # AC-104
+        for platform in ("linux-x86_64", "linux-aarch64"):
+            binary = self.out / release.package.NAME / "agents" / platform / "terminumd"
+            binary.parent.mkdir(parents=True)
+            binary.touch()
+        never = mock.Mock(side_effect=AssertionError("a rehearsal must not reach this"))
+        with mock.patch.object(release, "check_settings"), mock.patch.object(release, "check_source", return_value="abc1234567"), \
+                mock.patch.object(release, "check_unmoved"), mock.patch.object(release, "run", return_value="") as run, \
+                mock.patch.object(release.package, "main") as build, mock.patch.object(release, "sign", never), \
+                mock.patch.object(release, "publish", never), mock.patch.object(release, "gh", never), \
+                mock.patch.object(release, "release_notes", never), mock.patch.object(release, "check_unpublished", never), \
+                mock.patch.dict(os.environ, {"TM_GATE_HEAD": "abc1234567"}):
+            release.main(["--rehearse", "v1.0.0"])
+        build.assert_called_once_with(["--build", "v1.0.0", "--release"])
+        self.assertEqual([c.args[:2] for c in run.call_args_list], [("npm", "ci"), ("npm", "run")])
+
+    def test_what_the_gate_could_not_run_goes_into_the_notes(self):  # AC-104
+        for platform in ("linux-x86_64", "linux-aarch64"):
+            binary = self.out / release.package.NAME / "agents" / platform / "terminumd"
+            binary.parent.mkdir(parents=True)
+            binary.touch()
+        with mock.patch.dict(os.environ, {"TM_GATE_SAID": "the Mac test runner's checks did not run: x"}), \
+                mock.patch.object(release, "check_settings"), mock.patch.object(release, "check_source", return_value="abc"), \
+                mock.patch.object(release, "check_unpublished", return_value=False), mock.patch.object(release, "release_notes", return_value="# Changes\n"), \
+                mock.patch.object(release, "run", return_value=""), mock.patch.object(release.package, "main"), mock.patch.object(release, "sign"), \
+                mock.patch.object(release, "check_unmoved"), mock.patch.object(release, "publish", return_value="url") as publish:
+            release.main(["v1.0.0"])
+        self.assertIn("**Not verified:** the Mac test runner's checks did not run: x", publish.call_args.args[2])
+
+    def test_a_commit_the_checks_did_not_see_is_refused(self):  # AC-104
+        with mock.patch.dict(os.environ, {"TM_GATE_HEAD": "aaaa"}):
+            self.assertIn("HEAD moved since the full checks", self.refused(release.check_gate, "bbbb"))
+            release.check_gate("aaaa")
+        os.environ.pop("TM_GATE_HEAD", None)
+        release.check_gate("bbbb")
+
 
 if __name__ == "__main__":
     unittest.main()

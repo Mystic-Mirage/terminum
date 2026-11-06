@@ -14,7 +14,7 @@ SPEC.loader.exec_module(ci_source)
 class SourceSelection(unittest.TestCase):
     def test_sensitive_and_local_names_are_rejected_even_if_tracked(self):
         for name in ["credentials.json", "cert.pem", ".codex/config.toml", "ui/.env.local", "docs/secrets.txt",
-                     "local.mk", "CLAUDE.local.md", "MEMORY.md", "ui/node_modules/x.js", "terminumd/target/x.rs",
+                     "local.mk", "CLAUDE.local.md", "MEMORY.md", "project-memory/INDEX.md", "docs/project-memory/x.md", "ui/node_modules/x.js", "terminumd/target/x.rs",
                      "scripts/private.key", "scripts/.docker/config.json", "scripts/.kube/config", "../outside.rs", "/tmp/outside.rs"]:
             for tracked in [True, False]:
                 with self.subTest(name=name, tracked=tracked):

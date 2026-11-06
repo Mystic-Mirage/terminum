@@ -87,7 +87,7 @@ class CiMacTest(unittest.TestCase):
         self.assertTrue(lines[0].startswith("/tmp/tm-ci-src."), lines[0])
         self.assertIn("scripts/ci_source.py", lines)
         self.assertIn("AGENTS.md", lines)
-        for name in ["local.mk", "CLAUDE.local.md", "MEMORY.md", "ui/node_modules", ".codex", ".claude"]:
+        for name in ["local.mk", "CLAUDE.local.md", "MEMORY.md", "project-memory", "ui/node_modules", ".codex", ".claude"]:
             self.assertNotIn(name, lines)
         self.assertFalse(Path(lines[0]).exists(), "the owned staging tree is removed on exit")
 

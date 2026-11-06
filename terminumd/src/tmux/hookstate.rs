@@ -256,6 +256,11 @@ impl Hooks {
         self.recs.lock().get_mut(key).is_some_and(|r| std::mem::take(&mut r.ended))
     }
 
+    /// How pane `key`'s turn ended, once `take_ended` said it did: its state and why.
+    pub fn ended_as(&self, key: &str) -> Option<(State, String)> {
+        self.recs.lock().get(key).and_then(|r| Some((r.state?, r.why.clone())))
+    }
+
     /// Whether pane `key`'s hooks already counted this turn's end, so its screen's is no second one.
     /// Not for a turn its hooks left without an end (no Stop, or one that waited on subagents).
     pub fn end_counted(&self, key: &str) -> bool {

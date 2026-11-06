@@ -670,11 +670,11 @@ Sample event: `{"task":"T-12","at":1792003600,"author":"Dispatcher","kind":"comm
 | Route | Does |
 |---|---|
 | `GET /`, `/sessions/`, `/kanban/`, `/kanban/T-12` | redirect keeping the query (`?trace=1`); the session page; the board |
-| `GET /api/tasks?project=&severity=&owner=&status=&q=&after=&limit=&counts=1` | a page of 200 at most; with `counts=1`, each column's count under the same filters |
+| `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&after=&limit=&counts=1` | a page of 200 at most; with `counts=1`, each column's count under the same filters; with `id=T-12`, whether they show that task |
 | `POST /api/tasks`, `PATCH /api/tasks/T-12`, `POST /api/tasks/T-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}` |
 | `GET /api/task-files/<id>` | header sign-in only, never an address (terminum.md AC-09): the page fetches and shows a blob, as `web/static/shown.js` does; `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; inline only for PNG, JPEG, GIF, WebP |
 
-`PATCH` takes `text_was`, the text the human began from: another now, it answers 412 and changes nothing (AC-133). A `session` that is not in the list is refused.
+`PATCH` takes `text_rev`, as a task's window gave it, for the text the human began from: another now, it answers 412 and changes nothing (AC-133). A `session` that is not in the list is refused.
 
 Pages hear over the page's WebSocket: `taskchange {id}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it; `taskmarks {marks, counts}` when the open tasks by session or the tasks by project change, for the session list; the `layout` it hears anyway gives a board its cards' session states.
 

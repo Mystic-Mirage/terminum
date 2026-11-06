@@ -2,6 +2,7 @@
 // The page's two small questions, on the session page and the board: a yes or no, and a name.
 const $ = (id) => document.getElementById(id);
 
+// Every dialog's ×, as Esc: a dialog that refuses Esc (the bookmark's while it saves) refuses it too.
 // The bookmarks' windows close their own way (marks.js, markdoc.js).
 for (const x of document.querySelectorAll("dialog.dlg .dhead .x:not([id])")) {
   x.onclick = () => { const d = x.closest("dialog"); if (d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel"); };

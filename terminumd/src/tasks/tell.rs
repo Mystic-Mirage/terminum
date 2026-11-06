@@ -13,6 +13,7 @@ use serde_json::Value;
 use super::ops::{self, Task};
 use super::store::DISPATCHER;
 use crate::app::Shared;
+use crate::tmux::agentstate::State;
 
 /// Lines waiting for a pane's next context, with their tasks.
 #[derive(Default)]
@@ -77,16 +78,12 @@ pub async fn human_moved(app: &Shared, task: &Task) {
     say(app, &task.id, "Waits for the session's next tool call".to_string());
 }
 
-/// What an agent's event says of the task its session works on (AC-132): only the main agent's;
-/// a question at a turn's end is no stop; /clear goes on.
-pub fn stopped_words(ev: &Value) -> Option<String> {
-    if ev["sub"].as_str().is_some_and(|s| !s.is_empty()) {
-        return None;
-    }
-    match ev["event"].as_str()? {
-        "StopFailure" => Some(format!("The agent stopped: {}", ev["error"].as_str().filter(|e| !e.is_empty()).unwrap_or("an error"))),
-        "Stop" if ev["asks"] != true => Some("The agent stopped with this task open".to_string()),
-        "SessionEnd" if ev["reason"] != "clear" => Some("The agent's session ended with this task open".to_string()),
+/// What a turn's end says of the task its session works on (AC-132), as hookstate read it: a turn
+/// that ends in a question or while subagents run is no stop.
+fn ended_words(state: State, why: &str) -> Option<String> {
+    match state {
+        State::Done => Some("The agent stopped with this task open".to_string()),
+        State::Failed => Some(format!("The agent stopped: {}", if why.is_empty() { "an error" } else { why })),
         _ => None,
     }
 }
@@ -97,7 +94,7 @@ fn say_stopped(tx: &rusqlite::Transaction, key: &str, words: &str, at: i64) -> R
     let task: Option<(String, String)> = tx.query_row("SELECT id, 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND archived_at IS NULL", [key], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional().map_err(ops::sql)?;
     let Some((row, id)) = task else { return Ok(None) };
-    let last: Option<String> = tx.query_row("SELECT text FROM events WHERE task = ?1 ORDER BY rowid DESC LIMIT 1", [&row], |r| r.get(0)).optional().map_err(ops::sql)?.flatten();
+    let last: Option<String> = tx.query_row("SELECT text FROM events WHERE task = ?1 ORDER BY at DESC, rowid DESC LIMIT 1", [&row], |r| r.get(0)).optional().map_err(ops::sql)?.flatten();
     if last.as_deref() == Some(words) {
         return Ok(None);
     }
@@ -105,15 +102,28 @@ fn say_stopped(tx: &rusqlite::Transaction, key: &str, words: &str, at: i64) -> R
     Ok(Some(id))
 }
 
-/// After a hook's event: what it says of the pane's task, off the async workers.
-pub fn agent_event(app: &Shared, key: &str, ev: &Value) {
-    let Some(words) = stopped_words(ev) else { return };
+/// Off the async workers; an open window shows it.
+fn said_stopped(app: &Shared, key: &str, words: String) {
     let (a, key) = (app.clone(), key.to_string());
     tokio::task::spawn_blocking(move || match a.tasks.with(|tx| say_stopped(tx, &key, &words, ops::now())) {
         Ok(Some(id)) => super::api::change_heard(&a, &id),
         Ok(None) => {}
         Err(e) => tracing::warn!(event = "tasks.told", error = %e),
     });
+}
+
+/// A pane's turn ended: what became of it is said on its task.
+pub fn turn_ended(app: &Shared, key: &str) {
+    if let Some(words) = app.hooks.ended_as(key).and_then(|(state, why)| ended_words(state, &why)) {
+        said_stopped(app, key, words);
+    }
+}
+
+/// A pane's agent session ended; /clear goes on.
+pub fn session_ended(app: &Shared, key: &str, ev: &Value) {
+    if ev["event"] == "SessionEnd" && ev["reason"] != "clear" {
+        said_stopped(app, key, "The agent's session ended with this task open".to_string());
+    }
 }
 
 /// The pane's next context, joined to what else is due; each line then is said on its task.
@@ -149,15 +159,12 @@ mod tests {
     }
 
     #[test]
-    fn ac132_what_an_agent_s_event_says() {
-        assert_eq!(stopped_words(&json!({"event": "StopFailure", "error": "rate_limit"})).as_deref(), Some("The agent stopped: rate_limit"));
-        assert_eq!(stopped_words(&json!({"event": "StopFailure"})).as_deref(), Some("The agent stopped: an error"));
-        assert_eq!(stopped_words(&json!({"event": "Stop"})).as_deref(), Some("The agent stopped with this task open"));
-        assert_eq!(stopped_words(&json!({"event": "Stop", "asks": true})), None, "a question is no stop");
-        assert_eq!(stopped_words(&json!({"event": "SessionEnd", "reason": "logout"})).as_deref(), Some("The agent's session ended with this task open"));
-        assert_eq!(stopped_words(&json!({"event": "SessionEnd", "reason": "clear"})), None, "/clear goes on");
-        assert_eq!(stopped_words(&json!({"event": "Stop", "sub": "a1"})), None, "a subagent's is its own");
-        assert_eq!(stopped_words(&json!({"event": "PostToolUse"})), None);
+    fn ac132_what_a_turn_s_end_says() {
+        assert_eq!(ended_words(State::Failed, "rate_limit").as_deref(), Some("The agent stopped: rate_limit"));
+        assert_eq!(ended_words(State::Failed, "").as_deref(), Some("The agent stopped: an error"));
+        assert_eq!(ended_words(State::Done, "").as_deref(), Some("The agent stopped with this task open"));
+        assert_eq!(ended_words(State::Waiting, "Which one?"), None, "a question is no stop");
+        assert_eq!(ended_words(State::Working, ""), None, "subagents still run");
     }
 
     #[test]

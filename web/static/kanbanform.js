@@ -2,16 +2,13 @@
 // The new-task window (AC-106): a title, Markdown with Preview, files dropped or pasted into the
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm } from "./dialogs.js";
-import { $, api, el, fileMarkdown, fillSelect, onFiles, renderInto, sessionOptions, upload } from "./kanbanutil.js";
+import { $, api, el, fileMarkdown, fillSelect, iconButton, onFiles, onSend, read, renderInto, sessionOptions, upload, write } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
-function read(key) { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } }
-function write(key, v) { try { if (v) localStorage.setItem(key, JSON.stringify(v)); else localStorage.removeItem(key); } catch { /* private mode: this page's only */ } }
-
 export function taskForm({ getMeta, getFilter, onMade }) {
   const box = $("newbox");
-  let files = [], uploads = 0;
+  let files = [], uploads = 0, offered = "";
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
   const canCreate = (busy = false) => { $("newcreate").disabled = busy || uploads > 0; };
 
@@ -22,16 +19,12 @@ export function taskForm({ getMeta, getFilter, onMade }) {
   function showFiles() {
     $("newfiles").replaceChildren(...files.map((f) => {
       const li = el("li", null, f.name);
-      const x = el("button", "icon", "×");
-      x.type = "button";
-      x.setAttribute("aria-label", `Remove ${f.name}`);
-      x.addEventListener("click", () => {
+      li.append(iconButton("icon", "x", `Remove ${f.name}`, "Remove this file", () => {
         files = files.filter((o) => o.id !== f.id);
         $("newtext").value = $("newtext").value.replaceAll(fileMarkdown(f), "");
         showFiles();
         keep();
-      });
-      li.append(x);
+      }));
       return li;
     }));
   }
@@ -103,7 +96,7 @@ export function taskForm({ getMeta, getFilter, onMade }) {
   $("newcreate").addEventListener("click", create);
   // Enter in the title is Create; what is typed never goes by a slip: Discard asks
   box.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); create(); });
-  $("newtext").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); create(); } });
+  onSend($("newtext"), create);
   $("newdiscard").addEventListener("click", async () => {
     const typed = $("newtitle").value.trim() || $("newtext").value.trim() || files.length;
     if (typed && !await askConfirm("Discard this task? What you typed and its files go.", "Discard")) return;
@@ -123,9 +116,12 @@ export function taskForm({ getMeta, getFilter, onMade }) {
   /** The pickers follow the projects and sessions while the window is open; a chosen one gone is said. */
   function refresh() {
     if (!box.open) return;
-    const meta = getMeta(), project = $("newproj").value, session = $("newsession").value;
-    fillSelect($("newproj"), meta.projects.map((p) => [p.id, p.name]), project);
-    fillSelect($("newsession"), sessionOptions(meta), session);
+    const meta = getMeta(), projects = meta.projects.map((p) => [p.id, p.name]), sessions = sessionOptions(meta), now = JSON.stringify([projects, sessions]);
+    if (now === offered) return;
+    offered = now;
+    const project = $("newproj").value, session = $("newsession").value;
+    fillSelect($("newproj"), projects, project);
+    fillSelect($("newsession"), sessions, session);
     if ($("newproj").value !== project) error("The project you chose is gone: choose another.");
     else if ($("newsession").value !== session) error("The session you chose is gone: choose another.");
     keep();

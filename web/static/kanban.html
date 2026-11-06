@@ -31,15 +31,15 @@
   <div id="filters">
     <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
       <input id="find" type="search" placeholder="Find tasks" aria-label="Find tasks" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-    <button id="filtersbtn" class="key" type="button" aria-expanded="false" aria-controls="picks">Filters</button>
+    <button id="filtersbtn" class="textkey" type="button" aria-expanded="false" aria-controls="picks">Filters</button>
     <div id="picks">
-      <details id="fproject" class="pick"><summary class="key">Projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
-      <details id="fseverity" class="pick"><summary class="key">Severity</summary><div class="box menurows" role="group" aria-label="Severity"></div></details>
-      <details id="fowner" class="pick"><summary class="key">Owner</summary><div class="box menurows" role="group" aria-label="Owner"></div></details>
-      <button id="clearfilters" class="key" type="button" hidden>Clear filters</button>
+      <details id="fproject" class="pick" name="picks"><summary class="textkey">Projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
+      <details id="fseverity" class="pick" name="picks"><summary class="textkey">Severity</summary><div class="box menurows" role="group" aria-label="Severity"></div></details>
+      <details id="fowner" class="pick" name="picks"><summary class="textkey">Owner</summary><div class="box menurows" role="group" aria-label="Owner"></div></details>
+      <button id="clearfilters" class="textkey" type="button" hidden>Clear filters</button>
     </div>
   </div>
-  <div id="boardacts"><button id="newtask" class="key primary" type="button">New task</button></div>
+  <div id="boardacts"><button id="newtask" class="textkey primary" type="button">New task</button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
@@ -73,7 +73,7 @@
       <label class="fieldrow">Session <select id="newsession" class="field"></select></label>
     </div>
     <input id="newpick" type="file" multiple hidden>
-    <p id="newerror" class="formerror" role="alert" hidden></p>
+    <p id="newerror" role="alert" hidden></p>
     <div class="actions">
       <button id="newadd" type="button">Add files…</button>
       <button id="newdiscard" type="button">Discard</button>
@@ -99,7 +99,7 @@
   <form method="dialog">
     <div class="dhead"><h2 id="nametext"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" spellcheck="false">
-    <p id="nameerror" class="formerror" role="alert" hidden></p>
+    <p id="nameerror" role="alert" hidden></p>
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="nameok" value="ok" type="submit" class="primary">Create</button>

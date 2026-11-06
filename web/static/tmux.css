@@ -9,7 +9,7 @@
 .grp:is(.reconnecting, .off, .absent) h2 :is(.label, .gkind) { opacity: .75; }
 .grp .gstate { --sev: var(--faint); margin: -2px var(--sp-2) var(--sp-1) 28px; padding-left: 13px; text-indent: -13px;
   font-size: var(--fs-meta); line-height: var(--lh-ui); color: var(--muted); overflow-wrap: anywhere; }
-.grp .gstate::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px;
+:is(.grp .gstate, .cstate)::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px;
   border-radius: var(--blob-b); background: var(--sev); }
 .grp.reconnecting .gstate { --sev: var(--waiting); }
 .grp.failed .gstate { --sev: var(--danger); color: var(--danger-text); }
@@ -32,7 +32,7 @@
 #addtmuxticks { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
 #addtmuxticks:empty { display: none; }
 .footform .tick { display: flex; align-items: center; gap: 6px; font-size: 13.5px; flex-wrap: wrap; }
-.footform .tick input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
+:is(.footform .tick, .pickrow) input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
 .footform .tick span { color: var(--muted); font-size: 12.5px; }
 .footform .tick.ends span { flex-basis: 100%; padding-left: 22px; color: var(--danger-text); }   /* a session that can be lost */
 

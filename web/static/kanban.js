@@ -7,22 +7,20 @@ import "./press.js";
 import "./pop.js";
 import { pageColors } from "./contrast.js";
 import { askConfirm, askName } from "./dialogs.js";
-import { icon } from "./icons.js";
-import { projectColor } from "./nav.js";
+import { projectColor } from "./listparts.js";
 import { takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
-import { $, COLUMNS, SEVERITIES, api, button, el, say } from "./kanbanutil.js";
+import { $, COLUMNS, SEVERITIES, api, button, el, iconButton, say } from "./kanbanutil.js";
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [] };
 let cards = new Map(COLUMNS.map((c) => [c, []]));
 let counts = {};
 let shownColumn = "TODO";
-const phone = () => matchMedia("(max-width: 860px)").matches;
-let dragging = null, drawLater = false;
-let loading = 0, changing = 0;
-const queues = new Map();
+const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-reduced-motion: reduce)");
+let dragging = null;
+let loading = 0, changing = 0, chain = Promise.resolve();
 const BUILD = document.querySelector('meta[name="build"]').content;
 
 const filters = () => {
@@ -113,6 +111,12 @@ function sessionLine(t) {
   return open ? line("stopped", "stopped, task open") : line("", "idle");
 }
 
+function showState(foot, t) {
+  foot.querySelector(".cstate")?.remove();
+  const line = sessionLine(t);
+  if (line) foot.append(line);
+}
+
 function card(t) {
   const c = el("article", `card sev-${t.severity}`);
   c.dataset.id = t.id;
@@ -120,10 +124,7 @@ function card(t) {
   c.tabIndex = 0;
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
-  const menu = button("icon cmove", null, (e) => { e.stopPropagation(); moveMenu(t, menu); });
-  menu.append(icon("ellipsis", 14));
-  menu.title = "Move to…";
-  menu.setAttribute("aria-label", "Move to…");
+  const menu = iconButton("icon cmove", "ellipsis", "Move to…", "Move to…", (b) => moveMenu(t, b));
   menu.setAttribute("aria-haspopup", "true");
   head.append(menu);
   const foot = el("div", "cfoot");
@@ -133,8 +134,7 @@ function card(t) {
   foot.append(proj, el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
-  const state = sessionLine(t);
-  if (state) foot.append(state);
+  showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
   c.addEventListener("click", () => openTask(t.id));
   c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) openTask(t.id); });
@@ -143,7 +143,7 @@ function card(t) {
     dragging = null;
     c.classList.remove("lifted");
     for (const { col } of columns.values()) col.classList.remove("over");
-    if (drawLater) draw();
+    draw();
   });
   return c;
 }
@@ -159,39 +159,32 @@ function moveMenu(t, anchor) {
   }));
   box.setAttribute("aria-label", `Move ${t.id} to`);
   box.showModal();
-  if (phone()) { rows.focus(); return; }   // a finger's: no row looks chosen before it presses one
+  if (narrow.matches) { rows.focus(); return; }   // a finger's: no row looks chosen before it presses one
   const r = anchor.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
   box.style.left = `${Math.max(8, Math.min(r.right - w, innerWidth - w - 8))}px`;
   box.style.top = `${r.bottom + h + 4 < innerHeight ? r.bottom + 4 : Math.max(8, r.top - h - 4)}px`;
 }
 $("movebox").addEventListener("click", (e) => { if (e.target === $("movebox")) $("movebox").close(); });
 
-/** A card's changes go one after another, as made, so the last drop stands; when none is left the
- *  columns are read again: a refused one's card goes back, and the toast says why (AC-133). */
+/** The board's changes go one after another, as made, so the last drop stands; when none is left
+ *  the columns are read again: a refused one's card goes back, and the toast says why (AC-133). */
 function change(t, body) {
   changing++;
-  const done = (queues.get(t.id) ?? Promise.resolve())
+  chain = chain
     .then(() => api(`/api/tasks/${t.id}`, { method: "PATCH", body }))
     .catch((e) => say(e.message))
-    .finally(() => {
-      changing--;
-      if (queues.get(t.id) === done) queues.delete(t.id);
-      if (!changing) load();
-    });
-  queues.set(t.id, done);
-  return done;
+    .finally(() => { if (!--changing) readSoon(); });
 }
 
-/** Shown at once where it goes: on top of its severity's cards, or above `before`. */
-function placeCard(t, column, before) {
+/** Shown at once where it goes: on top of its severity's cards. */
+function placeCard(t, column) {
   const from = cards.get(t.status), to = cards.get(column);
   from.splice(from.indexOf(t), 1);
   counts[t.status] = Math.max(0, (counts[t.status] ?? 1) - 1);
   counts[column] = (counts[column] ?? 0) + 1;
   t.status = column;
-  const at = before ? to.findIndex((c) => c.id === before && c.severity === t.severity) : -1;
   const top = to.findIndex((c) => c.severity >= t.severity);
-  to.splice(at >= 0 ? at : top >= 0 ? top : to.length, 0, t);
+  to.splice(top >= 0 ? top : to.length, 0, t);
   draw();
 }
 
@@ -207,12 +200,9 @@ function dropOn(column, before) {
   if (!t) return;
   if (t.status !== column) return moveTo(t, column);
   const list = cards.get(column);
-  if (before || list.at(-1) !== t) {
-    list.splice(list.indexOf(t), 1);
-    const at = before ? list.findIndex((c) => c.id === before) : -1;
-    list.splice(at >= 0 ? at : list.length, 0, t);
-    draw();
-  }
+  list.splice(list.indexOf(t), 1);
+  const at = before ? list.findIndex((c) => c.id === before) : -1;
+  list.splice(at >= 0 ? at : list.length, 0, t);
   change(t, before ? { before } : { order_end: true });
 }
 
@@ -230,52 +220,52 @@ const columns = new Map(COLUMNS.map((column) => {
     const under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging?.id; });
     dropOn(column, under?.dataset.id);
   });
-  return [column, { col, count, list }];
+  const tab = button(null, column, () => showColumn(column));
+  tab.dataset.status = column;
+  tab.setAttribute("role", "tab");
+  return [column, { col, count, list, tab, drawn: "" }];
 }));
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
+$("colswitch").replaceChildren(...[...columns.values()].map((c) => c.tab));
 
+/** A column is built anew only when what it shows changed; a drag's card stays until it ends. */
 function draw() {
-  drawLater = !!dragging;                          // a drag's card stays until it ends: redrawn, the drag would be lost
-  if (drawLater) return;
-  const focused = document.activeElement?.closest?.(".card")?.dataset.id;
-  for (const [column, { count, list }] of columns) {
-    const have = cards.get(column), scroll = list.scrollTop, n = counts[column] ?? 0;
-    count.textContent = String(n);
-    list.replaceChildren(...have.map(card));
-    if (!have.length) list.append(el("p", "colempty", hasFilter() ? "No tasks match" : "No tasks"));
-    if (have.length < n) {
-      const moreKey = button("key colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column));
-      list.append(moreKey);
-    }
-    list.scrollTop = scroll;
+  if (dragging) return;
+  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = hasFilter();
+  for (const [column, part] of columns) {
+    const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have, n, !!filtered]);
+    part.count.textContent = String(n);
+    part.tab.textContent = `${column} ${n}`;
+    if (shown === part.drawn) continue;
+    part.drawn = shown;
+    const scroll = part.list.scrollTop;
+    part.list.replaceChildren(...have.map(card));
+    if (!have.length) part.list.append(el("p", "colempty", filtered ? "No tasks match" : "No tasks"));
+    if (have.length < n) part.list.append(button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column)));
+    part.list.scrollTop = scroll;
   }
   if (focused) document.querySelector(`.card[data-id="${focused}"]`)?.focus({ preventScroll: true });
-  $("colswitch").replaceChildren(...COLUMNS.map((c) => {
-    const b = button(null, `${c} ${counts[c] ?? 0}`, () => showColumn(c));
-    b.dataset.status = c;
-    b.setAttribute("role", "tab");
-    b.setAttribute("aria-selected", String(c === shownColumn));
-    return b;
-  }));
+  markTab();
 }
 
 /** A phone's one column, by its tab or a swipe. */
 function showColumn(column) {
   shownColumn = column;
-  columns.get(column).col.scrollIntoView({ inline: "start", block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  columns.get(column).col.scrollIntoView({ inline: "start", block: "nearest", behavior: still.matches ? "auto" : "smooth" });
   markTab();
 }
 
 function markTab() {
-  for (const b of $("colswitch").children) {
-    const on = b.dataset.status === shownColumn;
-    b.setAttribute("aria-selected", String(on));
-    if (on) b.scrollIntoView({ inline: "nearest", block: "nearest" });
+  for (const [column, { tab }] of columns) {
+    const on = column === shownColumn;
+    if (tab.getAttribute("aria-selected") === String(on)) continue;
+    tab.setAttribute("aria-selected", String(on));
+    if (on) tab.scrollIntoView({ inline: "nearest", block: "nearest" });
   }
 }
 
 $("board").addEventListener("scroll", () => {
-  if (!phone()) return;
+  if (!narrow.matches) return;
   const b = $("board"), now = COLUMNS[Math.round(b.scrollLeft / Math.max(1, b.clientWidth))];
   if (now && now !== shownColumn) { shownColumn = now; markTab(); }
 }, { passive: true });
@@ -285,13 +275,14 @@ function sessionsCame(groups) {
   const items = groups.flatMap((g) => g.items ?? []);
   meta.sessions = items.map((it) => ({ key: it.id, title: it.title }));
   const live = new Map(items.map((it) => [it.id, it]));
-  const shownCards = new Map([...cards.values()].flat().map((t) => [t.id, t]));
-  for (const c of $("board").querySelectorAll(".card")) {
-    const t = shownCards.get(c.dataset.id);
-    if (!t?.session) continue;
+  for (const t of [...cards.values()].flat()) {
+    if (!t.session) continue;
     const it = live.get(t.session.key);
-    t.session = it ? { key: it.id, state: it.state, agent: it.agent, why: it.why, closed: false } : { key: t.session.key, closed: true };
-    c.querySelector(".cstate")?.replaceWith(sessionLine(t));
+    const now = it ? { key: it.id, state: it.state, agent: it.agent, why: it.why, closed: false } : { key: t.session.key, closed: true };
+    if (JSON.stringify(now) === JSON.stringify(t.session)) continue;
+    t.session = now;
+    const foot = document.querySelector(`.card[data-id="${t.id}"] .cfoot`);
+    if (foot) showState(foot, t);
   }
 }
 
@@ -327,11 +318,10 @@ function newProject() {
   return b;
 }
 
-/** One picker open at a time; a press elsewhere or Esc closes it. */
-const pickers = () => [...document.querySelectorAll(".pick")];
-for (const d of pickers()) d.addEventListener("toggle", () => { if (d.open) for (const o of pickers()) if (o !== d) o.open = false; });
-document.addEventListener("click", (e) => { if (!e.target.closest?.(".pick")) for (const d of pickers()) d.open = false; });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") for (const d of pickers()) d.open = false; });
+/** One picker open at a time (their `name`); a press elsewhere or Esc closes it. */
+const closePickers = () => document.querySelectorAll(".pick[open]").forEach((d) => { d.open = false; });
+document.addEventListener("click", (e) => { if (!e.target.closest?.(".pick")) closePickers(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePickers(); });
 $("filtersbtn").addEventListener("click", () => {
   const open = $("picks").classList.toggle("open");
   $("filtersbtn").setAttribute("aria-expanded", String(open));
@@ -362,23 +352,22 @@ async function loadMeta() {
   }
 }
 
-/** A task a filter hides is said when made: it does not just vanish. */
-function madeHidden(t) {
-  const f = filters();
-  const hidden = (f.project.length && !f.project.includes(t.project)) || (f.severity.length && !f.severity.includes(t.severity))
-    || (f.owner === "agents" && t.owner_kind !== "agent") || (f.owner === "humans" && t.owner_kind !== "human")
-    || (f.q && !t.title.toLowerCase().includes(f.q.toLowerCase()));
-  if (hidden) say(`${t.id} is kept; a filter hides it.`);
+/** A task a filter hides is said when made: it does not just vanish. terminumd says what its filters show. */
+async function madeHidden(t) {
+  if (!hasFilter()) return;
+  const { tasks } = await api(`/api/tasks?${query({ id: t.id })}`);
+  if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
 const windowed = taskWindow({ getMeta: () => meta });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden });
 
+const addressed = () => /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
+
 /** Its window has its own address: Back closes it, a task that is not there is said (AC-133). */
 function openTask(id, push = true) {
   // one step of Back for the window, whichever tasks it showed
-  const onlyOne = /\/T-\d+$/.test(location.pathname);
-  if (push) history[onlyOne ? "replaceState" : "pushState"]({ win: true }, "", `/kanban/${id}${location.search}`);
+  if (push) history[addressed() ? "replaceState" : "pushState"]({ win: true }, "", `/kanban/${id}${location.search}`);
   windowed.open(id).catch((e) => {
     say(e.message);
     history.replaceState(null, "", `/kanban/${location.search}`);
@@ -386,7 +375,7 @@ function openTask(id, push = true) {
 }
 
 async function route() {
-  const id = /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
+  const id = addressed();
   if (id) { if (!windowed.shows(id)) openTask(id, false); return; }
   // Back with an edit not saved: asked; kept, the window keeps its address
   if ($("taskbox").open && !await windowed.tryClose()) history.pushState({ win: true }, "", `/kanban/${windowed.shownId()}${location.search}`);
@@ -394,7 +383,7 @@ async function route() {
 addEventListener("popstate", route);
 
 $("taskbox").addEventListener("close", () => {
-  if (!/\/T-\d+$/.test(location.pathname)) return;
+  if (!addressed()) return;
   if (history.state?.win) history.back();
   else history.replaceState(null, "", `/kanban/${location.search}`);
 });
@@ -419,9 +408,11 @@ if (seen) { fit(); seen.addEventListener("resize", fit); }
 // A phone's page wakes: what it missed is read; its WebSocket says for itself when it is gone
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 
+let reloading = false;
 /** terminumd was upgraded: this page reloads when no window is open (a draft is kept anyway), once. */
 function buildCame(id) {
-  if (id === BUILD || sessionStorage.getItem("web.reloaded-for") === id) return;
+  if (id === BUILD || reloading || sessionStorage.getItem("web.reloaded-for") === id) return;
+  reloading = true;
   const go = () => {
     if (document.querySelector("dialog[open]")) { setTimeout(go, 1000); return; }
     try { sessionStorage.setItem("web.reloaded-for", id); } catch { /* private mode: at worst asks again */ }
@@ -432,14 +423,18 @@ function buildCame(id) {
 $("newtask").addEventListener("click", () => form.open());
 $("find").addEventListener("input", () => { clearTimeout($("find").wait); $("find").wait = setTimeout(() => setFilters({ q: $("find").value }), 200); });
 $("clearfilters").addEventListener("click", () => setFilters({ project: [], severity: [], owner: "", q: "" }));
-/** Every page hears of a task's change: the columns are read again once a burst ends, an open
- *  window only when it shows a task that changed. */
+/** The columns are read again once a burst ends. */
+let readWait = 0, windowToo = false;
+function readSoon() {
+  clearTimeout(readWait);
+  readWait = setTimeout(() => { load(); if (windowToo) windowed.refresh(); windowToo = false; }, 40);
+}
+
+/** Every page hears of a task's change; an open window reads again only when it shows that task. */
 function listen() {
-  let wait = 0, windowToo = false;
   const again = (id) => {
     windowToo ||= !id || windowed.shows(id);
-    clearTimeout(wait);
-    wait = setTimeout(() => { load(); if (windowToo) windowed.refresh(); windowToo = false; }, 40);
+    readSoon();
   };
   signin.prove().then(() => {
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`, signin.protocols());
@@ -454,7 +449,13 @@ function listen() {
   });
 }
 
-fetch("/custom.css", { cache: "no-store" }).then((r) => (r.ok ? r.text() : "")).then((css) => { $("customcss").textContent = css; }).catch(() => {});   // the user's own stylesheet (terminum.md AC-19)
+// the user's own stylesheet (terminum.md AC-19): the last one at once, the newest when it comes
+try { $("customcss").textContent = localStorage.getItem(signin.CSS_KEY) ?? ""; } catch { /* no storage: fetched below */ }
+fetch("/custom.css", { cache: "no-store" }).then((r) => (r.ok ? r.text() : null)).then((css) => {
+  if (css === null) return;
+  $("customcss").textContent = css;
+  try { localStorage.setItem(signin.CSS_KEY, css); } catch { /* no storage: fetched at every load */ }
+}).catch(() => {});
 await loadMeta();
 await load();
 listen();

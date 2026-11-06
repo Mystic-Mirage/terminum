@@ -7,26 +7,29 @@
 
 /* ---- keys: a text button, matte and a little raised; a press sinks it (shapes.css: --m-*) ---- */
 :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
-  .pwacts button, .tipacts button, .tochat, .key, #markbar button:not(.icon), #findbox .primary, #login button, #backterm) {
+  .pwacts button, .tipacts button, .tochat, .textkey, #markbar button:not(.icon), #findbox .primary, #login button, #backterm) {
   height: var(--key-h); padding: 0 var(--key-px); border-radius: var(--key-r); display: inline-flex; align-items: center;
   gap: var(--sp-2); white-space: nowrap; font-weight: var(--key-weight); color: var(--kc, var(--key-ink));
   background-color: var(--kf, var(--key-fill)); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
 @media (hover: hover) {
   :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
-    .pwacts button, .tipacts button, .tochat, .key, #markbar button:not(.icon), #backterm):not(:disabled, .primary):hover {
+    .pwacts button, .tipacts button, .tochat, .textkey, #markbar button:not(.icon), #backterm):not(:disabled, .primary):hover {
     background-color: var(--key-fill-hover); }
 }
 /* a press sinks a key into the panel */
 :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
-  .pwacts button, .tipacts button, .tochat, .key, #markbar button:not(.icon), #findbox .primary, #login button, #backterm):active:not(:disabled) {
+  .pwacts button, .tipacts button, .tochat, .textkey, #markbar button:not(.icon), #findbox .primary, #login button, #backterm):active:not(:disabled) {
   box-shadow: var(--m-well); }
 /* the keys at a pane's foot (Insert into chat and its neighbours): one size in every pane */
 :is(.tochat, .pwacts button, #markbar button:not(.icon)) { font-size: var(--fs-label); }
 /* the primary verb: its container's hue (--key-primary-fill: the accent, Ask's, the bookmark's, a reminder's, danger's);
    through --kf and --kc, so no selector's weight decides it */
-:is(dialog.dlg, .footform, #findbox) .primary, #login button, .key.primary {
+:is(dialog.dlg, .footform, #findbox) .primary, #login button, .textkey.primary {
   --kf: var(--key-primary-fill); --kc: var(--key-primary-ink); --focus: var(--key-primary-ink); }
-@media (hover: hover) { :is(dialog.dlg, .footform, #findbox) .primary:not(:disabled):hover, .key.primary:not(:disabled):hover { filter: brightness(1.08); } }
+@media (hover: hover) { :is(dialog.dlg, .footform, #findbox) .primary:not(:disabled):hover, .textkey.primary:not(:disabled):hover { filter: brightness(1.08); } }
+/* a key that opens something: as an icon key's; a filter on: the accent's mix */
+:is(.textkey[aria-expanded="true"], .pick[open] > .textkey) { background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
+.pick.on > .textkey { --kf: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); }
 /* disabled: faded, flat, never pressed */
 :where(button):disabled { opacity: var(--key-disabled); cursor: default; filter: none; }
 :where(button):disabled:active { box-shadow: var(--m-edge-ctl); }
@@ -95,9 +98,10 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
 
 /* popover menus: the host's ⋯, the update chip's, the board's: rows, not keys */
 :is(#hostmenu, #updmenu, .menurows) :is(button, label) { display: flex; align-items: center; gap: var(--sp-2); width: 100%; box-sizing: border-box; height: 34px; padding: 0 10px; border-radius: var(--r-xs); text-align: left; color: var(--t-fg); cursor: pointer; }
+.menurows :is(button, label) { font-family: var(--ui); font-size: var(--fs-body); }
 :is(#hostmenu, #updmenu, .menurows) button:focus-visible { background: var(--surface-4); }
 @media (hover: hover) { :is(#hostmenu, #updmenu, .menurows) :is(button, label):hover { background: var(--surface-4); } }
-.menurows { --fill: var(--chrome-2); padding: var(--sp-1); border-radius: var(--r-lg); }
+:is(.menurows, dialog.menurows) { --fill: var(--chrome-2); padding: var(--sp-1); border-radius: var(--r-lg); }
 
 /* a phone, a tablet or a narrow window: every target a finger's size (the key sizes: tokens.css) */
 @media (max-width: 860px), (pointer: coarse) {

@@ -2,10 +2,10 @@
 // A task's window (AC-107, AC-108, AC-109, AC-113): its fields, text, files, and one list of comments
 // and history. A comment by a human closes with CLOSE; RUN comes with Dispatcher.
 import { askConfirm } from "./dialogs.js";
-import { icon } from "./icons.js";
-import { $, COLUMNS, SEVERITIES, api, button, choose, download, el, fileMarkdown, fillSelect, onFiles, renderInto, say, sessionOptions, upload } from "./kanbanutil.js";
+import { $, COLUMNS, SEVERITIES, api, button, choose, download, el, fileMarkdown, fillSelect, iconButton, onFiles, onSend, read, renderInto, say, sessionOptions, upload, write } from "./kanbanutil.js";
 
 const time = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const EDITS = ".tasktext textarea, .markdown textarea";   // a text or a comment being edited
 const row = (...kids) => { const r = el("div", "actions"); r.append(...kids.filter(Boolean)); return r; };
 
 /** A field for Markdown. */
@@ -46,7 +46,7 @@ export function taskWindow({ getMeta }) {
   }
 
   /** Another changed the text while this one was written: nothing goes unasked; Cancel keeps writing (AC-133). */
-  async function textChanged(id, { text_was: _, ...change }) {
+  async function textChanged(id, { text_rev: _, ...change }) {
     if (await askConfirm("The text changed meanwhile. Put yours over it? The other text goes.", "Overwrite")) return patch(id, change);
     return false;
   }
@@ -91,7 +91,7 @@ export function taskWindow({ getMeta }) {
     const edit = button(null, "Edit", () => {
       const area = editor(t.text, "Text, Markdown");
       area.rows = 10;
-      const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_was: t.text })) refresh(true); });
+      const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_rev: t.text_rev })) refresh(true); });
       wrap.replaceChildren(area, row(button(null, "Cancel", () => refresh(true)), save));
       area.focus();
     });
@@ -107,9 +107,7 @@ export function taskWindow({ getMeta }) {
     list.append(...t.files.map((f) => {
       const li = el("li");
       const open = button("linklike", f.name, () => download(f.id, f.name).catch((e) => say(e.message)));
-      const del = button("icon", null, () => confirmed(`Delete ${f.name}? Its bytes leave the store for good.`, "Delete", () => api(`/api/task-files/${f.id}`, { method: "DELETE" })));
-      del.append(icon("x", 14));
-      del.setAttribute("aria-label", `Delete ${f.name}`);
+      const del = iconButton("icon", "x", `Delete ${f.name}`, "Delete this file", () => confirmed(`Delete ${f.name}? Its bytes leave the store for good.`, "Delete", () => api(`/api/task-files/${f.id}`, { method: "DELETE" })));
       li.append(open, el("small", null, `${Math.ceil(f.bytes / 1024)} KB`), del);
       return li;
     }));
@@ -119,7 +117,7 @@ export function taskWindow({ getMeta }) {
   /** A human's own comment changes or goes (AC-108): small keys on its head's line. */
   function commentActions(t, e, said) {
     const route = `/api/tasks/${t.id}/comments/${e.id}`;
-    const edit = button("icon", null, () => {
+    const edit = iconButton("icon", "pencil", "Edit", "Edit this comment", () => {
       const area = editor(e.text ?? "");
       const save = button("primary", "Save", async () => {
         try {
@@ -130,13 +128,7 @@ export function taskWindow({ getMeta }) {
       said.replaceChildren(area, row(save));
       area.focus();
     });
-    const del = button("icon", null, () => confirmed("Delete this comment?", "Delete", () => api(route, { method: "DELETE" })));
-    edit.append(icon("pencil", 14));
-    edit.title = "Edit this comment";
-    edit.setAttribute("aria-label", "Edit");
-    del.append(icon("x", 14));
-    del.title = "Delete this comment";
-    del.setAttribute("aria-label", "Delete");
+    const del = iconButton("icon", "x", "Delete", "Delete this comment", () => confirmed("Delete this comment?", "Delete", () => api(route, { method: "DELETE" })));
     const keys = el("span", "evacts");
     keys.append(edit, del);
     return keys;
@@ -163,21 +155,19 @@ export function taskWindow({ getMeta }) {
   function commentForm(t) {
     const wrap = el("section", "newcomment");
     const draft = `tm.comment.${t.id}`, filesKey = `tm.commentfiles.${t.id}`;
-    const stored = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
-    const store = (key, v) => { try { if (v === null) localStorage.removeItem(key); else localStorage.setItem(key, v); } catch { /* private mode: this page's only */ } };
-    const area = editor(stored(draft) ?? "", "Comment");
+    const area = editor(read(draft) ?? "", "Comment");
     area.rows = 4;
     area.placeholder = "Comment, Markdown. Drop or paste files here.";
-    area.addEventListener("input", () => store(draft, area.value));
+    area.addEventListener("input", () => write(draft, area.value));
     // the files of a comment being written: kept with its text, or the sweep would take them
-    const dropped = () => { try { return JSON.parse(stored(filesKey) ?? "[]"); } catch { return []; } };
+    const dropped = () => read(filesKey) ?? [];
     onFiles(area, area, async (list) => {
       for (const f of list) {
         try {
           const kept = await upload(f, getMeta().most_bytes);
-          store(filesKey, JSON.stringify([...dropped(), kept.id]));
+          write(filesKey, [...dropped(), kept.id]);
           area.value += `${area.value && !area.value.endsWith("\n") ? "\n" : ""}${fileMarkdown(kept)}\n`;
-          store(draft, area.value);
+          write(draft, area.value);
         } catch (e) { say(e.message); }
       }
     });
@@ -186,12 +176,12 @@ export function taskWindow({ getMeta }) {
         try {
           await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: area.value, files: dropped() } });
         } catch (e) { say(e.message); return; }
-        store(draft, null);
-        store(filesKey, null);
+        write(draft, null);
+        write(filesKey, null);
       }
       tryClose();
     });
-    area.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); close.click(); } });
+    onSend(area, () => close.click());
     close.title = "Keep the comment and close: nothing moves, the session hears nothing";
     wrap.append(area, row(close));
     return wrap;
@@ -202,7 +192,7 @@ export function taskWindow({ getMeta }) {
     $("tasktitle").textContent = `${t.id} ${t.title}`;
     const history = el("ol", "history");
     history.append(...t.history.map((e) => eventRow(t, e)));
-    const closed = t.session?.closed ? el("p", "note", "session closed") : null;
+    const closed = t.session?.closed ? el("p", "cstate closed", "session closed") : null;
     const scroll = body.scrollTop;
     body.replaceChildren(...[fields(t), closed, text(t), filesOf(t), history, commentForm(t)].filter(Boolean));
     body.scrollTop = scroll;
@@ -218,7 +208,7 @@ export function taskWindow({ getMeta }) {
   }
 
   /** A text being edited, changed from what shows. */
-  const edited = () => [...body.querySelectorAll(".tasktext textarea, .markdown textarea")].some((a) => a.value !== a.defaultValue);
+  const edited = () => [...body.querySelectorAll(EDITS)].some((a) => a.value !== a.defaultValue);
 
   /** Closes it; an edit not saved is asked about first. Whether it closed. */
   async function tryClose() {
@@ -230,7 +220,7 @@ export function taskWindow({ getMeta }) {
   /** Reads it again; a text being edited holds until it is saved (`saved`). */
   async function refresh(saved = false) {
     if (!box.open || !shown) return;
-    if (!saved && body.querySelector(".tasktext textarea, .markdown textarea")) return;
+    if (!saved && body.querySelector(EDITS)) return;
     try { draw(await api(`/api/tasks/${shown.id}`)); } catch (e) { say(e.message); }
   }
 

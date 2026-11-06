@@ -22,6 +22,10 @@ export function toast(text, ms = 1800) {
   el.style.top = top();
   el.textContent = text;
   el.hidden = false;
+  if (el.popover) {                                // over an open window: the top layer
+    if (el.matches(":popover-open")) el.hidePopover();
+    el.showPopover();
+  }
   clearTimeout(timer);
-  timer = setTimeout(() => { el.hidden = true; }, ms);
+  timer = setTimeout(() => { el.hidden = true; if (el.popover) el.hidePopover(); }, ms);
 }

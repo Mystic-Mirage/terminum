@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { check as report, slack, until } from "./check.mjs";
-import { shortTmp } from "./testrun.mjs";
+import { ownTmp } from "./testrun.mjs";
 
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 const AGENT = new Set(["agent_stops_with_task_open", "agent_out_of_limits", "agent_process_dies", "pane_closes"]);
@@ -17,17 +17,16 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
   let tag = "AC-133";
   const check = (name, ok, extra) => report(`${tag} ${name}`, ok, extra);
   // `terminum` by its name: the same binary, which its name makes the command
-  const links = fs.mkdtempSync(path.join(shortTmp(), "tmb-"));
-  const cli = path.join(links, "terminum");
+  const cli = path.join(ownTmp("tmb-"), "terminum");
   fs.symlinkSync(bin, cli);
   const j = (p, method = "GET", body) => page.evaluate(async ([p, method, body]) => { const r = await fetch(p, { method, headers: method === "GET" ? undefined : { "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) }); return { code: r.status, ...(await r.json().catch(() => ({}))) }; }, [p, method, body]);
   const make = async (title, more = {}) => (await j("/api/tasks", "POST", { title, ...more })).id;
   const st = async (id) => (await j(`/api/tasks/${id}`)).status;
   const card = (id) => `.card[data-id="${id}"]`;
   const colOf = (id) => page.evaluate((s) => document.querySelector(s)?.closest(".col")?.dataset.status ?? null, card(id));
+  const isOpen = (sel) => page.evaluate((s) => document.querySelector(s).open, sel);
   const open = async () => { await page.goto(`${base}/kanban/`); await page.waitForSelector("#board .col"); await nap(250); };
   const drag = (id, column) => page.dragAndDrop(card(id), `.col[data-status="${column}"]`);
-  const sessKey = async () => (await j("/api/tasks/meta")).sessions[0].key;
   const newPane = (name) => { tmux("new-window", "-d", "-n", name); return tmux("list-panes", "-a", "-F", "#{window_name} #{pane_id}").split("\n").find((l) => l.startsWith(`${name} `)).split(" ")[1]; };
   const keyOf = async (pane) => { let k; await until(async () => (k = (await j("/api/tasks/meta")).sessions.find((s) => s.key.endsWith(`:${pane}`))?.key)); return k; };
   const hook = (pane, event, more = {}) => {
@@ -117,8 +116,8 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       await open(); await page.click("#newtask"); await page.fill("#newtitle", "made by Enter"); await page.press("#newtitle", "Enter");
       await nap(500);
       const made = await until(async () => (await j("/api/tasks?q=made%20by%20Enter")).tasks?.length === 1, 1500);
-      check("Enter in the title creates the task", made, `box open: ${await page.evaluate(() => document.querySelector("#newbox").open)}`);
-      if (await page.evaluate(() => document.querySelector("#newbox").open)) await page.click("#newdiscard");
+      check("Enter in the title creates the task", made, `box open: ${await isOpen("#newbox")}`);
+      if (await isOpen("#newbox")) await page.click("#newdiscard");
     },
     async double_create() {
       await open(); await page.click("#newtask"); await page.fill("#newtitle", "double create");
@@ -127,10 +126,10 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
     },
     async discard_asks() {
       await open(); await page.click("#newtask"); await page.fill("#newtitle", "typed for a while"); await page.click("#newdiscard"); await nap(300);
-      const asked = await page.evaluate(() => document.querySelector("#confirmbox").open);
+      const asked = await isOpen("#confirmbox");
       check("Discard of typed text asks first", asked);
       if (asked) await page.keyboard.press("Escape"); await nap(200);
-      if (await page.evaluate(() => document.querySelector("#newbox").open)) { await page.fill("#newtitle", ""); await page.click("#newdiscard"); await nap(200); if (await page.evaluate(() => document.querySelector("#confirmbox").open)) await page.click("#confirmok"); }
+      if (await isOpen("#newbox")) { await page.fill("#newtitle", ""); await page.click("#newdiscard"); await nap(200); if (await isOpen("#confirmbox")) await page.click("#confirmok"); }
     },
     async create_during_upload() {
       await open(); await page.click("#newtask"); await page.fill("#newtitle", "while it uploads");
@@ -142,7 +141,7 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       await nap(1600); await page.unroute("**/api/task-files*");
       const got = (await j("/api/tasks?q=while%20it%20uploads")).tasks?.[0];
       check("Create while a file uploads waits, the file on the task", disabled || got?.files === 1, JSON.stringify({ disabled, files: got?.files }));
-      if (await page.evaluate(() => document.querySelector("#newbox").open)) { await page.click("#newcreate"); await nap(300); }
+      if (await isOpen("#newbox")) { await page.click("#newcreate"); await nap(300); }
     },
     async edit_conflict() {
       const id = await make("two editors", { text: "first words" }); await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(300);
@@ -150,7 +149,7 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       await j(`/api/tasks/${id}`, "PATCH", { text: "someone else's words" });
       await page.click('.tasktext button:has-text("Save")'); await nap(500);
       const text = (await j(`/api/tasks/${id}`)).text;
-      const asked = await page.evaluate(() => document.querySelector("#confirmbox").open);
+      const asked = await isOpen("#confirmbox");
       check("saving over another's edit asks, nothing lost", asked && text === "someone else's words", JSON.stringify({ asked, text }));
       if (asked) await page.keyboard.press("Escape"); await nap(150); await page.click("#taskclose").catch(() => {});
     },
@@ -158,9 +157,9 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       const id = await make("an edit not saved", { text: "words" }); await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(300);
       await page.click('.tasktext button:has-text("Edit")'); await page.fill(".tasktext textarea", "half a thought");
       await page.keyboard.press("Escape"); await nap(300);
-      check("Esc with an edit not saved asks", await page.evaluate(() => document.querySelector("#confirmbox").open));
+      check("Esc with an edit not saved asks", await isOpen("#confirmbox"));
       await page.keyboard.press("Escape"); await nap(300);
-      check("  and Cancel keeps it", await page.evaluate(() => document.querySelector("#taskbox").open) && await page.inputValue(".tasktext textarea") === "half a thought");
+      check("  and Cancel keeps it", await isOpen("#taskbox") && await page.inputValue(".tasktext textarea") === "half a thought");
       await page.click(".tasktext button:has-text('Cancel')"); await nap(200); await page.click("#taskclose"); await nap(200);
     },
     async toast_over_window() {
@@ -188,7 +187,7 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
         return { prevented: drop.defaultPrevented, open: document.querySelector("#newbox").open, files: document.querySelector("#newfiles").textContent };
       });
       check("a file dropped on the board never leaves the page: it starts a new task", stayed.prevented && stayed.open && stayed.files.includes("dropped.txt"), JSON.stringify(stayed));
-      if (stayed.open) { await page.fill("#newtitle", ""); await page.fill("#newtext", ""); await page.click("#newdiscard"); await nap(300); if (await page.evaluate(() => document.querySelector("#confirmbox").open)) await page.click("#confirmok"); await nap(200); }
+      if (stayed.open) { await page.fill("#newtitle", ""); await page.fill("#newtext", ""); await page.click("#newdiscard"); await nap(300); if (await isOpen("#confirmbox")) await page.click("#confirmok"); await nap(200); }
     },
     async bidi_title() {
       const id = await make("safe‮evil name");
@@ -224,7 +223,7 @@ ${"z".repeat(400)}
     async back_closes_window() {
       const id = await make("back closes it"); await open(); await page.click(card(id)); await page.waitForSelector("#taskbox[open]");
       await page.goBack(); await nap(500);
-      check("Back closes the window and stays on the board", new URL(page.url()).pathname === "/kanban/" && !(await page.evaluate(() => document.querySelector("#taskbox")?.open)), page.url());
+      check("Back closes the window and stays on the board", new URL(page.url()).pathname === "/kanban/" && !(await isOpen("#taskbox")), page.url());
       await open();
     },
     async project_gone_in_form() {
@@ -236,7 +235,7 @@ ${"z".repeat(400)}
       const offered = await page.evaluate((id) => [...document.querySelector("#newproj").options].some((o) => o.value === id), p);
       check("a project deleted meanwhile leaves the open form's picker", !offered, "still offered");
       await page.click("#newcreate"); await nap(500);
-      const open_ = await page.evaluate(() => document.querySelector("#newbox").open), made = (await j("/api/tasks?q=to%20a%20gone%20project")).tasks?.length ?? 0;
+      const open_ = await isOpen("#newbox"), made = (await j("/api/tasks?q=to%20a%20gone%20project")).tasks?.length ?? 0;
       check("  and nothing typed is lost", made === 1 || (open_ && await page.inputValue("#newtitle") === "to a gone project"), JSON.stringify({ open_, made }));
       if (open_) await page.click("#newclose");
     },
@@ -252,7 +251,7 @@ ${"z".repeat(400)}
       await open(); await page.click("#newtask"); await page.fill("#newtitle", "too long a text");
       await page.evaluate(() => { const t = document.querySelector("#newtext"); t.value = "x".repeat((1 << 20) + 1); t.dispatchEvent(new Event("input", { bubbles: true })); });
       await page.click("#newcreate"); await nap(800);
-      check("over 1 MiB is refused in place, the window stays", (await page.textContent("#newerror")).includes("1 MiB") && await page.evaluate(() => document.querySelector("#newbox").open), await page.textContent("#newerror"));
+      check("over 1 MiB is refused in place, the window stays", (await page.textContent("#newerror")).includes("1 MiB") && await isOpen("#newbox"), await page.textContent("#newerror"));
       await page.evaluate(() => { const t = document.querySelector("#newtext"); t.value = ""; }); await page.fill("#newtitle", ""); await page.click("#newclose").catch(() => {});
     },
     async pickers() {
@@ -287,7 +286,7 @@ ${"z".repeat(400)}
       await page.fill(".newcomment textarea", "long thought");
       await page.route(`**/api/tasks/${id}/comments`, (r) => r.abort());
       await page.click(".newcomment .primary"); await nap(400); await page.unroute(`**/api/tasks/${id}/comments`);
-      check("a comment lost to the network stays typed, the window open", await page.evaluate(() => document.querySelector("#taskbox").open) && await page.inputValue(".newcomment textarea") === "long thought");
+      check("a comment lost to the network stays typed, the window open", await isOpen("#taskbox") && await page.inputValue(".newcomment textarea") === "long thought");
       await page.reload(); await page.waitForSelector("#taskbox[open]"); await nap(300);
       check("  and survives a reload", await page.inputValue(".newcomment textarea") === "long thought");
       await page.fill(".newcomment textarea", ""); await page.click("#taskclose");
@@ -339,15 +338,11 @@ ${"z".repeat(400)}
       check("a cancelled drag leaves no lit column and no lifted card", await page.evaluate(() => !document.querySelector(".col.over") && !document.querySelector(".card.lifted")));
     },
   };
-  try {
-    for (const [name, f] of Object.entries(probes)) {
-      tag = AGENT.has(name) ? "AC-132" : "AC-133";
-      await nap(200);                              // a window closed just now goes Back in its own time
-      try { await f(); } catch (e) { check(`${name} ran to its end`, false, e.message.split("\n").slice(0, 6).join(" | ")); await page.unroute("**/*").catch(() => {}); }
-      await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); }).catch(() => {});
-    }
-  } finally {
-    fs.rmSync(links, { recursive: true, force: true });
+  for (const [name, f] of Object.entries(probes)) {
+    tag = AGENT.has(name) ? "AC-132" : "AC-133";
+    await nap(200);                                // a window closed just now goes Back in its own time
+    try { await f(); } catch (e) { check(`${name} ran to its end`, false, e.message.split("\n").slice(0, 6).join(" | ")); await page.unroute("**/*").catch(() => {}); }
+    await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); }).catch(() => {});
   }
 }
 

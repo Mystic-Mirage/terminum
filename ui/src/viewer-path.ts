@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The viewer window's path bar (AC-26): the active tab's full path, selectable, with a copy
+// The viewer window's path bar (AC-70): the active tab's full path, selectable, with a copy
 // button. iTerm2's own address bar cannot be hidden, so this is where the path is read.
 
 import { scope } from "./api";

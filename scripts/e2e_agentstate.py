@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""Coding agents' states in the list (terminum-terminal.md AC-39) for Codex installed with npm,
+"""Coding agents' states in the list (terminum-agents.md AC-39) for Codex installed with npm,
 whose program is `node`, against a private terminumd and a private tmux server (never the
 user's): `node` programs draw Codex's screens as measured on Codex 0.162, and a dev server's.
 

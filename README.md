@@ -59,6 +59,7 @@ Downloads and your cloud folders: Allow, once. Then:
 
 ```bash
 echo 'export PATH="$HOME/.terminum/bin:$PATH"' >> ~/.zshrc   # the install's tip
+export PATH="$HOME/.terminum/bin:$PATH"
 terminum password        # set the password every browser signs in with
 terminum open            # open it: http://127.0.0.1:48080/
 terminum hooks install   # optional: exact states from Claude Code and Codex
@@ -72,6 +73,8 @@ shows a chip when one is out.
 ```bash
 sudo apt install tmux curl openssh-client
 curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/install.sh | sh
+echo 'export PATH="$HOME/.terminum/bin:$PATH"' >> ~/.bashrc
+export PATH="$HOME/.terminum/bin:$PATH"
 terminum password
 terminum hooks install   # optional: exact states from Claude Code and Codex
 ```
@@ -111,11 +114,9 @@ its own with a Tailscale Service: see [Over Tailscale](docs/USAGE.md#over-tailsc
 - [Architecture](docs/ARCHITECTURE.md): every part on one diagram, a Mac, a Linux server and the browsers.
 - [Set it up with a coding agent](skills/terminum-setup/SKILL.md): a skill Claude Code, Codex and the like follow to install, check and repair terminum for you.
 - [SECURITY.md](SECURITY.md): the threat model.
-- [docs/specs/](docs/specs/): behavior, limits and evidence; contributor rules in
-  [CLAUDE.md](CLAUDE.md), releases in [docs/RELEASING.md](docs/RELEASING.md).
+- [All the docs](docs/README.md): specs, contributing, releases, and which fact lives where.
 
-terminum is the successor of [iterm-enhancer](https://github.com/extractumio/iterm-enhancer),
-without iTerm2. Licensed under AGPL-3.0 or a commercial license (`LICENSE`,
+Licensed under AGPL-3.0 or a commercial license (`LICENSE`,
 `LICENSE-COMMERCIAL.md`); contributions come under the agreement in `CONTRIBUTING.md`. The coding
 agents' marks in `web/static/agents/` are their owners' trademarks, outside both licenses
 (`NOTICE`).

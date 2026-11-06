@@ -3,7 +3,8 @@
 Binding on humans and AI for any change to the Page (`web/static/`) or the Panel (`ui/src/`).
 Behavior lives in the specs; this file says what the UI looks like, what to reuse, and what to
 check before a UI change is done. Where the code disagrees, it moves to this file when that area
-is next changed. CLAUDE.md and the specs win over this file.
+is next changed. CLAUDE.md and the specs win over this file; CLAUDE.md §1's fail-loud rule holds
+here: an error shows in place, never only in the console.
 
 ## 1. Principles
 
@@ -11,7 +12,6 @@ is next changed. CLAUDE.md and the specs win over this file.
 | --- | --- |
 | Terminal first | The terminal gets the space; chrome is one header row, one list, floating buttons only where the thumb is. Nothing covers terminal text without a way to dismiss it. |
 | IDE-standard | Controls look and behave like VS Code / iTerm2 / macOS: segmented controls, ghost icon buttons, popover menus, modal dialogs for irreversible actions. No novel widgets. |
-| Fail loud, in place | An error shows where the action was taken (form line, banner, toast) with terminumd's words; never only in the console. |
 | Phone = finger-sized | Under `(max-width: 860px)` or `(pointer: coarse)` every tappable target is ≥ 44 × 44 px (≥ 40 inside a list row whose height is 40); text fields keep their role's size (§4.6: the viewport's `maximum-scale=1` stops iOS zooming in on focus). |
 | Theme-driven colors | Surfaces, text, lines and accent derive from the session's theme (`--t-bg`, `--t-fg`, `--accent`). Fixed hues only for meaning that must not change with the theme (§2.2), and they must read on a light theme too. |
 | One look per kind | Two controls of the same kind share one class and one rule. Style by class; ids are for behavior and tests. |
@@ -67,7 +67,7 @@ Selected list row: `color-mix(in srgb, var(--accent) 16%, var(--chrome))`. Press
 | This Mac / a host | `--local: #4f9dff`, `--remote: #a98bff`; `--host-label: cornflowerblue` | Rows, group labels, `.tsess` pill. |
 | Danger / error | `--danger: #ff6b5e` (a dot or icon), `--danger-text` (= danger 80% into `--t-fg`, 45% on a light theme for 4.5:1: every error text), `--danger-fill: #b3372e` (fills), `--danger-ink: #ffffff` (text on those fills) | Remove/Close/Sign out, error lines, a failed host's state, `#status`, confirm primary, armed delete. |
 | Done / ok | `--ok-fill: #2f7d4f` | `#restored`, update chip. |
-| Warning / waiting | `--warn-fill: #9a6a12`; `--waiting: #ffb020` (a dot or edge, never text) | `#stall`, `#sized`, Screen label warn, waiting cards. |
+| Warning / waiting | `--warn-fill: #9a6a12`; `--waiting: #ffb020` (a dot or edge, never text) | `#stall`, `#sized`, waiting cards. |
 | Text on the bookmark color | `#1b1200` | `#markbox .primary`. |
 | Picture viewer, find highlight | fixed white on black | `#zoom`, find marks: they sit over any theme. |
 | A terminal's icon | `--term-tile: #3a3a3c`, `--term-tile-ink: #ffffff` (style.css) | `.agmark.term`: a shell's row and header, white on a dark gray tile with small round corners, on every theme. |
@@ -125,7 +125,7 @@ changed (they become 4/8 and 8/12). `--gutter`: 12px wide, 16px on a touch scree
 | `--r-md` 3px | (= `--r-sm`) controls 30–44px. |
 | `--r-lg` 4px | A panel: popovers, footer forms, bookmark bar, waiting cards, widgets. |
 | `--r-xl` 4px | Dialogs, the View window. |
-| `--r-pill` | Pills: chips, `.tsess`, Screen label. |
+| `--r-pill` | Pills: chips, `.tsess`. |
 | `--blob-a` … `--blob-d` | Every round thing (floating buttons, the touch footer, dots, badges): four uneven radii, one per neighbor; never `50%`. |
 
 | Control | Wide | Phone / coarse |
@@ -254,7 +254,7 @@ setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own
 | Footer button | `button.footbtn` > `svg.lu --s:15px` + `span` (label, its tail in `span.more`) | style.css | Same look for all four; a count is `span.count`. Do not add per-id size, color or padding (the icon's color may vary by meaning, e.g. `#marksbtn > svg`). On a touch screen or below 860px: one row of four blobs (48px icon fill, a different `--blob-*` each), the label's first words under each as a caption (`.more` hidden, so the name stays whole), the bookmark count a badge. |
 | Footer form | `form.footform.box` + `p.hint` + `p[role=alert]` + `.row` > `button.primary` + Cancel | tmux.css | One open at a time; opens above the footer; primary first, Cancel second; fields `.field`. Error text only in the `role="alert"` line. |
 | Header icon button | `button.icon` | style.css | Ghost; 32/44px. Pressed or expanded state via `aria-*`, not a class. |
-| Segmented control | `div.seg` > `button[aria-pressed]` or `[role=tab][aria-selected]` | style.css | Lines, Screen mode, Views. Text labels, 12.5px. |
+| Segmented control | `div.seg` > `button[aria-pressed]` or `[role=tab][aria-selected]` | style.css | Views, Last Lines' choice, a bookmark's kind. Text labels, 12.5px. |
 | Popover menu | `div.box[role=menu]` > `button` | tmux.css (`#hostmenu`, `#updmenu`), controls.css (items), style.css (`#menu`) | todobem's dropdown plate: `--fill: var(--chrome-2)`, `--r-lg`, padding 4, `--shadow-far`, no border; items left-aligned, 34px, `--r-xs`, hover `--surface-4`; destructive item in `--danger-text`, last, set apart by 8px; Esc closes it. A new popover joins the `:is(#hostmenu, #updmenu)` item rules. |
 | Settings menu row | `#menu .row` (button or label) with `small` description | style.css | Label left, control right; danger row last with a divider. |
 | Dialog, list foot form | `<dialog class="box dlg">` > `form[method=dialog]` > `.dhead` (`h2` title, `button.icon.x` ×) > labels over `.field`s > `.actions` (Cancel, then primary); a list foot's `form.footform.box` the same inside | controls.css (one rule set for both); feature sheets only for a primary's hue | `--fill: var(--chrome)`, `--r-xl` (a foot form `--r-lg`), padding 16, no border, `--shadow-far`, width ≤ 480px; actions are keys (§2.7), 38px; title `--fs-title` 600; × 32px (44 on a phone) in the corner, as Esc; label `--fs-label` muted; every field `--term-font` at `--size`, padding 10/12, a well (§2.7) on `--surface-2`, `--r-sm`; a quote shown in it (`#asktext`, `#marktext`) as a field on `--t-bg`. The primary in the hue of what opened it: `--accent`, Ask's `--ask`, the bookmark's `--mark`, a reminder's `--remind`, an irreversible verb's `--danger-fill` (`#confirmbox`, whose question is its title). Use `askConfirm(text, verb)` (navtools.js) for every irreversible action. |
@@ -266,7 +266,7 @@ setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own
 | List row | `button.item` (`.pbar`, `.txt` > `.head` (`.idx`, `.agmark`, `.t`) + `.s`, `.st`) | style.css | Title ellipsis, meta line gives way from its end, under the title. Child rows `.item.child`. |
 | Group header | `.grp h2` (dragged by itself: `data-drag`, reorder.js) > `button.toggle`, `.attach`, `.import`, `.new`, `.hostbtn` | style.css, controls.css | The trailing buttons share size, radius and color (controls.css); `.new` is filled as the group's own action. The name keeps 6 characters; the session pill gives way first. |
 | Group state | `p.gstate` under a group's name | tmux.css | One look for every state: a 7px blob dot in its severity (failed `--danger`, reconnecting `--waiting`, off and absent `--faint`), then terminumd's words in `--muted`, a failure's in `--danger-text`; a session of the user's tmux on a host that is down takes its host's state. |
-| Badge / pill | `.tsess`, `.count`, `#scrlabel`, `#updchip`, `#marksfabn` | style.css, tmux.css, marks.css | Counts: muted 11px tabular; pills 999px. |
+| Badge / pill | `.tsess`, `.count`, `#updchip`, `#marksfabn` | style.css, tmux.css, marks.css | Counts: muted 11px tabular; pills 999px. |
 | Floating button | `#fabs > button`, `#findfab`, `#splitfab`, `#sentfab`, `#remindfab`, `#marksfab`, `#bottom` | style.css, find.css, marks.css, reminders.css | 44px on touch, blob radius, blurred `--chrome-2`; listed in motion.css's blob rules; one column at the terminal's top right (marks.js `placeFab`), one shape, phase and surface for all: first, set apart, the plan's progress (`#planfab`, planpane.css: round, not a blob, a ring filled to the percent, the percent inside, while the session has a plan), then find, split (a phone's; a computer splits from the header), sent, then set apart the colored ones (bookmarks, reminders: one base rule in marks.css, no glow, never a blink: a still ring or a filled count for attention); never on a split's embedded page; a pane opens beside its button, under it where narrow (`placeBeside`, fabpane.js); waiting cards stand left of the column. Where they float (a phone, a narrow window) every one but `#fabs` folds under `#foldfab` (⟨…⟩, Lucide `chevrons-left-right-ellipsis`, fold.js, fold.css) in find's place, unfolded by a tap for 3 s; it carries the bookmarks' count and the reminders' pink; a selection's Copy, [+] and Ask stand in its place, 44px; `body.scrolling` fades them all while a finger scrolls. |
 | Sheet | `[data-sheet]` (`placeModal`, fabpane.js), and `dialog.dlg` on a phone | sheets.css | Where the buttons float every dialog, pane, menu and list form is centered on the visible screen (`--app-h`), 16px from the sides, at most the visible height less 32px, scrolling inside, over a shade that takes the whole press (`#sheetscrim`, `#panescrim` or `::backdrop`); a computer keeps the placement at its button or pointer. |
 | Dragging in the list | `[data-drag]` rows and headers, `.dragging` (the slot), `.dragghost`, `.lifted` | listdrag.css | No grip: the row itself; its slot a dashed outline of its size, its content hidden; a copy follows the pointer with `--shadow-far`; a finger's lift shows before it drags. |

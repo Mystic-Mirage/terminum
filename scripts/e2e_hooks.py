@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""Coding agents' hooks (terminum-terminal.md AC-39) through `terminum hook`, as an agent runs it
+"""Coding agents' hooks (terminum-agents.md AC-39) through `terminum hook`, as an agent runs it
 in its pane, against a private terminumd and a private tmux server (never the user's): states,
 tools, questions and failures in the list over the screen's reading; no output; its time.
 

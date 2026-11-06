@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""A session's last lines survive its tmux restarting (terminum.md AC-96), end to end against a
+"""A session's last lines survive its tmux restarting (terminum-lifecycle.md AC-96), end to end against a
 private terminumd and tmux server: the last 300 lines of each pane (under a full-screen program,
 the normal screen's, not the program's) are kept within 5 s in private files; the server killed, AC-15 makes
 the panes again and each new pane's "before the restart" lines are the old pane's; a page asks

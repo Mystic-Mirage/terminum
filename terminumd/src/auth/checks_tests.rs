@@ -79,7 +79,7 @@ fn only_the_macs_own_browser_may_use_finder_and_type_paths() {
 }
 
 #[test]
-fn forwarding_headers_are_known_by_name_in_any_case() {
+fn forwarding_headers_are_known_by_name_in_any_case() { // AC-10
     assert!(is_forwarded(["host", "X-Forwarded-Host"].into_iter()));
     assert!(is_forwarded(["tailscale-app-capabilities"].into_iter()));
     assert!(is_forwarded(["Forwarded"].into_iter()));

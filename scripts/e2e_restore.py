@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""The layout survives a reboot and a killed tmux (terminum.md AC-15), end to end against a
+"""The layout survives a reboot and a killed tmux (terminum-lifecycle.md AC-15), end to end against a
 private terminumd and tmux server: a checkpoint is written, a "reboot" (another TM_BOOT_ID,
 the tmux server gone) brings the sessions, windows, splits and folders back with a report; a
 restart of terminumd recreates nothing; the server killed while terminumd runs comes back; a

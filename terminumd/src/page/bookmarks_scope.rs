@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Where a bookmark shows (AC-33, AC-91): in the session it was made in alone, in a project
-//! (AC-92) or not; the project it was made in names it in the list below the sessions and is the
-//! scope of agents' limits. Once that session closed it is orphaned (projects.rs says when), shown
+//! (AC-92) or not; the project it was made in names it in the list below the sessions. Once that session closed it is orphaned (projects.rs says when), shown
 //! only in that list; a restored server's panes keep theirs. A file before version 3 scoped by
 //! folder: its bookmarks take the project their session is in now, once.
 

@@ -1,17 +1,16 @@
 # Using terminum
 
-The full guide: install, commands, the page, your own tmux, other devices, remote hosts and
-configuration. The overview is in the [README](../README.md).
+The full guide: commands, the page, your own tmux, other devices, remote hosts and
+configuration. The overview and the install commands are in the [README](../README.md); which
+fact lives where is in [docs/README.md](README.md).
 
 ## What it is
 
-- **terminumd**, one Rust server on `127.0.0.1:48080`: the tmux control client of a private
-  tmux server (`tmux -L terminum`, started by terminumd with `~/.terminum/tmux.conf`) and of each
-  remote host over ssh; it serves the page and the Files panel and never emulates a terminal:
-  screens are tmux's own grid (`capture-pane`), only the rows that changed are sent.
+- **terminumd**, one server on `127.0.0.1:48080`: it drives a private tmux server (`tmux -L
+  terminum`) and each remote host's tmux, and serves the page and the Files panel
+  ([how the parts fit](ARCHITECTURE.md)).
 - **The page** (`web/static`): the session list (tmux sessions, windows, panes; coding agents'
-  states), the terminal in **Wrap**, **Grid** or **Fit**, **Screen mode** for full-screen
-  programs (the pane is sized to the view, keys and the mouse reach the program), widgets for
+  states), the terminal (see Sizing below; keys and the mouse reach a full-screen program), widgets for
   code, Markdown, diagrams and tables in the output, folds, bookmarks, search, hot keys for
   phones, paste and upload of files.
 - **The Files panel** (`ui/`): the tree of the shown pane's folder, a viewer and editor with
@@ -42,14 +41,9 @@ configuration. The overview is in the [README](../README.md).
 
 ## Install
 
-```bash
-curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/install.sh | sh
-```
+The commands and what they need are in the [README](../README.md#install). This is what they do.
 
-On a Mac it needs macOS 14+ and tmux 3.2+ (`brew install tmux`); on a Ubuntu/Debian server,
-systemd, tmux 3.2+, curl and openssh-client (`sudo apt install tmux curl openssh-client`).
-Nothing else. The installer checks the
-release's signature, installs into `~/.terminum/` (`builds/<build>`, `current`, the command
+The installer checks the release's signature, installs into `~/.terminum/` (`builds/<build>`, `current`, the command
 `~/.terminum/bin/terminum`, which is terminumd itself, and `daemon/terminumd`, the copy launchd
 runs), loads the launchd agent `io.terminum.terminumd` and says how to set the password. launchd holds `127.0.0.1:48080` from
 then on, so no other program can take the page's port while terminumd restarts or is upgraded.
@@ -74,21 +68,17 @@ server outlives upgrades. `terminum status`, the install and `terminum folders` 
 started by another program (a build from before this one, a build run by hand, `tmux -L
 terminum` typed in Terminal): restart it once at a quiet moment, by a reboot or `tmux -L
 terminum kill-server`, which ends the programs in it; terminum makes the sessions again with
-their windows, splits, folders and projects (AC-15), and the programs are started again by
+their windows, splits, folders and projects, and the programs are started again by
 hand (`claude --continue`, `codex resume --last`).
 
 On a Linux server terminumd is the systemd user service `io.terminum.terminumd`
 (`~/.config/systemd/user/`), started at once and at every login; a restart, an upgrade or an
 uninstall ends terminumd alone, never the terminals. Without linger the user's services end at
 logout, terminals too: `terminum status` says so, and `sudo loginctl enable-linger $USER` keeps
-them from boot. The page is on the server's `127.0.0.1:48080`; reach it from your computer
-with `ssh -L 48080:127.0.0.1:48080 <server>` (then `http://127.0.0.1:48080/`) or publish it on
-your tailnet with `tailscale serve` on the server. Finder and default apps are a Mac's only.
+them from boot. The README says how to reach its page. Finder and default apps are a Mac's only.
 
-From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools needed; on `main` it
-first brings a clean tree up to `origin/main`, and refuses one with uncommitted changes when it is behind:
-`TM_INSTALL_STALE=1` installs it as it is);
-`make test` runs the unit tests.
+From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools needed;
+[CONTRIBUTING](../CONTRIBUTING.md#worktrees) says when it refuses).
 
 ## Use
 
@@ -102,6 +92,8 @@ terminum upgrade              # the latest signed release (--to vX.Y.Z); rollbac
 terminum restart              # load the launchd agent again (a new port in settings.json; a port taken back)
 terminum logs                 # terminumd's log (-n N, -f)
 terminum hooks install        # Claude Code's and Codex's own hooks: exact states, prompts, reminders
+terminum import               # workspaces, bookmarks and hosts of iterm-enhancer
+terminum help                 # every command
 ```
 
 Every browser, on the Mac or another device, signs in with the password; until one is set the
@@ -122,7 +114,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   `terminum hooks remove` takes terminum's hooks out. An install or upgrade of terminum refreshes them (and the
   MCP server) where you installed them, never elsewhere; `terminum uninstall` takes them out.
 - **MCP server**: `terminum hooks install` also adds `terminum mcp`, terminum's MCP server, so
-  the agent can keep the session's plan, progress and notes for you (AC-97, AC-98): in Claude
+  the agent can keep the session's plan, progress and notes for you: in Claude
   Code through the same plugin (its `.mcp.json`), in Codex as one block in
   `~/.codex/config.toml` between `# >>> terminum: MCP server …` and `# <<< terminum` (the file
   backed up first; nothing else in it changes, lines of others inside the markers are kept, a
@@ -185,9 +177,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   report, a next step, a gap it saw elsewhere, deferred work, a question) as the session's
   bookmarks, with its mark; a reminder when you must act or decide. Each is written to read without
   the chat; Open goes to where it was made, Insert into chat pastes its title and text.
-- **The view** is the pane sized to the browser window you use (in front, or the phone in your
-  hand), from 45×14 (an iPhone in portrait) to 240×70 cells; a pane of another width re-flows to
-  the window (a full-screen program is scaled to fit). The menu has 20 color schemes (one for every browser, kept in settings.json),
+- **The view's menu** has 20 color schemes (one for every browser, kept in settings.json),
   the Markdown text size and the history lines of new terminals. Option or ⌘ with ↑/↓ pages.
 - **Keys of an IDE**: ⌘[ and ⌘] go back and forward through the last 20 sessions you showed,
   ⌘F searches the history, ⌘B opens or closes Files. In a coding agent's input, Backspace or
@@ -285,8 +275,7 @@ where it is:
   terminum` in `~/.codex/config.toml` and run `terminum hooks install` with the build you kept.
 - **A host's agents do not show**: see Remote hosts below.
 - **Stored where**: plans in `~/.terminum/state/plans.json`, the agent's records with your
-  bookmarks in `~/.terminum/state/web-bookmarks.json` (0.23's `notes.json` is imported once and kept
-  as `notes.json.imported`). To clear the plans, stop terminumd first (`launchctl bootout gui/$(id -u)/io.terminum.terminumd`; on Linux
+  bookmarks in `~/.terminum/state/web-bookmarks.json`. To clear the plans, stop terminumd first (`launchctl bootout gui/$(id -u)/io.terminum.terminumd`; on Linux
   `systemctl --user stop io.terminum.terminumd`), remove the files, then `terminum restart`;
   terminals live in tmux and are not touched.
 
@@ -321,7 +310,7 @@ each port. Pick where terminum goes:
 | Setup | terminum at | Steps |
 | --- | --- | --- |
 | Nothing else on the Mac's name | `https://<mac>.<tailnet>.ts.net/` | 1–3 below |
-| Another service keeps the Mac's name (such as iterm-enhancer) | `https://terminum.<tailnet>.ts.net/` | 1 below, then the Tailscale Service |
+| Another service keeps the Mac's name | `https://terminum.<tailnet>.ts.net/` | 1 below, then the Tailscale Service |
 
 1. Set the password, if you have not yet:
 
@@ -339,7 +328,7 @@ each port. Pick where terminum goes:
    password.
 
 Without a tagged machine for a Service, another service on the Mac's name can move to a port
-of its own instead, such as iterm-enhancer on 8765:
+of its own instead, here one on 8765:
 
 ```bash
 tailscale serve --https=443 off                            # if it had the address without a port
@@ -360,8 +349,7 @@ Notes:
 - `tailscale funnel` (the public internet) is refused: terminum answers it with 403.
 - To stop serving it: `tailscale serve --https=443 off`.
 - `tailscale serve --bg` and `--service` are kept by tailscaled and come back after a restart
-  of the Mac. The program behind each address must be running too: terminumd starts at login;
-  iterm-enhancer runs only while iTerm2 is open.
+  of the Mac. The program behind each address must be running too: terminumd starts at login.
 
 #### A name of its own: a Tailscale Service
 
@@ -391,7 +379,7 @@ service, and it can be served only by a tagged machine (`tag:personal` below):
    opened terminum under both names), and check:
 
    ```bash
-   tailscale serve --bg --https=443 http://127.0.0.1:8765   # the Mac's name → iterm-enhancer
+   tailscale serve --bg --https=443 http://127.0.0.1:8765   # the Mac's name → the other service
    tailscale serve status   # <mac>…:443 → 8765; terminum…ts.net (svc:terminum) → 48080
    ```
 
@@ -400,7 +388,7 @@ To remove it: `tailscale serve clear svc:terminum`.
 ## Remote hosts
 
 ```bash
-terminum hosts add 'alex@devbox.example -p 2222' --files   # or "Add host" under the list
+terminum hosts add devbox 'alex@devbox.example -p 2222' --files   # or "Add host" under the list
 terminum hosts                                             # each host, its state, files and agents
 terminum hosts enable devbox                               # browse its files (copies a helper)
 terminum hosts agents devbox on|off                        # coding agents' progress from devbox
@@ -440,19 +428,10 @@ Everything is in `~/.terminum/` and is read again within a second of a change:
 
 | File | What |
 |---|---|
-| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `size`, `restore`, `lastLines`, `themes` rules (by host and session), `page` defaults (`textSize`, `markdownSize`, `widgets`, `folds`, `followAgent`), `midi.soundfont` (the .sf2 MIDI files play with), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
+| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `restore`, `lastLines`, `themes` rules (by host and session), `page` defaults (`textSize`, `markdownSize`, `colorScheme`, `widgets`, `folds`, `followAgent`), `midi.soundfont` (the .sf2 MIDI files play with), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
 | `themes/*.json` | colors, ANSI palette, font; `local.json` and `remote.json` ship as defaults |
 | `hotkeys.json` | the hot keys panel's rows (`"F5"`, `"C-r"`, `"text:git status"`, `"Paste"`) |
 | `custom.css` | your stylesheet, loaded after the page's own |
 | `tmux.conf` | the private tmux server's configuration (written once; yours to edit) |
 
 A wrong value keeps its default and is said once in the page.
-
-## Specs and contributing
-
-The behavior, limits and evidence are in `docs/specs/` (`terminum.md` and its siblings);
-contributor rules in [CLAUDE.md](../CLAUDE.md); the release procedure in
-[docs/RELEASING.md](RELEASING.md). Licensing: AGPL-3.0 or commercial (`LICENSE`,
-`LICENSE-COMMERCIAL.md`); contributions come under the agreement in `CONTRIBUTING.md`. The
-coding agents' marks in `web/static/agents/` are their owners' trademarks, outside both
-licenses (`NOTICE`).

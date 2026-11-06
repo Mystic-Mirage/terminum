@@ -85,7 +85,7 @@ export interface TermState {
   /** a remote pane's host as offered to the user (AC 83): key = its name */
   remote?: {
     key: string; name: string; state: "ask" | "dismissed" | "enabling" | "connecting" | "updating" | "up" | "down";
-    updated?: string;  // the build its helper was just updated to (AC-42)
+    updated?: string;  // the build its helper was just updated to (AC-84)
     why?: string;      // why the enabling ticked in Add host failed (AC 83)
   };
 }

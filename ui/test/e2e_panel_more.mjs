@@ -141,7 +141,7 @@ export async function panelSort(page, { row, H }) {
     held === 1 && recent === true && chosen === "b.txt", JSON.stringify({ held, recent, chosen }));
   await page.click(row("sorted/a.md"), { button: "right" });
   await page.hover('.ctx .mi:has-text("Sorting")');
-  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight"); // keys in the tree (AC-62)
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
   const keyed = await shows(byName);

@@ -277,7 +277,7 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .ctx .mi .more { opacity: .65; margin-right: -2px; }
 .ctx .sep { height: 1px; background: var(--line); margin: 4px 6px; }
 
-/* ── viewer window (AC-26): tabs and editor only ─────────── */
+/* ── viewer window (AC-70): tabs and editor only ─────────── */
 html.viewer-mode header, html.viewer-mode #foot, html.viewer-mode #tree, html.viewer-mode #splitter, html.viewer-mode #empty,
 html.viewer-mode #maximize { display: none !important; }
 html.viewer-mode #viewer { display: flex !important; }

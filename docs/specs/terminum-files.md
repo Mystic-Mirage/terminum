@@ -1,44 +1,21 @@
 # terminum — Specification (Files panel)
 
-Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enhancer's panel (its AC 01–AC 32, AC 44, AC 53) against terminumd, following the pane the page shows. Cases are AC-51…AC-73. A case of another spec is written `AC nn` (a space); `AC-nn` is this spec's own.
+Sibling of `terminum.md` (the core). This spec holds the Files panel: the tree, viewer and editor against terminumd, following the pane the page shows. Cases are AC-51…AC-73, AC-94 and AC-95. A case of another spec names its spec beside it.
 
 ## 0. Metadata
 
 | Field | Value |
 |---|---|
-| Version | 0.8.2 |
-| Date | 2026-11-03 |
+| Version | 0.9.0 |
+| Date | 2026-11-06 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
-Change log:
+Change log (older rows, gaps, stages and dated evidence: [history/terminum-files.md](history/terminum-files.md)):
 
-| Version | Date | Change |
+| Version | Date | 2026-11-06 |
 |---|---|---|
-| 0.8.2 | 2026-11-03 | An audit of 7e5c220: four held 64 MB raw answers took 262 MB and a Range got the whole file: raw files stream in 256 KiB parts with one `Range` (206, 416), through a host's Agent too, the 64 MB limit judged from the size first. The listing cache counts its sorting and filter indexes and evicts after they grow. The Panel says when saving its tree, tabs or preferences fails (once until a save works again) and sends them again on the next change or reconnect; an answer lost for a write that landed is recognized by its pane and content. A View waiting for its session pauses its event stream and rechecks on coming back (unloading waiting Views was left out: it would lose their tabs). bench_ls: 20 runs, p50/p95/max, the largest RSS (AC-64, AC-67, AC-70). |
-| 0.8.1 | 2026-11-02 | New File… and New Folder… did nothing when the selection kept with the pane named a path whose folder does not open in the tree (in another folder, or under a closed one): the name's field had no row to stand on. Such a selection makes it in the root (AC-57); found as a rare failure of `web/test/e2e_live.mjs` in WebKit. |
-| 0.8.0 | 2026-10-28 | Owner: the tree's context menu has Sorting › Recent First, Alphabetical, By Extension (folders always first); terminumd sorts, so a 500,000-entry folder still pages; a finger held on the tree opens its menu (iOS Safari sends no contextmenu); the menu has a second level (AC-52). Pragmatic review applied: an order made under its own once-cell (Recent's 500,000 lstat() held the listing's lock, name order waiting behind it); Recent's times read on up to 8 threads (3.7 s cold for 500,000 by `SORT=recent scripts/bench_ls.sh`, now 2.1 s); a finger never starts a row's drag (iOS lifts a draggable row on a long press); no hold in the rename field; a menu opened over another closes it (its keys' listener stayed). Rejected: three flat items instead of a second level (the owner asked for Sorting → three choices). |
-| 0.7.2 | 2026-10-26 | An audit's findings fixed. A JSON or YAML root of 100,000 values drew 100,000 rows at once: the top level is paged as a folder's children; Expand all and Collapse all kept every tree drawn before in memory. YAML: a key named `__proto__` vanished (it set the object's prototype), a key twice in one mapping kept the last silently, `\UFFFFFFFF` threw and left Rendered blank: each key is a member of its own, a key twice and an escape past Unicode are errors with their line and column. CSV: a last record `""` with no line end was dropped, and a column first met after row 5000 was never shown (AC-94). A video or a sound no longer shown played on, detached: it is stopped and let go as soon as its element leaves the page; a picture's `blob:` address lives while it is shown (it was revoked once drawn, so Open Image in New Tab failed); MIDI renders run two at a time, and one whose tab closed or file changed is called off, its WAV never made (AC-64). Keep Both was refused when the name was taken by a link to a file outside the roots: the new file is judged in its folder, and saved beside the link (AC-95). |
-| 0.7.1 | 2026-10-25 | A ⌘S pressed while a save is still in flight saves again once it ends, so text typed meanwhile is written too (before, the press joined the running save and that text stayed unsaved; seen on the Linux CI, whose slower save outlasted the check's wait) (AC-56). |
-| 0.7.0 | 2026-10-24 | Owner: files dragged from Finder (or another app) onto the tree upload into the folder under the pointer, on this Mac or the pane's host (AC-95): the folder a row is in (a folder's own row: that folder; below the rows: the root) shows as the target while the drag lasts, and moving up or down picks another among those shown. New route `POST /api/fs/upload?dir=&name=[&both=1]` (the file's bytes, at most 100 MB; under Roots; never over an existing file: refused, or with both=1 saved as "name 2.ext"), forwarded to a host's agent as the other file operations are (terminum.md AC-09). |
-| 0.6.1 | 2026-10-24 | Owner: Esc in the Files tree hides View, the keys staying in the tree, so files are looked at one after another (Enter or a click shows one, Esc hides it); MIDI plays on a fresh install with the SoundFont in the package (terminum.md 0.19.2) (AC-70, AC-64). |
-| 0.6.0 | 2026-10-24 | Owner: a player for every sound, MIDI too, and JSON, YAML, CSV and TSV rendered. A sound the browser plays (MP3, AAC/M4A, WAV, FLAC, Ogg; AIFF and AU in Safari) plays in its player; AU (.au, .snd) and AIFF (.aif, .aiff), which Chrome does not play, are decoded in the panel into WAV; MIDI (.mid, .midi), which no browser plays, is rendered on the Mac by terminumd with a General MIDI SoundFont of the user's (settings.json's midi.soundfont, else ~/.terminum/soundfont.sf2; none is shipped: a bank is tens of MB) into a WAV the same player plays, so it seeks, pauses and sets its volume as any sound; no synthesis of the panel's own; a type nothing here plays says so with Download (AC-64). JSON, YAML, CSV and TSV open Rendered with a Source toggle: JSON and YAML as a tree that folds, CSV and TSV as a table (AC-94). |
-| 0.5.8 | 2026-10-24 | Owner: a PDF opens in its tab in the browser's own PDF viewer (scroll, zoom, find, print), a video and a sound in the browser's player, instead of "Binary file"; each fetched with the sign-in's header and shown from a `blob:` address of its own type (a PDF keeps `application/pdf`: the viewer runs none of the file's script in the page's origin); the page's policy lets a frame show a `blob:` (`frame-src 'self' blob:`) (AC-64; terminum.md 0.18.18). |
-| 0.5.7 | 2026-10-24 | Owner: Esc in an open View hides it and gives the terminal its keys, as its × does (its tabs stay); an Esc that the editor takes first (its search panel, a completion list, a dialog) does only that (AC-70). |
-| 0.5.6 | 2026-10-24 | Owner: when the pane's coding agent works in another folder than the pane's (a worktree it moved to), the tree follows the agent: its root is the folder the agent's hooks last said, and it moves when that changes (within a frame of the pane's output); "Follow the agent's folder" off (the menu's Settings) keeps the pane's folder (AC-51; terminum.md 0.18.17). |
-| 0.5.5 | 2026-10-24 | Owner: a row of the tree (a file or a folder) can be dragged; it carries its host and path, the selection's when the row is selected, and a drop on the terminal puts their paths at the input (terminum-terminal.md AC-36); elsewhere it is plain text, one path a line (AC-52). |
-| 0.5.4 | 2026-10-24 | Owner: a video's or a sound's `blob:` address in an HTML document lived as long as the panel (a closed document's video held its bytes); it is revoked once its element left the page or its document's frame closed (looked at every 5 s). A document's SVG picture is shown from a `data:` address and a file named in a `src` of another type as bytes, so none opened as a page runs in the panel's origin (terminum.md 0.18.15) (AC-67; terminum.md AC-09). |
-| 0.5.3 | 2026-10-23 | Owner, a security audit: an image tab, a Markdown or HTML document's local images, videos and stylesheets and Download (the web app) fetch the file with the sign-in's header and show it from a `blob:` address; the address with `?t=` (the 30-day sign-in) is gone; a picture full screen gets the file's address without it, which the page fetches itself; an HTML file's own `data-raw` attributes are dropped with its handlers, so only its local `src` and `href` are fetched (found in review: a planted `<link data-raw="/etc/hosts">` was read into a `<style>`) (AC-64, AC-67, AC-53; terminum.md AC-09). |
-| 0.5.2 | 2026-10-22 | Owner: a click on an image tab's picture opens it full screen in the page's viewer (pinch, wheel, drag, a double click for 1:1; −, +, Fit, ×), alone (no page around) it toggles its own size; the checkerboard is behind the picture alone, so its transparent parts show within its edges (AC-64); Reveal in tree expands the file's folders and selects it, and is offered only for a file under the folder Files shows (AC-67); View's head, path bar and tab row stand on one grid, Reveal beside the tabs; at WIDE View has no Terminal key, its × closes it (AC-70). |
-| 0.5.1 | 2026-10-22 | Owner: View's Terminal button on a phone is a key as the others, not an accent pill (AC-70). |
-| 0.5.0 | 2026-10-22 | Owner: docked Files' width follows a drag of its border with the terminal, remembered in this browser (AC-70). |
-| 0.4.1 | 2026-10-21 | Owner: in Safari a quick switch to another session and back left docked Files blank (the emptied frame's about:blank loaded after the folder set meanwhile); Files is hidden, not emptied, until the shown session's folder is in (AC-70). |
-| 0.4.0 | 2026-10-21 | Owner: the ```mermaid fences of a rendered Markdown document showed as plain text; they are drawn as diagrams, their source a click away (AC-54). Owner: docked Files opened or closed in one session did so in all; it is each session's now, in this browser (AC-70). |
-| 0.3.2 | 2026-10-16 | Owner: a file made with New File… opens where a click opens files (View in the page), not in the panel's own editor under the tree (AC-70). |
-| 0.3.1 | 2026-10-15 | AC-51: terminumd tells the page when the shown pane's folder changes (read with every frame); the page no longer asks again 0.7 s after Enter. |
-| 0.3.0 | 2026-10-15 | Owner: no App (the Mac's browser and an iPhone are the clients): "Open in Window" and the App's viewer window go; the private tmux server. |
-| 0.2.0 | 2026-10-15 | Pragmatic review: the panel stays in its proxied mode under `/fb/` with its `web:` workspace keys (`ui/src/embed.ts`), so it needs no edit; the files API paths are the page's `/fb/api/*`. |
-| 0.1.0 | 2026-10-15 | Initial draft from iterm-enhancer 0.42: the panel follows the shown pane (not the focused iTerm2 pane); the viewer window is the page's View window and an App window; everything else kept. |
+| 0.9.0 | 2026-11-06 | Consolidated: change log and dated evidence moved to history; sections 7, 10 and 11 rewritten for a shipped product. |
 
 ## 1. Overview
 
@@ -55,10 +32,10 @@ Change log:
 ## 2. Scope and non-goals
 
 In scope:
-- The tree, viewer, editor, workspaces, watcher, file operations, utility actions, theme, keyboard, filter, images, hidden files, multi-select, links between documents, expand all, icons, the View window and docked layout, state persistence and cleanup, git colors and drag-and-drop as later items.
+- The tree, viewer, editor, workspaces, watcher, file operations, utility actions, theme, keyboard, filter, media players, data views, hidden files, multi-select, links between documents, expand all, icons, upload by drop, the View window and docked layout, state persistence and cleanup; git colors and moving files by drag as later items.
 
 Out of scope (explicit):
-- Files of a remote host without the files helper (the tree says so; enabling it is `terminum-remote.md`, AC 83).
+- Files of a remote host without the files helper (the tree says so; enabling it is `terminum-remote.md` AC-83).
 - IDE features (LSP, project search), a second user, writes outside Roots.
 
 ## 3. Assumptions, dependencies, open questions
@@ -67,22 +44,23 @@ Assumptions:
 
 | ID | Assumption | Owner | Status |
 |---|---|---|---|
-| AS-51 | The panel (`ui/`) runs unchanged in the page's iframe in its proxied mode (`PROXIED`, `ui/src/api.ts`) under `/fb/` against terminumd's Files API at `/fb/api/*` (fbd's paths), pinned to the pane the page names in the frame's URL (`key`, `cwd`, `host`) and themed by the page's message, with its own workspace key `web:[host, key]` (`embed.ts:16`). | Claude | unverified: `ui/test/e2e_panel.mjs` on terminumd |
-| AS-52 | Reading a 500K-entry folder takes about 1 s warm (`ls -f`, measured 2026-09-30 in iterm-enhancer). | Claude | verified |
-| AS-53 | `#{pane_current_path}` is the pane's shell cwd (the foreground job's for a program that changed it, as tmux reports the active process's cwd on macOS through libproc), within 0.5 s of a `cd` at the prompt. | Claude | verified for shells in iterm-enhancer (AS-03 there); vim `:cd` unverified |
+| AS-51 | The panel (`ui/`) runs in the page's iframe in its proxied mode (`PROXIED`, `ui/src/api.ts`) under `/fb/` against terminumd's Files API at `/fb/api/*`, pinned to the pane the page names in the frame's URL (`key`, `cwd`, `host`) and themed by the page's message, with its own workspace key `web:[host, key]` (`ui/src/embed.ts:17`). | Claude | verified: `ui/test/e2e_panel.mjs`, `web/test/e2e_live.mjs` |
+| AS-52 | Reading a 500K-entry folder takes about 1 s with the OS's disk cache warm. | Claude | verified: `scripts/bench_ls.sh` |
+| AS-53 | `#{pane_current_path}` is the pane's shell cwd (the foreground job's for a program that changed it, as tmux reports the active process's cwd on macOS through libproc), within 0.5 s of a `cd` at the prompt. | Claude | verified for shells; vim `:cd` unverified |
 
 Dependencies:
 
 | ID | Dependency | Owner | Status |
 |---|---|---|---|
-| DEP-51 | fbd's Rust modules from iterm-enhancer (`listing.rs`, `files.rs`, `ops.rs`, `watcher.rs`, `workspace.rs`, `api_fs.rs`, `remote.rs`, `agent.rs`), moved into terminumd. | Claude | available |
-| DEP-52 | CodeMirror 6, markdown-it 14, Tabler Icons (MIT, vendored) in `ui/`. | Claude | available |
+| DEP-51 | terminumd's Files modules: `listing.rs`, `files.rs`, `ops.rs`, `watcher.rs`, `workspace.rs`, `api_fs.rs`, `remote.rs`, `agent.rs`. | Claude | available |
+| DEP-52 | CodeMirror 6, markdown-it 15, Mermaid 11, Tabler Icons (MIT, vendored) in `ui/`. | Claude | available |
+| DEP-53 | rustysynth (`terminumd/src/midi.rs`) and GeneralUser GS 2.0.3 in the package (`scripts/package.py`), for MIDI (AC-64). | Claude | available |
 
 Open questions:
 
 | ID | Question | Owner | Status | Decision |
 |---|---|---|---|---|
-| OQ-51 | Should the Files panel follow the pane's folder on every `cd` (tree state cleared, as iterm-enhancer's OQ-02 decided) also when the user is editing in the viewer? | Owner | resolved | Yes: tree state clears on `cd`, tabs stay (they hold absolute paths and unsaved edits), 2026-09-30. |
+| OQ-51 | Should the Files panel follow the pane's folder on every `cd` (tree state cleared) also when the user is editing in the viewer? | Owner | resolved | Yes: tree state clears on `cd`, tabs stay (they hold absolute paths and unsaved edits), 2026-09-30. |
 | OQ-52 | Where may the panel write? | Owner | resolved | Under `$HOME` and `/tmp` by default (`TM_WRITABLE_ROOTS`), 2026-09-30. |
 
 ## 4. Acceptance cases
@@ -113,6 +91,7 @@ Open questions:
 | AC-72 | [NICE TO HAVE / later] | Git status colors (modified, added, ignored) show in the tree. |
 | AC-73 | [NICE TO HAVE / later] | Files move between folders by drag and drop. |
 | AC-94 | [SHOULD / P1] | JSON, YAML, CSV and TSV open rendered (a tree that folds, a table), with a Source toggle. |
+| AC-95 | [SHOULD / P1] | Files dragged from Finder onto the tree upload into the folder under the pointer, on this Mac or the pane's host, never over an existing file. |
 
 ## 5. BDD scenarios
 
@@ -122,25 +101,30 @@ Open questions:
 Scenario: AC-51 happy path — cd re-roots the tree
   Given the page shows pane %3 (zsh) and Files is open
   When the user runs "cd /Users/alex/work/api" in %3
-  Then within 1 s (every frame of the shown pane reads #{pane_current_path}; a change is sent to the page as `files`, whatever made it: Enter, a hot key, a script) the panel header shows the pane's title, the badge "TMUX" and "~/work/api", and the tree lists that folder
-  And a remote pane shows "REMOTE devbox" and the host's folder once its helper is enabled (AC 82)
+  Then within 1 s (every frame of the shown pane reads #{pane_current_path}; a change is sent to the page as `files`, whatever made it: Enter, a hot key, a script) the panel header shows the badge "TMUX" and "~/work/api", and the tree lists that folder
+  And a remote pane shows "REMOTE devbox" and the host's folder once its helper is enabled (`terminum-remote.md` AC-82)
+  When the user opens pane %4 in "/tmp"
+  Then within 1 s the tree root is "/tmp" with %4's own state (AC-55)
 
 Scenario: AC-51 happy path — the coding agent's folder
   Given the pane's Claude Code works in "/Users/alex/work/api/worktrees/fix" (it moved there; the pane's folder is still "/Users/alex/work/api")
   Then with "Follow the agent's folder" on (the default) the tree's root and the header's folder are "~/work/api/worktrees/fix", the folder its hooks last said (its own events, not a subagent's), and they move when it moves (within a frame of the pane's output)
   And with it off they are the pane's folder; a pane with no agent's hooks shows the pane's folder either way
 
-Scenario: AC-51 happy path — another pane
-  When the user opens pane %4 in "/tmp"
-  Then within 1 s the tree root is "/tmp" with %4's own state (AC-55)
-
 Scenario: AC-51 edge — a foreground program in a subdirectory
   Given the shell's cwd is "/Users/alex/work/api" and vim runs there after ":cd src"
   Then the root follows what tmux reports (AS-53); the badge names the program ("vim")
 
-Scenario: AC-51 failure — the folder is unavailable
-  Given the pane is on a host without the helper, or the folder is gone
-  Then the badge shows "REMOTE" or "GONE", the footer says why ("remote host devbox: files not enabled", "/Users/alex/old: No such file or directory"), and the tree keeps the last known root marked "cwd unavailable — showing last known"
+Scenario: AC-51 failure — the folder is gone
+  Given the pane's folder "/Users/alex/old" was deleted
+  Then the tree's row says "⚠ No such file or directory (os error 2)"
+  And the badge shows "GONE" and the tree keeps the last known root marked "cwd unavailable — showing last known"
+
+Scenario: AC-51 failure — no folder to show
+  Given tmux does not answer for the pane
+  Then Files shows "The pane's folder is not known: <tmux's error>" in the frame's place
+  Given the pane is on a host whose files are not enabled
+  Then the badge shows "REMOTE" and the panel offers Enable and Not now (`terminum-remote.md` AC-83)
 ```
 
 ### AC-52 — Very large folders [MUST / P0]
@@ -165,7 +149,7 @@ Scenario: AC-52 edge — invalidation and unreadable names
 Scenario: AC-52 happy path — sorting
   When the user right-clicks the tree (on a phone: holds a finger on it 0.5 s without moving) and picks Sorting › Recent First, Alphabetical or By Extension (the current one checked; Sorting opens with the pointer over it, a tap, → or ↩)
   Then every folder of the tree is listed in that order, folders always before files and sorted the same way among themselves: Recent First by last modified, newest first (a link by its own time); Alphabetical as Finder's names, case-insensitive with numbers by value (the default); By Extension case-insensitive, names without one (".gitignore", "Makefile") first, then by name (folders by name)
-  And terminumd sorts (the tree pages the order, a filter keeps it, a host's agent the same); the order is made once per listing, a request for another order never waiting for it, and Recent First alone reads every entry's time (on up to 8 threads: 500,000 entries' first rows in 2.1 s cold, within the 2.5 s; read again after each change in that folder, as the listing is); the choice is kept with the panel's prefs for every pane and page; expanded folders, the selection and the scroll stay
+  And terminumd sorts (the tree pages the order, a filter keeps it, a host's agent the same); the order is made once per listing, a request for another order never waiting for it, and Recent First alone reads every entry's time (on up to 8 threads, within the 2.5 s; read again after each change in that folder, as the listing is); the choice is kept with the panel's prefs for every pane and page; expanded folders, the selection and the scroll stay
   And on a touch screen a finger never drags a row (it holds: the menu), a hold in a name being typed is the field's
 ```
 
@@ -199,7 +183,7 @@ Scenario: AC-53 error — gone or not a regular file
 Scenario: AC-54 happy path — rendered by default, source on a click
   When the user clicks "README.md"
   Then the tab opens Rendered: proportional text, headings, tables, task lists, footnotes, fenced ```rust highlighted (as the editor highlights it), relative images shown
-  And a ```mermaid fence is drawn as its diagram (Mermaid in strict mode, as the terminal's widgets draw one, AC-31 of terminum-terminal.md; in the theme's light or dark), with "Source" over it to show its highlighted text and "Diagram" back; a fence Mermaid cannot draw shows its source with Mermaid's message above it
+  And a ```mermaid fence is drawn as its diagram (Mermaid in strict mode, as the terminal's widgets draw one, `terminum-terminal.md` AC-31; in the theme's light or dark), with "Source" over it to show its highlighted text and "Diagram" back; a fence Mermaid cannot draw shows its source with Mermaid's message above it
   When the user clicks "Source"
   Then Markdown source with Markdown highlighting; the choice is remembered for the tab
 
@@ -249,7 +233,7 @@ Scenario: AC-56 error — changed on disk, outside Roots, during a gap
   And "/etc/hosts" is read-only with "Read-only: outside writable folders"; a save while terminumd is unreachable fails at once with "Not saved: server restarting — save again"
 
 Scenario: AC-56 edge — closing, competing saves, renames, size
-  Then closing a dirty tab asks "Save changes to app.py?" (Save, Don't save, Cancel); text typed before a closing save finishes stays unsaved in the open tab
+  Then closing a dirty tab asks "Save changes to app.py?" (Save, Don't Save, Cancel); text typed before a closing save finishes stays unsaved in the open tab
   And text typed while a save is in flight stays unsaved; a ⌘S pressed before that save ends saves again once it does, so that text is written too
   And of two pages saving the same etag (symlink aliases included) exactly one succeeds and the other sees the conflict; a save pending across a rename retries on the current path and a stale old-path reply cannot mark it clean
   And a 9 MB file saves; a body over 6 × the text limit answers 413 as JSON; a 255-byte basename saves with no temp file left; a conflict dialog of one host's file is discarded only for that document when the pane switches hosts
@@ -308,7 +292,7 @@ Scenario: AC-59 happy path — trash a folder
 
 Scenario: AC-59 error — gone already, or the request fails
   Then "build: No such file or directory" as a toast and the tree refreshes; a request-level failure keeps every tab and edit, and only files reported trashed close their tabs
-  And Enter activates the focused dialog button: Cancel or Close never chooses Move to Trash, Overwrite or Don't save
+  And Enter activates the focused dialog button: Cancel or Close never chooses Move to Trash, Overwrite or Don't Save
 ```
 
 ### AC-60 — Utility actions [SHOULD / P1]
@@ -340,8 +324,8 @@ Scenario Outline: AC-60 security — quoting follows the pane's shell, nothing r
     | any                           | -rf        | ./-rf            |                                                                        |
     | any                           | a‮b (U+202E)|                  | Name contains control or invisible characters — not sent to the terminal |
 
-Scenario: AC-60 edge — the web page and remote files
-  Then Finder and "Open with Default App" are not offered on a network page or for remote files, "Open in Window" not on a phone; terminumd refuses them with "Not available for remote files" or 403; queued text is checked at delivery: a pane or shell that changed meanwhile gets nothing and the page is told
+Scenario: AC-60 edge — another device and remote files
+  Then Finder and "Open with Default App" are not offered on a page from another device or for remote files; "Insert Path in Terminal", "Open Terminal Here" and "Open in Window" are offered only at the Mac; terminumd refuses a forwarded /api/os or /api/terminal request with 403 and a remote file's with "Not available for remote files"; queued text is checked at delivery: a pane or shell that changed meanwhile gets nothing and the page is told
 ```
 
 ### AC-61 — Live refresh [SHOULD / P1]
@@ -352,12 +336,10 @@ Scenario: AC-61 happy path — new file, clean tab reloads, dirty tab asks
   When another program runs "touch src/new.rs" and edits "app.py"
   Then within 1 s "new.rs" appears sorted and the tab shows the new content keeping its scroll; a dirty tab shows "Changed on disk" with "Reload" and "Keep mine"
 
-Scenario: AC-61 edge — retry a failed watch
+Scenario: AC-61 edge — a failed watch, bursts and stale listings
   Given installing a filesystem watch failed temporarily
   When the same folder is requested again after the cause clears
   Then the watch is retried and only successfully installed subscriptions count as watched
-
-Scenario: AC-61 edge — bursts and stale listings
   When "npm install" writes 40,000 files into an expanded "node_modules"
   Then the tree updates at most twice a second; an older listing page arriving after a fresh one cannot replace it
 
@@ -400,19 +382,16 @@ Scenario: AC-63 happy path — loaded tree and a 500K folder
   Then within 500 ms it shows the 10 matching rows and "10 of 500,000" (filtered by terminumd)
 
 Scenario: AC-63 edge — no match
-  Then "No items match "zzz"" and Esc clears the filter
+  When the user types "zzz"
+  Then a folder with no match shows the row "no matches", and Esc clears the filter
 ```
 
 ### AC-64 — Images, PDFs, videos and sounds [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-64 happy path — png
+Scenario: AC-64 happy path — a picture and a closer look
   When the user clicks "docs/arch.png" (1920×1080, 240 K)
-  Then a tab shows it fitted with "1920 × 1080 · 240 K"
-
-Scenario: AC-64 happy path — a closer look
-  Given a picture in its tab
-  Then it stands in the middle of the tab, a checkerboard behind it alone (its transparent parts show within its edges)
+  Then a tab shows it fitted with "1920 × 1080 · 240 K", in the middle of the tab, a checkerboard behind it alone (its transparent parts show within its edges)
   When the user clicks the picture
   Then it opens full screen in the page's viewer, fitted: two fingers pinch, the wheel zooms around the pointer, a drag pans, a double click toggles fitted and 1:1; −, +, Fit and × (or Esc) in its corner
   And in a View of its own (no page around) a click shows it at its own size, scrolled, and another fits it again
@@ -462,13 +441,15 @@ Scenario: AC-66 edge — remembered, across unloaded pages
 
 ```gherkin
 Scenario: AC-67 happy path — Markdown, HTML, anchors, web
-  When the user clicks "[design](docs/design.md)" in a rendered file
-  Then "docs/design.md" opens in a new tab Rendered; "[the page](page.html#sec2)" opens page.html rendered in a sandboxed frame scrolled to "#sec2" with its relative images; "<a href='../README.md#sandbox'>" inside page.html opens README.md at "#sandbox"; "Reveal in tree" expands the file's folders and selects it; it is offered only for a file under the folder Files shows (the pane's, which the page tells View)
-  When the user clicks "[tmux](https://github.com/tmux/tmux)"
+  When the user clicks a link to "docs/guide.md" in a rendered file
+  Then "docs/guide.md" opens in a new tab Rendered; a link to "docs/report.html#sec2" opens report.html rendered in a sandboxed frame scrolled to "#sec2" with its relative images; "<a href='../README.md#sandbox'>" inside report.html opens README.md at "#sandbox"; "Reveal in tree" expands the file's folders and selects it; it is offered only for a file under the folder Files shows (the pane's, which the page tells View)
+  When the user clicks a link to "https://github.com/tmux/tmux"
   Then the reader's default browser opens it (new tab, noopener) and the panel stays
 
 Scenario: AC-67 edge — scripts, frames, odd names
-  Then page.html's scripts and handlers never run, nor do those of a picture or video it names opened as a page (an SVG is shown from a data: address, a file of another type than a picture, a video or a sound as bytes); a video's or a sound's address is let go once its document closed; a local image name with "#", "?" or "%" is addressed exactly through its percent-encoded path; a resource URL with an invalid escape leaves the document visible and marks the resource broken
+  Then report.html's scripts and handlers never run, nor do those of a picture or video it names opened as a page (an SVG is shown from a data: address, a file of another type than a picture, a video or a sound as bytes)
+  And a file's own data-raw attribute is dropped with its handlers: a planted '<link data-raw="/etc/hosts">' reads nothing, and only its local src and href are fetched with the sign-in
+  And a video's or a sound's address is let go once its document closed; a local image name with "#", "?" or "%" is addressed exactly through its percent-encoded path; a resource URL with an invalid escape leaves the document visible and marks the resource broken
 
 Scenario: AC-67 error — broken link
   Then "gone.md: No such file or directory" as a toast
@@ -503,7 +484,7 @@ Scenario: AC-95 happy path — the folder under the pointer
   When the user drags "photo.png" and "notes.txt" from Finder over "b.ts"
   Then "src" is the target while the pointer is there: its row and its rows under it marked in the accent, a line at the top of the tree says "Upload 2 files to src"; over "docs" (a folder's own row) "docs"; over "README.md" or below the last row the root
   When the user drops them over "b.ts"
-  Then each is saved in "src" under its own name (one after another, the bytes as they are, by the tree's host: this Mac or the pane's host, AC-37), the tree shows them, a toast says "Uploaded 2 files to src"
+  Then each is saved in "src" under its own name (one after another, the bytes as they are, by the tree's host: this Mac or the pane's host, `terminum-remote.md` AC-82), the tree shows them, a toast says "Uploaded 2 files to src"
 
 Scenario: AC-95 edge — a name taken, a folder, a read-only place
   When "notes.txt" exists in "src"
@@ -513,6 +494,7 @@ Scenario: AC-95 edge — a name taken, a folder, a read-only place
 Scenario: AC-95 failure — too large, refused, gone
   When a file is over 100 MB, the host does not answer or terminumd refuses it
   Then the toast names the file and terminumd's reason; the files before it stay, those after it are not sent
+  And with two uploads running a third is refused before its body is read: 429 "Two uploads are running already"
 ```
 
 ### AC-68 — Expand and collapse all [SHOULD / P1]
@@ -607,8 +589,13 @@ Scenario: AC-70 failure — nothing to show
 ```gherkin
 Scenario: AC-71 happy path — terminumd restarts
   Given in %3 "src" and "src/db" are expanded and the tree is scrolled to row 412
-  When terminumd restarts (AC 14)
+  When terminumd restarts (`terminum-lifecycle.md` AC-14)
   Then the panel reconnects and shows the same, scrolled to row 412 (workspaces.json, debounced 500 ms, atomic, written complete at shutdown)
+
+Scenario: AC-71 failure — a save of the panel's state fails
+  When terminumd refuses or does not answer a write of the workspace or the preferences
+  Then the panel says "Panel state not saved: <message>" or "Preferences not saved: <message>" once, until that kind of save works again, and sends it again on the next change or reconnect
+  And an answer lost for a write that landed is recognized by its pane and content: the newer change is kept
 
 Scenario: AC-71 edge — expiry
   Given a pane's state was last used 15 days ago and the pane is not in any tmux server
@@ -651,14 +638,14 @@ sequenceDiagram
   participant D as terminumd
   participant P as Page
   participant F as Files panel (iframe)
-  T-->>D: %output / list-panes every 2 s (pane_current_path)
-  D-->>P: {"t":"layout",…} and {"t":"files","key":"tmux:local:default:%3","cwd":"/Users/alex/work/api","host":null}
-  P->>F: postMessage {key, cwd, host, theme}
-  F->>D: GET /api/workspace?key=… ; GET /api/ls?path=…
+  T-->>D: a frame of the shown pane (pane_current_path)
+  D-->>P: {"t":"files","key":"tmux:local:default:%3","cwd":"/Users/alex/work/api","home":"/Users/alex","host":null}
+  P->>F: frame URL /fb/?key=…&cwd=…&host=… ; message fb-theme
+  F->>D: GET /api/workspace?key=…&cwd=… ; PUT /api/watch ; GET /api/ls?path=…
   D-->>F: workspace {rev, expanded, tabs…} ; rows
 ```
 
-The page tells the panel which pane it shows; the panel keeps its workspace under that key. No focus tracking exists: the shown pane is the one.
+The page tells the panel which pane it shows; the panel keeps its workspace under that key. The shown pane is the one: there is no focus tracking.
 
 ### Save with conflict check (AC-56, AC-61)
 
@@ -680,64 +667,48 @@ sequenceDiagram
 
 ## 7. Current behavior and gaps
 
-Today is iterm-enhancer 0.42; `fbd` and the panel are inherited.
-
-| AC | Today | Gap | Evidence |
-|---|---|---|---|
-| AC-51 | The bridge resolves the focused iTerm2 pane's cwd (three modes). | The page's shown pane and `#{pane_current_path}`; no focus. | `iterm-enhancer/bridge/fbbridge/resolve.py:65`, `web/static/panefiles.js:1` |
-| AC-52 | Rust listing cache, paging, virtual tree. | None (moved). | `iterm-enhancer/fbd/src/listing.rs:1`, `ui/src/tree-rows.ts:1` |
-| AC-53 | CodeMirror viewer, limits, regular files only. | None. | `iterm-enhancer/fbd/src/files.rs:1`, `ui/src/viewer.ts:1` |
-| AC-54 | markdown-it, html off, source toggle. | None. | `ui/src/markdown.ts:1` |
-| AC-55 | Workspaces in fbd keyed by pane; web pages use `web:` keys. | None: the `web:` key is the key (no Mac panel competes for the pane). | `iterm-enhancer/fbd/src/workspace.rs:1`, `ui/src/embed.ts:16` |
-| AC-56 | Atomic etag-checked save. | None. | `iterm-enhancer/fbd/src/ops.rs:1`, `ui/src/viewer-editor.ts:1` |
-| AC-57 | mkdir, touch, inline names. | None. | `ui/src/tree-edit.ts:1` |
-| AC-58 | rename, tabs follow. | None. | `ui/src/tree-edit.ts:1` |
-| AC-59 | Trash via the `trash` crate, dialog. | None. | `iterm-enhancer/fbd/src/ops.rs:1` |
-| AC-60 | Terminal actions through the bridge (`/internal/commands`). | terminumd types with `send-keys -l`; quoting rules moved from fbd. | `iterm-enhancer/fbd/src/termtext.rs:1` |
-| AC-61 | FSEvents watcher, events over the WebSocket. | None. | `iterm-enhancer/fbd/src/watcher.rs:1` |
-| AC-62 | Full shortcut set. | None. | `ui/src/binding.ts:1` |
-| AC-63 | Server-side filter. | None. | `iterm-enhancer/fbd/src/listing.rs:1` |
-| AC-64 | Image tab. | None. | `ui/src/viewer.ts:1` |
-| AC-65 | Hidden toggle in prefs. | None. | `ui/src/tree.ts:1` |
-| AC-66 | Multi-select across pages. | None. | `ui/src/tree-select.ts:1` |
-| AC-67 | Links, anchors, sandboxed HTML. | None. | `ui/src/docview.ts:1`, `ui/src/viewer-path.ts:1` |
-| AC-68 | Expand all with limits. | None. | `ui/src/tree-expand.ts:1` |
-| AC-69 | Tabler icons. | None. | `ui/src/icons.ts:1` |
-| AC-70 | Docked Files and View in the web app; a "Files Viewer" iTerm2 profile window on the Mac. | A second browser tab at `/view` instead of the iTerm2 window. | `web/static/views.js:1`, `iterm-enhancer/bridge/fbbridge/windows.py:1` |
-| AC-71 | TTL at inventories from the bridge. | Inventory from tmux's pane list. | `iterm-enhancer/fbd/src/liveness.rs:1` |
-| AC-72 | not implemented | everything | — |
-| AC-73 | not implemented | everything | — |
+| AC | Gap | Evidence |
+|---|---|---|
+| AC-51 | The badge shows only `tmux` or `remote`: never "GONE" or the program's name. Nothing sends `stale` or `note`, so "cwd unavailable — showing last known" never shows. A gone folder shows its error row in the tree instead. | `ui/src/main.ts:151`, `ui/src/main.ts:162`, `terminumd/src/panel_api.rs:34` |
+| AC-51 | `web/test/e2e_files.mjs`, named as the measure of "p95 < 1 s over 20 cds", does not exist; only a single wait with a budget checks it. | `ui/test/e2e_panel.mjs:54` |
+| AC-52 | j and k do not move the selection; ↓ and ↑ do. | `ui/src/tree-input.ts:102` |
+| AC-62 | ⌥W, ⌃Tab and `/` work but no test presses them. | `ui/src/main.ts:397`, `ui/src/main.ts:417`, `ui/src/main.ts:418` |
+| AC-63 | "10 of 500,000" is not shown: a filtered folder shows its rows and no count. The 500 ms budget is not measured: `scripts/bench_ls.sh` sends no filter. | `ui/src/tree-rows.ts:60`, `scripts/bench_ls.sh:19` |
+| AC-65 | ⌘⇧. is not bound: only the eye button toggles. A selected item that becomes hidden leaves the selection; the selection does not move to its parent. | `ui/src/main.ts:383`, `ui/src/tree.ts:119` |
+| AC-72 | Not built: a listing row has no git field and nothing runs git. | `terminumd/src/listing.rs:86` |
+| AC-73 | Not built: a row dragged inside the tree is not taken as a move. | `ui/src/tree-drop.ts:7` |
+| AC-95 | A hidden part file stays in the folder if terminumd dies during an upload's write. | `terminumd/src/ops.rs:224` |
 
 ## 8. Recommendation and ownership
 
-**Recommended approach.** Move fbd's Files modules into terminumd unchanged (listing cache, watcher, ops, workspace, agent proxy) and serve the panel under `/fb/` in its proxied mode; the page embeds it as iterm-enhancer's web app does and names the shown pane's key, cwd and host in the frame's URL and sends the theme. The "focused pane" concept goes: a page shows one pane, and the panel's `web:` key for it is its workspace.
+**Approach.** The panel is its own bundle (`ui/`), served by terminumd under `/fb/` in its proxied mode and embedded by the page as an iframe. The page names the shown pane's key, folder and host in the frame's URL and sends the theme by message. A page shows one pane, and the panel's `web:` key for it is its workspace. terminumd owns listings, the watcher, file operations and workspaces, and proxies a host's requests to its Agent.
 
-**Rejected alternative.** A tree inside the terminal view (one DOM) — rejected because the panel is 3.6 k lines of working TypeScript with its own tests, and an iframe keeps its CSP and sandbox for rendered HTML.
+**Rejected alternative.** A tree inside the terminal view (one DOM): an iframe keeps the panel's own tests, and its CSP and sandbox for rendered HTML, apart from the terminal.
 
-| Part | Owner |
-|---|---|
-| terminumd Files modules | Claude |
-| Panel (`ui/`) and page embedding | Claude |
-| Acceptance on the owner's Mac and hosts | Owner |
+**Ownership.** terminumd's Files modules, `ui/` and the page's embedding are maintained together; the maintainer accepts on their Mac and hosts.
 
 ## 9. Technical details and specifications
 
 ### Interfaces
 
-All `/fb/api/*` need the sign-in header (`terminum.md` AC 09); a remote host's request carries `X-TM-Host: devbox`. JSON in and out; errors `{"error","message"}`.
+All `/fb/api/*` need the sign-in header (`terminum.md` AC-09); a remote host's request carries `X-TM-Host: devbox`. JSON in and out; errors `{"error","message"}`.
 
 | Method and path | Purpose | Case |
 |---|---|---|
-| `GET /fb/api/ls?path&offset&limit&filter&hidden&locate` (every path below under `/fb/api/`) | a page of a folder, `writable`, `located` | AC-52, AC-63, AC-65 |
+| `GET /fb/api/ls?path&offset&limit&filter&hidden&sort&locate` (every path below under `/fb/api/`) | a page of a folder, `writable`, `located`; `sort` is `name`, `recent` or `ext` | AC-52, AC-63, AC-65 |
 | `GET /api/file?path` (`If-None-Match`) | text and meta; 304 when unchanged | AC-53, AC-54, AC-61 |
 | `GET /api/raw?path` | bytes with MIME, streamed, never read whole; one `Range: bytes=` answers 206 with `Content-Range` (416 when past the end; several ranges get the whole file), also through a host's Agent (the sign-in in the header only: shown from `blob:`) | AC-64, AC-67 |
 | `PUT /api/file?path` (`If-Match`) | save | AC-56 |
 | `POST /api/fs/{mkdir,touch,rename,trash}` | operations | AC-57–AC-59, AC-66 |
+| `POST /api/fs/upload?dir&name&both` | a dropped file's bytes as the body; with `both=1` a taken name is saved as "name 2.ext" | AC-95 |
+| `POST /api/midi` | a MIDI file's bytes in, its WAV out, the bank's name in `x-tm-soundfont` | AC-64 |
 | `POST /api/os/{reveal,open}` | Finder, default app (loopback page only) | AC-60 |
-| `POST /api/terminal/{insert,cd}` | `{key, paths}` / `{key, path}`; quoted by terminumd, idle shell for cd | AC-60 |
-| `GET/PUT /api/workspace?key` | per-pane state with `rev` (409 if stale), `X-TM-Client` | AC-55, AC-71 |
-| `GET/PUT /api/prefs` | `{hidden, split}` | AC-65, AC-70 |
-| `GET /api/ws` | the page's socket carries `fs-change {host, dirs, files, moved}`, `workspace {key, rev, by}`, `rescan {host}` and `host {host}` (a host's files offer changed: the panel reads `GET /api/state?host=` again, AC 83) events to the panel | AC-61 |
+| `POST /api/terminal/{insert,cd}` | `{key, paths}` / `{key, path}`; quoted by terminumd, idle shell for cd (loopback page only) | AC-60 |
+| `GET/PUT /api/workspace?key&cwd` | per-pane state with `rev` (409 if stale), `X-TM-Client`; a GET's `cwd` re-roots it when the folder moved | AC-55, AC-71 |
+| `PUT /api/watch` | `{root, expanded}`: the folders this panel watches | AC-61 |
+| `GET/PUT /api/prefs` | `{hidden, split, sort}` | AC-52, AC-65, AC-70 |
+| `GET /api/state?host` | the build and a host's files offer | `terminum-remote.md` AC-83 |
+| `GET /api/ws` | the panel's socket: `{"event","data"}` frames `state`, `fs-change {host, dirs, files, moved}`, `workspace {key, rev, by}`, `rescan {host}` and `host {host}` (a host's files offer changed: read `/api/state` again) | AC-61 |
 
 Example:
 
@@ -752,20 +723,20 @@ curl -s -H "X-TM-Session: …" "http://127.0.0.1:48080/fb/api/ls?path=/tmp/fb-bi
 `workspaces.json` (terminumd, debounced 500 ms, atomic):
 
 ```json
-{"version": 1, "prefs": {"hidden": true, "split": 0.45},
- "panes": {"web:[\"\",\"tmux:local:default:%3\"]": {"rev": 17, "root": "/Users/alex/work/api", "host": null,
+{"version": 1, "prefs": {"hidden": true, "split": 0.5, "sort": "name"},
+ "panes": {"web:[\"\",\"tmux:local:default:%3\"]": {"rev": 17, "root": "/Users/alex/work/api",
    "expanded": ["/Users/alex/work/api/src"], "selected": ["/Users/alex/work/api/src/db/pool.rs"], "scroll": 412,
    "tabs": [{"path": "/Users/alex/work/api/README.md", "view": "rendered"}], "active_tab": 0, "updated": 1792000000}}}
 ```
 
-The etag is `<mtime ns>-<inode>-<size>`. Unsaved edits live in the panel's memory per key, never in the file.
+A tab's `view` is `auto`, `rendered` or `source`. `prefs.hidden` true shows dot files. The etag is `<mtime ns>-<inode>-<size>`. Unsaved edits live in the panel's memory per key, never in the file.
 
 ### Configuration
 
 | Key | Default | Example | Effect |
 |---|---|---|---|
 | `TM_WRITABLE_ROOTS` | `$HOME:/tmp` | `$HOME:/tmp:/opt/work` | Roots (OQ-52) |
-| `TM_LIST_CACHE_MB` | `128` | `64` | listing cache |
+| `TM_LIST_CACHE_MB` | `128` | `64` | listing cache, its sort and filter indexes counted |
 | `TM_TEXT_MAX_BYTES` | `10485760` | `5242880` | above: read-only, first 1 MB |
 | `TM_WORKSPACE_TTL_DAYS` | `14` | `30` | idle pane state removed after |
 
@@ -773,84 +744,73 @@ The etag is `<mtime ns>-<inode>-<size>`. Unsaved edits live in the panel's memor
 
 | Operation | Target | Measured by |
 |---|---|---|
-| cd → tree re-rooted | p95 < 1 s | `web/test/e2e_files.mjs` (20 cds) |
-| First page of a 500K folder, not in terminumd's cache (the OS's disk cache warm) | p95 < 2.5 s; RSS < 150 MB in every run | `scripts/bench_ls.sh /tmp/fb-big` (20 fresh terminumds; p50, p95, max) |
+| cd → tree re-rooted | p95 < 1 s | no repeated measure (section 7); `ui/test/e2e_panel.mjs` waits once |
+| First page of a 500K folder, not in terminumd's cache (the OS's disk cache warm) | p95 < 2.5 s | `scripts/bench_ls.sh /tmp/fb-big` (fresh terminumds; p50, p95, max) |
 | Later page of a cached folder | p95 < 50 ms | same |
-| Filter a 500K folder | p95 < 500 ms | same, `filter=f49999` |
-| Scroll | no frame over 50 ms | Web Inspector timeline |
-| terminumd RSS with one 500K folder cached | < 150 MB | `ps -o rss` |
+| terminumd RSS with one 500K folder cached | < 150 MB in every run | same |
+| Filter a 500K folder | p95 < 500 ms | not measured (section 7) |
+| Scroll | no frame over 50 ms | by hand, Web Inspector timeline |
 
 ### Constraints and limits
 
 | Limit | Value | When exceeded |
 |---|---|---|
 | Page size | 500 entries | clamped |
-| Text viewer and editor | 10 MB | first 1 MB, read-only, banner |
+| Text over `TM_TEXT_MAX_BYTES` | first 1 MB shown | read-only, banner |
 | Binary detection | NUL in the first 8 KB | binary tab |
 | Name length | 255 bytes | "Name is too long (max 255 bytes)" |
-| Expand all | 200 folders, depth 8, 500 entries a folder | skipped, named in the toast |
+| `/api/raw` | 64 MB, judged from the size first | 400 "Larger than 64 MB" |
 | Watched folders | expanded folders of shown panes + open tabs | others re-validated by mtime |
-| Workspace entries | idle 14 days and not live | removed at an inventory |
 
 ### Security
 
-Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; delete moves to the Trash; only regular files read; HTML in a sandboxed frame without scripts; Markdown raw HTML off; SVG only through an image element; `Referrer-Policy: no-referrer`; CSP `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'`; files are fetched with the sign-in's header, never an address with it, and shown from `blob:` only as a picture, a video, a sound or a PDF (an SVG from `data:`, anything else as bytes: a blob: has the page's origin); terminal actions need an idle shell and never Enter; Finder actions only on the loopback listener.
+Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; delete moves to the Trash; only regular files read; HTML in a sandboxed frame without scripts; Markdown raw HTML off; SVG only through an image element; `Referrer-Policy: no-referrer`; CSP `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' ws://{host} wss://{host}; frame-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`; `/api/raw` answers with `default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox`; files are fetched with the sign-in's header, never an address with it, and shown from `blob:` only as a picture, a video, a sound or a PDF (an SVG from `data:`, anything else as bytes: a blob: has the page's origin); terminal actions need an idle shell and never Enter; Finder actions only on the loopback listener.
 
 Denied request:
 
 ```bash
 curl -s -X POST -H "X-TM-Session: …" -H "Content-Type: application/json" -d '{"path":"/etc/newdir"}' http://127.0.0.1:48080/fb/api/fs/mkdir
-# 403 {"error":"outside_roots","message":"/etc is outside writable folders"}
+# 403 {"error":"outside_writable_roots","message":"Read-only: outside writable folders"}
 ```
 
 ### Compatibility
 
-`workspaces.json` of iterm-enhancer is imported by `terminum import`: `web:` entries whose pane key is `tmux:…` are kept, entries of iTerm2 sessions dropped. Every field optional with a default.
+`terminum import` takes the `workspaces.json` of iterm-enhancer: `web:` entries whose pane key is `tmux:…` are kept, entries of iTerm2 sessions dropped. Every field optional with a default.
 
 ### Logging and observability
 
-```text
-2026-10-15T09:30:01.200Z level=info event=ls path=/tmp/fb-big total=500000 ms=812 cache=miss
-2026-10-15T09:30:05.010Z level=info event=save path=/Users/alex/work/api/app.py bytes=2048 etag=1792000000000000000-8812345-2048
-```
-
-| Metric | Type | Alert when |
-|---|---|---|
-| `ls_ms_p95` | gauge | > 2.5 s |
-| `save_conflicts` | counter | informational |
-| `listing_cache_mb` | gauge | > 128 |
+terminumd logs to stderr through `tracing` (level by `TM_LOG`, default `info`); no metrics are exported. Events: `ls.done {path, entries, ms}`, `ls.error {path, error}`, `save {path}`, `save.conflict {path}`, `mkdir`, `touch`, `upload {path}`, `rename {from, to}`, `trash {count, failed}`, `workspace.reset {reason, backup}`, `workspace.write_failed {path}`, `ws.lagged {missed}`.
 
 ## 10. Delivery stages
 
-| Stage | Cases | What a user can do once it ships | Effort |
+| Stage | Cases | What a user can do | Effort |
 |---|---|---|---|
-| Stage 1 (fast lane) | AC-51, AC-52, AC-53, AC-54, AC-55 | See the shown pane's folder, browse huge folders, read code and Markdown, keep state per pane | — |
-| Stage 2 | AC-56, AC-57, AC-58, AC-59, AC-60, AC-61, AC-62 | Edit, create, rename, Trash, utility actions, live refresh, keyboard | — |
-| Stage 3 | AC-63, AC-64, AC-65, AC-66, AC-67, AC-68, AC-69, AC-70, AC-71 | Filter, images, hidden files, multi-select, document links, expand all, icons, docked layout and windows, durable state | — |
-| Backlog | AC-72, AC-73 | Git colors, drag and drop | — |
+| Later | AC-72, AC-73 | See git status in the tree; move files between folders by dragging | — |
 
 ## 11. Checklist with Definition of Done
 
-- [x] Full-tree review (2026-10-31, uncommitted tree on `beea7ee`): `cd ui && node test/e2e_panel.mjs` passes 165 checks, including focused Cancel/Close safety, cancelled delayed expansion and destructive-button contrast; Panel unit tests pass 47/47. Actual modal and Find screenshots inspected in Chromium/WebKit at 1400×900 and 390×844, dark/light; the phone's Cancel target is 44 px tall. YAML document/alias/scalar regressions and bounded Files requests pass. Watch-subscription retry uses an injected failure; real FSEvents/inotify exhaustion was not induced.
-
-Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromium against a private terminumd and a private tmux server → 128 checks pass; `cd ui && npx tsc -p . && npm test` → 28 pass; `cargo test` (the moved fbd modules) → pass; `web/test/e2e_live.mjs` (Files docked beside the terminal, the pane's folder) → pass.
-
-- [x] AC-51 … AC-71 — `ui/test/e2e_panel.mjs` (tree, viewer, Markdown, workspaces across reload and restart, edit and conflicts, create, rename, Trash, terminal insert and cd into a tmux pane, watcher, keyboard, filter, images, hidden files, multi-select, links, expand all, icons) → pass; `scripts/bench_ls.sh` on a 500,000-entry folder (10 runs, a new terminumd each): first page p95 333 ms (budget 2.5 s), a random cached page p95 9 ms, RSS 33 MB → pass.
-- [x] AC-70 (2026-10-16) — a new file opens in the page's View: `web/test/e2e_live.mjs` "a new file opens in View, where a click opens files, not under the tree" in Chromium and WebKit; it fails with the panel's own editor (checked by reverting the fix).
-- [x] AC-57 (2026-11-02, 0.8.1) — New File… with a selection whose folder does not open here: `ui/test/tree-cancel.test.mjs` (another folder's file, a file under two closed folders: the field starts in the root; fails without the fix), `web/test/e2e_live.mjs` AC-70's new file in Chromium and WebKit.
-- [x] AC-70 (2026-10-18) — View belongs to its session: `web/test/e2e_app.mjs` "View belongs to its session: another session hides it, coming back shows it as it was" and "a View whose last file closed does not come back with its session" in Chromium and WebKit → pass.
-- [ ] AC-72, AC-73 — backlog, not implemented.
-- [x] 0.4.0 (2026-10-21) — AC-54 `cd ui && node test/e2e_panel.mjs` (a ```mermaid fence drawn as an SVG image at its size, its source hidden; Source shows the fence's text, Diagram goes back; a fence Mermaid cannot draw keeps its source with Mermaid's message; a ```rust fence highlighted; a hostile fence (an HTML label with onerror, a click handler) drawn as an image only: no dialog, no element of its label); screenshots in Chromium and WebKit at 1200×800 and 390×844, dark and light (the toggle 44×44 on a touch screen; a dark theme's diagram drawn dark, again when the theme changes); AC-70 `web/test/e2e_switch.mjs` (docked Files closed in one session stays open in another and closed when back; "sub" carries the width the session's own Files leave, no other width after it) → pass.
-- [x] 0.5.0 (2026-10-22) — AC-70 `web/test/e2e_dock.mjs` (Chromium and WebKit at 1400×900: dragging the separator left widens Files and narrows the terminal at once; one size message once the drag rests, none during; kept across a reload; at least 260 px, at most 60% and 45 columns; ← → 16 px; a double click back to 380; a narrower window clamps, a wider one restores the chosen width) → pass.
-- [x] 0.5.1 (2026-10-22) — AC-70 `web/test/e2e_notes.mjs` (a phone: View's Terminal key has the header keys' fill, radius and matte, 44 px) → pass.
-- [x] 0.5.2 (2026-10-22) — AC-64, AC-67, AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` (Chromium and WebKit, a private terminumd and tmux: View's head, path bar and tab row: text 12 px in, keys 24×24 px with 6 px above, below and right, Reveal on the tabs' row, no Terminal key at WIDE (before: the head 30 px with a 30 px × flush, the path bar 12/6 px, Reveal on a row of its own as `.vbar` had no style, and Terminal shown: controls.css's keys rule, of the same specificity, came later); the picture's margins equal (184/184 px), the checkerboard on the `img` alone, none on the view (before: on the whole view, so a PNG's transparent right part looked like the view and its picture off the middle); a click opens it in the page's full-screen viewer with its name, Esc closes it; Reveal of `sub/deep/note.txt` with its folders closed expands both and selects it (before: nothing); a file in another /tmp folder: no Reveal key, a file under the folder again one), `ui/test/e2e_panel.mjs` (alone, a click toggles the picture's own size) → pass; `node web/test/e2e_all.mjs` 1103, live 95, Panel 138, `make test` (cargo 444 + 1), `scripts/security_check.sh` pass.
-- [x] 0.5.4 (2026-10-24) — AC-67, AC-09 `cd ui && node test/e2e_panel.mjs` 144/144 (the video's blob: revoked 5.6 s after its document's tab closed, red without the sweep; the HTML-named video bytes, the SVG data:, neither runs opened as a page) → pass.
-- [x] 0.5.5 (2026-10-24) — AC-52 `cd ui && node test/e2e_panel.mjs` (a row's dragstart carries {host, paths} and plain text; a selected row the selection) → pass.
-- [x] 0.7.0 (2026-10-24) — AC-95 `cargo test ops::` (a new file with its bytes; a name taken refused, the file kept; both: "notes 2.txt", "notes 3.txt"; a symlink in the name's place taken, never followed; no part file left; outside the roots, a bad name, a folder that is not: refused), `page::upload` (no more than two uploads at once, a slot given back taken again), `auth::checks` (the route takes any type, only with the page's Origin and a sign-in); `cd ui && node test/e2e_panel.mjs` 151 (Chromium: files over a file's row mark its folder and its rows, over a folder's row that folder, below the rows the root, the line says "Upload 2 files to data"; dropped, both saved with their bytes, shown, "Uploaded 2 files to data"; a name taken asks, Keep Both saves "note 2.txt", the file there unchanged); `scripts/e2e_remote.py` 32/32 (through a host's agent: saved, a taken name 409 exists, both=true "dropped 2.bin"). Reviewed: the pragmatic reviewer was started twice and wrote no report in 5 minutes either time (stopped); the main thread's review found that each upload held up to 100 MB with no bound on how many: now one of two upload slots is taken before the body is read, on the Mac and before a forward to a host (429 when busy, 413 over the limit, not "unreachable"). Not done: a collapsed folder does not open while files hover over it; a folder dropped is not uploaded (said); a part file stays if terminumd dies mid-write.
-- [x] 0.5.6 (2026-10-24) — AC-51 `web/test/e2e_header.mjs` (Files' root the agent's folder, the pane's with the switch off) and `scripts/e2e_hooks.py` ("files" says the agent's folder) → pass; see terminum.md 0.18.17.
-- [x] 0.5.7 (2026-10-24) — AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` (Chromium and WebKit: Esc in the editor's search panel closes only the panel; another Esc hides View, the terminal has the keys, the tabs stay) → pass.
-- [x] 0.5.8, 0.6.0 (2026-10-24) — AC-64, AC-94 `cd ui && node test/e2e_panel.mjs` 148/148 (`e2e_panel_media.mjs`: a PDF in a frame filling its tab and a video in the player, both from blob:, no CSP refusal; an AU decoded into the player; a MIDI file says where to put a SoundFont, and with `TM_TEST_SOUNDFONT` (GeneralUser GS 2.0.3) plays rendered by terminumd; JSON open as a tree in the editor's colors that folds; YAML's two documents; CSV as a table, its quoted comma one cell, numbers right; a bad JSON's line 3, column 8; Source shows the text); `node --test ui/test/dataparse.test.mjs` (JSON's error place, YAML's mappings, flow, quotes, block scalars, anchors and documents, the core schema's scalars, CSV and TSV by RFC 4180) and `pcm.test.mjs` (AU μ-law, PCM and A-law, AIFF, the WAV); `cargo test midi::` (the SoundFont's path, no SoundFont said, the WAV, a song rendered with a real bank, not MIDI said) → pass.
-- [x] 0.6.1 (2026-10-24) — AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` 111/111 (Chromium and WebKit: a file opened from the tree, Esc in the tree hides View, the page's keys on Files and Files' on the tree) → pass.
-- [x] 0.7.2 (2026-10-26) — AC-94 `node --test ui/test/dataparse.test.mjs` (`__proto__`, `constructor`, `toString` as members, copied; a key twice an error at the second, the same key in two mappings none; `\UFFFFFFFF` an error at its string, `\U0010FFFF` read; `""` a record with and without a line end) and `cd ui && node test/e2e_panel.mjs` 157/157 (a root of 100,000 values: 1,000 rows and "… 99,000 more", 2,000 after a press; a column first met at row 5001 shown); AC-64 the same run (a picture's blob: address opens while shown; a video no longer shown paused, its src gone); `cargo test midi` (a request gone sets its flag; a render asked to stop is not made: with `TM_TEST_SOUNDFONT` only); AC-95 `cargo test ops` (a name taken by a link to a file outside the roots: exists, Keep Both beside it, link and target unchanged; a folder linked outside refused) → pass. Not covered: an aborted MIDI request through `tailscale serve` (its connection may stay open, so the render runs to its end).
-- [x] 0.8.0 (2026-10-28) — AC-52 `cargo test listing` 10/10 (by extension and recent first with folders first, ties and an unreadable entry by name; pages, filter and locate in the order; the name order unchanged); `cd ui && node test/e2e_panel.mjs` 160/160 (Sorting › with Alphabetical checked, By Extension orders the rows and is kept in the prefs; a finger held 0.5 s on a row selects it and opens the menu, its lift no click; a tap opens Sorting, Recent First orders newest first; → ↓ ↩ choose Alphabetical); `SORT=recent scripts/bench_ls.sh` on 500,000 entries: cold first page 2104 ms (3662 ms before the threads), pages 6 ms; name 312 ms, ext 328 ms; `scripts/e2e_remote.py` 32/32; `scripts/security_check.sh` PASS (its terminumd refusals skipped: no private terminumd given) → pass. Not verified: a long press on a real iPhone (synthetic touch events in Chromium).
-- [x] 0.8.2 (2026-11-03) — audit fixes: AC-64 `cargo test raw_body` (one range, 206 across a chunk boundary, 416, a file that shrinks while read), `cargo test remote` (Range through a host's Agent), the audit's raw repro 4 × 64 MB held: +262 MB → +4.3 MB (+0.34 MB with a Range); AC-52 `cargo test listing` (the indexes counted, eviction after they grow); AC-71 `ui/test/e2e_panel_saves.mjs` (a refused workspace or preferences write says so once and the next change saves; a write whose answer was lost after it landed: the newer change is kept: it failed before the keys were compared sorted); AC-70 `e2e_viewpark.mjs` (a waiting View pauses its event stream, every one stays loaded, shown again it resumes); bench_ls 20 runs: cold p50 337, p95 1006 ms, page p95 18 ms, RSS 36 MB. On the delivered tree (uncommitted, on 7e5c220): `make test` (Rust 725 + 1, Python 69, Panel unit 52, Page unit 175), clippy `-D warnings`, `ui/test/e2e_panel.mjs` 171/171, `web/test/e2e_live.mjs` 233/233, `web/test/e2e_all.mjs` 1691/1691 in Chromium and WebKit, `scripts/security_check.sh`. Pragmatic review: must-fix (a handler cut part-way on close) and should-fix (lanes' order, the -R back-off, the sign-in wait, toasts once and the lost write by pane, the CLI budgets) applied.
+- [x] AC-51 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_more.mjs`, `ui/test/e2e_layout.mjs`, `web/test/e2e_header.mjs`, `scripts/e2e_hooks.py`
+- [x] AC-52 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_more.mjs`, `cargo test listing`, `scripts/bench_ls.sh`
+- [x] AC-53 — `ui/test/e2e_panel.mjs`, `cargo test files`
+- [x] AC-54 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_docs.mjs`, `ui/test/e2e_panel_more.mjs`, `ui/test/markdown.test.mjs`
+- [x] AC-55 — `ui/test/e2e_panel.mjs`, `cargo test workspace`
+- [x] AC-56 — `ui/test/e2e_panel.mjs`, `cargo test ops`
+- [x] AC-57 — `ui/test/e2e_panel.mjs`, `ui/test/tree-cancel.test.mjs`, `web/test/e2e_live.mjs`, `cargo test ops`
+- [x] AC-58 — `ui/test/e2e_panel.mjs`, `cargo test ops`
+- [x] AC-59 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`
+- [x] AC-60 — `ui/test/e2e_panel.mjs`, `cargo test termtext`
+- [x] AC-61 — `ui/test/e2e_panel.mjs`, `ui/test/stream.test.mjs`, `cargo test watcher`
+- [x] AC-62 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/e2e_review.mjs`
+- [x] AC-63 — `ui/test/e2e_panel.mjs`, `cargo test listing`
+- [x] AC-64 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_media.mjs`, `ui/test/pcm.test.mjs`, `web/test/e2e_liveview.mjs`, `cargo test midi`, `cargo test raw_body`
+- [x] AC-65 — `ui/test/e2e_panel.mjs`
+- [x] AC-66 — `ui/test/e2e_panel.mjs`, `ui/test/tree-select.test.mjs`
+- [x] AC-67 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_docs.mjs`, `web/test/e2e_liveview.mjs`
+- [x] AC-68 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/tree-expand.test.mjs`
+- [x] AC-69 — `ui/test/e2e_panel.mjs`, `ui/test/icons.test.mjs`
+- [x] AC-70 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_more.mjs`, `web/test/e2e_dock.mjs`, `web/test/e2e_switch.mjs`, `web/test/e2e_app.mjs`, `web/test/e2e_viewpark.mjs`, `web/test/e2e_liveview.mjs`, `web/test/e2e_live.mjs`
+- [x] AC-71 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_saves.mjs`, `cargo test workspace`
+- [ ] AC-72 — no automated check: not built; a test that modifies a file in a git repository and reads its row's "M"
+- [ ] AC-73 — no automated check: not built; a test that drags a row onto a folder and finds the file moved
+- [x] AC-94 — `ui/test/dataparse.test.mjs`, `ui/test/e2e_panel_media.mjs`, `ui/test/e2e_panel.mjs`
+- [x] AC-95 — `ui/test/e2e_panel_drop.mjs`, `cargo test ops`, `scripts/e2e_remote.py`

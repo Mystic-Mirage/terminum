@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The event socket from terminumd (/fb/api/ws): a WebSocket, because a browser gives a page six
-// HTTP connections per host and a held SSE stream would take one per panel (AC-41). The sign-in
+// HTTP connections per host and a held SSE stream would take one per panel (AC-61). The sign-in
 // rides in its subprotocols. It opens only after terminumd proved that it knows the sign-in
 // (AC 09): while terminumd is not running another program may hold its port. When it closes it
 // is opened again after a new proof: at once while terminumd restarts (AC-16), then less often

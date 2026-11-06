@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! `terminum import`: what iterm-enhancer knew, for terminum (terminum.md §9 Compatibility,
+//! `terminum import`: what iterm-enhancer knew, for terminum (terminum-lifecycle.md §9 Compatibility,
 //! terminum-remote.md §9). From ~/.iterm-enhancer/state, each only when terminum has none yet:
 //!
 //!   workspaces.json     the Files panels of web pages: `web:` entries whose pane key is a tmux

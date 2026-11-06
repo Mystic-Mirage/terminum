@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// AC-41: events arrive over one WebSocket; a close brings it back after a new proof, and a
+// AC-61: events arrive over one WebSocket; a close brings it back after a new proof, and a
 // proof that returns late never opens a second socket nor one that was closed meanwhile.
 import assert from "node:assert/strict";
 import { test } from "node:test";

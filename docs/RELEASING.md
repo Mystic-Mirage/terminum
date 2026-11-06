@@ -24,7 +24,7 @@ ssh-add --apple-use-keychain ~/.config/iterm-enhancer/release-key \
 Then a release is one command, with no prompt: `make release TAG=vX.Y.Z` refuses unless the
 tree is clean, the version is above every `v*` tag and `HEAD` is `origin/main`; it installs
 the UI's dependencies with `npm ci --ignore-scripts`, builds terminumd with `cargo --locked`
-for macOS arm64 and x86_64 and Linux x86_64 and aarch64 (`make toolchain` once: zig and
+for every platform below ("Builds for remote hosts"; `make toolchain` once: zig and
 cargo-zigbuild pinned in `.toolchain/`; a release without the Linux builds fails, since a Linux
 server installs from the same package), packs `terminum.tar.gz` and the same bytes as
 `terminum-macos.tar.gz` (the name installs before 0.22 ask for: keep it until a release notes
@@ -54,15 +54,18 @@ A release refuses builds that printed a compiler or linker `warning:` (`scripts/
 Release notes go in `docs/releases/vX.Y.Z.md`, committed before `main` is pushed; the release
 command refuses an empty or unreadable file and a symlink out of the tree.
 
-Who else could ship code to users: an upgrade installs only what this key signed, and the key
-exists only on the maintainer's Mac (and its backups). Left: whoever controls the
-maintainer's GitHub account can replace a release's `install.sh`, which a *first*
-`curl | sh` trusts; a program running as the maintainer while the Keychain is unlocked can
-sign. Keep the key and its passphrase backed up: a new key makes existing installs refuse
+Who else could ship code to users is in [SECURITY.md](../SECURITY.md) ("The installer and
+releases"). Keep the key and its passphrase backed up: a new key makes existing installs refuse
 upgrades until they are installed again with the one-line installer. The key is shared with
 iterm-enhancer, so a leaked key is replaced for both: a new key in both repositories'
 `release-signers` and `install.sh`, a release of each, and every install of each installed
 again with its one-line installer.
+
+## Before a release
+
+`make release` first runs `scripts/leftovers.py --end`, which removes what old test runs left and never
+stops the release (spec AC-102): `make leftovers` only says what it would remove, `make leftovers END=1`
+removes it. `/docs-review` is in CLAUDE.md §10.
 
 ## Builds for remote hosts
 

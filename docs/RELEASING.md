@@ -30,7 +30,7 @@ server installs from the same package), packs `terminum.tar.gz` and the same byt
 `terminum-macos.tar.gz` (the name installs before 0.22 ask for: keep it until a release notes
 a floor version below which `terminum upgrade` is no longer supported), signs `SHA256SUMS` through ssh-agent (the key loaded
 for two minutes with the Keychain's passphrase, then removed), checks the signature, and only
-then tags `HEAD`, pushes the tag and publishes the GitHub release once all its files are
+then, if `HEAD` has not moved since the checks (another session's `make install` fast-forwards a clean `main`), tags `HEAD`, pushes the tag and publishes the GitHub release once all its files are
 attached. A failure before signing leaves nothing public.
 
 Each macOS terminumd is signed with the maintainer's Developer ID as `io.terminum.terminumd`

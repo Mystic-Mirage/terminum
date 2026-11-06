@@ -159,7 +159,27 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
   the checkout, gets its own worktree: `python3 scripts/worktree.py add <slug> --kind <kind>`
   (from a fresh `origin/main`), never a raw `git worktree add`; `make check` and the e2e checks
   run in one tree at a time (fixed ports and tmux sockets); after the merge, `worktree.py remove <slug>` from
-  the primary checkout (CONTRIBUTING.md "Worktrees").
+  the primary checkout (CONTRIBUTING.md "Worktrees"): the agent's last step, or the sweep below takes it.
+- Always work on a fresh `origin/main`:
+  - `git fetch origin` at a task's start, before any claim about what `main` has or lacks, and
+    before each push; a failed fetch is reported, naming the base the analysis used. `.claude/settings.json`'s
+    hooks say the checkout, branch and distance at a session's start, and at a prompt when it matters: act on them.
+  - New work starts with `python3 scripts/worktree.py add <slug> --kind <kind>`: it branches from
+    the `origin/main` it just fetched and refuses when the fetch fails.
+  - An existing branch with an upstream: `git pull --ff-only`; one diverged from its remote: merge, never
+    reset or rebase.
+  - Agents never pull or switch the primary checkout by hand: its working tree is the maintainer's, with
+    uncommitted changes. When it is stale, work in a worktree and say so. `make install` alone moves it: a
+    clean `main` is fast-forwarded first. One behind with uncommitted changes, or diverged, is refused: report
+    it and ask, never set the maintainer's `TM_INSTALL_STALE=1`. `make release` refuses a stale `HEAD`: report and ask.
+    Exception: tasks about that checkout's own state, such as a review of the maintainer's changes.
+  - Merge `origin/main` into an MR branch only on a conflict, when `main` changed code the branch
+    depends on, or before the final push, and only with a push needed anyway: each push reruns the
+    MR's pipeline and `main` moves often. To read fresh code, `git grep` and `git log` against
+    `origin/main` need no merge.
+- `worktree.py sweep` (Claude Code's Stop hook, and every `worktree.py add`) removes a tree in `.worktrees` left
+  behind: its last move its own work, all of it in `origin/main` or `main`, idle for an hour, as `remove` would.
+  Anything else stays, and `worktree.py list` shows why. Never `--discard` a tree you did not make.
 - Never commit builds, caches, logs, tokens or `workspaces.json`.
 - `AGENTS.md` → `CLAUDE.md` stays a relative symlink.
 - Dual license (AGPL-3.0 + commercial): never add code you cannot relicense; contributions

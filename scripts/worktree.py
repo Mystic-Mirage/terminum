@@ -16,8 +16,11 @@
       uncommitted changes, ignored files that are not build output, or commits on a
       detached HEAD; then remove the tree, and its branch only when that branch is in
       origin/main or main (an unmerged branch is kept and named)
+  sweep           remove what is finished and forgotten: a tree in .worktrees whose last move was its
+      own work, all in origin/main or main, idle for an hour, as remove would (never --discard);
+      run by Claude Code's Stop hook (.claude/settings.json) and by add
 
-Nothing here starts, stops or kills a process or container.
+worktree_fresh.py keeps agents and installs on a fresh origin/main. Nothing here starts, stops or kills a process or container.
 """
 import argparse
 import os
@@ -26,6 +29,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 KINDS = ("feat", "fix", "test", "docs", "chore")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
@@ -37,6 +41,7 @@ EXCLUDES = ("/.worktrees", *(f"/{name}" for name in SHARED))
 REBUILT = ("ui/node_modules/", "ui/dist/", "ui/.build-id", "terminumd/target/", "dist/", ".checks/",
            ".playwright-cli/")
 REBUILT_NAMES = ("__pycache__", ".DS_Store")
+IDLE = 3600            # seconds with no commit, no index write: an agent between commands is no process to see
 
 
 class Refused(Exception):
@@ -74,6 +79,43 @@ def primary_of(cwd):
     return next(iter(trees(cwd)))
 
 
+def ours(cwd):
+    """Whether `cwd` is in the repository this script is from: a hook runs wherever its session has
+    moved to, and another project's trees and remote are not its business."""
+    try:
+        return primary_of(cwd) == Path(__file__).resolve().parents[1]
+    except Refused:
+        return False
+
+
+def fetched(cwd, timeout):
+    """`git fetch origin`: None, or the failure's words. It never asks, ends by SIGTERM at `timeout`
+    (a kill could leave a ref's lock) and tries again when a parallel fetch held a ref's lock."""
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", LC_ALL="C")  # C: the lock's words below
+    if "GIT_SSH_COMMAND" not in env and git("config", "core.sshCommand", cwd=cwd, check=False).returncode != 0:
+        env["GIT_SSH_COMMAND"] = "ssh -o BatchMode=yes -o ConnectTimeout=5"
+    words = ""
+    for _ in range(2):
+        fetch = subprocess.Popen(["git", "fetch", "--quiet", "origin"], cwd=cwd, env=env, text=True,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        try:
+            words = fetch.communicate(timeout=timeout)[1].strip()
+        except subprocess.TimeoutExpired:
+            fetch.terminate()
+            fetch.stderr.close()
+            try:
+                fetch.wait(2)
+            except subprocess.TimeoutExpired:
+                fetch.kill()
+                fetch.wait()
+            return f"no answer in {timeout} s"
+        if fetch.returncode == 0:
+            return None
+        if "cannot lock ref" not in words:
+            break
+    return words or "git fetch failed"
+
+
 def exclude(primary):
     file = Path(git("rev-parse", "--path-format=absolute", "--git-path", "info/exclude", cwd=primary))
     file.parent.mkdir(parents=True, exist_ok=True)
@@ -95,10 +137,20 @@ def clone(source, target):
     return run.returncode == 0
 
 
+def guard(primary):
+    """An invalid .git above the trees: a removed tree's folder that a stray write makes again finds
+    this, and git there fails, instead of finding the primary checkout's and working on its main."""
+    file = primary / ".worktrees" / ".git"
+    if not file.exists():
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("not a repository: scripts/worktree.py makes the trees here\n")
+
+
 def link(tree, primary):
     tree, lines = Path(tree).resolve(), []
     if tree == primary:
         raise Refused("link: this is the primary checkout; give a worktree's path")
+    guard(primary)
     for name in SHARED:
         source, target = primary / name, tree / name
         if not source.exists():
@@ -157,8 +209,8 @@ def add(slug, kind="feat", base="origin/main", cwd="."):
         raise Refused(f"{path} exists")
     if has_ref(f"refs/heads/{branch}", primary):
         raise Refused(f"branch {branch} exists: another slug, or remove its tree first")
-    if base.startswith("origin/"):
-        git("fetch", "--quiet", "origin", cwd=primary)
+    if base.startswith("origin/") and (failed := fetched(primary, 120)):
+        raise Refused(f"git fetch origin: {failed}")
     path.parent.mkdir(parents=True, exist_ok=True)
     git("worktree", "add", "--quiet", "--no-track", "-b", branch, str(path), base, cwd=primary)
     lines = [f"{branch} at {path} from {base} ({git('log', '--oneline', '-1', cwd=path)})"]
@@ -166,7 +218,12 @@ def add(slug, kind="feat", base="origin/main", cwd="."):
     if unpushed:
         lines.append(f"warning: main has {unpushed} commits not in {base}, so this tree lacks them "
                      f"(their rules and tools too); --from main starts from them")
-    return path, lines + link(path, primary)
+    try:
+        lines += link(path, primary)
+        lines += sweep(primary)
+    except (Refused, OSError) as failed:  # the tree is there: what it lacks is said, it stays usable
+        lines.append(f"warning: {failed}")
+    return path, lines
 
 
 def working_in(tree):
@@ -201,6 +258,47 @@ def merged(rev, cwd):
     """Whether `rev` is in origin/main or main (absent refs count as not)."""
     return any(git("merge-base", "--is-ancestor", rev, ref, cwd=cwd, check=False).returncode == 0
                for ref in ("origin/main", "main") if has_ref(ref, cwd))
+
+
+def own_work(branch, cwd):
+    """Whether the branch's moves end in its own work, a commit or a real merge, looking through the
+    fast-forwards and rebases after it: its creation or a reset there mean it may never have held any,
+    though it is in main."""
+    for move in git("log", "-g", "--format=%gs", f"refs/heads/{branch}", cwd=cwd, check=False).stdout.splitlines():
+        if not ("Fast-forward" in move or move.startswith("rebase (finish)")):
+            return move.startswith("commit") or "Merge made by" in move
+    return False
+
+
+def finished(primary):
+    """{tree: branch} of the trees in .worktrees whose own work is all in origin/main or main."""
+    return {path: branch for path, branch in trees(primary).items()
+            if path.parent == primary / ".worktrees" and path.exists() and branch
+            and merged(branch, primary) and own_work(branch, primary)}
+
+
+def idle_for(path, branch):
+    """Seconds since the tree's index or its branch's reflog was written."""
+    names = git("rev-parse", "--path-format=absolute", "--git-path", "index", "--git-path", f"logs/refs/heads/{branch}",
+                cwd=path).splitlines()
+    return time.time() - max(Path(name).stat().st_mtime for name in names if Path(name).exists())
+
+
+def said_name(path):
+    """A tree's name for an agent's context: a slug, or nothing a folder's name could smuggle in."""
+    return path.name if SLUG.match(path.name) else "(unusual name)"
+
+
+def sweep(cwd="."):
+    primary, lines = primary_of(cwd), []
+    for path, branch in finished(primary).items():
+        try:
+            if idle_for(path, branch) >= IDLE:
+                lines += remove(str(path), cwd=primary)
+        except (Refused, OSError, ValueError):
+            if path.exists():  # else a parallel sweep took it
+                lines.append(f"kept {said_name(path)}: in use or holding changes (worktree.py list)")
+    return lines
 
 
 def kept_files(path):
@@ -238,6 +336,7 @@ def remove(target, discard=False, cwd="."):
                             "or main: give it a branch (git switch -c <name>)")
         if problems:
             raise Refused(f"{path} holds " + "; ".join(problems) + "\n(commit or move them, or --discard)")
+    guard(primary)  # a tree made by hand got none from link
     for name in SHARED:  # the links only, never what they point to; link restores them
         if (path / name).is_symlink():
             (path / name).unlink()
@@ -262,11 +361,13 @@ def listing(cwd="."):
             continue
         dirty = len(git("status", "--porcelain", cwd=path).splitlines())
         ahead, own = count("origin/main..HEAD", path), count("main..HEAD", path)
-        state = ("no commits of its own" if not ahead and not own
-                 else "merged into origin/main or main" if merged("HEAD", path)
+        in_main = merged("HEAD", path)
+        state = ("merged: sweep takes it once clean and idle for an hour" if branch and in_main and own_work(branch, path)
+                 else "no commits of its own" if not ahead and not own
+                 else "merged into origin/main or main: remove by hand" if in_main
                  else f"{'?' if ahead is None else ahead} commits not in origin/main")
-        lines.append(f"{path}\t{branch or '(detached)'}\t{dirty} uncommitted\t{state}\t"
-                     f"{len(working_in(path))} processes in it")
+        lines.append(f"{path}\t{branch or '(detached)'}\t{dirty} uncommitted\t{len(kept_files(path))} ignored to keep\t"
+                     f"{state}\t{len(working_in(path))} processes in it")
     return lines or ["no worktrees besides the primary checkout"]
 
 
@@ -283,6 +384,7 @@ def main(argv):
     gone = commands.add_parser("remove")
     gone.add_argument("target")
     gone.add_argument("--discard", action="store_true")
+    commands.add_parser("sweep")
     args = parser.parse_args(argv)
     if args.command == "add":
         path, lines = add(args.slug, args.kind, args.base)
@@ -291,9 +393,12 @@ def main(argv):
         lines = link(args.path, primary_of(args.path))
     elif args.command == "list":
         lines = listing()
+    elif args.command == "sweep":
+        lines = sweep() if ours(".") else []
     else:
         lines = remove(args.target, args.discard)
-    print("\n".join(lines))
+    if lines:
+        print("\n".join(lines))
     return 0
 
 

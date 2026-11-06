@@ -2,7 +2,8 @@
 # curl … install.sh | sh, then the terminum command; README).
 #   make install    build the package from this checkout and install it (first install or
 #                   upgrade; a build that does not come up healthy is rolled back); from the primary
-#                   checkout only: a worktree's is refused (CONTRIBUTING.md "Worktrees")
+#                   checkout only: a worktree's is refused (CONTRIBUTING.md "Worktrees"); a clean main behind
+#                   origin/main is fast-forwarded first, one with uncommitted changes refused (CLAUDE.md §9)
 #   make upgrade    the same
 #   make rollback   back to the previous build
 #   make uninstall  stop terminumd, remove the launchd agent, builds and command (keeps state, logs)
@@ -36,7 +37,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test check test-mac primary-checkout install installed hooks upgrade rollback uninstall package agents toolchain release signing-key
+.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain release signing-key
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -79,19 +80,25 @@ primary-checkout:
 	echo "make install: refused in a worktree ($$(git rev-parse --show-toplevel)): the machine has one install;"; \
 	echo "  here make build and the checks; after the merge, make install from the primary checkout"; exit 2; fi
 
-install: primary-checkout ui
+# freshen first and the rest in a make of its own: this one's TM_BUILD was read before main moved
+install: primary-checkout
+	python3 scripts/worktree_fresh.py freshen
+	$(MAKE) --no-print-directory install-stage
+
+install-stage: primary-checkout ui
 	python3 scripts/package.py --stage
 	dist/package/terminum/agents/$(PLATFORM)/terminumd install
 
 # several checkouts (worktrees, sessions) share one install: say whose build runs
 installed:
 	@got=$$($(TERMINUM) status 2>/dev/null | sed -n 's/.*running, build \([^,]*\),.*/\1/p'); \
-	if [ "$$got" = "$(BUILD)" ]; then echo "installed: this tree ($(BUILD))"; \
+	behind=$$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0); \
+	if [ "$$got" = "$(BUILD)" ]; then echo "installed: this tree ($(BUILD))$$([ "$$behind" -gt 0 ] && echo ", $$behind commits behind origin/main as last fetched")"; \
 	else echo "installed: ANOTHER build ($${got:-none running}), this tree is $(BUILD)"; exit 1; fi
 
 hooks:
-	git config core.hooksPath scripts/hooks
-	@echo "hooks: scripts/hooks for every checkout of this repository (git config --unset core.hooksPath removes them)"
+	git config core.hooksPath "$$(cd "$$(git rev-parse --path-format=absolute --git-common-dir)/.." && pwd -P)/scripts/hooks"
+	@echo "hooks: the primary checkout's scripts/hooks for every checkout of this repository, never a branch's own (git config --unset core.hooksPath removes them)"
 
 upgrade: install
 

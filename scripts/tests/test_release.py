@@ -86,6 +86,14 @@ class ReleaseTest(unittest.TestCase):
         self.assertIn("HEAD is not origin/main", self.refused(release.check_source, "v1.3.0"))
         self.assertIn("v1.2.0 exists and is not HEAD", self.refused(release.check_source, "v1.2.0"))
 
+    def test_a_head_moved_during_the_build_is_not_tagged(self):
+        head = release.check_source("v1.0.0")
+        self.assertEqual(head, git(self.work, "rev-parse", "HEAD"))
+        release.check_unmoved(head)
+        (self.work / "f").write_text("2")
+        git(self.work, "commit", "-qam", "another session's merge, fast-forwarded")
+        self.assertIn("HEAD moved", self.refused(release.check_unmoved, head))
+
     def test_a_published_release_is_never_changed(self):
         os.environ["FAKE_GH_DRAFT"] = "false"
         self.assertIn("already published", self.refused(release.check_unpublished, "v1.0.0"))
@@ -231,16 +239,17 @@ class ReleaseTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"TM_BUILD": "checkout-id"}), \
                 mock.patch.object(release, "check_source"), mock.patch.object(release, "check_unpublished", return_value=False), \
                 mock.patch.object(release, "release_notes", return_value="# Changes\n"), mock.patch.object(release, "run") as run, mock.patch.object(release.package, "main") as build, \
+                mock.patch.object(release, "check_unmoved") as unmoved, \
                 mock.patch.object(release, "sign") as sign, mock.patch.object(release, "publish", return_value="url") as publish:
             order = mock.Mock()
-            for name, fn in (("run", run), ("build", build), ("sign", sign), ("publish", publish)):
+            for name, fn in (("run", run), ("build", build), ("sign", sign), ("unmoved", unmoved), ("publish", publish)):
                 order.attach_mock(fn, name)
             release.main(["v1.0.0"])
             ui_call = next(call for call in run.call_args_list if call.args == ("npm", "run", "-s", "build"))
             self.assertEqual(ui_call.kwargs["env"]["TM_BUILD"], "v1.0.0")
             self.assertEqual(os.environ["TM_BUILD"], "checkout-id", "the override is local to the UI build")
             build.assert_called_once_with(["--build", "v1.0.0", "--release"])
-            self.assertEqual([call[0] for call in order.mock_calls], ["run", "run", "build", "sign", "publish"])
+            self.assertEqual([call[0] for call in order.mock_calls], ["run", "run", "build", "sign", "unmoved", "publish"])
 
 
 if __name__ == "__main__":

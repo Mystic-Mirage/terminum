@@ -1,17 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """scripts/worktree.py against a throwaway origin and primary checkout in a temporary folder."""
-import importlib.util
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("worktree", SCRIPTS / "worktree.py")
-worktree = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(worktree)
+sys.path.insert(0, str(SCRIPTS))
+import worktree  # noqa: E402
 ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com", "GIT_COMMITTER_NAME": "t",
        "GIT_COMMITTER_EMAIL": "t@example.com", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
 
@@ -28,7 +27,7 @@ def commit(cwd, name, text="x"):
     sh(cwd, "git", "commit", "-q", "-m", f"add {name}")
 
 
-class Worktrees(unittest.TestCase):
+class Repo(unittest.TestCase):
     def setUp(self):
         self.saved = {k: os.environ.get(k) for k in [*ENV, "TM_WORKTREES"]}
         os.environ.update(ENV)
@@ -63,6 +62,32 @@ class Worktrees(unittest.TestCase):
             os.environ.pop(key, None) if value is None else os.environ.__setitem__(key, value)
         self.tmp.cleanup()
 
+    def merged_tree(self, slug):
+        path, _ = worktree.add(slug, cwd=self.primary)
+        commit(path, f"{slug}.txt")
+        sh(self.primary, "git", "merge", "-q", "--no-edit", f"feat/{slug}")
+        sh(self.primary, "git", "push", "-q", "origin", "main")
+        return path
+
+    def idle(self, path, branch):
+        names = sh(path, "git", "rev-parse", "--path-format=absolute", "--git-path", "index", "--git-path", f"logs/refs/heads/{branch}")
+        for name in names.splitlines():
+            os.utime(name, (1, 1))
+
+    def push_from_another_clone(self, name="other.txt"):
+        other = Path(self.tmp.name) / "other"
+        if not other.exists():
+            sh(self.tmp.name, "git", "clone", "-q", str(self.origin), str(other))
+        sh(other, "git", "pull", "-q", "origin", "main")
+        commit(other, name)
+        sh(other, "git", "push", "-q", "origin", "HEAD:main")
+        self.forget_fetch()
+
+    def forget_fetch(self):
+        (self.primary / ".git" / "terminum-fetch").unlink(missing_ok=True)
+
+
+class Worktrees(Repo):
     def test_add_branches_from_fresh_origin_main_and_links_the_primarys_files(self):
         # a commit another clone pushed after the primary's last fetch
         other = Path(self.tmp.name) / "other"
@@ -90,6 +115,14 @@ class Worktrees(unittest.TestCase):
         self.assertEqual(sh(path, "git", "status", "--porcelain"), "", "links and clones are not changes")
         self.assertEqual(sh(self.primary, "git", "status", "--porcelain"), "", ".worktrees is excluded")
         self.assertIn("thing", "\n".join(worktree.listing(self.primary)))
+
+    def test_add_refuses_when_the_fetch_fails_and_makes_nothing(self):
+        sh(self.primary, "git", "remote", "set-url", "origin", str(Path(self.tmp.name) / "gone.git"))
+        with self.assertRaises(worktree.Refused) as said:
+            worktree.add("no-fetch", cwd=self.primary)
+        self.assertIn("fetch", str(said.exception))
+        self.assertFalse((self.primary / ".worktrees" / "no-fetch").exists())
+        self.assertFalse(worktree.has_ref("refs/heads/feat/no-fetch", self.primary))
 
     def test_add_refuses_bad_names_and_existing_trees_or_branches(self):
         for slug, kind in (("Bad Slug", "feat"), ("../x", "feat"), ("ok", "wip")):
@@ -168,6 +201,13 @@ class Worktrees(unittest.TestCase):
         self.assertFalse(path.exists())
         self.assertTrue((self.primary / "ui/package-lock.json").exists())
 
+    def test_make_hooks_names_the_primarys_hooks_by_an_absolute_path_from_any_tree(self):
+        path, _ = worktree.add("hooked2", cwd=self.primary)
+        for cwd in (self.primary, path):
+            subprocess.run(["make", "-s", "-f", str(SCRIPTS.parent / "Makefile"), "hooks"], cwd=cwd, check=True, capture_output=True,
+                           env={**os.environ, "PATH": os.environ["PATH"]})
+            self.assertEqual(sh(cwd, "git", "config", "core.hooksPath"), str(self.primary / "scripts/hooks"), "a branch's own hooks never run")
+
     def test_make_install_runs_from_the_primary_checkout_only(self):
         path, _ = worktree.add("inst", cwd=self.primary)
         make = lambda cwd, **env: subprocess.run(["make", "-s", "-f", str(SCRIPTS.parent / "Makefile"), "primary-checkout"],
@@ -190,6 +230,118 @@ class Worktrees(unittest.TestCase):
             sleeper.wait()
         worktree.remove("busy", cwd=self.primary)
         self.assertFalse(path.exists())
+
+    # the sweep: a tree finished and forgotten goes, anything that may still be someone's work stays
+    def test_sweep_takes_a_merged_idle_tree_and_its_branch(self):
+        path = self.merged_tree("done")
+        self.assertEqual(worktree.sweep(self.primary), [], "just merged: its agent may be between commands")
+        self.assertTrue(path.exists())
+        self.idle(path, "feat/done")
+        self.assertIn(f"removed {path}", worktree.sweep(self.primary))
+        self.assertFalse(path.exists())
+        self.assertFalse(worktree.has_ref("refs/heads/feat/done", self.primary))
+
+    def test_sweep_leaves_what_never_held_work_or_still_holds_some(self):
+        new, _ = worktree.add("new", cwd=self.primary)            # an ancestor of main with nothing of its own
+        forward, _ = worktree.add("forward", cwd=self.primary)
+        reset, _ = worktree.add("reset", cwd=self.primary)
+        commit(reset, "reset.txt")
+        sh(reset, "git", "reset", "-q", "--hard", "HEAD~1")       # dropped, not merged
+        ahead, _ = worktree.add("ahead", cwd=self.primary)
+        commit(ahead, "ahead.txt")                                # not merged
+        partly = self.merged_tree("partly")
+        commit(partly, "more.txt")                                # a commit after the merge
+        dirty = self.merged_tree("dirty")
+        (dirty / "dirty.txt").write_text("uncommitted")
+        ignored = self.merged_tree("ignored")
+        (ignored / "local.mk").unlink(missing_ok=True)
+        (ignored / "local.mk").write_text("own settings")
+        commit(self.primary, "newer.txt")
+        sh(self.primary, "git", "push", "-q", "origin", "main")
+        sh(forward, "git", "merge", "-q", "--ff-only", "origin/main")   # the behind line's advice, nothing of its own
+        trees = {new: "new", forward: "forward", reset: "reset", ahead: "ahead", partly: "partly", dirty: "dirty", ignored: "ignored"}
+        for tree, slug in trees.items():
+            self.idle(tree, f"feat/{slug}")
+        said = worktree.sweep(self.primary)
+        for tree in trees:
+            self.assertTrue(tree.exists(), tree)
+        self.assertEqual(sorted(said), ["kept dirty: in use or holding changes (worktree.py list)",
+                                        "kept ignored: in use or holding changes (worktree.py list)"])
+
+    def test_sweep_leaves_a_tree_with_a_process_and_trees_elsewhere(self):
+        busy = self.merged_tree("busy")
+        self.idle(busy, "feat/busy")
+        elsewhere = Path(self.tmp.name) / "elsewhere"
+        sh(self.primary, "git", "worktree", "add", "-q", "--no-track", "-b", "feat/elsewhere", str(elsewhere), "origin/main")
+        commit(elsewhere, "e.txt")
+        sh(self.primary, "git", "merge", "-q", "--no-edit", "feat/elsewhere")
+        self.idle(elsewhere, "feat/elsewhere")
+        sleeper = subprocess.Popen(["sleep", "30"], cwd=busy)
+        try:
+            self.assertEqual(worktree.sweep(self.primary), ["kept busy: in use or holding changes (worktree.py list)"])
+            self.assertTrue(busy.exists())
+        finally:
+            sleeper.kill()
+            sleeper.wait()
+        self.assertIn(f"removed {busy}", worktree.sweep(self.primary))
+        self.assertTrue(elsewhere.exists(), "only the script's own folder is swept")
+
+    def test_sweep_looks_through_fast_forwards_and_rebases(self):
+        pulled = self.merged_tree("pulled")                       # merged, then the old advice's fast-forward
+        self.push_from_another_clone()
+        sh(pulled, "git", "merge", "-q", "--ff-only", "origin/main")
+        rebased, _ = worktree.add("rebased", cwd=self.primary)    # no work of its own, a rebase moved it
+        self.push_from_another_clone("second.txt")
+        sh(rebased, "git", "fetch", "-q", "origin")
+        sh(rebased, "git", "rebase", "-q", "origin/main")
+        self.idle(pulled, "feat/pulled")
+        self.idle(rebased, "feat/rebased")
+        said = worktree.sweep(self.primary)
+        self.assertIn(f"removed {pulled}", said)
+        self.assertTrue(rebased.exists(), said)
+
+    def test_a_sweep_that_loses_a_race_says_nothing_and_add_still_makes_its_tree(self):
+        old = self.merged_tree("raced")
+        self.idle(old, "feat/raced")
+        with mock.patch.object(worktree, "idle_for", side_effect=FileNotFoundError("gone")):
+            self.assertEqual(worktree.sweep(self.primary), ["kept raced: in use or holding changes (worktree.py list)"])
+        with mock.patch.object(worktree, "sweep", side_effect=OSError("gone")):
+            path, lines = worktree.add("after", cwd=self.primary)
+        self.assertTrue(path.exists())
+        self.assertIn("warning: gone", lines)
+
+    def test_list_says_why_a_merged_tree_is_still_here(self):
+        path = self.merged_tree("listed")
+        (path / "local.mk").unlink(missing_ok=True)
+        (path / "local.mk").write_text("own settings")
+        said = "\n".join(worktree.listing(self.primary))
+        self.assertIn("sweep takes it once clean and idle for an hour", said)
+        self.assertIn("1 ignored to keep", said)
+
+    def test_add_sweeps_for_those_without_claude_codes_hooks(self):
+        old = self.merged_tree("old")
+        self.idle(old, "feat/old")
+        _, lines = worktree.add("next", cwd=self.primary)
+        self.assertIn(f"removed {old}", lines)
+
+    def test_a_folder_made_again_after_removal_never_reaches_the_primary_checkout(self):
+        path = self.primary / ".worktrees/again"                  # made by hand: no guard from link
+        sh(self.primary, "git", "worktree", "add", "-q", "--no-track", "-b", "feat/again", str(path), "origin/main")
+        self.assertFalse((self.primary / ".worktrees/.git").exists())
+        commit(path, "again.txt")
+        sh(self.primary, "git", "merge", "-q", "--no-edit", "feat/again")
+        self.idle(path, "feat/again")
+        worktree.sweep(self.primary)
+        (self.primary / "tracked.txt").write_text("the maintainer's")
+        sh(self.primary, "git", "add", "tracked.txt")
+        before = sh(self.primary, "git", "rev-parse", "main")
+        path.mkdir()                                              # a write by absolute path, its agent unaware
+        (path / "f.txt").write_text("x")
+        run = subprocess.run(["git", "commit", "-qam", "stray"], cwd=path, capture_output=True, text=True)
+        self.assertNotEqual(run.returncode, 0)
+        self.assertIn("invalid gitfile", run.stderr)
+        self.assertEqual(sh(self.primary, "git", "rev-parse", "main"), before)
+        self.assertIn("A  tracked.txt", sh(self.primary, "git", "status", "--porcelain"))
 
     def test_remove_refuses_the_primary_and_strangers(self):
         with self.assertRaisesRegex(worktree.Refused, "primary"):

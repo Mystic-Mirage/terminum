@@ -67,7 +67,7 @@ def tag_exists(tag):
 
 def check_source(tag):
     """What users run is exactly the public tag: a clean tree at its commit, on main; a new
-    version only above every earlier one, from main as it is now."""
+    version only above every earlier one, from main as it is now. Returns that commit."""
     run("git", "fetch", "--quiet", "--tags", "origin", "main")
     if run("git", "status", "--porcelain"):
         sys.exit("the tree has changes: commit or stash them (a release is built from the tag only)")
@@ -77,12 +77,20 @@ def check_source(tag):
             sys.exit(f"{tag} exists and is not HEAD: check it out, or release a new version")
         if subprocess.run(["git", "merge-base", "--is-ancestor", "HEAD", "origin/main"], cwd=package.REPO).returncode != 0:
             sys.exit(f"{tag} is not on origin/main")
-        return
+        return head
     if head != run("git", "rev-parse", "origin/main"):
         sys.exit("HEAD is not origin/main: push main (or pull) first")
     newest = max((version(t) for t in run("git", "tag", "-l", "v*").split() if version(t)), default=None)
     if newest and version(tag) <= newest:
         sys.exit(f"{tag} is not above the newest release tag v{'.'.join(map(str, newest))}")
+    return head
+
+
+def check_unmoved(head):
+    """The tag goes on HEAD and must be what was built: another session's `make install` fast-forwards
+    a clean main (scripts/worktree.py freshen)."""
+    if run("git", "rev-parse", "HEAD") != head:
+        sys.exit("HEAD moved during the build (another session's make install?): nothing is public; release again")
 
 
 def check_unpublished(tag):
@@ -137,8 +145,8 @@ def release_notes(tag):
     return notes
 
 
-def publish(tag, draft, notes):
-    """Tag HEAD, push the tag (again, if an earlier run stopped after tagging), fill a draft
+def publish(tag, draft, notes, head="HEAD"):
+    """Tag `head`, push the tag (again, if an earlier run stopped after tagging), fill a draft
     release and publish it."""
     footer = ("Install or upgrade: curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/install.sh | sh\n\n"
               f"SHA256SUMS is signed with the release key {signing_key.fingerprint()}.")
@@ -147,7 +155,7 @@ def publish(tag, draft, notes):
         path = Path(folder) / "notes.md"
         path.write_text(body, encoding="utf-8")
         if not tag_exists(tag):
-            run("git", "tag", "-a", tag, "-m", tag)
+            run("git", "tag", "-a", tag, "-m", tag, head)
         run("git", "push", "--quiet", "origin", f"refs/tags/{tag}")
         if not draft:
             gh("release", "create", tag, "--verify-tag", "--draft", "--title", tag, "--notes-file", str(path))
@@ -165,7 +173,7 @@ def main(argv):
         sys.exit("release-signers holds no release key: run make signing-key and commit it first")
     if not os.environ.get("TM_CODESIGN_IDENTITY", "").strip():
         sys.exit("TM_CODESIGN_IDENTITY is not set: a release is signed with the maintainer's Developer ID (docs/RELEASING.md)")
-    check_source(tag)
+    head = check_source(tag)
     notes = release_notes(tag)
     draft = check_unpublished(tag)
     run("npm", "ci", "--ignore-scripts", "--no-fund", "--no-audit", cwd=package.REPO / "ui")
@@ -175,7 +183,8 @@ def main(argv):
         if not (package.OUT / package.NAME / "agents" / platform / "terminumd").is_file():
             sys.exit(f"the package has no {platform} terminumd (run make toolchain): not released")
     sign(package.OUT / "SHA256SUMS")
-    print(f"{tag}: {publish(tag, draft, notes)}")  # only now does anything become public
+    check_unmoved(head)
+    print(f"{tag}: {publish(tag, draft, notes, head)}")  # only now does anything become public
 
 
 if __name__ == "__main__":

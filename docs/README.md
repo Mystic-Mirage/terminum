@@ -24,8 +24,10 @@ A spec is a snapshot of what terminum must do: never a chronicle or a change log
 | [terminum.md](specs/terminum.md) | The core: session list, screen, typing, sizing, managing sessions, sign-in, themes, keys, budgets, projects, the user's own tmux | AC-01…07, 09, 10, 12, 13, 18…20, 88, 89, 92, 100, 101 |
 | [terminum-lifecycle.md](specs/terminum-lifecycle.md) | Install, run, restart, reboot, upgrade, uninstall, update notice; landing a worktree, the release's gate, a tidy machine and docs | AC-08, 11, 14…17, 96, 102…104 |
 | [terminum-terminal.md](specs/terminum-terminal.md) | Terminal features: widgets, folds, bookmarks, reminders, search, links, paste, selection, traces, sent history | AC-31…38, 40, 90, 91 |
-| [terminum-agents.md](specs/terminum-agents.md) | Coding agents: states, unread, plans and progress, the bookmarks and reminders they keep | AC-39, 93, 97, 98 |
+| [terminum-agents.md](specs/terminum-agents.md) | Coding agents: states, unread, plans and progress, the records they kept | AC-39, 93, 97, 98 |
 | [terminum-files.md](specs/terminum-files.md) | The Files panel | AC-51…73, 94, 95 |
 | [terminum-remote.md](specs/terminum-remote.md) | Remote hosts: tmux over ssh, files through an agent, helpers, builds and releases, agents on a host | AC-81…87, 99 |
+| [terminum-kanban.md](specs/terminum-kanban.md) | Tasks, the board at `/kanban/`, projects shared with the session list, agents' task tools, the store | AC-105…120 |
+| [terminum-dispatcher.md](specs/terminum-dispatcher.md) | Dispatcher: RUN, a task's status as its session lives, time budgets, watching and closing sessions | AC-121…131 |
 
 Each spec has the same sections: 0 Metadata (status only), 1 Overview, 2 Scope and non-goals, 3 Assumptions, dependencies, open questions, 4 Acceptance cases, 5 BDD scenarios, 6 Flow and sequence diagrams, 7 Current behavior and gaps (open gaps only), 8 Recommendation and ownership, 9 Technical details and specifications, 10 Delivery stages (only what is not shipped), 11 Checklist with Definition of Done (one line per case: what proves it).

@@ -633,16 +633,16 @@ Scenario: AC-88 edge — a host
 ### AC-92 — Projects [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-92 happy path — a project lets its agents share records
+Scenario: AC-92 happy path — a project lets its agents share tasks
   Given sessions grouped into a project
-  Then their agents on one host read and close each other's records and do not keep one twice (terminum-agents.md AC-98); ungrouping ends that at once, each keeping its own
+  Then their agents read and comment on each other's tasks (terminum-kanban.md AC-115); leaving the project ends that at once
 
 Scenario: AC-92 happy path — a project
   When the user picks Add to Project… → New project… in the menu of "api" (in ~/work/api)
-  Then a dialog asks its name at once ("Group 1" suggested, Enter or Create takes it, Cancel makes none) and terminumd makes it (the lowest "Group N" free when no name comes), its color the first of ten pastel hues far apart no other project has, its folder ~/work/api; it keeps it in projects.json and tells every page
+  Then a dialog asks its name at once ("Group 1" suggested, Enter or Create takes it, Cancel makes none) and terminumd makes it (the lowest "Group N" free when no name comes), its color the first of ten pastel hues far apart no other project has, its folder ~/work/api; it keeps it in the store (terminum-kanban.md AC-119) and tells every page
   And the list shows the projects, each a group tinted and named in its color (under its last session as much space as above its name), with its sessions (the shown one's row a deeper tint of it, not a box of its own), their bars in the project's color (not the folder's), their panes and quick shells under them; their tmux groups list them no more (a group left empty goes); a project's rows are counted there
   And every other group (a tmux session's, a host's) is tinted too, its name kept in the list's color: in a hue at least 60° from the part's above it and from a project's right under it, so neighbors never run together
-  And projects and tmux groups stand in one order, every page's, kept by terminumd in projects.json: Move to the Top, Up, Down, to the Bottom and a drag by the header go past either kind; a new project stands after the last project, a new group at the end; before the first move the projects stand first and the groups as this browser last kept them; a move under a filter leaves the parts it hides in their places; a rename keeps the group's place, also when tmux refuses the name
+  And projects and tmux groups stand in one order, every page's, kept by terminumd in the store: Move to the Top, Up, Down, to the Bottom and a drag by the header go past either kind; a new project stands after the last project, a new group at the end; before the first move the projects stand first and the groups as this browser last kept them; a move under a filter leaves the parts it hides in their places; a rename keeps the group's place, also when tmux refuses the name
   And a project's header and a tmux group's have the same New Window button, a plain [+], the first of their buttons, the same size, words and act (a window after its last session, in its folder, as the menu's New Window; a group with no session: a new window in that tmux session)
   And left of the name, after the chevron, a 4 px dot in its color says a project (a tag on what the user gathered) and a thin >_ in the name's color a tmux session, with its words on hover
   When the user adds "docs" to Group 1, or a second project
@@ -652,23 +652,23 @@ Scenario: AC-92 happy path — new sessions, order, names
   Then the window opens as above (the session's own folder when the project's is gone) and joins the project; Clone of a project's session joins it right after that session
   When the user drags a session in it (as a row is dragged, AC-07), or picks a move in a session's menu
   Then its sessions are in that order
-  When the user picks Rename… in the project's menu (its ⋯, or a right click on its header, as a row's menu) (or double-clicks its name) and types "API" (Enter or Rename), or picks Ungroup
-  Then it is named "API" (1–40 characters; another length is refused), or it goes and its sessions are back in their tmux groups
-  And the menu also has New Window (as its [+]), Move to the Top, Up, Down, to the Bottom (as the list shows them, off at an end), and Close Project… (red): it asks "Close the project <name> and its N sessions? The programs running in them end." and, confirmed, closes each of its sessions; Cancel closes nothing
+  When the user picks Rename… in the project's menu (its ⋯, or a right click on its header, as a row's menu) (or double-clicks its name) and types "API" (Enter or Rename)
+  Then it is named "API" (1–40 characters; another length is refused)
+  And Delete Project… asks and moves its sessions and tasks to Default (terminum-kanban.md AC-110)
+  And the menu also has New Window (as its [+]), Move to the Top, Up, Down, to the Bottom (as the list shows them, off at an end), and Close Project… (red): it asks "Close the project <name> and its N sessions? The programs running in them end." and, confirmed, closes each of its sessions, the project staying with its tasks; Cancel closes nothing
 Scenario: AC-92 edge — the shown session closes
   When the session or pane a page shows closes (from any page, or its program ended)
   Then the page shows the first session the list has in the same project, top to bottom; outside projects the first of the same tmux group
-  And when none is left there (a project left without sessions goes, below), the first session at the top of the list as the page draws it (AC-92's one order), however it was filtered or folded
+  And when none is left there, the first session at the top of the list as the page draws it (AC-92's one order), however it was filtered or folded
   And a session taken out of its project stands in its tmux group at once, and one added to a project in that project
 Scenario: AC-92 edge — sessions that close
   When a project's pane closes
-  Then it leaves its project when its server's list is read next (one added in the last 5 s is spared: a read on its way may not have it; the list is read again when those 5 s end, so it leaves then without another change); a project left without sessions goes (a server that cannot be read keeps its panes' places); the list without the pane is told first, then the projects, so its row does not stand in its tmux group in between (a project action or a page connecting during that read sends the projects at once)
+  Then it leaves its project when its server's list is read next (one added in the last 5 s is spared: a read on its way may not have it; the list is read again when those 5 s end, so it leaves then without another change); a project left without sessions stays (terminum-kanban.md AC-110); a server that cannot be read keeps its panes' places; the list without the pane is told first, then the projects, so its row does not stand in its tmux group in between (a project action or a page connecting during that read sends the projects at once)
   When a tmux server starts anew (a reboot, a crash) its panes are numbered anew
   Then the sessions restored from its checkpoint keep their projects (restore says which new pane each old one is); without a restore (its @terminum-id differs) its old members go, never naming other panes
-  And a projects.json that cannot be read is set aside as projects.json.bak, never written over
-  And valid JSON with an invalid projects or servers schema is set aside before starting empty, so a later save cannot destroy the recoverable original
+  And a store that cannot be read is set aside, never written over (terminum-kanban.md AC-119)
   And a move in a tmux group reorders only the windows that group lists (a project's windows keep their places in tmux)
-  And a bookmark or a reminder shows only in the session it was made in, in a project or not (terminum-terminal.md AC-33): a project that goes leaves it there, its session closing orphans it
+  And a bookmark or a reminder shows only in the session it was made in, in a project or not (terminum-terminal.md AC-33): a project deleted leaves it there, its session closing orphans it
 ```
 
 ### AC-89 — Sessions of the user's own tmux [SHOULD / P1]
@@ -818,6 +818,7 @@ stateDiagram-v2
 | AC-20 | "Open a pane, p95 < 1 s" has no measurement: `e2e_term.mjs` checks what history pages draw and times nothing. | `web/test/e2e_term.mjs:114` |
 | AC-20 | "Page heap under 150 MB" is read by hand from `?trace=2`'s state, and only where the browser has `performance.memory`. | `web/static/tracebuf.js:280` |
 | AC-20 | The budgets run by hand: `Makefile` has no bench target, and `make test` tests the bench scripts, not the budgets. | `scripts/bench_load.py:7` |
+| AC-92 | An empty project goes, projects live in `projects.json` and Ungroup is the way out; `terminum-kanban.md` AC-110 and AC-119 replace these. | `terminumd/src/page/projects.rs:127`, `terminumd/src/page/projects.rs:155` |
 
 ## 8. Recommendation and ownership
 

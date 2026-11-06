@@ -40,7 +40,9 @@ page: plain JavaScript, ES modules, !bundler
 | Worktree | `<primary>/.worktrees/<slug>`, branch `<kind>/<slug>`: made, linked, listed, removed only by `scripts/worktree.py` (CONTRIBUTING.md "Worktrees") |
 | Theme | JSON in `~/.terminum/themes/`: colors, ANSI palette, font; a rule assigns one per host or session |
 | Project memory | `project-memory/`: agents' local long-term memory, indexed, !committed ("Project memory" below) |
-| Spec | `docs/specs/`: `terminum.md` (core), `terminum-lifecycle.md`, `terminum-terminal.md`, `terminum-agents.md`, `terminum-files.md`, `terminum-remote.md`: cases `AC-nn` (unique across them), BDD scenarios, design, limits, the test proving each case |
+| Task | a card on the board at `/kanban/`, in the SQLite store: status, severity, owner, project, session (`terminum-kanban.md`) |
+| Dispatcher | terminum's system user: starts a task's session, watches it, keeps its budget, ends it (`terminum-dispatcher.md`) |
+| Spec | `docs/specs/`: `terminum.md` (core), `terminum-lifecycle.md`, `terminum-terminal.md`, `terminum-agents.md`, `terminum-kanban.md`, `terminum-dispatcher.md`, `terminum-files.md`, `terminum-remote.md`: cases `AC-nn` (unique across them), BDD scenarios, design, limits, the test proving each case |
 
 ## Product
 
@@ -49,14 +51,14 @@ page never blocks: screens = diffs of changed rows, ≤ 30 a second; history pag
 budgets: the spec's hold with 50 panes open and a 500,000-entry folder (`scripts/bench_ls.sh`, `scripts/bench_echo.py`)
 standard: terminal and IDE behavior and keys; every action also has a button or menu item; ⌘N, ⌘W, ⌘T stay the browser's, !bound
 fail loud: errors show where the action was taken (inline field, banner, toast) with terminumd's message; !silent fallback; a pane whose server is gone says so
-never lose user data: terminals live in tmux, outlive terminumd and the Page; unsaved edits survive pane switches, rename, refresh; saves atomic, etag-checked, keep metadata; delete = Trash; a conflict asks; closing a pane asks
+never lose user data: terminals live in tmux, outlive terminumd and the Page; unsaved edits survive pane switches, rename, refresh; saves atomic, etag-checked, keep metadata; delete = Trash; a conflict asks; closing a pane asks, except Dispatcher closing a session it started and marked, with its agent idle (AC-125)
 
 ### 2. Security and secrets
 **public repository** (github.com/extractumio/terminum): every file, commit message, branch name, issue, release is readable by anyone, for good: write each for that reader; private → `project-memory/` or uncommitted local files; a landing pushes by itself and scans first
 reach: loopback only; other devices through `tailscale serve` (HTTPS); Tailscale Funnel refused; every browser signs in with the password from `terminum password` (a header sign-in, !cookie); exact Host, Origin, Content-Type checks on writes; forwarded requests !Finder, !type paths
 writes: only under Roots, judged on resolved paths (a symlink judged where it lives for rename, trash)
 page runs no content from terminals or files: Markdown raw HTML off; `javascript:` links dropped; remote images not loaded; CSP `script-src 'self'`; !navigation away; terminal output reaches only the Panel's Markdown rules and Mermaid in strict mode
-tmux commands: user text only as quoted arguments, !control characters; `send-keys` only for the user's explicit key or paste; `cd` only into an idle shell
+tmux commands: user text only as quoted arguments, !control characters; `send-keys` and `paste-buffer` only for the user's explicit key or paste, or Dispatcher: only in a pane it started and marked, only through the gate of `terminum-dispatcher.md` §9, only T-numbers with fixed words or a prompt of a human's RUN; `cd` only into an idle shell
 !secrets, !personal names, !private hosts, !home paths in source, tests, fixtures, docs, commits. Exception: the copyright holder's name and licensing email in `LICENSE-COMMERCIAL.md`, `CONTRIBUTING.md`, `README.md`, `Cargo.toml`, `package.json`, git author metadata. Examples use `/Users/alex`, `devbox.example`
 scan: `make hooks` installs git hooks running `scripts/security_check.sh` on each commit and its message; other machines' and the tailnet's names → `~/.config/terminum/private-patterns`, !here
 tests: !touch the live token, workspaces, tmux server (`TM_APP_DIR`, `tmux -L` a private socket)

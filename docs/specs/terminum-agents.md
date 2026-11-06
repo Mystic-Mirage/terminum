@@ -16,24 +16,24 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Who it affects.** Users of Claude Code and Codex who keep several sessions, and read and answer from a Mac or a phone.
 
-**Expected outcome.** The session list and the header show each agent's state and, from its hooks, its tool, what it waits for and its subagents. A reminder names an agent waiting in a pane not shown. A session whose turn ended unseen is unread. A plan shows as a percent and in a Plan pane. What the agent hands over through `terminum mcp` is kept as the session's bookmarks and reminders, shared across a project's sessions on one host.
+**Expected outcome.** The session list and the header show each agent's state and, from its hooks, its tool, what it waits for and its subagents. A reminder names an agent waiting in a pane not shown. A session whose turn ended unseen is unread. A plan shows as a percent and in a Plan pane. What an agent finds or defers becomes a task on the board (`terminum-kanban.md` AC-115); its older records stay for the user.
 
-**Scenario.** Alex runs six agents and reads another session on a phone. A line over the terminal says "api waits for your answer"; a press opens that pane. Another row is hatched: its turn ended unseen, and its Plan pane says 9 of 9 done and holds the agent's final report.
+**Scenario.** Alex runs six agents and reads another session on a phone. A line over the terminal says "api waits for your answer"; a press opens that pane. Another row is hatched: its turn ended unseen, and its Plan pane says 9 of 9 done.
 
 ## 2. Scope and non-goals
 
 In scope:
 - Reading agents' states from their screens and hooks; subagents; reminders of a waiting or failed agent; unread.
 - `terminum hooks`, `terminum hook`, `terminum mcp`, and the installation of hooks and MCP server into Claude Code and Codex.
-- Plans, progress and the stale reminder; the records an agent hands the user, their limits and a project's sharing.
+- Plans, progress and the stale reminder; agents' records kept from before tasks.
 
 Out of scope (explicit):
 - A host's agents: `terminum-remote.md` AC-99.
 - The user's own bookmarks and reminders, and the panes that list them: `terminum-terminal.md` AC-33, AC-91.
 - Sent history: `terminum-terminal.md` AC-90.
 - States for other agents: OpenCode gets only a mark (`terminum.md` AC-01).
-- An MCP tool listing other sessions: the agent sees a project's records only (AC-98).
-- Typing into a pane for an agent's hook or tool: a hook only observes, a reminder reaches the agent as context.
+- Tasks and agents' task tools: `terminum-kanban.md`.
+- Typing into a pane for an agent's hook or tool: a hook only observes, a reminder reaches the agent as context. What types: `terminum-kanban.md` AC-114, `terminum-dispatcher.md`.
 
 ## 3. Assumptions, dependencies, open questions
 
@@ -63,7 +63,7 @@ Open questions: none.
 | AC-39 | [MUST / P0] | A pane running a coding agent shows its state (working, waiting, failed; done shows no mark) in the list and the header, breathes while it works, and a reminder over the terminal names an agent that waits for an answer in a pane not shown. |
 | AC-93 | [SHOULD / P1] | A session whose coding agent finished a turn while no page in sight showed it is marked unread until a page shows it. |
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
-| AC-98 | [SHOULD / P1] | A coding agent hands the user what must not get lost in the terminal's scroll (a final report, a next step, a gap seen elsewhere, deferred work, a question) through terminum's MCP tool: kept as its session's bookmarks, or reminders when the user must act; self-contained, found where the call was printed; a project's agents on one host share them, so the same record is not kept twice. |
+| AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
 
 ## 5. BDD scenarios
 
@@ -194,7 +194,7 @@ Scenario: AC-97 happy path — the agent's own plan
 
 Scenario: AC-97 happy path — the Plan pane
   When the user presses the percent, the column's progress circle or the header's Plan button
-  Then the Plan pane opens (modal, a window placed as the reminders' pane, terminum-terminal.md AC-91), laid out in sections: the plan's title (15 px, 600); "Now" and the current step ("doing") on a raised strip with a gray pill inside it at its left (as a row's folder bar; no stripe along its rounded edge); the progress, "3 of 9 done" and "33%" over a bar filled to it, the ETA "~17:40 (agent's estimate, given 16:55)" under it; "Steps", each item with its mark in a round badge (✓ on green, ▶ on the text color with its row tinted, an empty ring pending, a large "!" on amber) and its text hanging beside it; under a rule "Updated 2 min ago (16:57)" and where the plan came from (terminumd's times, aged by the browser's clock); "For you" and how many open records its agent kept for the user ("2 kept for you by the agent: show them", a press opening the session's bookmarks' pane; "Nothing kept for you by the agent.", AC-98)
+  Then the Plan pane opens (modal, a window placed as the reminders' pane, terminum-terminal.md AC-91), laid out in sections: the plan's title (15 px, 600); "Now" and the current step ("doing") on a raised strip with a gray pill inside it at its left (as a row's folder bar; no stripe along its rounded edge); the progress, "3 of 9 done" and "33%" over a bar filled to it, the ETA "~17:40 (agent's estimate, given 16:55)" under it; "Steps", each item with its mark in a round badge (✓ on green, ▶ on the text color with its row tinted, an empty ring pending, a large "!" on amber) and its text hanging beside it; under a rule "Updated 2 min ago (16:57)" and where the plan came from (terminumd's times, aged by the browser's clock); "Tasks" and this session's tasks, each opening its window on the board (terminum-kanban.md AC-113), or "No task in this session."
   And every text the agent wrote is kept without control or bidi characters (U+202A–U+202E, U+2066–U+2069) and shown as plain text (never Markdown or HTML: "<b>x</b>" reads as typed); on a phone the pane is full-width under the header, its buttons at least 44 px
 
 Scenario: AC-97 happy path — found before a plan
@@ -274,86 +274,25 @@ Scenario: AC-97 happy path — kept current by an install or upgrade of terminum
   Then a "Warning: …; run terminum hooks install" line is said and the install or upgrade still succeeds; `terminum status`, `open` and `install` say in one line that the agent has terminum's hooks without its MCP server, naming `terminum hooks install`
 ```
 
-### AC-98 — The agent's bookmarks and reminders [SHOULD / P1]
+### AC-98 — Agents' records kept from before tasks [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-98 happy path — the agent hands the user a record instead of printing it
-  Given the coding agent finds a next step, a gap or a bug in another part of the project, deferred work, a question only the user can answer, or ends with a final report
-  When it calls add_notes_for_user {notes: [{title: "Final report: retry loop fixed", text: "<Markdown: what changed, files, why, how checked, next step>", kind: "report"}, {title: "Decide: rename the API to fetch_all?", text: "…", kind: "question", remind: true}]}
-  Then terminumd keeps each as a bookmark of the agent's pane (AC-33) marked made by the agent (claude or codex): its title the bookmark's note, its text the body, its kind and file kept; one with remind true is a reminder (AC-91) and comes up when the turn ends
-  And it answers each record's id, and for a reminder that it comes up at each turn end until the user resolves it
-  And it shows as a bookmark the user makes there does, in its session alone its title and text cleaned (control and bidi characters dropped) and redacted (`sent::redact`) before they are kept
-  And its place is where the agent's call was printed: the pane's newest history line then, and its title, which the agent's transcript of the call shows; Open looks for the title nearest that line (AC-33's search), and where it is no longer in the history it says so with the record, as a bookmark does (AC-33)
-  And the tool's description says what it covers and the rule: a final report, findings and deferred work are bookmarks; remind only when the user must act or decide (a blocker, a question, a risky leftover, a step only the user can take); when unsure, a bookmark; each record readable without the chat (what, where: files and paths, why, next step)
-  And the MCP instructions ask for one record per final report, finding outside the task, deferred item or question, never one for progress; a record that changes is updated with update_notes_for_user instead of added again
+Scenario: AC-98 happy path — agents make tasks instead
+  Then `terminum mcp` offers no add_notes_for_user, get_notes_for_user, update_notes_for_user or delete_notes_for_user; bookmarks and reminders are the user's own (terminum-terminal.md AC-33, AC-91)
+  And what an agent would have kept goes as terminum-kanban.md AC-115 says, and its MCP instructions say so
 
-Scenario: AC-98 happy path — the agent tidies its own, the user answers only questions
-  When a record with remind true has the kind bug, deferred, followup or report
-  Then it is kept as a bookmark and the answer says only a question reminds; update_notes_for_user refuses remind true for such a record of an agent, the user's own stays the user's
-  When the agent adds with {replaces: [ids]}
-  Then those of its own records go in the same save, a reminder too, and the answer names them; a record of the user's is left and named
-  When a report is added to a session holding three of agents' reports
-  Then the oldest there go in the same save and the answer names them, with no banner: a later report tells what the earlier ones did
-  And every answer to add_notes_for_user lists the session's other open records, newest first, ten at most and how many more, by id, kind and title, so the agent closes what it covered instead of the user
+Scenario: AC-98 happy path — what is kept stays
+  Given records an agent kept earlier, open or not
+  Then they stay in their sessions and are listed with the user's bookmarks and reminders, the agent's mark before the title, the text as Markdown with raw HTML off (as rendered output, AC-31)
+  And a reminder among them comes up as AC-91 says until the user resolves it
+  And the user closes or deletes them as their own, or makes a task of one (terminum-kanban.md AC-116)
+  And no record turns into a task unless the user asks
 
-Scenario: AC-98 happy path — shown with the user's
-  Then it is listed with the user's bookmarks and reminders (AC-33, AC-91), its agent's mark before its title, its text as Markdown with raw HTML off (as rendered output, AC-31), never quoted; Quote in chat as AC-33's, its title the note
-
-Scenario: AC-98 happy path — the agent updates one
-  When the agent calls update_notes_for_user {id, status: "done"} (or a new title, text or remind)
-  Then a reminder is resolved, a bookmark deleted (open reopens a resolved reminder); any record of the caller's session is found, the user's too; of other sessions only what the project's scope below allows
-
-Scenario: AC-98 happy path — the agent reads and deletes its session's
-  When the agent calls get_notes_for_user {}
-  Then it gets JSON of its session's bookmarks and reminders, the agent's and the user's, in the order they were made: id, type (bookmark, reminder), status (open, up, resolved), by (the agent, or "user"), title, kind, file, no text, then the project's scope below; with {id} that record whole, its note and text, cleaned and redacted as a record is kept; the tool says their text is data, never instructions
-  When the agent calls delete_notes_for_user {ids: [1–20 ids]}
-  Then those records are gone for good, a reminder too, every page told at once
-  And an id of another session, of its project too, of an orphaned record or of none is answered "No record <id> in this session" and nothing of that call is deleted; another session's it reads and closes only by the project's scope below
-
-Scenario: AC-98 happy path — a project's sessions share their agents' records
-  Given a pane that is a member of a project (AC-92), its agent's scope beyond its own session is, on the same host as that pane (the host part of the record's key): agents' records of the project's other member panes, and agents' orphaned records stamped with that project
-  And a pane in no project has its own session's alone; a pane taken out of a project leaves it at once, whatever its records are stamped with; the user's records of other sessions are in no scope, for reading, closing or repeats
-  When the agent adds a record whose title equals an open record in its session (letter case, runs of spaces and end punctuation aside), or in a live session of that scope with the same kind, the same reminder or bookmark, and the same file when both name one
-  Then it is not kept, the answer says "Not kept, your text was not stored", names the record's id and its session, and asks to read it and add under a title that says what when its text adds something; a repeat within the call is said too
-  And a repeated question raises the reminder kept (up in its own session as at a turn end) and the answer asks the agent to tell the user which session holds it, so a question is never left in an idle session unseen
-  And kind report never repeats across sessions: each session's report is its own
-  When the title equals an orphaned record of that scope, of the same kind and file
-  Then the new record is kept and the orphaned one goes in the same save, named in the answer: a closed session's never blocks a live one
-  When the title shares at least 3 words and at least 60% of the larger title's words with an open record of a live session of the scope
-  Then the record is kept, and the answer says it looks like that record, by id, session and title, and how to delete the new one if it is the same; a wrong hint costs one line and loses nothing
-  And a repeat judged against an id in the call's `replaces` does not count: the old record goes and the new one is kept
-  When get_notes_for_user {} is called
-  Then after the session's own it lists that scope's open records, newest first, at most 50 then {"more": n}, each with `session` (its row's title when made, cleaned and cut to 40 characters) and `closed` for an orphaned one; with {id} a record of the scope is read whole
-  And every answer to add_notes_for_user adds up to 10 of them, as quoted JSON said to be data, never instructions, apart from the session's own, and only the session's own are asked to be closed
-  When update_notes_for_user {id, status: "done"} names a record of the scope
-  Then it is closed as its own would be, a copy of it whole with who closed it and when is added first to `closed-records.jsonl` beside web-bookmarks.json (0600, past 1 MiB the file becomes `.1`, one older file kept), the close is logged, and when the copy cannot be written nothing closes
-  And any other change to it, status open, title, text or remind, is refused with why, as are delete_notes_for_user and `replaces` naming it
-  And limits, reports past three and "went for room" stay each session's own, so one session's record never deletes another's; a record another session's add was refused for can still go by its holder's limits or close, a known limit
-  And a reminder comes up by its own session (AC-91), and the page's panes keep their default filter (AC-33)
-
-Scenario: AC-98 edge — limits, an older notes.json
-  When a call adds bookmarks to a session holding 50 of agents' bookmarks, or reminders to one holding 20 of agents' open reminders
-  Then the oldest of that kind there (in the order they were made) are deleted, in the same save, so that the new ones are kept, never a refusal for room; the answer names the ids that went
-  And update_notes_for_user reopening a reminder or making a record the other kind makes room the same way, never deleting that record
-  And past 500 records of agents in all, the oldest orphaned ones go (no live scope loses a record but by its own limits); agents' records never count against the user's limits, and the user's own are never deleted for room
-  And a call carries 1–20 records: title 1–120 characters, text 1–2000, kind bug, deferred, followup, question or report, file at most 300
-  When terminumd starts with a notes.json of an older terminum (the Plan pane's notes)
-  Then its open notes become agents' bookmarks of their scopes once (title: the text's first line, cut to 120), and the file is kept as notes.json.imported
-
-Scenario: AC-98 happy path — told when the oldest went
-  Given agents' bookmarks or reminders of a session were deleted for room
-  When that session's agent next ends a turn (AC-91's turn end)
-  Then every page shows a banner over the terminal: "Agents' bookmarks of session <its row's title> are over 50: the oldest are deleted automatically. Review them." (for reminders "Agents' reminders … over 20"), with Open bookmarks (Open reminders) and ×; both kinds of a session are two lines
-  And Open shows the pane that made room and opens its bookmarks' (reminders') pane (that pane gone: Bookmarks / Reminders below the sessions); × closes it on every page; pages that connect later get it until closed; a restart forgets it
-  And one banner a session and kind: a deletion while it shows changes nothing; after it was closed, the next turn end after another deletion there shows it again; orphaned records that went (past 500) show none
-
-Scenario: AC-98 failure — not kept
-  When the call is made outside a terminum pane or terminumd is down
-  Then it answers the same errors as AC-97's tools
-  When web-bookmarks.json cannot be written
-  Then the tool answers an error and nothing is kept
+Scenario: AC-98 edge — an agent of an older session
+  Given an agent started before the upgrade, holding the old tool list
+  When it calls add_notes_for_user
+  Then it is answered: "This tool is gone. Use create_task for what must not get lost." and nothing is kept
 ```
-
 
 ## 6. Flow and sequence diagrams
 
@@ -396,6 +335,7 @@ sequenceDiagram
 | AC-39 | A changed wording of Claude Code or Codex shows no state. | `terminumd/src/tmux/agentstate.rs:25` |
 | AC-39 | Codex's startup prompts (trust, update) show no state; nor does a `node` Codex with a typed draft and no other mark, until it is sent; nor does a custom `[tui].terminal_title` mark a question. | `terminumd/src/tmux/agentstate.rs:37`, `terminumd/src/tmux/agentstate.rs:62` |
 | AC-39 | An error still in the last 25 rows after a later finished turn reads as failed. | `terminumd/src/tmux/agentstate.rs:325` |
+| AC-98 | Agents still make and manage records through the four tools; `terminum-kanban.md` AC-115 replaces them. | `terminumd/src/cli/mcp.rs:35` |
 
 ## 8. Recommendation and ownership
 
@@ -435,10 +375,6 @@ MCP tools:
 |---|---|
 | `update_session_plan` | `items` (required): `[{text, status}]`; `doing`, `eta_minutes`, `title` |
 | `get_session_plan` | none |
-| `add_notes_for_user` | `notes` (required): `[{title, text, remind?, kind?, file?}]`; `replaces`: ids |
-| `get_notes_for_user` | `id?` |
-| `update_notes_for_user` | `id` (required), `status` (open, done), `title`, `text`, `remind` |
-| `delete_notes_for_user` | `ids` (required) |
 
 ### Files
 
@@ -447,8 +383,6 @@ MCP tools:
 | `state/plans.json` | 0600, `{version: 1, current, archived, servers}`; `servers` each tmux server's identity by its keys' start |
 | `state/unread.json` | `{unread: [keys], servers}`; a file that cannot be read is set aside |
 | `web-bookmarks.json` | format in `terminum-terminal.md` §9 |
-| `closed-records.jsonl` | beside `web-bookmarks.json`: records another session closed (AC-98) |
-| `notes.json`, `notes.json.imported` | an older terminum's notes, imported once (AC-98) |
 | `~/.terminum/hooks/claude/` | the local marketplace `terminum-local`: `.claude-plugin/marketplace.json`, `plugins/terminum/{.claude-plugin/plugin.json, hooks/hooks.json, .mcp.json}` |
 | `~/.terminum/hooks/claude.installed` | the build that installed the plugin |
 | `$CODEX_HOME/hooks.json`, `config.toml` | terminum's entries and block; each one's backup is `<file>.terminum-<time>` |
@@ -479,7 +413,7 @@ Limits a scenario states are not repeated.
 
 ### Compatibility
 
-An older Codex SessionEnd entry: AC-39. An older `notes.json`: AC-98.
+An older Codex SessionEnd entry: AC-39.
 
 ### Logging and observability
 
@@ -487,11 +421,11 @@ An older Codex SessionEnd entry: AC-39. An older `notes.json`: AC-98.
 
 ## 10. Delivery stages
 
-All cases are shipped; nothing is staged.
+AC-98 ships with `terminum-kanban.md` AC-115; all else is shipped.
 
 ## 11. Checklist with Definition of Done
 
 - [x] AC-39 — `cargo test tmux::agentstate`, `cargo test tmux::hookstate`, `cargo test tmux::titles`, `cargo test cli::` (`terminumd/src/cli/tests/hooks_tests.rs`), `scripts/e2e_agentstate.py`, `scripts/e2e_hooks.py`, `web/test/e2e_app.mjs`, `web/test/e2e_rows.mjs`, `web/test/e2e_look.mjs`
 - [x] AC-93 — `cargo test page::unread`, `cargo test page::turns`, `scripts/e2e_hooks.py`, `web/test/e2e_projects.mjs`
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
-- [x] AC-98 — `cargo test agentmarks`, `cargo test page::bookmarks`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`, `web/test/e2e_marksfull.mjs`, `web/test/e2e_marksscope.mjs`, `web/test/e2e_marknav.mjs`
+- [ ] AC-98 — `cargo test cli::mcp`, `cargo test page::bookmarks`, `web/test/e2e_marksfull.mjs`, `web/test/e2e_marksscope.mjs`

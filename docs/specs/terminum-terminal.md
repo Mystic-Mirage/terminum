@@ -238,7 +238,7 @@ Scenario: AC-33 happy path — a chosen list
 Scenario: AC-33 happy path — a session's own
   Given a bookmark made in a session, in a project (terminum.md AC-92) or not
   Then only that session lists it under the pane's Session ("Bookmarks and reminders of this session") and only its row has the wavy orange line, at its right edge past its program; another session, of the same project too, shows nothing of it on any path: the bookmarks' button (its count and pane), the bell (its count, pane and toast), the Plan pane's "kept for you" (its count, the header's hover and what its press opens), a banner's Open, the terminal's marks and the bar's steps
-  And it stays its session's when that session joins, leaves or changes a project, or its project is deleted (Ungroup), or an attached session is detached (it shows again when attached)
+  And it stays its session's when that session joins, leaves or changes a project, or its project is deleted (terminum-kanban.md AC-110), or an attached session is detached (it shows again when attached)
   And a record of another session arriving while a pane is open changes nothing in it
   When its session closes
   Then terminumd orphans it: it is only in the list below the sessions (Bookmarks | Reminders), said "orphaned", until deleted there (for good); a bookmark is deleted from a session's list or bar too

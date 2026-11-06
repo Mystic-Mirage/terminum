@@ -7,6 +7,7 @@ import "./press.js";                                // a pressed blob's pulse (m
 import "./pop.js";                                  // where a window flies out of (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
+import { askedSession } from "./tasklink.js";
 import { findItem, listParts, renderNav, seeWaits, serverDown, setTaskMarks, taskMarksOf } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
@@ -64,8 +65,9 @@ const store = {
 if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
+const opened = embedded ? {} : askedSession();     // a session asked for by the address (terminum-kanban.md AC-134)
 const st = {
-  groups: [], sid: embedded ?? store.get("sid", null), projects: [], listOrder: [],
+  groups: [], sid: embedded ?? opened.key ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
   appCursor: false, bracketed: store.get("bracketed", true), insertClipboard: store.get("insertClipboard", true), atMac: false,
@@ -269,7 +271,7 @@ function onMessage(m) {
   rail?.seen(m);
   ask.seen(m); asked.seen(m); rowMenu.seen(m);
   switch (m.t) {
-    case "layout": st.groups = m.groups; place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
+    case "layout": st.groups = m.groups; place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); opened.came?.(m.groups, pick, serverDown, toast); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
     case "hist":                                    // a reset: another pane, or its scrollback cleared
       if (m.mode === "reset") widgets.folds.reset();

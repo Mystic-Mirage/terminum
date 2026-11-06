@@ -60,7 +60,7 @@ Open questions: none.
 | AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment closes with RUN or CLOSE. |
 | AC-109 | [MUST / P0] | Files up to 100 MB each stay with their task: images shown, other files downloaded, nothing run; a human can purge a file or a text. |
 | AC-110 | [MUST / P0] | The session list and the board share projects; a project needs no session, its last session closing leaves it; Default holds what has no project and is no real project; deleting a project moves its sessions and tasks to Default. |
-| AC-111 | [SHOULD / P1] | Filters by several projects, severity, owner and text, kept in the URL. |
+| AC-111 | [SHOULD / P1] | Filters by severity, owner and text, and the projects chosen (AC-135), kept in the URL. |
 | AC-112 | [SHOULD / P1] | One level of subtasks, each a full task; the parent shows their progress. |
 | AC-113 | [MUST / P0] | A task has at most one session, a session one IN PROGRESS task at most; moving a task across projects asks about its session; a closed session is said on the card. |
 | AC-114 | [MUST / P0] | A human's move reaches the task's session as a line with no text of the task: by hook context, and typed through Dispatcher's gate in an idle session Dispatcher started; a move to DONE never wakes it; a pane without an agent gets nothing and the card says so. |
@@ -71,6 +71,8 @@ Open questions: none.
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
 | AC-132 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
 | AC-133 | [MUST / P0] | The board's flow survives what people and machines do: the last drop stands, a move shows at once and a refused one goes back; a late answer never stands over a newer; what is typed is never lost by a slip, a refusal or a change by another. |
+| AC-134 | [MUST / P0] | A card with a live session carries that session's own row from the session list: bar in the project's color, pulsing while its agent works, plan, what it does now, every state; a press opens that session. |
+| AC-135 | [MUST / P0] | The board's head chooses the project; beside the columns stand that project's sessions, the session list's own groups and rows; a press opens one. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
 
 ## 5. BDD scenarios
@@ -96,13 +98,13 @@ Scenario: AC-105 happy path — columns and order
   Then it stays P1 and returns to the top of the P1 cards; severity changes only in the task's window or its menu
 
 Scenario: AC-105 happy path — a card
-  Then a card shows its ID, title, severity, owner, project in the project's color, subtask progress and its session's live state (terminum-agents.md AC-39: working, waiting, failed), or "session closed"
+  Then a card shows its ID, title, severity, owner, project in the project's color, subtask progress and its session (AC-134), or "session closed"
   And every drag has a menu item too, Move to…; a press on a card opens its window
 
 Scenario: AC-105 edge — a phone
   Given a width under 860 px
-  Then one column shows, a swipe goes to the next, a switch over it names the five with their counts and follows, and a card moves by Move to…, a sheet
-  And its head leaves the cards the room: pages and New task on one row, Find and Filters on the next; the filters open under Filters
+  Then one column shows, a swipe goes to the next, a switch over it names the five with their counts, then Sessions (AC-135), and follows, and a card moves by Move to…, a sheet
+  And its head leaves the cards the room: pages and New task on one row, the project, Find and Filters on the next; the filters open under Filters
 
 Scenario: AC-105 edge — many cards
   Given 1,000 DONE tasks
@@ -249,7 +251,7 @@ Scenario: AC-110 failure — refused
 
 ```gherkin
 Scenario: AC-111 happy path — several at once
-  When the user ticks projects api and web, severities P0 and P1 and owner "agents"
+  When the user ticks projects api and web (AC-135), severities P0 and P1 and owner "agents"
   Then the columns and counts hold only such tasks and the URL is "/kanban/?project=api,web&severity=P0,P1&owner=agents"
   And opening that URL shows the same; every project is shown when none is ticked
 
@@ -259,7 +261,7 @@ Scenario: AC-111 happy path — text
 
 Scenario: AC-111 edge — nothing left
   When nothing matches
-  Then each column says "No tasks match" and Clear filters shows them all
+  Then each column says "No tasks match" and Clear filters takes off severity, owner and text; the project stays chosen (AC-135)
   When the URL names a project that is gone
   Then that name is ignored and said once in a toast
 ```
@@ -498,7 +500,7 @@ Scenario: AC-132 failure — it stopped with the task open
   When a Stop comes and the last message asks nothing, T-12 still IN PROGRESS
   Then its card says "stopped, task open" and its history "The agent stopped with this task open", once in a row
   When the agent works again
-  Then its card says "working"
+  Then the words go and its row's bar pulses (AC-134)
 
 Scenario: AC-132 failure — it died or left
   When its session ends (not /clear), or its process is gone and only the shell remains
@@ -577,6 +579,91 @@ Scenario: AC-120 happy path — a file
 Scenario: AC-120 failure — no way to write there
   When the host's files are off
   Then get_file says "Files are off for this host" and other tools work
+```
+
+### AC-134 — A card carries its session [MUST / P0]
+
+```gherkin
+Scenario: AC-134 happy path — the session's own row
+  Given T-12 in project Billing, linked to a live session, in any column
+  Then its card carries that session's row as the session list draws it: a bar in Billing's color, the agent's mark, the title, the plan's percent and track, subagents, the state's mark with what it waits for or runs, unread's hatching
+  And under it what the agent's plan says it does now
+  And a task in Default has its bar in the folder's color, as a session in no project does
+
+Scenario: AC-134 happy path — it follows the session
+  When the session's agent starts working
+  Then the bar pulses within 2 s, no task being read; when it stops, the bar stands still
+  When its plan goes from 40% to 60%
+  Then the percent and the track say so within 2 s; the rest of the card and the column stay as they are
+
+Scenario: AC-134 happy path — a press opens it
+  When the user presses the row on T-12's card
+  Then "/sessions/?open=tmux%3Alocal%3Aterminum%3A%257" loads and shows that session, the address back to "/sessions/"
+  And T-12's window does not open, and Back returns to the board
+
+Scenario: AC-134 failure — gone by the time it opens
+  Given the session closed after the board last heard
+  When "/sessions/?open=tmux%3Alocal%3Aterminum%3A%257" loads
+  Then a toast says "That session has ended." and the list shows what it would show after any closing
+
+Scenario: AC-134 edge — nothing to open
+  Given T-12's session closed
+  Then its card says "session closed" in words and has no row (AC-113)
+  Given T-13 with no session
+  Then its card has neither
+
+Scenario: AC-134 edge — a drag by the row
+  When the user drags T-12's card by its row and drops it on FAILED
+  Then the card moves and no session opens
+```
+
+### AC-135 — The project, and its sessions beside the columns [MUST / P0]
+
+```gherkin
+Scenario: AC-135 happy path — choosing the project
+  When the user presses the project key in the board's head and presses Billing
+  Then the key says Billing with its color's dot, the menu closes, the URL is "/kanban/?project=billing-id", and columns and counts hold Billing's tasks
+  When the user ticks web in the same menu
+  Then both are shown and the key says "Billing +1"
+  When the user presses All projects
+  Then every task shows and the key says All projects
+
+Scenario: AC-135 happy path — remembered
+  Given Billing chosen
+  When "/kanban/" is opened again in this browser
+  Then Billing is chosen and the URL says so; a URL naming a project wins
+
+Scenario: AC-135 happy path — its sessions beside the columns
+  Given Billing chosen, with sessions api and web in it
+  Then a Sessions column stands left of TODO with Billing's group and rows, drawn by the session list's own code, in its order, its groups collapsing as there
+  And with All projects chosen it holds the whole list; with Default its sessions in no project, with the hosts' and tmux's groups
+  And it changes as the session list does, within 2 s, and stays in sight while the columns scroll sideways
+
+Scenario: AC-135 happy path — a press opens the session
+  When the user presses session api there
+  Then "/sessions/" shows that session (AC-134)
+  When the user presses a task's mark on a row there
+  Then that task's window opens on the board, no page loading
+
+Scenario: AC-135 edge — it can be hidden
+  When the user presses the key that hides the Sessions column
+  Then the columns take its room, and this browser remembers it
+
+Scenario: AC-135 edge — a project with no session
+  Given Billing chosen with no session
+  Then the column shows Billing's name and "No sessions here."
+
+Scenario: AC-135 edge — a phone
+  Given a width under 860 px
+  Then Sessions is the last page of the swipe and of the switch, TODO still first; the project key stands left of Find
+
+Scenario: AC-135 failure — a project gone
+  Given the remembered or addressed project was deleted
+  Then a toast says "A filter named a project that is gone: billing-id" and all projects show
+
+Scenario: AC-135 failure — sessions not read
+  Given terminumd cannot be reached
+  Then the column keeps what it shows and the banner says the board is out of date (AC-105)
 ```
 
 ## 6. Flow and sequence diagrams
@@ -676,7 +763,7 @@ Sample event: `{"task":"T-12","at":1792003600,"author":"Dispatcher","kind":"comm
 
 `PATCH` takes `text_rev`, as a task's window gave it, for the text the human began from: another now, it answers 412 and changes nothing (AC-133). A `session` that is not in the list is refused.
 
-Pages hear over the page's WebSocket: `taskchange {id}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it; `taskmarks {marks, counts}` when the open tasks by session or the tasks by project change, for the session list; the `layout` it hears anyway gives a board its cards' session states.
+Pages hear over the page's WebSocket: `taskchange {id}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it; `taskmarks {marks, counts}` when the open tasks by session or the tasks by project change, for the session list; the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135).
 
 **MCP tools** added to `terminum mcp`: `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `add_comment`, `attach_file`, `get_file`, `finish_task`. `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
@@ -721,4 +808,6 @@ AC-117 and AC-114's typing ship with `terminum-dispatcher.md`'s Stage 1. Depends
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-132 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`
 - [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
+- [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
+- [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
 - [ ] AC-120 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py` for what is built

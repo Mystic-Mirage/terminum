@@ -89,6 +89,9 @@ pub struct Row {
     pub updated: u64,
     pub stale: bool,
     pub partial: bool,
+    /// What the agent says it does now: a card shows it (terminum-kanban.md AC-134).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub doing: Option<String>,
 }
 
 /// What the plan's details show.
@@ -320,7 +323,7 @@ impl Plans {
     pub fn details(&self, key: &str, working: bool, now: u64) -> Option<Details> {
         let cur = self.cur.lock();
         let p = cur.get(key)?;
-        let r = row(p, working, now).unwrap_or(Row { done: 0, total: 0, pct: 0, eta: p.eta_at, updated: p.updated, stale: false, partial: p.incomplete });
+        let r = row(p, working, now).unwrap_or(Row { done: 0, total: 0, pct: 0, eta: p.eta_at, updated: p.updated, stale: false, partial: p.incomplete, doing: None });
         Some(Details { agent: p.agent.clone(), source: p.source, title: p.title.clone(), doing: p.doing.clone(),
                        items: p.items.clone(), row: r, eta_given: p.eta_given })
     }
@@ -333,7 +336,7 @@ impl Plans {
         }
         let a = self.archived.lock();
         let (_, p) = a.iter().rev().find(|(k, _)| k == key)?;
-        let r = row(p, false, now).unwrap_or(Row { done: 0, total: 0, pct: 0, eta: None, updated: p.updated, stale: false, partial: p.incomplete });
+        let r = row(p, false, now).unwrap_or(Row { done: 0, total: 0, pct: 0, eta: None, updated: p.updated, stale: false, partial: p.incomplete, doing: None });
         Some(Details { agent: p.agent.clone(), source: p.source, title: p.title.clone(), doing: p.doing.clone(),
                        items: p.items.clone(), row: Row { eta: None, ..r }, eta_given: None })
     }
@@ -361,7 +364,8 @@ fn row(p: &Plan, working: bool, now: u64) -> Option<Row> {
     // stale as the reminder judges it: a finished plan never, the age from this turn's start at most
     let since = p.updated.max(p.turn_started.unwrap_or(0));
     (total > 0).then(|| Row { done, total, pct: percent(done, total), eta: p.eta_at, updated: p.updated,
-                              stale: working && done < total && now.saturating_sub(since) >= threshold(p.turn_started, now), partial: p.incomplete })
+                              stale: working && done < total && now.saturating_sub(since) >= threshold(p.turn_started, now), partial: p.incomplete,
+                              doing: p.doing.clone() })
 }
 
 #[path = "planrules.rs"]

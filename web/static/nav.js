@@ -145,7 +145,8 @@ export function setTaskMarks(m) { taskMarks = m.marks ?? {}; projectTasks = m.co
 export const taskMarksOf = (id) => taskMarks[id] ?? [];
 export const tasksOfProject = (id) => projectTasks[id] ?? 0;
 
-function row(item, current, onPick, movable, child = false, marked = new Map(), opts = {}) {
+/** One session's row: the list's, and a card's on the board (terminum-kanban.md AC-134). */
+export function row(item, current, onPick, movable, child = false, marked = new Map(), opts = {}) {
   const li = document.createElement("li");
   if (movable) li.dataset.drag = "row";           // dragged by its body (reorder.js); not while a filter shows a subset
   const b = el("button", "item" + (child ? " child" : "") + (item.id === current ? " on" : "") + (item.offline ? " offline" : ""));
@@ -273,7 +274,7 @@ export function listParts(groups, projects, order = []) {
 }
 
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
-  { projects = [], order = [], onClone = null, onProjectNew = null, onGroupNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null } = {}) {
+  { projects = [], order = [], onClone = null, onProjectNew = null, onGroupNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null, show = () => true, empty = "No tmux sessions." } = {}) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
@@ -427,13 +428,14 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     frag.append(sec);
   };
   arranged(groups, projects, order).forEach(({ id, project, group }, i, parts) => {
+    if (!show(project)) return;                    // the board's chosen projects (terminum-kanban.md AC-135)
     if (project) drawProject(project, id);
     else drawGroup(group, id, parts[i + 1]?.project ? projectHue(parts[i + 1].project) : null);
   });
   // the counts stand in one column: as wide as the header with the most buttons
   list.style.setProperty("--acts-n", String(Math.max(2, ...[...frag.querySelectorAll(".acts")].map((a) => a.childElementCount))));
   if (!shown) {
-    frag.append(el("p", "empty", q ? "No session matches. Clear the filter to see all." : "No tmux sessions."));
+    frag.append(el("p", "empty", q ? "No session matches. Clear the filter to see all." : empty));
   }
   if (lastShown !== undefined && current !== lastShown) frag.querySelector(".item.on")?.classList.add("fresh");   // it settles once (motion.css)
   lastShown = current;

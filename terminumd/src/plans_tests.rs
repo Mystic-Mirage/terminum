@@ -31,7 +31,7 @@ fn task_ops_build_the_plan_and_its_percent() {
     p.hook(K, "claude", Some("s1"), &json!({"op": "set", "id": "1", "status": "completed"}), T0 + 5);
     p.hook(K, "claude", Some("s1"), &json!({"op": "set", "id": "2", "status": "in_progress", "text": "beta two"}), T0 + 5);
     assert_eq!(items(&p), vec![pair("alpha", "completed"), pair("beta two", "in_progress"), pair("gamma", "pending")]);
-    assert_eq!(p.row(K, true, T0 + 5), Some(Row { done: 1, total: 3, pct: 33, eta: None, updated: T0 + 5, stale: false, partial: false }));
+    assert_eq!(p.row(K, true, T0 + 5), Some(Row { done: 1, total: 3, pct: 33, eta: None, updated: T0 + 5, stale: false, partial: false, doing: None }));
     p.hook(K, "claude", Some("s1"), &json!({"op": "set", "id": "3", "status": "deleted"}), T0 + 6);
     assert_eq!(p.row(K, true, T0 + 6).unwrap().pct, 50, "deleted: removed, not counted");
     assert_eq!((percent(2, 3), percent(0, 0), percent(1, 8)), (67, 0, 13));

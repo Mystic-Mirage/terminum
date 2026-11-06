@@ -72,6 +72,7 @@ class CiMacTest(unittest.TestCase):
                 r, log = self.run_script(self.root, rc)
                 self.assertEqual(r.returncode, rc, r.stderr)
                 self.assertEqual([x.split()[0] for x in log], ["ssh", "rsync", "ssh", "ssh"], log)
+                self.assertIn("TM_TEST_NO_CLAUDE=1 node web/test/e2e_live.mjs", log[2], "no login's or region's failure reads as a test's")
                 self.assertIn("command -v tmux", log[2], "a runner without tmux is refused, not a run of skipped checks")
                 self.assertFalse((self.root / "runner/ci/terminum.lock").exists(), "the run ended, passed or failed: its lock went")
 

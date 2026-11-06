@@ -146,12 +146,12 @@ class TheListOfPrefixes(unittest.TestCase):
                       r"""|mkdtempSync\(`\$\{shortTmp\(\)\}/([^`$]+)`|mkdtempSync\(path\.join\(os\.tmpdir\(\), "([^"]+)"|ownTmp\("([^"]+)\"""")
 
     def test_it_holds_every_prefix_a_test_uses(self):
-        repo = Path(__file__).resolve().parents[2]
-        listed = subprocess.run(["git", "ls-files", "scripts", "web/test", "ui/test"], cwd=repo, capture_output=True, text=True, check=True)
+        repo = Path(__file__).resolve().parents[2]   # no git: the Mac test runner's tree has none
         found = set()
-        for name in listed.stdout.splitlines():
-            if not name.startswith("scripts/tests/"):
-                found |= {next(filter(None, m)) for m in self.MADE.findall((repo / name).read_text(errors="replace"))}
+        for folder in ("scripts", "web/test", "ui/test"):
+            for path in (repo / folder).rglob("*"):
+                if path.is_file() and path.suffix in (".py", ".sh", ".mjs") and "node_modules" not in path.parts and path.parent.name != "tests":
+                    found |= {next(filter(None, m)) for m in self.MADE.findall(path.read_text(errors="replace"))}
         self.assertGreater(len(found), 10, found)  # a pattern that stopped matching checks nothing
         self.assertEqual([p for p in sorted(found) if not p.startswith(leftovers.FOLDER_PREFIXES)], [])
 

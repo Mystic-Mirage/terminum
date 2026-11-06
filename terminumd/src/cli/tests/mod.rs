@@ -185,7 +185,8 @@ pub fn fake_health(build: &str) -> Value {
 }
 
 /// Not a test: this test binary playing terminumd in a fake package (TM_FAKE_TERMINUMD=1),
-/// serving /health as TM_FAKE_BUILD on the socket until it is killed.
+/// serving /health as TM_FAKE_BUILD on the socket until it is killed, its test's home is
+/// gone or five minutes have passed: a test that fails before killing it leaves nothing running.
 #[test]
 fn fake_terminumd() {
     if std::env::var("TM_FAKE_TERMINUMD").as_deref() != Ok("1") {
@@ -199,9 +200,43 @@ fn fake_terminumd() {
     routes.insert("GET /health".into(), fixed(200, fake_health(&build)));
     eprintln!("level=info event=start build={build}");
     let _served = serve(&sock, routes);
-    loop {
-        std::thread::sleep(Duration::from_secs(60));
+    for _ in 0..300 {
+        std::thread::sleep(Duration::from_secs(1));
+        if !sock.exists() {
+            return;
+        }
     }
+}
+
+#[test]
+fn the_fake_terminumd_ends_when_its_home_goes() {
+    let home = Home::new();
+    let state = home.path("state");
+    std::fs::create_dir_all(&state).unwrap();
+    let mut fake = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "cli::tests::fake_terminumd", "--nocapture", "--test-threads=1", "-q"])
+        .env("TM_FAKE_TERMINUMD", "1")
+        .env("TM_FAKE_BUILD", "b1")
+        .env("TM_APP_DIR", &state)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let sock = state.join("terminumd.sock");
+    let deadline = std::time::Instant::now() + Duration::from_secs(20) * slack();
+    while !sock.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(sock.exists(), "the fake never served its socket");
+    std::fs::remove_dir_all(&state).unwrap();
+    let mut ended = None;
+    while ended.is_none() && std::time::Instant::now() < deadline {
+        ended = fake.try_wait().unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = fake.kill();
+    let _ = fake.wait();
+    assert!(ended.is_some(), "the fake outlived its home");
 }
 
 /// A package folder as scripts/package.py makes it; its terminumd says `answers` to

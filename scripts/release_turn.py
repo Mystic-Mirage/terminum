@@ -7,14 +7,17 @@ problem clearing leftovers, or a runner that could not run them, is said. `--reh
 runs the same chain with no mark and stops before anything is signed or public."""
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release  # noqa: E402
-from worktree import mark_path, releasing  # noqa: E402
+from worktree import mark_path, primary_of, releasing  # noqa: E402
 
 MAC_CAP_S = 3600   # a runner gone quiet must not hold a release
+BUSY_WAIT_S, BUSY_RETRY_S = 1800, 60
 # ci_mac.sh's exits that are no failing test, what each says
 COULD_NOT_RUN = {0: "", 2: "the runner could not run them", 3: "the runner is busy, or its lock is stale"}
 
@@ -23,14 +26,18 @@ def mac_checks(repo):
     """The checks on the Mac test runner (scripts/ci_mac.sh): (failing tests, why they did not run)."""
     if not os.environ.get("TM_MAC_RUNNER"):
         return False, "no TM_MAC_RUNNER"
-    run = subprocess.Popen(["bash", "scripts/ci_mac.sh"], cwd=repo)
-    try:
-        status = run.wait(MAC_CAP_S)
-    except subprocess.TimeoutExpired:
-        run.terminate()
-        run.wait()
-        return False, f"it took over {MAC_CAP_S // 60} minutes"
-    return status not in COULD_NOT_RUN, COULD_NOT_RUN.get(status, "")
+    busy_until = time.monotonic() + BUSY_WAIT_S
+    while True:
+        run = subprocess.Popen(["bash", "scripts/ci_mac.sh"], cwd=repo, start_new_session=True)
+        try:
+            status = run.wait(MAC_CAP_S)
+        except subprocess.TimeoutExpired:
+            os.killpg(run.pid, signal.SIGTERM)   # its ssh too
+            run.wait()
+            return False, f"it took over {MAC_CAP_S // 60} minutes"
+        if status != 3 or time.monotonic() >= busy_until:   # another run, as a rehearsal, may just be ending
+            return status not in COULD_NOT_RUN, COULD_NOT_RUN.get(status, "")
+        time.sleep(BUSY_RETRY_S)
 
 
 def chain(repo, argv):
@@ -44,9 +51,11 @@ def chain(repo, argv):
     if failed:
         print("release: failing tests on the Mac test runner stop it: nothing is public", file=sys.stderr)
         return 1
-    done = subprocess.run([sys.executable, "scripts/release.py", *argv], cwd=repo, env={**os.environ, "TM_GATE_HEAD": head}).returncode
-    if why:   # last, where it is seen: it belongs under Not verified in the release notes
-        print(f"release: the Mac test runner's checks did not run: {why}")
+    said = f"the Mac test runner's checks did not run: {why}" if why else ""
+    env = {**os.environ, "TM_GATE_HEAD": head, "TM_GATE_SAID": said}
+    done = subprocess.run([sys.executable, "scripts/release.py", *argv], cwd=repo, env=env).returncode
+    if said:
+        print(f"release: {said}")
     return done
 
 
@@ -55,9 +64,13 @@ def main(argv):
     if len(argv) != 1 + rehearsing:
         sys.exit("usage: release_turn.py [--rehearse] vX.Y.Z")
     repo = Path(__file__).resolve().parent.parent
-    if rehearsing and releasing(repo):
-        sys.exit("a release is running: rehearse after it")
-    release.check_settings()   # before the long run: neither is any test's fault
+    if rehearsing:
+        if primary_of(repo) == repo:   # its build replaces ui/dist and dist/package under other sessions
+            sys.exit("make rehearse runs in a worktree: python3 scripts/worktree.py add <slug> --kind chore")
+        if releasing(repo):
+            sys.exit("a release is running: rehearse after it")
+    release.check_settings()   # before the long run: none of these is any test's fault
+    release.check_source(argv[-1])
     if rehearsing:
         return chain(repo, argv)
     release.release_notes(argv[0])

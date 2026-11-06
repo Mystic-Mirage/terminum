@@ -78,7 +78,7 @@ def host_or_skip(start, work):
     (scripts/check_docker.py reads this exit)."""
     try:
         return start(work)
-    except (RuntimeError, OSError) as e:
+    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
         print(f"could not run: {e}")
         sys.exit(os.EX_TEMPFAIL)
 

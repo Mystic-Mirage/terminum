@@ -8,7 +8,7 @@
 # wrote the files; the maintainer's own terminal is untouched (CLAUDE.md §9, AC-104)
 if [ -n "${CLAUDECODE:-}" ] && [ -z "${TM_EDIT_PRIMARY:-}" ] \
    && [ "$(git rev-parse --absolute-git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
-  echo "terminum: an agent does not commit in the primary checkout: python3 scripts/worktree.py add <slug> --kind <kind>" >&2
+  echo "terminum: an agent does not commit in the primary checkout (CLAUDECODE is set): python3 scripts/worktree.py add <slug> --kind <kind>" >&2
   exit 1
 fi
 exec bash "$(git rev-parse --show-toplevel)/scripts/security_check.sh" --staged

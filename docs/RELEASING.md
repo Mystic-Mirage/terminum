@@ -54,9 +54,9 @@ again with its one-line installer.
 
 ## Before a release
 
-`make release` runs the full checks first (`make check`, once per tree), then the Mac test runner's when `TM_MAC_RUNNER` is set: failing tests stop it, and nothing else that is about quality does. A runner that could not run them (asleep, busy, a dropped link, over an hour) is said at the end, for Not verified in the release notes. The commit published is the one the checks saw: another session's `make install` leaves `main` alone during a release, and a moved `HEAD` is refused.
+`make release` runs the full checks first (`make check`, once per tree), then the Mac test runner's when `TM_MAC_RUNNER` is set: failing tests stop it, and nothing else that is about quality does. A busy runner is tried again for half an hour. One that could not run them (asleep, still busy, a dropped link, over an hour) is said at the end, and the release's notes get a line saying so under Not verified. The commit published is the one the checks saw: another session's `make install` leaves `main` alone during a release, and a moved `HEAD` is refused.
 
-`make rehearse TAG=vX.Y.Z` is the same chain, from a tree at `origin/main`, up to the built package: nothing signed, tagged, pushed or published, no notes needed, no mark held. Its own target, so a mistyped variable can never publish.
+`make rehearse TAG=vX.Y.Z` is the same chain, from a tree at `origin/main`, up to the built package (its macOS builds codesigned with the Developer ID, as for real): no release key, nothing tagged, pushed or published, no notes needed, no mark held. Its own target, so a mistyped variable can never publish. The primary checkout refuses it: it replaces `ui/dist` and `dist/package`.
 
 `make release` first runs `scripts/leftovers.py --end`, which removes what old test runs left and never
 stops the release (spec AC-102): `make leftovers` only says what it would remove, `make leftovers END=1`
@@ -78,7 +78,7 @@ Two places, both the owner's: GitHub Actions on the owner's Linux runner for eve
 owner's network over ssh (`make test-mac`, `scripts/ci_mac.sh`; `TM_MAC_RUNNER` is its ssh name,
 in the maintainer's `local.mk`): no GitHub runner on a Mac, whose user can do more than a
 CI job should. `make test-mac` runs from `make release`, and by hand after a change to macOS-only
-code (launchd, signing, folders, Finder). Exit: 0 passed, 1 tests failed, 2 they could not run, 3 busy.
+code (launchd, signing, folders, Finder). `scripts/ci_mac.sh` exits 0 passed, 1 tests failed, 2 they could not run, 3 busy (through make, any failure is make's own 2).
 
 The Linux job runs `make test`, clippy with warnings as errors, `e2e_install.sh`, the Files
 panel's checks and the page's live checks (`e2e_live.mjs`, Chromium and WebKit) against a

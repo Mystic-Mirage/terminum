@@ -37,6 +37,8 @@ class Chain(unittest.TestCase):
         with mock.patch.object(release_turn, "mark_path", return_value=self.mark), \
                 mock.patch.object(release_turn.subprocess, "run", fake_run), \
                 mock.patch.object(release_turn.release, "check_settings"), \
+                mock.patch.object(release_turn.release, "check_source"), \
+                mock.patch.object(release_turn, "primary_of", return_value=Path("/elsewhere")), \
                 mock.patch.object(release_turn.release, "release_notes") as notes, \
                 mock.patch.object(release_turn, "mac_checks", return_value=self.mac):
             self.notes = notes
@@ -68,6 +70,7 @@ class Chain(unittest.TestCase):
             self.assertEqual(self.run_chain(["v1.0.0"]), 0)
         self.assertEqual(len(self.released()), 1)
         self.assertIn("did not run: the runner could not run them", said.call_args_list[-1].args[0])
+        self.assertIn("did not run: the runner could not run them", self.calls[-1][1]["TM_GATE_SAID"], "for the release's notes")
 
     def test_a_rehearsal_holds_no_mark_and_needs_no_notes(self):
         self.assertEqual(self.run_chain(["--rehearse", "v1.0.0"]), 0)
@@ -76,8 +79,20 @@ class Chain(unittest.TestCase):
         self.notes.assert_not_called()
 
     def test_a_rehearsal_waits_for_a_release(self):
-        with mock.patch.object(release_turn, "releasing", return_value=True), self.assertRaisesRegex(SystemExit, "a release is running"):
+        with mock.patch.object(release_turn, "primary_of", return_value=Path("/elsewhere")), \
+                mock.patch.object(release_turn, "releasing", return_value=True), self.assertRaisesRegex(SystemExit, "a release is running"):
             release_turn.main(["--rehearse", "v1.0.0"])
+
+    def test_a_rehearsal_stays_out_of_the_primary_checkout(self):
+        with mock.patch.object(release_turn, "primary_of", return_value=Path(release_turn.__file__).resolve().parent.parent), \
+                self.assertRaisesRegex(SystemExit, "runs in a worktree"):
+            release_turn.main(["--rehearse", "v1.0.0"])
+
+    def test_a_tree_that_cannot_release_is_refused_before_the_long_run(self):
+        with mock.patch.object(release_turn.release, "check_settings"), mock.patch.object(release_turn.release, "check_source", side_effect=SystemExit("the tree has changes")), \
+                mock.patch.object(release_turn.subprocess, "run") as run, self.assertRaisesRegex(SystemExit, "the tree has changes"):
+            release_turn.main(["v1.0.0"])
+        run.assert_not_called()
 
 
 class MacChecks(unittest.TestCase):
@@ -91,7 +106,15 @@ class MacChecks(unittest.TestCase):
         self.assertEqual(self.status(0), (False, ""))
         self.assertEqual(self.status(1)[0], True)
         self.assertEqual(self.status(2), (False, "the runner could not run them"))
-        self.assertEqual(self.status(3), (False, "the runner is busy, or its lock is stale"))
+        with mock.patch.object(release_turn, "BUSY_WAIT_S", 0):
+            self.assertEqual(self.status(3), (False, "the runner is busy, or its lock is stale"))
+
+    def test_a_busy_runner_is_tried_again(self):
+        runs = [mock.Mock(wait=mock.Mock(return_value=3)), mock.Mock(wait=mock.Mock(return_value=0))]
+        with mock.patch.dict(os.environ, {"TM_MAC_RUNNER": "runner"}), mock.patch.object(release_turn.subprocess, "Popen", side_effect=runs), \
+                mock.patch.object(release_turn.time, "sleep") as slept:
+            self.assertEqual(release_turn.mac_checks(Path(".")), (False, ""))
+        slept.assert_called_once()
 
     def test_no_runner_is_said(self):
         with mock.patch.dict(os.environ):
@@ -99,11 +122,12 @@ class MacChecks(unittest.TestCase):
             self.assertEqual(release_turn.mac_checks(Path(".")), (False, "no TM_MAC_RUNNER"))
 
     def test_a_runner_gone_quiet_is_ended_and_said(self):
-        run = mock.Mock()
+        run = mock.Mock(pid=4242)
         run.wait.side_effect = [subprocess.TimeoutExpired("x", 1), 0]
-        with mock.patch.dict(os.environ, {"TM_MAC_RUNNER": "runner"}), mock.patch.object(release_turn.subprocess, "Popen", return_value=run):
+        with mock.patch.dict(os.environ, {"TM_MAC_RUNNER": "runner"}), mock.patch.object(release_turn.subprocess, "Popen", return_value=run), \
+                mock.patch.object(release_turn.os, "killpg") as ended:
             failed, why = release_turn.mac_checks(Path("."))
-        run.terminate.assert_called_once()
+        ended.assert_called_once_with(4242, release_turn.signal.SIGTERM)
         self.assertFalse(failed)
         self.assertIn("minutes", why)
 

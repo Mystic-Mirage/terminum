@@ -491,13 +491,13 @@ Scenario: AC-104 failure — failing tests on the Mac test runner are never read
 Scenario Outline: AC-104 edge — the Mac test runner could not run them
   Given <what>
   When make release runs
-  Then it goes on and its last line says "the Mac test runner's checks did not run: <why>"
+  Then it goes on, the release's notes get a Not verified line saying "the Mac test runner's checks did not run: <why>", and that is its last line too
 
   Examples:
     | what                                                 | why                                     |
     | no answer over ssh, a dropped link, a failed rsync   | the runner could not run them           |
     | no tmux, rustup or Playwright's browsers on it       | the runner could not run them           |
-    | another run holds its lock, or a stale one           | the runner is busy, or its lock is stale |
+    | another run holds its lock for half an hour, or a stale one | the runner is busy, or its lock is stale |
     | it runs for over an hour (it gets SIGTERM)           | it took over 60 minutes                 |
     | no TM_MAC_RUNNER                                     | no TM_MAC_RUNNER                        |
 
@@ -510,8 +510,9 @@ Scenario: AC-104 failure — a commit the checks did not see
 Scenario: AC-104 happy path — the rehearsal
   When anyone runs make rehearse TAG=v0.32.0 in a tree at origin/main
   Then it runs make release's chain: leftovers, the full check, the Mac test runner's, the build of the package
-  And it prints "v0.32.0: rehearsal passed on 4f2a91c07: not signed, not tagged, not pushed, not published"
-  And it reads no key, runs neither gh nor git tag nor git push, needs no release notes and holds no release mark
+  And it prints "v0.32.0: rehearsal passed on 4f2a91c07: no release signature, not tagged, not pushed, not published"
+  And its macOS builds are codesigned with the Developer ID, as for real; it reads no release key, runs neither gh nor git tag nor git push, needs no release notes and holds no release mark
+  And in the primary checkout, whose ui/dist and dist/package it would replace, it refuses: "make rehearse runs in a worktree"
   And while a release runs it refuses: "a release is running: rehearse after it"
 
 Scenario Outline: AC-104 edge — Docker's step cannot run

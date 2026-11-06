@@ -161,7 +161,9 @@ class Fresh(Repo):
                         "git log -3", "git diff", "git fetch origin", "git stash list", "git worktree list", "make land SLUG=x",
                         "echo x > local.mk", "echo x > project-memory/log.md", "echo x > /dev/null", f"ls {tracked} 2>/dev/null",
                         "rm /tmp/some-file 2>/dev/null", "echo x > /tmp/some-file", 'echo x > "$SCRATCH/out"', "python3 - <<'EOF'\nopen('f') > 1\nEOF",
-                        f"cat > /tmp/x <<'EOF'\nrm -rf {tracked}\nEOF", f"git -C {tree} commit -m x", f"cd {tree} && git add x && rm y"):
+                        f"cat > /tmp/x <<'EOF'\nrm -rf {tracked}\nEOF", f"git -C {tree} commit -m x", f"cd {tree} && git add x && rm y",
+                        "sed -i '' 's/a/b/' /tmp/x", "perl -pi -e 's/a/b/' /tmp/x", "sed -i.bak -e s/a/b/ /tmp/x", "(( n > 1 )) && echo y",
+                        "[[ a > b ]] && echo y", 'cd "$WORK" && rm f && git add x', 'pushd "$WORK" && touch g'):
             self.assertFalse(self.shell_refused(command, self.primary), command)
         for command in (f"echo x > {tracked}", "git add x", "git commit -m x", "rm x", "echo x > project-memory/log.md", "rm project-memory"):
             self.assertFalse(self.shell_refused(command, tree), command)

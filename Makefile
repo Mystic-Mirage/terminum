@@ -12,7 +12,7 @@
 #   make package    the release package in dist/package (tarball, install.sh, SHA256SUMS)
 #   make release TAG=vX.Y.Z   tag HEAD, build, sign (key via ssh-agent and the Keychain) and
 #                   publish; only when the maintainer asks for it (CLAUDE.md §10)
-#   make rehearse TAG=vX.Y.Z  what make release does, stopping before anything is signed or public
+#   make rehearse TAG=vX.Y.Z  what make release does up to the built package: no release key, nothing public
 #   make land SLUG=x  a worktree's targeted checks, then merged, pushed, the checkout updated, the tree deleted
 #   make leftovers  what old test runs left (AC-102); END=1 removes it, as make release does first
 #   make signing-key       the maintainer's release key (once)

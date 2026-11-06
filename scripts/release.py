@@ -198,12 +198,14 @@ def main(argv):
     check_settings()
     head = check_source(tag)
     check_gate(head)
-    if rehearsing:   # as far as nothing is public or signed: no key, no gh, no tag, no push
+    if rehearsing:   # as far as nothing is public: no release key, no gh, no tag, no push
         build(tag)
         check_unmoved(head)
-        print(f"{tag}: rehearsal passed on {head[:9]}: not signed, not tagged, not pushed, not published")
+        print(f"{tag}: rehearsal passed on {head[:9]}: no release signature, not tagged, not pushed, not published")
         return
     notes = release_notes(tag)
+    if os.environ.get("TM_GATE_SAID"):   # what the gate could not run (release_turn.py)
+        notes = f"{notes.rstrip()}\n\n**Not verified:** {os.environ['TM_GATE_SAID']}\n"
     draft = check_unpublished(tag)
     build(tag)
     sign(package.OUT / "SHA256SUMS")

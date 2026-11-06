@@ -95,7 +95,7 @@ behavior change: tests happy, failure, edge paths
 | `scripts/e2e_*.py` | remote hosts |
 browsers: Chromium and WebKit, a wide and a phone size
 tests, experiments, cleanup: !attach to, !type into, !end what they did not start; end own processes by pid (`Popen.pid`, a pidfile their wrapper writes, a process group they made) or `tmux -L <own socket> kill-server`; !pattern on this machine (`pkill -f`): the installed terminumd's control clients and ssh links and the user's processes can match a test's command line
-one exception: `scripts/leftovers.py`, from `make leftovers END=1` or `make release`: one exact test command, no parent, over 6 h old, read again just before, SIGTERM by pid; dead `tm-*` tmux sockets; folders with a test's prefix in the temporary folders, nothing recent or open in them (AC-102)
+one exception: `scripts/leftovers.py`, from `make leftovers END=1`, `make release` or `make rehearse`: one exact test command, no parent, over 6 h old, read again just before, SIGTERM by pid; dead `tm-*` tmux sockets; folders with a test's prefix in the temporary folders, nothing recent or open in them (AC-102)
 end everything started (terminumd, tmux servers, ssh stand-ins, browsers, containers, temporary folders) on pass, fail or signal (`finally`, SIGTERM/SIGHUP turned into an exit so it runs: `scripts/e2e_ws.py`)
 before delivering: look for leftovers of your runs (`ps`, `tmux -L`/`-S` sockets, `docker ps`), end them as above; a leftover is a test bug to fix, not only to end
 guard: `make check` runs each step under `scripts/check_step.py`, which fails one that leaves something (AC-102)
@@ -150,7 +150,7 @@ when: only on the maintainer's request in the current session, in their words ("
 request covers, in order: `/simplify` (`simplify` skill) over every change since the newest `v*` tag, fixes applied > on a minor release `/docs-review` (`docs-review` skill) over the same > changes and release notes landed (§9) > `make release`
 **only failing tests block a release:** its full test run is the gate; a docs finding, a skipped review, a build's warning, a leftover is said, !stops it
 version: the number the maintainer names; words without one ("a minor release", "a small one") !choose it. Else: next patch `x.y.Z+1` when all since the newest `v*` tag is fixes or small changes to existing UI (a new button, a label, a look); next minor `x.Y+1.0` for a new feature or screen, a changed protocol, install or upgrade; in doubt the patch; !major unless named. Say the number and why when writing its release notes
-try: `make rehearse TAG=vX.Y.Z`, the same chain until before signing: no request needed, nothing signed or public; from a tree at `origin/main`
+try: `make rehearse TAG=vX.Y.Z`, the same chain up to the built package (its macOS builds codesigned with the Developer ID, as `make install`'s): no request needed, no release key, nothing tagged or public; from a tree at `origin/main`
 how: only `make release TAG=vX.Y.Z`: clears old leftovers > full checks > the Mac test runner's (could not run: said, goes on) > builds > signs > tags `HEAD` > pushes the tag > publishes; report the release URL
 fails: report, stop; !sign with `ssh-keygen -Y` by hand; !push, !move, !delete a `v*` tag; !create, !edit, !upload to, !delete a release by hand
 forks: !approve a fork's workflow run

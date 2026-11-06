@@ -116,7 +116,7 @@ Scenario: AC-01 happy path — sessions, windows and panes
 Scenario: AC-01 happy path — what runs in a pane
   Given rows running Claude Code (its process named by its version, "2.1.302", whatever the window's title), Codex (also as npm's "node", by its screen), OpenCode (its program "opencode") and a shell
   Then a row's line under its title names Claude Code's program "claude", never its version
-  And each row, before its title, and the header, before the shown pane's title, show Claude Code's mark, Codex's mark, OpenCode's mark (their owners' trademarks, outside terminum's licenses: NOTICE) or the terminal icon (white on a dark gray tile with small round corners); a build without the marks' files shows the terminal icon for them
+  And each row, before its title, and the header, before the shown pane's title, show Claude Code's mark, Codex's mark, OpenCode's mark (their owners' trademarks, outside terminum's licenses: NOTICE) or the terminal icon (`docs/UI-GUIDELINES.md`); a build without the marks' files shows the terminal icon for them
 Scenario: AC-01 happy path — a folder's color
   Given rows in ~/work/api, ~/work/web, ~/notes and two in ~/tools, and a row in ~/work/api/db
   Then the bar left of each row (and of the header's title), at one place in every row, is a pastel color of its folder: rows in the same folder (on the same host) share it, folders not inside one another get hues as far apart as their count allows
@@ -178,9 +178,9 @@ Scenario: AC-02 edge — the terminal hidden behind Files or View
   And when the terminal is shown again ("screens" on) terminumd sends "hist" "reset" and a full screen, with what was printed meanwhile
 Scenario: AC-02 edge — a page out of focus and a hidden page
   Given a browser window in sight, its page out of focus ("pause" with hidden false), while the user types in another app
-  Then terminumd keeps its stream and refreshes its list as for a page in front; the page only gives up sizing (AC-13)
-  When a page is hidden ("pause" with hidden true, or with no hidden field)
-  Then its stream stops, also one it opens while hidden, and starts once the page is in sight
+  Then terminumd keeps its stream and refreshes its list as for a page in front, drawn as they come; the page only gives up sizing (AC-13)
+  When a page is hidden (another tab, a minimized window, a locked phone: "pause" with hidden true, or with no hidden field)
+  Then its stream stops, also one it opens while hidden, and starts once the page is in sight, with the screen and the list within 2 s
 Scenario: AC-02 failure — the capture fails
   When "capture-pane" answers %error (the pane closed meanwhile)
   Then the page shows "This pane has closed. Pick another one." for that pane only, and the log names the command and the error
@@ -228,7 +228,7 @@ Scenario: AC-03 happy path — undo and redo
   When on a phone the user swipes quickly along the input (under 0.3 s, at least 48 px, at least twice as far across as up or down, not from a screen edge)
   Then a swipe to the right sends → (as the arrow key) and one to the left the program's Undo (as ⌘Z, with a toast "Undo"; where the program has none the toast says so and nothing is sent)
   When on a phone the user taps a word in an agent's input box twice quickly
-  Then the word is selected with iOS's handles (the keyboard goes down; a tap on the input brings it back), and a finger held on the selection opens the menu above with Cut, Clear and Copy
+  Then the word is selected and a finger held on it opens the menu above: terminum-terminal.md AC-40
 Scenario Outline: AC-03 happy path — special keys by name
   When the user presses "<key>"
   Then terminumd sends "send-keys -t %3 <name>" and tmux encodes it for the pane's mode (application cursor keys in vim and mc)
@@ -448,7 +448,7 @@ Scenario: AC-09 security — the page proves the server, and never sends its sec
 Scenario: AC-09 security — private files and the socket
   Then "~/.terminum" is 0700 and everything terminumd and the installer create in it is 0600 (files) or 0700 (folders), while what it makes for the user keeps the umask terminumd was started with (launchd's or systemd's, or the shell's that ran `terminum` in direct mode): the tmux server it starts, so every terminal and what runs in it, and the files and folders Files makes (new, a new file saved, a drop on the tree), on a host's Agent too (pasted and uploaded files for a pane stay 0600 in their 0700 folder, terminum-terminal.md AC-36: a copy keeps that mode); the CLI talks to terminumd through the Unix socket "~/.terminum/state/terminumd.sock" (health, the password, sign-out), never with a sign-in over TCP; "/internal/*" and the socket's routes over TCP answer 404
 Scenario: AC-09 security — the page runs no content
-  Then the page's CSP is "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'", terminal output reaches only the panel's Markdown rules and Mermaid strict, and a link never navigates the page
+  Then the page's CSP is "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'", terminal output reaches only what `terminum-terminal.md` §9 Security names, and a link never navigates the page
   And every answer, a refusal too, carries "X-Content-Type-Options: nosniff", "Referrer-Policy: no-referrer", "Cache-Control: no-store" (unless it sets its own), "Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()", "Cross-Origin-Opener-Policy: same-origin" and "Cross-Origin-Resource-Policy: same-origin"
 ```
 
@@ -920,18 +920,7 @@ Settings `~/.terminum/settings.json` (every key optional):
  "hosts": {"devbox": {"ssh": ["-p", "2222", "alex@devbox.example"], "files": "enabled"}}}
 ```
 
-Layout checkpoint `~/.terminum/state/layout.json` (terminum-lifecycle.md AC-15):
-
-```json
-{"version": 1, "boot": "8F2C…", "at": 1792000000,
- "sessions": [{"name": "main", "windows": [{"index": 1, "name": "api", "layout": "b1a2,180x50,0,0{90x50,0,0,3,89x50,91,0,4}",
-   "panes": [{"id": "%3", "dir": "/Users/alex/work/api", "kind": "shell"}, {"id": "%4", "dir": "/Users/alex/work/api", "kind": "other", "program": "claude"}]}]}],
- "hosts": ["devbox"]}
-```
-
-The checkpoint also names its server's identity: `"identity": "6db00afe9596fc57"` at the top for terminum's tmux, in each of `servers` for the others (terminum-lifecycle.md AC-96).
-
-Last lines `state/lastlines/local@terminum/6db00afe9596fc57_3.json` (terminum-lifecycle.md AC-96; `…_3.before.json` from before a restart): `{"key": "tmux:local:terminum:%3", "session": "main", "window": "api", "dir": "/Users/alex/work/api", "at": 1792000000, "text": "…"}`.
+Layout checkpoint and last lines: `terminum-lifecycle.md` §9 Data formats.
 
 Sign-ins `state/signins.json` (AC-09): `{"items": [{"sha256": "…", "id": "…", "proof_key": "…", "expires": 1794592000, "by": "password"}]}`. Workspaces, bookmarks and the password live in `workspaces.json`, `web-bookmarks.json` and `web.json`.
 
@@ -943,7 +932,7 @@ Sign-ins `state/signins.json` (AC-09): `{"items": [{"sha256": "…", "id": "…"
 | `tmux.socket` / `TM_TMUX_SOCKET` | `terminum` | `tm-test` | the local server's `-L` name (OQ-01); its config `~/.terminum/tmux.conf` |
 | `TM_TMUX` | `tmux` on PATH, then Homebrew's and the system's folders | `/opt/homebrew/bin/tmux` | the tmux binary |
 | `attach` | `{}` | `{"default": ["work"]}` | sessions of the user's own tmux servers on this Mac by `-L` socket ("default": plain `tmux`); a host's are `hosts.<name>.attach` (terminum-remote.md); how many: AC-89 |
-| `tmux.history` | `12000` | `20000` | `history-limit`, 1000–1000000 (AC-19) |
+| `tmux.history` | `12000` | `20000` | `history-limit`: lines tmux keeps and a page may load, 1000–1000000 (AC-19) |
 | `TM_HISTORY` | `10000` | `20000` | lines a page may load |
 | `size`, `page.lines`, `page.screenMode` | — | — | not used: reported once (AC-19) |
 | `themes.default`, `themes.hosts`, `themes.sessions` | local, hosts `*` remote | — | theme rules (AC-12) |
@@ -951,13 +940,11 @@ Sign-ins `state/signins.json` (AC-09): `{"items": [{"sha256": "…", "id": "…"
 | `page.markdownSize` | `14` | `16` | rendered Markdown's size, 10–32 px (AC-19) |
 | `page.colorScheme` | none | `"Nord"` | the menu's color scheme (AC-12) |
 | `page.followAgent` | `true` | `false` | the menu's "Follow the agent's folder" for a browser with no choice (AC-01) |
-| `page.widgets`, `page.folds` | `true` | `false` | widgets and folds for a browser with no choice (`terminum-terminal.md`) |
-| `TM_WRITABLE_ROOTS` | `$HOME:/tmp` | `$HOME:/tmp:/opt/work` | Roots |
 | `TM_APP_DIR` | `~/.terminum/state` | `/tmp/tm-test` | state folder; tests use a private one |
 | `TM_LOG` | `info` | `debug` | log level |
 | `web.json` | no password | `{"allow_hosts": ["proxy.example"]}` | the password's hash (`terminum password`) and names another proxy forwards besides `*.ts.net` (AC-09, AC-10) |
 
-Listed elsewhere: `restore`, `lastLines` and the install's variables in `terminum-lifecycle.md`; `hosts.*` in `terminum-remote.md`; `midi.soundfont` in `terminum-files.md`.
+Listed elsewhere: `page.widgets`, `page.folds` in `terminum-terminal.md`; `restore`, `lastLines` and the install's variables in `terminum-lifecycle.md`; `hosts.*` in `terminum-remote.md`; `TM_WRITABLE_ROOTS` and `midi.soundfont` in `terminum-files.md`.
 
 ### Performance
 
@@ -965,9 +952,8 @@ Listed elsewhere: `restore`, `lastLines` and the install's variables in `terminu
 |---|---|---|
 | Open a pane (theme, 1000 lines, screen) | p95 < 1 s | no measurement (section 7) |
 | List refresh with 60 panes | < 50 ms terminumd time | `scripts/bench_load.py` |
-| 500K-entry folder, first page | p95 < 2.5 s | `scripts/bench_ls.sh` |
 
-The other budgets are in AC-20's scenarios.
+The other budgets are in AC-20's scenarios; a large folder's in `terminum-files.md` §9 Performance.
 
 ### Constraints and limits
 
@@ -987,11 +973,11 @@ Limits told in their cases: a set-buffer command (AC-03), a pane's grid and resi
 
 ### Security
 
-- The listener, the sign-in, Host and Origin: AC-09, AC-10. Writes need `Content-Type: application/json`; only the Mac's own, unforwarded requests may leave the `Origin` out; no CORS headers. launchd holds the port from the moment the agent is loaded (socket activation), also while terminumd is down, restarting or upgraded, so no other program can serve a page in the page's origin. Residual: before the agent is first loaded (or after `terminum uninstall`, or when the port was already taken at bootstrap, which `terminum status` reports; and on Linux or with `TM_NO_LAUNCHD`, where terminumd binds the port itself) another program can bind `127.0.0.1:<port>` and serve its own page, which can ask for the password (the proof protects only a page that is already loaded and reconnects); `tailscale serve` then forwards to it as well. Any local program can try passwords on loopback, against the brakes. A script injected into the page could read the storage, which the CSP is there to prevent.
+- The listener, the sign-in, Host and Origin: AC-09, AC-10. Writes need `Content-Type: application/json`; only the Mac's own, unforwarded requests may leave the `Origin` out; no CORS headers. launchd holds the port (`terminum-lifecycle.md` AC-08); what is left when it does not, and passwords tried on loopback: `SECURITY.md`. A script injected into the page could read the storage, which the CSP is there to prevent.
 - tmux commands: arguments and typing as "The control client" says (AS-11, probed: a folder named `#(cmd)` would run `cmd`); `send-keys -l` is never given a newline the user did not type.
 - The page: CSP as AC-09; terminal output is text; Markdown raw HTML off; links open new tabs with `noopener`.
-- Files: writes under Roots on resolved paths; Trash only; regular files only; as `terminum-files.md`.
-- Nothing leaves the Mac by itself except the daily release check (one HEAD request) and the ssh connections the user configured.
+- Files: `terminum-files.md` §9 Security.
+- Nothing leaves the Mac by itself except the release check (`terminum-lifecycle.md` AC-17) and the ssh connections the user configured.
 
 Denied request:
 
@@ -1015,7 +1001,7 @@ Logs go to stderr, the install's log file, by `tracing` (`TM_LOG`), each with an
 2026-10-15T09:14:10.001Z  WARN terminumd::tmux::control: control client timed out event="tmux.timeout" pid=Some(4242)
 ```
 
-`/health` on the socket: `build`, `pid`, `uptime_s`, `port`, `password`, `servers`, `hosts`, `pages`, `tmux`, `service`, `signins`, `workspaces`, `denied_requests`, `rss_mb`, `hooks`.
+`/health` on the socket: `build`, `pid`, `uptime_s`, `port`, `password`, `servers`, `hosts`, `pages`, `tmux` (`ok`, `message`, `started_by`), `service`, `signins`, `workspaces`, `denied_requests`, `rss_mb`, `hooks`.
 
 ## 10. Delivery stages
 

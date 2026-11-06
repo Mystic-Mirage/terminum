@@ -21,17 +21,11 @@ ssh-add --apple-use-keychain ~/.config/iterm-enhancer/release-key \
   && ssh-add -d ~/.config/iterm-enhancer/release-key.pub              # keep it in the Keychain, not loaded
 ```
 
-Then a release is one command, with no prompt: `make release TAG=vX.Y.Z` refuses unless the
-tree is clean, the version is above every `v*` tag and `HEAD` is `origin/main`; it installs
-the UI's dependencies with `npm ci --ignore-scripts`, builds terminumd with `cargo --locked`
-for every platform below ("Builds for remote hosts"; `make toolchain` once: zig and
-cargo-zigbuild pinned in `.toolchain/`; a release without the Linux builds fails, since a Linux
-server installs from the same package), packs `terminum.tar.gz` and the same bytes as
-`terminum-macos.tar.gz` (the name installs before 0.22 ask for: keep it until a release notes
-a floor version below which `terminum upgrade` is no longer supported), signs `SHA256SUMS` through ssh-agent (the key loaded
-for two minutes with the Keychain's passphrase, then removed), checks the signature, and only
-then, if `HEAD` has not moved since the checks (another session's `make install` fast-forwards a clean `main`), tags `HEAD`, pushes the tag and publishes the GitHub release once all its files are
-attached. A failure before signing leaves nothing public.
+Then a release is one command, with no prompt: `make release TAG=vX.Y.Z`. What it refuses and
+does, in order: [terminum-remote.md](specs/terminum-remote.md) AC-86. It needs `make toolchain` once (zig and
+cargo-zigbuild pinned in `.toolchain/`), builds every platform below ("Builds for remote hosts"), and packs
+`terminum.tar.gz` and the same bytes as `terminum-macos.tar.gz` (the name installs before 0.22 ask
+for: keep it until a release notes a floor version below which `terminum upgrade` is no longer supported).
 
 Each macOS terminumd is signed with the maintainer's Developer ID as `io.terminum.terminumd`
 (it embeds `terminumd/macos/Info.plist`), so macOS keeps the folder access the user grants
@@ -42,16 +36,14 @@ the uncommitted `local.mk` beside the Makefile:
 TM_CODESIGN_IDENTITY := Developer ID Application: <name> (<team id>)
 ```
 
-`make release` refuses without it, signs with Apple's secure timestamp (online) and checks
-each binary's Team ID; codesign gets 60 s, so a keychain dialog waiting for "Always Allow"
-fails the build instead of hanging it. No hardened runtime and no notarization: the tarball
-arrives by curl, which sets no quarantine. Without `local.mk`, `make install` signs ad hoc and
-says so; macOS then asks again for protected folders after an upgrade.
+What `make release` and `make install` do with it or without it: spec AC-08 and its §9 "macOS
+identity"; codesign's limit means a keychain dialog waiting for "Always Allow" fails the build
+instead of hanging it. No hardened runtime and no notarization: the tarball arrives by curl, which
+sets no quarantine.
 
 A build's compiler or linker `warning:` is said, by a release and by `make install`, and stops neither.
 
-Release notes go in `docs/releases/vX.Y.Z.md`, landed from a worktree before `make release`; the release
-command refuses an empty or unreadable file and a symlink out of the tree.
+Release notes go in `docs/releases/vX.Y.Z.md`, landed from a worktree before `make release` (what it refuses there: AC-86).
 
 Who else could ship code to users is in [SECURITY.md](../SECURITY.md) ("The installer and
 releases"). Keep the key and its passphrase backed up: a new key makes existing installs refuse
@@ -70,10 +62,9 @@ removes it. `/docs-review` is in CLAUDE.md §10.
 
 ## Builds for remote hosts
 
-`make agents` builds terminumd for `aarch64-apple-darwin`, `x86_64-apple-darwin`,
-`x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl` (static Linux builds with the
-pinned zig); `make package` puts them into `dist/package` (`terminum/agents/<platform>/terminumd`,
-`BUILD`, `AGENT_ID`, `release-signers`, licenses; no scripts) next to `install.sh`, which runs
+`make agents` builds terminumd for the platforms of [terminum-remote.md](specs/terminum-remote.md) AC-86
+(Linux with the pinned zig); `make package` puts them into `dist/package` (what it holds:
+[terminum-lifecycle.md](specs/terminum-lifecycle.md) §9 Package; no scripts) next to `install.sh`, which runs
 the package's terminumd for the Mac's architecture with `install`: the macOS build is the
 installer, the server and the `terminum` command at once. The helper a host gets is the build
 for its platform (`uname -sm`), named by its agent id.

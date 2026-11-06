@@ -318,7 +318,7 @@ Scenario: AC-35 failure — the folder is unknown
 Scenario: AC-36 happy path — paste an image
   Given the shown pane runs on this Mac, or on a host whose files helper is enabled
   When the user pastes an image (a screenshot: PNG, JPEG, GIF, WebP; another type the browser can draw, such as TIFF from Preview or HEIC in Safari, is turned into a PNG first) into the terminal, or presses the hot key Paste over HTTPS with an image on the clipboard
-  Then the image is never typed as text; the page uploads it (300 s to arrive; its limits under "refused or failed"), terminumd saves it where the pane's shell runs ("~/.terminum/tmp/" on the Mac and on a host; folder 0700, file 0600, named by UTC time and 8 random hex digits), and the page pastes the absolute path shell-quoted as text (bracketed when on), no Enter; files older than 7 days go at the next paste, when terminumd starts and once a day (on a host: when its files agent starts and once a day while it runs)
+  Then the image is never typed as text; the page uploads it (300 s to arrive; its limits under "refused or failed"), terminumd saves it where the pane's shell runs ("~/.terminum/tmp/" on the Mac and on a host; folder 0700, file 0600, named by UTC time and 8 random hex digits: `<utc>-<8 hex>.png`), and the page pastes the absolute path shell-quoted as text (bracketed when on), no Enter; files older than 7 days go at the next paste, when terminumd starts and once a day (on a host: when its files agent starts and once a day while it runs)
 
 Scenario: AC-36 happy path — upload and drop
   When the user presses Upload and picks a file, or drops files on the page
@@ -349,8 +349,10 @@ Scenario: AC-36 failure — refused or failed
   When the image is of another type, its bytes do not match, it is over 100 MB, or a third upload starts
   Then nothing is typed and a toast says why ("Two uploads are running already"); a file over 100 MB is not sent, the page saying "<name> is larger than the 100 MB an upload may be: type or paste the path to the file instead (in Finder ⌥⌘C copies it)." (a browser never gives a page a file's path), and terminumd's own "too large" answer says the same, never the server's raw text
   And a third upload is refused before its body is read, so at most two bodies are in memory
-  When the pane's host has no helper, or ssh fails or takes longer than 30 s plus 1 s per 256 KB
-  Then nothing is typed, the toast says to enable the host or shows ssh's message, no partial file is left under the name; when one of several files fails, the rest are not sent and the saved paths are pasted
+  When the pane's host has no helper, or ssh fails or is too slow
+  Then nothing is typed (`terminum-remote.md` AC-85)
+  When one of several files fails
+  Then the rest are not sent and the saved paths are pasted
 ```
 
 ### AC-37 — Selection, copy, phones [MUST / P0]
@@ -380,7 +382,7 @@ Scenario: AC-37 happy path — Ask about a selection
     "> Quote #0007\n> <the selected text's first line>\n> <its next line>\n\n<the question>\n\n"
   And the selected text's blank lines, line ends' spaces and control characters are left out and its tabs are spaces (each would be a key typed); a line ending in an @-word ends in a space (the agent's file list it opened closes before the new line)
   And the view stays where it was (typing elsewhere brings it to the cursor): the user reads on from the text asked about
-  And in a coding agent's box it is typed, its new lines as Ctrl+J (a new line there), so the agent shows it whole: Claude Code folds a paste into "[Pasted text #1 +5 lines]", and so also more than 800 characters it reads at once, so terminumd types a long quote in parts (terminum.md AC-03)
+  And in a coding agent's box it is typed, its new lines as Ctrl+J (a new line there), so the agent shows it whole, a long quote in parts, unfolded (terminum.md AC-03)
   But when the agent's box with it would not stay inside the pane, two rows kept (the rows its box and footer take now, 6 when the page has not found the box, plus the quote's rows at the pane's width less 4), it is pasted there (folded) and the blank line typed after it: a coding agent's box taller than the pane breaks its redraw, which then writes over the answer
   And the pane is measured as the dialog opens, before its field brings a phone's keyboard up (which makes the pane shorter until the dialog closes); a box taller than the screen counts whole
   And in a shell, where Ctrl+J would run the line, it is pasted with the blank line inside the paste
@@ -398,7 +400,7 @@ Scenario: AC-37 happy path — an asked quote stays marked
   And the line stands beside the rows, which stay as they are (copying, iOS's selection), for the rows within a screen of the visible ones; text in a fold or scrolled out of tmux's history has none
 
 Scenario: AC-37 edge — a tablet's trackpad and a hidden page
-  Then a trackpad selection on a tablet stays the browser's own and is copied by a tap on it and Copy; a hidden page (another tab, a minimized window, a locked phone) pauses its stream and gets the screen and the list within 2 s when it is back; a page in sight without focus on a computer (the user types in another app beside it) keeps its stream and the list, drawn as they come, but neither sizes the pane nor reads its agent's turn (terminum.md AC-13, terminum-agents.md AC-93); while it follows the output the page keeps about 2000 lines on a touch screen and 5000 on a computer, dropping the oldest blocks (loaded again on scrolling up)
+  Then a trackpad selection on a tablet stays the browser's own and is copied by a tap on it and Copy; a hidden page and a page in sight without focus: terminum.md AC-02, AC-13, terminum-agents.md AC-93; while it follows the output the page keeps about 2000 lines on a touch screen and 5000 on a computer, dropping the oldest blocks (loaded again on scrolling up)
 
 Scenario: AC-37 failure — the clipboard is not available
   When the page runs over plain HTTP, where the browser's clipboard API is unavailable
@@ -525,7 +527,7 @@ Scenario: AC-40 happy path — the cursor follows taps and arrows
   Then the cursor goes to the character above or below by the page's lines at the view's width (a blank line and a line out of sight count), keeping the column; on the first line ↑ goes to the start, on the last ↓ to the end; on the input's first or last row in tmux too the key goes to the agent as it is (history recall), unless held
   And a menu the agent draws between rules (a question, a permission) is not the input box: ↑ and ↓ go to it as they are
   When the user taps a word in the input box twice quickly
-  Then the word is selected with iOS's handles (the keyboard goes down; the handles take the touches while the selection lasts), and a finger held on it opens the page's menu with Cut, Clear and Copy (terminum.md AC-03): Cut and Clear send the keys Backspace over the selection sends; a selection the keys cannot reach exactly (outside the typed text) offers Copy only
+  Then the word is selected with iOS's handles (the keyboard goes down, a tap on the input brings it back; the handles take the touches while the selection lasts), and a finger held on it opens the page's menu with Cut, Clear and Copy (terminum.md AC-03): Cut and Clear send the keys Backspace over the selection sends; a selection the keys cannot reach exactly (outside the typed text) offers Copy only
 
 Scenario: AC-40 happy path — the panel, status lines, the view
   Then on a phone the input box is a panel at least two rows high, without its rules; the status lines below it (folder, model, context, limits, permission mode) are behind the ⓘ button, remembered per browser; a "/" or "@" list the input opened stays in sight (every other footer line waits, also those it shows only while it works); typing keeps the panel in sight; empty rows below the last text and the cursor are not shown; whole-line key hints ("(ctrl+b to run in background)") are left out on a phone, and a notice pushed right by spaces loses them
@@ -661,9 +663,8 @@ Trace record (`logs/trace-<date>-<time>.jsonl`): `{"at": 1792003600123, "k": 17,
 
 | Key | Default | Example | Effect |
 |---|---|---|---|
-| `tmux.history` (settings.json) | `12000` | `20000` | lines tmux keeps and a page may load; 1000–1000000 |
-| `page.widgets` (settings.json) | `true` | `false` | widgets off (text only) |
-| `page.folds` (settings.json) | `true` | `false` | folds off |
+| `page.widgets` (settings.json) | `true` | `false` | widgets off (text only), for a browser with no choice |
+| `page.folds` (settings.json) | `true` | `false` | folds off, for a browser with no choice |
 | `TM_PASTE_DIR` | `~/.terminum/tmp` | `/tmp/tm-paste` | where pasted files go on the Mac |
 
 ### Performance
@@ -692,7 +693,7 @@ Limits a scenario states are in §5. Only these are not:
 - Bookmarks hold selected terminal text: sent only over a signed-in WebSocket, shown as text.
 - Pasted files: the name is terminumd's (AC-36).
 - Traces: AC-38.
-- Sent history: what the user typed, at rest on the Mac only, sent only to signed-in pages; its secrets: AC-90.
+- Sent history: AC-90; the threat: `SECURITY.md`.
 
 Denied request: `{"t":"unfold","n":5,"to":40000}` → `{"t":"lines","sid":"tmux:local:default:%3","first":5,"lines":[],"error":"Not a fold terminumd told of"}`.
 

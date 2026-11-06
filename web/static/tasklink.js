@@ -10,25 +10,14 @@ export const newTaskUrl = (session, project) => `/kanban/?new=1&session=${encode
 /** The session page showing session `key` (terminum-kanban.md AC-134). */
 export const sessionUrl = (key) => `/sessions/?open=${encodeURIComponent(key)}`;
 
-/** The session this page's address asks for, once: the address goes back to the page's, and the
- *  first list with rows shows it or says it ended (`down(groups, key)`: its server is away, nothing known). */
+/** The session this page's address asks for, once: the address goes back to the page's. */
 export function askedSession() {
-  const asked = new URLSearchParams(location.search);
-  let key = asked.get("open");
+  const asked = new URLSearchParams(location.search), key = asked.get("open");
   if (key) {
     asked.delete("open");
     history.replaceState(null, "", `${location.pathname}${asked.size ? `?${asked}` : ""}`);
   }
-  return {
-    key,
-    came(groups, show, down, say) {
-      if (!key || !groups.length) return;
-      const k = key;
-      key = null;
-      if (groups.some((g) => g.items.some((it) => it.id === k))) show(k);
-      else if (!down(groups, k)) say("That session has ended.", 4000);
-    },
-  };
+  return key;
 }
 
 /** Text for that window to take, once; in private mode it opens empty. */

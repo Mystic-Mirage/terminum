@@ -100,7 +100,6 @@ pub struct Details {
     pub agent: String,
     pub source: Source,
     pub title: Option<String>,
-    pub doing: Option<String>,
     pub items: Vec<Item>,
     pub row: Row,
     pub eta_given: Option<u64>,
@@ -323,9 +322,8 @@ impl Plans {
     pub fn details(&self, key: &str, working: bool, now: u64) -> Option<Details> {
         let cur = self.cur.lock();
         let p = cur.get(key)?;
-        let r = row(p, working, now).unwrap_or(Row { done: 0, total: 0, pct: 0, eta: p.eta_at, updated: p.updated, stale: false, partial: p.incomplete, doing: None });
-        Some(Details { agent: p.agent.clone(), source: p.source, title: p.title.clone(), doing: p.doing.clone(),
-                       items: p.items.clone(), row: r, eta_given: p.eta_given })
+        Some(Details { agent: p.agent.clone(), source: p.source, title: p.title.clone(),
+                       items: p.items.clone(), row: row_or_empty(p, working, now), eta_given: p.eta_given })
     }
 
     /// The pane's newest archived plan (its agent exited), when the pane has no plan of its
@@ -336,9 +334,8 @@ impl Plans {
         }
         let a = self.archived.lock();
         let (_, p) = a.iter().rev().find(|(k, _)| k == key)?;
-        let r = row(p, false, now).unwrap_or(Row { done: 0, total: 0, pct: 0, eta: None, updated: p.updated, stale: false, partial: p.incomplete, doing: None });
-        Some(Details { agent: p.agent.clone(), source: p.source, title: p.title.clone(), doing: p.doing.clone(),
-                       items: p.items.clone(), row: Row { eta: None, ..r }, eta_given: None })
+        Some(Details { agent: p.agent.clone(), source: p.source, title: p.title.clone(),
+                       items: p.items.clone(), row: Row { eta: None, ..row_or_empty(p, false, now) }, eta_given: None })
     }
 
     #[cfg(test)]
@@ -366,6 +363,11 @@ fn row(p: &Plan, working: bool, now: u64) -> Option<Row> {
     (total > 0).then(|| Row { done, total, pct: percent(done, total), eta: p.eta_at, updated: p.updated,
                               stale: working && done < total && now.saturating_sub(since) >= threshold(p.turn_started, now), partial: p.incomplete,
                               doing: p.doing.clone() })
+}
+
+/// `row`, or one with no items for a plan that holds only what it does or its ETA.
+fn row_or_empty(p: &Plan, working: bool, now: u64) -> Row {
+    row(p, working, now).unwrap_or(Row { done: 0, total: 0, pct: 0, eta: p.eta_at, updated: p.updated, stale: false, partial: p.incomplete, doing: p.doing.clone() })
 }
 
 #[path = "planrules.rs"]

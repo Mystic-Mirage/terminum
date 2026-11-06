@@ -65,9 +65,9 @@ const store = {
 if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
-const opened = embedded ? {} : askedSession();     // a session asked for by the address (terminum-kanban.md AC-134)
+let opening = askedSession();                      // a session asked for by the address (terminum-kanban.md AC-134)
 const st = {
-  groups: [], sid: embedded ?? opened.key ?? store.get("sid", null), projects: [], listOrder: [],
+  groups: [], sid: embedded ?? opening ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
   appCursor: false, bracketed: store.get("bracketed", true), insertClipboard: store.get("insertClipboard", true), atMac: false,
@@ -271,7 +271,7 @@ function onMessage(m) {
   rail?.seen(m);
   ask.seen(m); asked.seen(m); rowMenu.seen(m);
   switch (m.t) {
-    case "layout": st.groups = m.groups; place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); opened.came?.(m.groups, pick, serverDown, toast); break;
+    case "layout": st.groups = m.groups; sayAskedGone(); place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
     case "hist":                                    // a reset: another pane, or its scrollback cleared
       if (m.mode === "reset") widgets.folds.reset();
@@ -322,6 +322,13 @@ const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
   if (kind === "part") orderList(ids);
   else saveOrder(send, parent, ids);
 }, () => drawNav(), rowMenu.held);                  // a layout may have come while dragging
+
+/** The first list says whether the address's session is there; `drawNav` then goes on as after any closing. */
+function sayAskedGone() {
+  if (!opening || !st.groups.length) return;
+  if (!findItem(st.groups, opening) && !serverDown(st.groups, opening)) toast("That session has ended.", 4000);
+  opening = null;
+}
 
 function pick(id) {
   const of = !narrow.matches && findItem(st.groups, id)?.item.quickOf;   // a quick shell's row: its pane, with it

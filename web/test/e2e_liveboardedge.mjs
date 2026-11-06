@@ -7,22 +7,19 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit } from "./boardkit.mjs";
+import { boardKit, nap } from "./boardkit.mjs";
 import { check as report, slack, until } from "./check.mjs";
 
-const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 const AGENT = new Set(["agent_stops_with_task_open", "agent_out_of_limits", "agent_process_dies", "pane_closes"]);
 
 export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, stop, start }) {
   let tag = "AC-133";
   const check = (name, ok, extra) => report(`${tag} ${name}`, ok, extra);
-  const { j, newPane, keyOf, hook, endPanes } = boardKit(page, { tmux, work, bin, home, app });
+  const { j, newPane, keyOf, hook, endPanes, card, open } = boardKit(page, { base, tmux, work, bin, home, app });
   const make = async (title, more = {}) => (await j("/api/tasks", "POST", { title, ...more })).id;
   const st = async (id) => (await j(`/api/tasks/${id}`)).status;
-  const card = (id) => `.card[data-id="${id}"]`;
   const colOf = (id) => page.evaluate((s) => document.querySelector(s)?.closest(".col")?.dataset.status ?? null, card(id));
   const isOpen = (sel) => page.evaluate((s) => document.querySelector(s).open, sel);
-  const open = async () => { await page.goto(`${base}/kanban/`); await page.waitForSelector("#board .col"); await nap(250); };
   const drag = (id, column) => page.dragAndDrop(card(id), `.col[data-status="${column}"]`);
   const probes = {
     async rapid_drag_and_back() {

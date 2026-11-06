@@ -7,14 +7,18 @@ import path from "node:path";
 import { until } from "./check.mjs";
 import { ownTmp } from "./testrun.mjs";
 
-export function boardKit(page, { tmux, work, bin, home, app }) {
+export const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+export const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
+/** How a client opens `terminum mcp`, before its calls. */
+export const mcpOpening = [rpc(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } }), rpc(null, "notifications/initialized")];
+
+export function boardKit(page, { base, tmux, work, bin, home, app }) {
   const cli = path.join(ownTmp("tmb-"), "terminum");
   fs.symlinkSync(bin, cli);
   const j = (p, method = "GET", body) => page.evaluate(async ([p, method, body]) => { const r = await fetch(p, { method, headers: method === "GET" ? undefined : { "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) }); return { code: r.status, ...(await r.json().catch(() => ({}))) }; }, [p, method, body]);
   const panes = [];
   const newPane = (name) => {
-    tmux("new-window", "-d", "-n", name);
-    const pane = tmux("list-panes", "-a", "-F", "#{window_name} #{pane_id}").split("\n").find((l) => l.startsWith(`${name} `)).split(" ")[1];
+    const pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", name).trim();
     panes.push(pane);
     return pane;
   };
@@ -26,10 +30,11 @@ export function boardKit(page, { tmux, work, bin, home, app }) {
   const hook = (pane, event, more = {}) => execFileSync(cli, ["hook", "claude"], { input: JSON.stringify({ session_id: `s-${pane}`, cwd: work, hook_event_name: event, ...more }), env: envOf(pane), encoding: "utf8", timeout: 8000 });
   /** One tool of `terminum mcp`, as the pane's agent calls it. */
   const tool = (pane, name, args) => {
-    const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
-    const lines = [rpc(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } }), rpc(null, "notifications/initialized"), rpc(2, "tools/call", { name, arguments: args })];
+    const lines = [...mcpOpening, rpc(2, "tools/call", { name, arguments: args })];
     return execFileSync(cli, ["mcp"], { input: `${lines.join("\n")}\n`, env: envOf(pane), encoding: "utf8", timeout: 8000 });
   };
   const endPanes = () => { for (const pane of panes.splice(0)) tmux("kill-pane", "-t", pane); };
-  return { j, newPane, keyOf, hook, tool, endPanes };
+  const card = (id) => `.card[data-id="${id}"]`;
+  const open = async () => { await page.goto(`${base}/kanban/`); await page.waitForSelector('.col[data-status="TODO"]'); await nap(250); };
+  return { j, newPane, keyOf, hook, tool, endPanes, card, open };
 }

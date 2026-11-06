@@ -6,13 +6,11 @@ import path from "node:path";
 import { boardKit } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
-const nap = (ms) => new Promise((r) => setTimeout(r, ms));
-
 export async function liveBoardSessions(page, opts) {
   const { base, shots } = opts;
-  const { j, newPane, keyOf, hook, tool, endPanes } = boardKit(page, opts);
-  const card = (id) => `.card[data-id="${id}"]`;
-  const open = async (q = "") => { await page.goto(`${base}/kanban/${q}`); await page.waitForSelector("#board .col"); await nap(250); };
+  const { j, newPane, keyOf, hook, tool, endPanes, card, open } = boardKit(page, opts);
+  /** The project key's menu, and a press in it. */
+  const inProjects = async (what) => { await page.click("#fproject summary"); await page.click(`#fproject ${what}`); };
   await open();
   const a = newPane("cardrow"), b = newPane("cardother"), key = await keyOf(a), other = await keyOf(b);
   const project = (await j("/api/task-projects", "POST", { name: "Billing" })).id;
@@ -70,8 +68,7 @@ export async function liveBoardSessions(page, opts) {
   // AC-135: the project in the head, its sessions beside the columns
   await open();
   check("AC-135 with no project chosen the key says All projects", /All projects/.test(await page.textContent("#fproject summary")), await page.textContent("#fproject summary"));
-  await page.click("#fproject summary");
-  await page.click('#fproject .projrow button:has-text("Billing")');
+  await inProjects('.projrow button:has-text("Billing")');
   check("AC-135 a name chooses that project, in the URL", await until(() => new URL(page.url()).searchParams.get("project") === project), page.url());
   check("AC-135 the key says it", /Billing/.test(await page.textContent("#fproject summary")) && await page.isVisible("#fproject summary .pdot"));
   check("AC-135 its menu closes", !(await page.evaluate(() => document.querySelector("#fproject").open)));
@@ -83,24 +80,20 @@ export async function liveBoardSessions(page, opts) {
   check("AC-135 a session in no project does not", !(await listed()).includes(other), (await listed()).join());
   await page.goto(`${base}/kanban/?project=${empty}`);
   check("AC-135 a project with no session says so", await until(async () => /No sessions here/.test(await page.textContent("#sidecol")), 4000), await page.textContent("#sidecol"));
-  await page.click("#fproject summary");
-  await page.click('#fproject .projrow button:has-text("Default")');
+  await inProjects('.projrow button:has-text("Default")');
   check("AC-135 Default holds the sessions in no project", await until(async () => (await listed()).includes(other)), (await listed()).join());
-  await page.click("#fproject summary");
-  await page.click('#fproject .projrow:has-text("Billing") input');
+  await inProjects('.projrow:has-text("Billing") input');
   check("AC-135 a tick adds a project", await until(() => /,/.test(new URL(page.url()).searchParams.get("project") ?? "")), page.url());
   check("AC-135 the key says how many", /\+1/.test(await page.textContent("#fproject summary")), await page.textContent("#fproject summary"));
   await page.click('#fproject button:has-text("All projects")');
   check("AC-135 All projects clears it", await until(() => !new URL(page.url()).searchParams.has("project")), page.url());
   check("AC-135 and the column holds the whole list", await until(async () => (await listed()).includes(other)));
-  await page.click("#fproject summary");
-  await page.click('#fproject .projrow button:has-text("Default")');
+  await inProjects('.projrow button:has-text("Default")');
   await page.goto(`${base}/kanban/`);
   check("AC-135 this browser remembers the project", await until(() => new URL(page.url()).searchParams.get("project") === "default"), page.url());
   await page.goto(`${base}/kanban/?project=${project}`);
   check("AC-135 an address that names one wins", await until(async () => /Billing/.test(await page.textContent("#fproject summary"))));
-  await page.click("#fproject summary");
-  await page.click('#fproject button:has-text("All projects")');
+  await inProjects('button:has-text("All projects")');
   await page.waitForFunction(() => !new URL(location.href).searchParams.has("project"));
 
   // a press on a row opens it; a task's mark stays on the board
@@ -109,8 +102,7 @@ export async function liveBoardSessions(page, opts) {
   await page.waitForURL("**/sessions/**", { timeout: 8000 });
   check("AC-135 a press opens the session", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, other), 8000));
   await open();
-  await page.waitForSelector("#sidecol .taskmark", { state: "attached", timeout: 4000 }).catch(() => {});
-  await page.click(`#sidecol .item[data-id="${key}"] .taskmark`).catch((e) => check("AC-135 a task's mark can be pressed", false, e.message.split("\n")[0]));
+  await page.click(`#sidecol .item[data-id="${key}"] .taskmark`, { timeout: 4000 });
   check("AC-135 a task's mark opens its window, no page loading", await until(() => page.evaluate(() => document.querySelector("#taskbox").open)));
   await page.click("#taskclose");
 
@@ -151,7 +143,6 @@ export async function liveBoardSessions(page, opts) {
 export async function liveBoardSessionsPhone(page, { base }) {
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector("#colswitch button");
-  await page.waitForTimeout(300);
   const tabs = await page.evaluate(() => [...document.querySelectorAll("#colswitch button")].map((t) => t.dataset.status));
   check("AC-135 a phone's switch ends with Sessions, TODO first", tabs[0] === "TODO" && tabs.at(-1) === "Sessions", tabs.join());
   check("AC-135 the project key stands left of Find", await page.evaluate(() => { const p = document.querySelector("#fproject").getBoundingClientRect(), f = document.querySelector("#filters .search").getBoundingClientRect(); return p.right <= f.left && Math.abs(p.top - f.top) < 8; }));

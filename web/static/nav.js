@@ -51,7 +51,9 @@ export function stateIcon(state, size) {
   return wrap;
 }
 
-let hues = new Map();                  // each folder's hue, for the list as last drawn (AC-01)
+let hues = new Map();                  // each folder's hue (AC-01)
+/** The folders' hues of `groups`: for a list, and a row drawn without one (a card's, terminum-kanban.md AC-134). */
+export const seeFolders = (groups) => { hues = folderHues(groups.flatMap((g) => g.items.map(folderKey))); };
 // a coding agent's own mark (their owners' trademarks, outside terminum's licenses: NOTICE)
 const MARKS = { claude: ["agents/claude.svg", "Claude Code"], codex: ["agents/codex.svg", "Codex"] };
 // a program shown by its mark alone, by its name as tmux has it (no coding agent's input box: its own full screen)
@@ -81,6 +83,7 @@ let lastShown;                         // the session shown when the list was la
 export function folderBar(item, shown = false, busy = false, project = null) {
   const d = el("span", "pbar" + (shown ? " on" : "") + (busy ? " busy" : ""));
   const key = folderKey(item), hue = key && hues.get(key);
+  if (busy) d.style.animationDelay = `-${Math.round(performance.now()) % 1400}ms`;   // one breath, however often its row is drawn anew (style.css pulse-bar)
   if (project) d.style.setProperty("--dot", projectColor(project));   // a project's rows: its color, not the folder's (AC-92)
   else if (hue != null) d.style.setProperty("--dot", `oklch(var(--dir-l) var(--dir-c) ${hue.toFixed(1)})`);
   d.title = (key ? `Folder ${key.split("\n")[1]}` : "No folder") + (busy ? ", working" : "");
@@ -161,7 +164,7 @@ export function row(item, current, onPick, movable, child = false, marked = new 
   for (const task of taskMarksOf(item.id)) {
     const t = el("span", "taskmark", task);
     t.title = `Open ${task} on the board`;
-    t.addEventListener("click", (e) => { e.stopPropagation(); location.href = taskUrl(task); });
+    t.addEventListener("click", (e) => { e.stopPropagation(); if (opts.onTask) opts.onTask(task); else location.href = taskUrl(task); });
     head.append(t);
   }
   if (item.plan) head.append(planPct(item, onPick));
@@ -274,11 +277,11 @@ export function listParts(groups, projects, order = []) {
 }
 
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
-  { projects = [], order = [], onClone = null, onProjectNew = null, onGroupNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null, show = () => true, empty = "No tmux sessions." } = {}) {
+  { projects = [], order = [], onClone = null, onProjectNew = null, onGroupNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null, onTask = null, show = () => true, empty = "No tmux sessions." } = {}) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
-  hues = folderHues(groups.flatMap((g) => g.items.map(folderKey)));
+  seeFolders(groups);
   const down = new Map(groups.filter((g) => g.host && !g.attached && g.state && g.state !== "attached").map((g) => [g.host, g.state]));
   let shown = 0;
   const { kids, topsOf, leftOf } = membership(groups, projects);
@@ -325,11 +328,11 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       const ul = el("ul");
       ul.dataset.project = p.id;
       for (const top of rows) {
-        const li = row(top, current, onPick, !q, false, marked, { onClone, project: p });
+        const li = row(top, current, onPick, !q, false, marked, { onClone, onTask, project: p });
         const ks = kids(top);
         if (ks.length) {
           const kl = el("ul", "kids");
-          for (const k of ks) kl.append(row(k, current, onPick, false, true, marked, { project: p }));
+          for (const k of ks) kl.append(row(k, current, onPick, false, true, marked, { onTask, project: p }));
           li.append(kl);
         }
         ul.append(li);
@@ -413,13 +416,13 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       let parent = null;
       const kid = (it) => {
         if (!parent.kids) parent.append(parent.kids = el("ul", "kids"));
-        parent.kids.append(row(it, current, onPick, false, true, marked));   // no Clone: a pane of its window
+        parent.kids.append(row(it, current, onPick, false, true, marked, { onTask }));   // no Clone: a pane of its window
       };
       const quicks = (it) => { for (const k of quickOf.get(it.id) ?? []) kid(k); };
       for (const it of items) {
         if (quickOf.has(it.quickOf)) continue;     // listed under its pane
         if (!q && it.pane > 1 && parent) { kid(it); quicks(it); continue; }
-        parent = row(it, current, onPick, !!g.wid && !q, false, marked, { onClone: g.new ? onClone : null });   // no tmux, no Clone
+        parent = row(it, current, onPick, !!g.wid && !q, false, marked, { onTask, onClone: g.new ? onClone : null });   // no tmux, no Clone
         ul.append(parent);
         quicks(it);
       }

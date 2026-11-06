@@ -10,8 +10,10 @@ import { askConfirm, askName } from "./dialogs.js";
 import { takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
-import { filterBar, filters, hasFilter, projectHue, query } from "./kanbanfilters.js";
-import { sessionStrip, sessionsColumn, sessionsPage } from "./kanbanside.js";
+import { projectInk } from "./listparts.js";
+import { seeFolders } from "./nav.js";
+import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
+import { sessionStrip, sessionsColumn } from "./kanbanside.js";
 import { $, COLUMNS, api, button, el, iconButton, say } from "./kanbanutil.js";
 
 const PAGE = 200;
@@ -83,9 +85,8 @@ function sessionLine(t) {
   if (s.closed) return line("closed", "session closed");
   if (s.state === "failed") return line("failed", `failed: ${(s.why || "an error").replaceAll("_", " ")}`);
   if (s.state === "waiting") return line("waiting", "waits for you", s.why);
-  if (s.state === "working") return null;
-  if (!s.agent) return open ? line("stopped", "no agent") : null;
-  return open ? line("stopped", "stopped, task open") : null;
+  if (s.state === "working" || !open) return null;
+  return line("stopped", s.agent ? "stopped, task open" : "no agent");
 }
 
 function showState(foot, t) {
@@ -96,12 +97,12 @@ function showState(foot, t) {
 
 /** Its session's row, the list's own, drawn anew only when that row changed (AC-134). */
 function showSession(c, t) {
-  const item = t.session && !t.session.closed ? liveRows.get(t.session.key) : null;
-  const now = item ? JSON.stringify([item, projectOf(t.project)?.color]) : "";
-  if (now === (c.rowDrawn ?? "")) return;
+  const item = t.session && !t.session.closed ? liveRows.get(t.session.key) : null, p = projectOf(t.project);
+  const now = item ? JSON.stringify([item, p?.color]) : "";
+  if (now === c.rowDrawn) return;
   c.rowDrawn = now;
   c.querySelector(".csession")?.remove();
-  if (item) c.append(sessionStrip(item, projectOf(t.project)));
+  if (item) c.append(sessionStrip(item, p));
 }
 
 function card(t) {
@@ -109,6 +110,7 @@ function card(t) {
   c.dataset.id = t.id;
   c.draggable = true;
   c.tabIndex = 0;
+  c.rowDrawn = "";
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
   const menu = iconButton("icon cmove", "ellipsis", "Move to…", "Move to…", (b) => moveMenu(t, b));
@@ -117,7 +119,7 @@ function card(t) {
   const foot = el("div", "cfoot");
   const p = projectOf(t.project);
   const proj = el("span", "cproj", p?.name ?? "Default");
-  proj.style.setProperty("--proj", projectHue(p));
+  proj.style.setProperty("--proj", projectInk(p));
   foot.append(proj, el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
@@ -194,6 +196,13 @@ function dropOn(column, before) {
   change(t, before ? { before } : { order_end: true });
 }
 
+function tabFor(name) {
+  const tab = button(null, name, () => showColumn(name));
+  tab.dataset.status = name;
+  tab.setAttribute("role", "tab");
+  return tab;
+}
+
 /** The columns stand once; a draw fills them, each keeping its scroll. */
 const columns = new Map(COLUMNS.map((column) => {
   const col = el("section", "col"), head = el("h2", "colhead"), count = el("span", "count"), list = el("div", "cards");
@@ -208,24 +217,20 @@ const columns = new Map(COLUMNS.map((column) => {
     const under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging?.id; });
     dropOn(column, under?.dataset.id);
   });
-  const tab = button(null, column, () => showColumn(column));
-  tab.dataset.status = column;
-  tab.setAttribute("role", "tab");
-  return [column, { col, count, list, tab, drawn: "" }];
+  return [column, { col, count, list, tab: tabFor(column), drawn: "" }];
 }));
 /** A phone's pages: the columns, then the project's sessions (AC-135). */
 const SESSIONS = "Sessions";
-const sessionsTab = button(null, SESSIONS, () => showColumn(SESSIONS));
-sessionsTab.dataset.status = SESSIONS;
-sessionsTab.setAttribute("role", "tab");
-const pages = new Map([...[...columns].map(([name, { col, tab }]) => [name, { col, tab }]), [SESSIONS, { col: sessionsPage(), tab: sessionsTab }]]);
-$("board").replaceChildren(pages.get(SESSIONS).col, ...[...columns.values()].map((c) => c.col));
+const sessionsTab = tabFor(SESSIONS);
+const side = sessionsColumn({ chosen: () => filters().project, openTask, onCount: (n) => { sessionsTab.textContent = `${SESSIONS} ${n}`; } });
+const pages = new Map([...columns, [SESSIONS, { col: side.col, tab: sessionsTab }]]);
+$("board").replaceChildren(side.col, ...[...columns.values()].map((c) => c.col));
 $("colswitch").replaceChildren(...[...pages.values()].map((p) => p.tab));
 
 /** A column is built anew only when what it shows changed; a drag's card stays until it ends. */
 function draw() {
   if (dragging) return;
-  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = hasFilter();
+  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed();
   for (const [column, part] of columns) {
     const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have.map((t) => ({ ...t, session: t.session?.key })), n, !!filtered]);   // a session's state changes on its card alone (sessionsCame)
     part.count.textContent = String(n);
@@ -269,12 +274,14 @@ function sessionsCame(groups) {
   const items = groups.flatMap((g) => g.items ?? []);
   meta.sessions = items.map((it) => ({ key: it.id, title: it.title }));
   liveRows = new Map(items.map((it) => [it.id, it]));
-  side.layout(groups);                             // first: the folders' hues are the list's
+  seeFolders(groups);
+  side.layout(groups);
+  const shown = new Map([...document.querySelectorAll(".card")].map((c) => [c.dataset.id, c]));
   for (const t of [...cards.values()].flat()) {
-    if (!t.session) continue;
-    const it = liveRows.get(t.session.key);
+    const it = t.session && liveRows.get(t.session.key);
+    if (!t.session || (!it && t.session.closed)) continue;
     const now = it ? { key: it.id, state: it.state, agent: it.agent, why: it.why, closed: false } : { key: t.session.key, closed: true };
-    const c = document.querySelector(`.card[data-id="${t.id}"]`);
+    const c = shown.get(t.id);
     if (JSON.stringify(now) !== JSON.stringify(t.session)) {
       t.session = now;
       if (c) showState(c.querySelector(".cfoot"), t);
@@ -315,7 +322,6 @@ async function madeHidden(t) {
 }
 
 const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); }, newProject });
-const side = sessionsColumn({ chosen: () => filters().project, openTask: (id) => openTask(id), onCount: (n) => { sessionsTab.textContent = `${SESSIONS} ${n}`; } });
 const windowed = taskWindow({ getMeta: () => meta });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden });
 

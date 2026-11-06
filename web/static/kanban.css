@@ -22,7 +22,7 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 #fproject { flex: none; }
 #fproject summary { max-width: 180px; }
 .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--proj, var(--muted)); }
+.pdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--proj); }
 .projrow { display: flex; align-items: center; }
 .projrow .projtick { flex: none; width: auto; padding-right: 0; }
 .projrow button { flex: 1 1 0; min-width: 0; }
@@ -37,8 +37,10 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 .cards { display: flex; flex-direction: column; gap: var(--sp-2); padding: 0 var(--sp-2) var(--sp-2); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 /* the project's sessions: the session list's, a column that stays while the others scroll by (AC-135) */
 #sidecol { position: sticky; left: 0; z-index: 2; }
-#board.noside { grid-template-columns: repeat(5, minmax(220px, 1fr)); }
-#board.noside #sidecol { display: none; }
+@media (min-width: 861px) {
+  #board.noside { grid-template-columns: repeat(5, minmax(220px, 1fr)); }
+  #board.noside #sidecol { display: none; }
+}
 .colempty { margin: var(--sp-1) var(--sp-1) 0; font-size: var(--fs-small); color: var(--muted); }
 .colmore { align-self: center; flex: none; }
 
@@ -67,10 +69,9 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 .csession { margin: 0; padding: 0; list-style: none; min-width: 0; }
 .csession .item { background: var(--surface-2); padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1); }
 @media (hover: hover) { .csession .item:hover { background: var(--surface-1); } }
-.csession :is(.idx, .taskmark) { display: none; }
+.csession :is(.idx, .taskmark, .item .s) { display: none; }
 .csession .pbar { min-height: 22px; opacity: .75; }
 .csession .pbar.busy { opacity: 1; }
-.csession .item .s { display: none; }
 .cdoing { display: block; padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* its windows */
@@ -124,7 +125,6 @@ dialog .markdown img { max-width: 100%; }
   .col { flex: 0 0 100%; box-sizing: border-box; scroll-snap-align: start; scroll-snap-stop: always; background: none; border-radius: 0; }
   .colhead { display: none; }
   #sidecol { position: static; order: 1; }
-  #board.noside #sidecol { display: flex; }
   #boardhead #sidetoggle { display: none; }
   #fproject summary { max-width: 120px; }
   .cards { padding: 0 var(--gutter) var(--gutter); }

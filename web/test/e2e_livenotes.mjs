@@ -7,10 +7,10 @@
 // closed session orphans them.
 import fs from "node:fs";
 import path from "node:path";
+import { mcpOpening, rpc } from "./boardkit.mjs";
 import { check, shownPane, until } from "./check.mjs";
 import { ownTmp } from "./testrun.mjs";
 
-const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export async function liveNotes(page, { tmux, work, bin, home, app }) {
@@ -38,7 +38,7 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     };
     /** One call through `terminum mcp`: its answer, or the list's. */
     const mcp = async (name, args) => {
-      const lines = [rpc(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } }), rpc(null, "notifications/initialized"),
+      const lines = [...mcpOpening,
         name ? rpc(2, "tools/call", { name, arguments: args }) : rpc(2, "tools/list")];
       await inPane(`terminum mcp > mcp.out <<'EOF'\n${lines.join("\n")}\nEOF\n`);
       return fs.readFileSync(path.join(dir, "mcp.out"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((x) => x.id === 2);

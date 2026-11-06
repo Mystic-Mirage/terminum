@@ -77,7 +77,7 @@ Two places, both the owner's: GitHub Actions on the owner's Linux runner for eve
 (`.github/workflows/ci.yml`, label `terminum`), and the macOS checks on a Mac test runner of the
 owner's network over ssh (`make test-mac`, `scripts/ci_mac.sh`; `TM_MAC_RUNNER` is its ssh name,
 in the maintainer's `local.mk`): no GitHub runner on a Mac, whose user can do more than a
-CI job should. `make test-mac` runs from `make release`, and by hand after a change to macOS-only
+CI job should. `make test-mac`, with no real Claude Code (a login and a region it cannot promise), runs from `make release`, and by hand after a change to macOS-only
 code (launchd, signing, folders, Finder). `scripts/ci_mac.sh` exits 0 passed, 1 tests failed, 2 they could not run, 3 busy (through make, any failure is make's own 2).
 
 The Linux job runs `make test`, clippy with warnings as errors, `e2e_install.sh`, the Files

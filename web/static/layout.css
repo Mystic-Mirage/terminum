@@ -73,7 +73,6 @@ body.wide #main > * { grid-column: 1 / 2; }   /* both lines: an absolute child's
 body.wide #bar { grid-row: 1; }
 body.wide #restored { grid-row: 3; }
 body.wide #sized { grid-row: 5; }
-body.wide #marksfull { grid-row: 6; }
 body.wide #asks { grid-row: 7; }
 body.wide #term { grid-row: 8; }
 body.wide #over { grid-row: 8; align-self: start; }
@@ -93,3 +92,5 @@ body.wide #filewin .winhead { display: flex; padding: 6px 6px 6px 12px; }   /* o
 /* the build under the session list's buttons, small and quiet (app.js showBuild) */
 #buildinfo { margin: 4px 10px 0; font: var(--fs-micro)/1.3 var(--ui); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #buildinfo:empty { display: none; }
+/* the Kanban link: in the header where it fits, in the settings menu everywhere */
+body:not(.wide) #tokanban { display: none; }

@@ -21,11 +21,6 @@ body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibi
 :is(#marksfabn, #remindfabn) { position: absolute; right: -6px; top: -6px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 50%;
   font: 700 9.5px/14px var(--ui); font-variant-numeric: tabular-nums; text-align: center; background: var(--t-bg); }
 #marksfabn { background: var(--mark-ink); color: var(--mark); border: 1px solid var(--mark-ink); }
-/* agents' records that went for room (marksfull.js): a warning banner, a line a scope and kind */
-#marksfull { background: var(--warn-fill); color: #fff; padding: 2px 12px; }
-#marksfull .fullline { display: flex; align-items: center; gap: 8px; min-height: 32px; }
-#marksfull .fullline > span { flex: 1; min-width: 0; }
-#marksfull .link { padding: 0; color: inherit; text-decoration: underline; font-weight: 600; white-space: nowrap; }
 /* the bookmarks' pane is a window as View's (panewin.css), its texts in View's type */
 /* nearly round, never quite: the outline drifts slowly */
 @keyframes blob {

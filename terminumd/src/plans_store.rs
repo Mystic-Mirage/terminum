@@ -86,6 +86,11 @@ pub fn hook_event(app: &Shared, key: &str, ev: &Value) -> Option<String> {
     remind
 }
 
+/// Whether the main agent reads `ev`'s answer as context: the one event that may carry words to it.
+pub fn carries_context(ev: &Value) -> bool {
+    !ev["sub"].as_str().is_some_and(|s| !s.is_empty()) && ev["event"].as_str() == Some(remind_event(ev["agent"].as_str().unwrap_or("")))
+}
+
 /// `ev` applied to the plans: (changed, the reminder due).
 fn apply(p: &Plans, key: &str, ev: &Value, working: impl FnOnce() -> bool, now: u64) -> (bool, Option<String>) {
     let (agent, name) = (ev["agent"].as_str().unwrap_or(""), ev["event"].as_str().unwrap_or(""));
@@ -96,13 +101,12 @@ fn apply(p: &Plans, key: &str, ev: &Value, working: impl FnOnce() -> bool, now: 
         _ => false,
     };
     // a subagent's plan tool and tool calls are its own: the session's plan is the main agent's
-    let sub = ev["sub"].as_str().is_some_and(|s| !s.is_empty());
-    if ev["plan"].is_object() && !sub {
+    if ev["plan"].is_object() && !ev["sub"].as_str().is_some_and(|s| !s.is_empty()) {
         p.hook(key, agent, session, &ev["plan"], now);
         changed = true;
     }
     // the reminder rides the event whose output reaches the model: Claude's sync PostToolBatch, Codex's PostToolUse
-    let remind = (!sub && name == remind_event(agent)).then(|| p.post_tool(key, working(), now)).flatten();
+    let remind = carries_context(ev).then(|| p.post_tool(key, working(), now)).flatten();
     (changed, remind)
 }
 

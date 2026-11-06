@@ -2,7 +2,7 @@
 // The session list's menus: a row's on a right click or a long press (Close Session, Clone, Add to Project,
 // Remove from Project, Mark as Unread or Read, Show Last 300 Lines (AC-96), Diagnostics (AC-100), Split Below, Right and Left (its quick shell, AC-88),
 // Move to the Top, to the Bottom, Up, Down, Move to Session…; AC-07, AC-92, AC-93), and a project's, on its ⋯ or a right click on its header (New Window, Rename, the same moves among the
-// projects, Ungroup, Close Project; AC-92), and a tmux session's group's, the same way (New Window,
+// projects, Delete Project, Close Project; AC-92), and a tmux session's group's, the same way (New Window,
 // moves among the groups, Close Group; AC-07). A move reorders the row among its group's: a project's
 // sessions in the project, a tmux session's windows in tmux; a project among the projects. Each is modal (a <dialog>): the
 // page is shaded and takes no press while it is open; a press outside it closes it and does
@@ -11,14 +11,15 @@ import { askConfirm, askName, closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
 import { inside, placeModal } from "./fabpane.js";
 import { floats } from "./fold.js";
-import { groupKey, groupRows, projectColor } from "./nav.js";
+import { groupKey, groupRows, projectColor, taskMarksOf, tasksOfProject } from "./nav.js";
+import { newTaskUrl } from "./tasklink.js";
 import { lastLinesView } from "./lastlines.js";
 import { diagnostics } from "./diag.js";
 
 const $ = (id) => document.getElementById(id);
 const HOLD = 500;                // ms a finger rests before its menu opens
 // each item's icon, by its action (icons.js); a destructive one's is a red ×
-const MARKS = { clone: "copy-plus", project: "folder-plus", unproject: "folder-minus", plan: "list-checks", lastlines: "history",
+const MARKS = { newtask: "list-checks", clone: "copy-plus", project: "folder-plus", unproject: "folder-minus", plan: "list-checks", lastlines: "history",
   diag: "activity", top: "arrow-up-to-line", up: "arrow-up", down: "arrow-down", bottom: "arrow-down-to-line", movewin: "arrow-right-left",
   close: "x", new: "plus", newproject: "plus", rename: "pencil", ungroup: "ungroup", back: "chevron-left", session: "terminal",
   paste: "clipboard", copy: "copy", undo: "undo-2", redo: "redo-2" };
@@ -116,15 +117,16 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     fill(it.title,
       button("Close Session", "close", () => {
         hide();
-        closeSession(it, send);
+        closeSession(it, send, taskMarksOf(it.id));
       }),
       document.createElement("hr"),
       button("Clone", "clone", () => { hide(); clone(it); }),
+      button("New Task…", "newtask", () => { hide(); location.href = newTaskUrl(id, mine?.id); }),
       button("Add to Project…", "project", () => projectMenu(it, mine, x, y)),
       ...(mine ? [button(`Remove from ${mine.name}`, "unproject", () => { hide(); send({ t: "project", action: "remove", id }); })] : []),
       // as if nobody had opened it since its agent finished, on every page, until it is shown again (AC-93)
       // the Plan pane is the shown session's (AC-97): shown first, then opened
-      button("Plan and Notes…", "plan", () => { hide(); li.querySelector(":scope > .item").click(); document.dispatchEvent(new Event("planopen")); }),
+      button("Plan and Tasks…", "plan", () => { hide(); li.querySelector(":scope > .item").click(); document.dispatchEvent(new Event("planopen")); }),
       button(it.unread ? "Mark as Read" : "Mark as Unread", "unread", () => { hide(); send({ t: "unread", id, on: !it.unread }); }, true, it.unread ? "mail-open" : "mail"),
       // what it showed before its tmux restarted, kept by terminumd (AC-96)
       ...(lastLines() > 0 ? [button(`Show Last ${lastLines()} Lines`, "lastlines", () => { hide(); kept.open(id, lastLines()); })] : []),
@@ -208,9 +210,27 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     if (name && name !== p.name) send({ t: "project", action: "rename", project: p.id, name });
   }
 
+  /** A new window of project `p`, after its session `last`; with none, on its host in its folder,
+   *  asked for once (AC-110). */
+  async function newInProject(p, last) {
+    if (last) return send({ t: "clone", id: last, project: p.id });
+    const dir = p.dir ? "" : await askName(`The folder of ${p.name}`, "", "Open", 4096);
+    if (p.dir || dir) send({ t: "projectwindow", project: p.id, dir });
+  }
+
+  function plural(n, one) { return n === 1 ? `1 ${one}` : `${n} ${one}s`; }
+
+  /** Deleted only once asked (AC-110): nothing closes, nothing is lost. */
+  async function deleteProject(p, sessions) {
+    hide();
+    const them = `Its ${plural(sessions, "session")} and ${plural(tasksOfProject(p.id), "task")} move to Default; nothing is closed.`;
+    if (await askConfirm(`Delete the project ${p.name}? ${them}`, "Delete Project")) send({ t: "project", action: "delete", project: p.id });
+  }
+
   /** A project's menu, under its ⋯ `b` or at x, y (a right click on its header): a new session in
-   *  its folder, Rename, moves among the projects as the list shows them, Ungroup (its sessions
-   *  stay, back in their tmux groups), Close Project (its sessions end, after asking). */
+   *  its folder, Rename, moves among the projects as the list shows them, Delete Project (asks; its
+   *  sessions stay, back in their tmux groups, its tasks in Default), Close Project (its sessions
+   *  end, after asking; the project stays). */
   function headMenu(p, b, x, y) {
     if (b && box.open && box.dataset.for === p.id) return hide();
     const here = p.members.filter((k) => item(k));
@@ -221,7 +241,7 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
       if (await askConfirm(`Close the project ${p.name} and ${them}? The programs running in them end.`, "Close Project")) for (const id of here) send({ t: "kill", id });
     };
     fill(p.name,
-      button("New Window", "new", () => { hide(); send({ t: "clone", id: here.at(-1), project: p.id }); }, here.length > 0),
+      button("New Window", "new", () => { hide(); newInProject(p, here.at(-1)); }),
       button("Rename…", "rename", () => { hide(); rename(p); }),
       document.createElement("hr"),
       button("Move to the Top", "top", () => move(0), i > 0),
@@ -229,7 +249,7 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
       button("Move Down", "down", () => move(i + 1), i >= 0 && i < last),
       button("Move to the Bottom", "bottom", () => move(last), i >= 0 && i < last),
       document.createElement("hr"),
-      button("Ungroup", "ungroup", () => { hide(); send({ t: "project", action: "delete", project: p.id }); }),
+      button("Delete Project…", "deleteproject", () => deleteProject(p, here.length)),
       button("Close Project…", "close", closeAll, here.length > 0));
     box.dataset.for = p.id;
     const r = b?.getBoundingClientRect();
@@ -330,5 +350,5 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     box.dataset.for = "";
     open(x, y, byFinger, keepKeys);
   }
-  return { headMenu, groupMenu, hide, show, rename, held, seen: (m) => { kept.seen(m); diag.seen(m); } };
+  return { headMenu, groupMenu, newInProject, hide, show, rename, held, seen: (m) => { kept.seen(m); diag.seen(m); } };
 }

@@ -47,7 +47,12 @@ fn files_api(app: &Shared) -> Router<Shared> {
 /// The routes of the page's listener.
 pub fn pages(app: Shared) -> Router {
     Router::new()
-        .route("/", get(index))
+        .route("/", get(to_sessions))
+        .route("/sessions", get(|| async { axum::response::Redirect::permanent("/sessions/") }))
+        .route("/sessions/", get(index))
+        .route("/kanban", get(|| async { axum::response::Redirect::permanent("/kanban/") }))
+        .route("/kanban/", get(board))
+        .route("/kanban/{id}", get(board))
         .route("/ws", get(crate::page::ws::socket))
         .route("/api/hello", get(hello))
         .route("/api/settings", get(settings))
@@ -64,6 +69,7 @@ pub fn pages(app: Shared) -> Router {
         .route("/fb/", get(panel))
         .route("/fb/{*path}", get(panel_asset))
         .nest("/fb", files_api(&app))
+        .merge(crate::tasks::api::routes())
         .fallback(static_file)
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app)
@@ -133,6 +139,16 @@ async fn agent_guard(State(app): State<Shared>, req: Request, next: Next) -> Res
 
 async fn index(headers: HeaderMap) -> Response {
     http::page_index(&headers)
+}
+
+/// "/" leads to the session list, its query kept (`?trace=1`, AC-38).
+async fn to_sessions(uri: axum::http::Uri) -> Response {
+    let to = uri.query().map_or_else(|| "/sessions/".to_string(), |q| format!("/sessions/?{q}"));
+    axum::response::Redirect::temporary(&to).into_response()
+}
+
+async fn board(headers: HeaderMap) -> Response {
+    http::page_named("kanban.html", &headers)
 }
 
 async fn static_file(req: Request) -> Response {

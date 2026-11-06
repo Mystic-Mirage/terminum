@@ -98,7 +98,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => read(app, page, "files", |a, p| async move { files(&a, &p).await }),
         "size" | "mouse" => super::sizing::handle(app, page, t, &msg),
-        "new" | "newsession" | "split" | "clone" | "rename" | "renamegroup" | "reorder" | "move" | "kill" =>
+        "new" | "newsession" | "split" | "clone" | "projectwindow" | "rename" | "renamegroup" | "reorder" | "move" | "kill" =>
             action(app, page, msg, |a, p, m, at| async move { super::sessions::handle(&a, &p, &m, at).await }),
         "plan" => super::plans::handle(app, page, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
@@ -118,7 +118,6 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),
-        "marksfullseen" => super::marksfull::seen(app, &s("scope"), msg["remind"] == true),
         "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
         "lastlines" => {
             let id = s("id");

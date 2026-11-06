@@ -4,7 +4,7 @@
 terminumd, with this Mac playing the host through scripts/fake_ssh.py (a private tmux server,
 a fake home with a stub `claude` and a ~/.codex folder). Checks: agents switched on (the
 per-agent lines, the plugin and Codex entries, the link socket), a hook and `terminum-host mcp`
-from a host pane reach that host's row (plan, doing, ETA, note, the prompt kept under the host),
+from a host pane reach that host's row (plan, doing, ETA, the prompt kept under the host) and the Mac's board (a task),
 a pane of another tmux with the same socket name is not filed, a refused forward, agents off,
 and agents with files off past the helper's 90 s rule (the longest wait here: about 95 s).
 
@@ -14,6 +14,7 @@ import glob
 import json
 import re
 import os
+import sqlite3
 import stat
 import subprocess
 import sys
@@ -56,7 +57,7 @@ def mcp_lines(n0=1):
     return [{"jsonrpc": "2.0", "id": n0, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             call(n0 + 1, "update_session_plan", {"items": [{"text": "one", "status": "completed"}], "doing": "Checking the host", "eta_minutes": 30}),
-            call(n0 + 2, "add_notes_for_user", {"notes": [{"title": "host parser drops a BOM", "text": "The host's parser drops a BOM.", "kind": "bug"}]})]
+            call(n0 + 2, "create_task", {"title": "host parser drops a BOM", "text": "The host's parser drops a BOM."})]
 
 
 def in_pane(sock, target, cmd, done, timeout=20):
@@ -221,8 +222,12 @@ def main():
         check("AC-99 the host's row has the plan 1 of 3, doing, an ETA",
               key.startswith("tmux:devbox:default:%") and p.get("done") == 1 and p.get("total") == 3 and p.get("doing") == "Checking the host"
               and p.get("eta"), plan)
-        kept = [i for i in json.load(open(os.path.join(t.app, "web-bookmarks.json"))).get("items", []) if i.get("by")] if os.path.exists(os.path.join(t.app, "web-bookmarks.json")) else []
-        check("AC-99 AC-98 the host agent's record is a bookmark of its pane on the Mac", any(i.get("note") == "host parser drops a BOM" and i.get("key") == key for i in kept), kept)
+        db = sqlite3.connect(f"file:{os.path.join(t.app, 'kanban.sqlite')}?mode=ro", uri=True)
+        try:
+            tasks = db.execute("SELECT title, by_agent FROM tasks").fetchall()
+        finally:
+            db.close()
+        check("AC-99 terminum-kanban.md AC-120 the host agent's task stands in the Mac's store, by an agent", ("host parser drops a BOM", 1) in tasks, tasks)
         metas = [json.load(open(m)) | {"_dir": os.path.dirname(m)} for m in glob.glob(os.path.join(t.home, "sessions", "*", "meta.json"))]
         kept = [m for m in metas if "plan the host check" in open(os.path.join(m["_dir"], "sent.jsonl")).read()] if metas else []
         check("AC-99 the sent history keeps the prompt under the host, not local", kept and all(m.get("host") == "devbox" for m in kept), metas)

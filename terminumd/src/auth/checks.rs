@@ -190,7 +190,7 @@ pub fn decide(listener: &Listener, method: &str, path: &str, header: impl Fn(&st
         return Err(Denial::new(401, "bad_session", "Missing or expired sign-in"));
     }
     let write = !matches!(method, "GET" | "HEAD");
-    let upload = write && (p == "/paste" || p == "/upload" || p == "/api/midi" || p == "/fb/api/fs/upload");   // bytes, not JSON
+    let upload = write && (p == "/paste" || p == "/upload" || p == "/api/midi" || p == "/fb/api/fs/upload" || p == "/api/task-files");   // bytes, not JSON
     // A browser names the page on every write and WebSocket; only these may lack an Origin:
     // a write from no page at all, on this Mac and not forwarded.
     let origin_needed = is_websocket(&p, &header) || upload || (write && !local);

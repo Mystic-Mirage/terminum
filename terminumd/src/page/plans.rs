@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The Page's view of plans (AC-97): the rows' summaries, the Plan pane's `plan` answer, and
-//! `plannew` to every page on a change. An agent's notes for the user are its bookmarks and
-//! reminders (AC-98, agentmarks.rs).
+//! `plannew` to every page on a change.
 
 use std::sync::Arc;
 

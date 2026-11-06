@@ -2,6 +2,8 @@
 /* The design code (docs/UI-GUIDELINES.md §2): every step, surface, size, shape and timing of the
    Page, by name. A rule uses these names, never a new value; a new value is added here first, with
    its role. The Panel imports this file too (ui/src/style.css) and maps its own colors onto it. */
+:root { --proj-l: .80; --proj-c: .075; }     /* a project's color: pastel, light, muted, the hues far apart (nav.js) */
+:root.light { --proj-l: .60; --proj-c: .085; }
 :root {
   /* ---- grid: 4px; 2px only inside a control (icon to edge, a ring's offset) ---- */
   --sp-0: 2px;    /* inside a control */

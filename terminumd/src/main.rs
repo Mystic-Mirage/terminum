@@ -13,7 +13,6 @@ mod activation;
 mod agent;
 mod agentapi;
 mod agentmarks;
-mod agentmarks_scope;
 mod api_fs;
 mod app;
 mod attach;
@@ -52,6 +51,7 @@ mod screen;
 mod sent;
 mod settings;
 mod sock;
+mod tasks;
 mod termtext;
 #[cfg(test)]
 mod testutil;
@@ -85,6 +85,11 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
     let changed = Arc::new(tokio::sync::Notify::new());
     let local = Server::new("local", socket, link, changed.clone());
     let dir = cfg.dir.clone();
+    // an Agent keeps no tasks: the Mac's terminumd holds the one store
+    let tasks = Arc::new(if cfg.agent { tasks::store::Store::absent() } else { tasks::store::Store::open(dir.join("kanban.sqlite")) });
+    let projects = if cfg.agent { Default::default() } else { page::projects::Projects::load(tasks.clone(), &dir.join("projects.json")) };
+    let task_marks = tasks::marks::Marks::default();
+    task_marks.refresh(&tasks);
     Arc::new(App {
         store: Store::load(dir.join("workspaces.json"), env.ttl_days, bus.clone()),
         roots: Roots::parse(&env.roots),
@@ -118,8 +123,10 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         restore: Default::default(),
         recorder: page::trace::Recorder::new(cfg.home.join("logs")),
         bookmarks: Mutex::new(page::bookmarks::Store::load(dir.join("web-bookmarks.json"))),
-        marks_full: Default::default(),
-        projects: Mutex::new(page::projects::Projects::load(dir.join("projects.json"))),
+        projects: Mutex::new(projects),
+        tasks,
+        task_lines: Default::default(),
+        task_marks,
         unread: Mutex::new(page::unread::Marks::load(&dir)),
         turns: Default::default(),
         plans: plans::Plans::load(&dir),
@@ -237,6 +244,13 @@ async fn serve() {
     page::bookmarks::adopt(&app);   // a file before version 3: its bookmarks take their projects
     tracing::info!(event = "start", port = env.port, pid = std::process::id(), build = config::build_id(), socket = %env.tmux_socket);
     tokio::spawn(axum::serve(cli, sock::routes(app.clone())).into_future());
+    let checked = app.clone();
+    tokio::task::spawn_blocking(move || {
+        checked.tasks.quick_check();
+        if let Err(e) = tasks::files::sweep(&checked.tasks, &checked.cfg.dir, tasks::ops::now()) {
+            tracing::warn!(event = "tasks.sweep", error = %e);
+        }
+    });
     hosts::sync(&app);
     attach::sync(&app);
     webaccess::apply(&app);

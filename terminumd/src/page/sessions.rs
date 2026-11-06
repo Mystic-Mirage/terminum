@@ -76,7 +76,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
     let t = msg["t"].as_str().unwrap_or("");
     let asked_on = at.as_ref().map(|(key, ..)| key.as_str());
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
-    if matches!(t, "new" | "newsession" | "split" | "clone") && !allowed_now(page) {
+    if matches!(t, "new" | "newsession" | "split" | "clone" | "projectwindow") && !allowed_now(page) {
         error(page, "Wait a second: one new window, session or split a second.", None);
         return;
     }
@@ -85,6 +85,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
         "newsession" => new_session(app, page, asked_on, &s("name")).await,
         "split" => split(app, page, asked_on, &s("id"), &s("how")).await,
         "clone" => clone_window(app, page, asked_on, &s("id"), msg["project"].as_str()).await,
+        "projectwindow" => project_window(app, page, asked_on, &s("project"), &s("dir")).await,
         "rename" => rename(app, &s("id"), msg["name"].as_str().unwrap_or("")).await,
         "renamegroup" => rename_group(app, &s("group"), &s("name")).await,
         "reorder" => reorder(app, &s("group"), msg["ids"].as_array().cloned().unwrap_or_default()).await,
@@ -161,6 +162,48 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
         super::projects::tell(app);
     }
     created(app, page, asked_on, &server, &new, note).await;
+    Ok(())
+}
+
+/// The [+] of a project with no session (AC-110): a window in its folder, on its host, in the tmux
+/// session named after it. `dir`, when given, is its folder from now on.
+async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, project: &str, dir: &str) -> Result<(), String> {
+    let (name, host, kept) = {
+        let ps = app.projects.lock();
+        let p = ps.list().iter().find(|p| p.id == project).ok_or("That project is gone.")?;
+        (p.name.clone(), p.host.clone(), p.dir.clone())
+    };
+    let dir = if dir.is_empty() { kept } else { dir.to_string() };
+    let server = match &host {
+        Some(h) => app.tmux.host(h).ok_or_else(|| format!("{h} is not connected."))?,
+        None => app.tmux.local.clone(),
+    };
+    if dir.is_empty() {
+        return Err("This project has no folder yet.".into());
+    }
+    args::check_text(&dir)?;
+    if server.is_local() && !std::path::Path::new(&dir).is_dir() {
+        return Err(format!("The folder {dir} does not exist."));
+    }
+    let session = args::check_session_name(&name.replace([':', '.'], "-"))?;
+    let exists = server.run(format!("has-session -t {}", args::quote(&format!("={session}")))).await.is_ok();
+    let line = if exists {
+        format!("new-window -t {} -c {} -P -F '#{{pane_id}}'", args::quote(&format!("={session}:")), args::format_arg(&dir))
+    } else {
+        format!("new-session -d -s {} -c {} -P -F '#{{pane_id}}'", args::format_arg(&session), args::format_arg(&dir))
+    };
+    let made = server.run(line).await.map_err(|e| format!("No new window: {}", said(&e)))?;
+    let pane = made.into_iter().next().unwrap_or_default();
+    let (key, pid, a) = (server.key(&pane), project.to_string(), app.clone());
+    let folder = dir.clone();
+    let joined = tokio::task::spawn_blocking(move || {
+        let mut ps = a.projects.lock();
+        ps.set_dir(&pid, folder.clone())?;
+        ps.add(&key, Some(&pid), None, host, folder, None).map(|_| ())
+    }).await.map_err(|e| e.to_string()).and_then(|r| r);
+    joined?;
+    super::projects::tell(app);
+    created(app, page, asked_on, &server, &pane, None).await;
     Ok(())
 }
 

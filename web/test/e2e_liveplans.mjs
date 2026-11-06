@@ -2,10 +2,10 @@
 // AC-97, AC-98 against a real private terminumd and tmux server (e2e_live.mjs): in a pane of its
 // own a long-lived shell (the pane's program stays the same, as an agent's does) runs the built
 // binary as `terminum hook claude` with Claude Code's own PostToolUse shapes and as `terminum mcp`
-// fed JSON-RPC lines; the row, the header and the Plan pane follow; the records the agent keeps for
-// the user (AC-98) are its bookmarks and reminders, settled with ✓ through terminumd and kept across
-// its restart; outside tmux, for a pane terminumd does not know and with terminumd stopped the tools
-// answer their errors. Then a phone shows the plan.
+// fed JSON-RPC lines; the row, the header and the Plan pane follow, across terminumd's restart; a task the
+// agent makes (terminum-kanban.md AC-115) has no session, so the pane's section Tasks stays empty; outside
+// tmux, for a pane terminumd does not know and with terminumd stopped the tools answer their errors. Then a
+// phone shows the plan.
 import fs from "node:fs";
 import path from "node:path";
 import { check, within } from "./check.mjs";
@@ -63,9 +63,6 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     return { open: !document.getElementById("planpane").hidden, items: all(".plitem").map((li) => `${li.querySelector(".plmark").textContent} ${li.querySelector(".pltext").textContent} ${li.className}`),
       doing: b.querySelector(".pldoing")?.textContent ?? null, meta: all(".plmeta").map((e) => e.textContent), kept: b.querySelector(".plkept")?.textContent ?? null };
   });
-  // the session's bookmarks' pane: its entries, an agent's with its mark (AC-33, AC-98)
-  const marksState = () => page.evaluate(() => [...document.querySelectorAll("#markpane .mknav li")].map((l) => ({ id: l.dataset.id, agent: !!l.querySelector(".note .agmark"),
-    remind: l.classList.contains("remind"), title: l.querySelector(".note").textContent })));
   const until = async (what, ok, ms = 8000) => {
     let last;
     for (let t = 0; t < ms; t += 150) { last = await what(); if (ok(last)) return last; await wait(150); }
@@ -86,42 +83,28 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     await within("AC-97 the Plan pane lists alpha ✓, beta ▶, gamma ○ from the agent's plan tool", () => until(paneState, (s) => s.open
       && s.items.join("|") === "✓ alpha plitem completed|▶ beta plitem in_progress|○ gamma plitem pending" && s.meta.includes("from the agent's plan tool")));
 
-    // 2. terminum mcp in the same pane: the tool plan wins over the MCP items; doing, ETA, notes kept
+    // 2. terminum mcp in the same pane: the tool plan wins over the MCP items; doing, ETA, a task made
     const before = Math.floor(Date.now() / 1000);
     const a = await mcp([
       rpc(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } }),
       rpc(null, "notifications/initialized"), rpc(2, "tools/list"),
       call(3, "update_session_plan", { items: [{ text: "one", status: "completed" }, { text: "two", status: "pending" }], doing: "Checking the live page", eta_minutes: 30 }),
-      call(4, "add_notes_for_user", { notes: [{ title: "Parser drops a BOM", text: "<b>parser</b> drops a BOM in `src/parse.rs`", kind: "bug", file: "src/parse.rs" },
-        { title: "Decide the paging size", text: "50 or 100 rows a page?", kind: "question", remind: true }] }),
+      call(4, "create_task", { title: "Parser drops a BOM", text: "<b>parser</b> drops a BOM in `src/parse.rs`" }),
       call(5, "get_session_plan", {})]);
     const etas = [hhmm(before + 1800), hhmm(Math.floor(Date.now() / 1000) + 1800)];
     check("AC-97 initialize answers terminum's server, the version asked, and its instructions",
       a[1]?.result?.protocolVersion === "2025-06-18" && a[1]?.result?.serverInfo?.name === "terminum" && /Keep a plan/.test(a[1]?.result?.instructions ?? ""), JSON.stringify(a[1]));
-    check("AC-97 tools/list names the tools; a notification gets no answer", (a[2]?.result?.tools ?? []).map((t) => t.name).join() === "update_session_plan,get_session_plan,add_notes_for_user,get_notes_for_user,update_notes_for_user,delete_notes_for_user"
+    check("AC-97 tools/list names the tools; a notification gets no answer", (a[2]?.result?.tools ?? []).map((t) => t.name).join() === "update_session_plan,get_session_plan,list_tasks,get_task,create_task,take_task,move_task,add_comment,attach_file,get_file,finish_task"
       && Object.keys(a).sort().join() === "1,2,3,4,5", Object.keys(a).join());
     const t3 = textOf(a[3]), eta = /ETA ~(\d\d:\d\d)\.$/.exec(t3)?.[1];
     check("AC-97 update_session_plan with a built-in plan keeps doing and the ETA (now + 30 min), not its items",
       a[3]?.result?.isError === false && /^Doing and ETA stored; items follow your own plan tool \(1 of 3 completed\), so the items sent were not taken, ETA ~\d\d:\d\d\.$/.test(t3) && etas.includes(eta), `${t3} ${etas}`);
-    const ids = /^Kept for the user: bookmark (\w+) "Parser drops a BOM"; reminder (\w+) "Decide the paging size" \(it comes up at each turn end until the user resolves it\)\.$/.exec(textOf(a[4]));
-    check("AC-98 add_notes_for_user answers a bookmark's id and a reminder's, saying when the reminder comes up", a[4]?.result?.isError === false && !!ids, textOf(a[4]));
+    check("AC-115 (terminum-kanban.md) create_task answers the task's id, in TODO", a[4]?.result?.isError === false && /^Kept as T-\d+, in TODO\.$/.test(textOf(a[4])), textOf(a[4]));
     check("AC-97 get_session_plan answers the stored plan as [x] [>] [ ] lines, doing and ETA",
       textOf(a[5]).startsWith(`[x] alpha\n[>] beta\n[ ] gamma\nDoing: Checking the live page\nETA: ~${eta}\n`), textOf(a[5]));
     await within("AC-97 the Plan button's hover shows the agent's ETA: 1 of 3 · ETA ~hh:mm", () => until(() => page.evaluate(() => document.getElementById("curplan").title), (t) => (t ?? "").startsWith(`Plan: 1 of 3 · ETA ~${eta} · updated just now`)));
-    const [bug, later] = [ids?.[1], ids?.[2]];
-    await within("AC-98 the open pane asks again: doing, the ETA as the agent's estimate, and the two records it kept", () => until(paneState, (s) => s.doing === "Checking the live page"
-      && s.meta.some((m) => m.startsWith(`ETA ~${eta} (agent's estimate, given `)) && s.kept === "2 kept for you by the agent: show them"));
-    await page.click("#planbody .plkept button");
-    await within("AC-98 \"show them\" opens the session's bookmarks' pane: the bookmark and the reminder with the agent's mark", () => until(marksState, (m) => m.length === 2
-      && m.some((e) => e.id === bug && e.agent && !e.remind && e.title === "Parser drops a BOM") && m.some((e) => e.id === later && e.agent && e.remind)));
-    const stored = () => { try { return JSON.parse(fs.readFileSync(path.join(app, "web-bookmarks.json"), "utf8")).items; } catch { return null; } };
-    const rec = (id) => (stored() ?? []).find((i) => i.id === id) ?? null;
-    check("AC-98 terminumd keeps them in web-bookmarks.json as the agent's, the reminder a reminder", rec(bug)?.by === "claude" && rec(bug)?.kind === "bug" && rec(later)?.remind === true,
-      JSON.stringify([rec(bug), rec(later)]));
-    for (const id of [bug, later]) { await page.click(`#markpane li[data-id="${id}"] .mkitem`); await page.click("#markpane .mkvdone"); }
-    await within("AC-33 ✓ settles them through terminumd after 5 s: the bookmark deleted, the reminder resolved", () => until(() => ({ b: rec(bug), r: rec(later) }),
-      ({ b, r }) => b === null && !!r?.resolved, 9000));
-    await page.keyboard.press("Escape");
+    await within("AC-97 the open pane asks again: doing, the ETA as the agent's estimate; the task made has no session, so none here (terminum-kanban.md AC-115)", () => until(paneState, (s) => s.doing === "Checking the live page"
+      && s.meta.some((m) => m.startsWith(`ETA ~${eta} (agent's estimate, given `)) && s.kept === "No task in this session."));
 
     // 3. refused: outside tmux, a pane terminumd does not know, terminumd stopped
     const get = [rpc(1, "initialize", {}), call(2, "get_session_plan", {})];
@@ -130,20 +113,20 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     const unknown = await mcp(get, "TMUX_PANE=%99999 ");
     check("AC-97 in a pane terminumd does not know the same error", unknown[2]?.result?.isError === true && /does not run in a terminum pane/.test(textOf(unknown[2])), textOf(unknown[2]));
     await page.keyboard.press("Escape");
-    check("AC-97 the Plan pane is closed (\"show them\" closed it)", (await paneState()).open === false);
+    check("AC-97 Esc closes the Plan pane", (await paneState()).open === false);
     await stop();
     const down = await mcp(get);
     check("AC-97 with terminumd stopped each tool answers it is not running", down[2]?.result?.isError === true && textOf(down[2]) === "terminum is not running; go on without it.", textOf(down[2]));
     const quiet = await inPane(`terminum hook claude < ev0.json; echo "exit $?"`);
     check("AC-97 with terminumd stopped the hook still exits 0, silent", quiet.trim() === "exit 0", quiet);
     await start();
-    await within("AC-97 after a restart the row keeps its plan and the pane its plan; the resolved reminder stays resolved", async () => {
+    await within("AC-97 after a restart the row keeps its plan and the pane its plan", async () => {
       await page.waitForFunction(() => !document.getElementById("status").innerText.includes("not running") && document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 8000 });
       await until(rowInfo, (r) => r.pct === "33%");
       await row().click({ position: { x: 12, y: 8 } });  // its title's side, not the percent (which opens the pane)
       await until(() => page.evaluate(() => [document.getElementById("planfabt").textContent, document.getElementById("curplan").title].join(" | ")), (t) => (t ?? "").startsWith("33% | Plan: 1 of 3 · ETA ~"));
       if (!(await paneState()).open) await page.click("#curplan");
-      await until(paneState, (s) => s.open && s.doing === "Checking the live page" && s.kept === "Nothing kept for you by the agent.");
+      await until(paneState, (s) => s.open && s.doing === "Checking the live page" && s.kept === "No task in this session.");
     });
     await page.keyboard.press("Escape");
 

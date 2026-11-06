@@ -18,6 +18,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::Shared;
+use crate::http::refuse;
 
 pub const MAX_BYTES: usize = 100 << 20;
 const KEEP_DAYS: u64 = 7;
@@ -33,10 +34,6 @@ pub struct PasteQuery {
     #[serde(default)]
     sid: String,
     name: Option<String>,
-}
-
-fn refuse(status: StatusCode, msg: impl Into<String>) -> Response {
-    (status, Json(json!({"error": msg.into()}))).into_response()
 }
 
 fn stamp() -> String {
@@ -55,14 +52,29 @@ fn stamp() -> String {
     format!("{y:04}{m:02}{d:02}-{:02}{:02}{:02}", rest / 3600, rest % 3600 / 60, rest % 60)
 }
 
+/// What `data` is by its first bytes, of the rasters a page may show (never SVG or HTML).
+pub fn raster_mime(data: &[u8]) -> Option<&'static str> {
+    if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if data.starts_with(b"\xff\xd8\xff") {
+        Some("image/jpeg")
+    } else if data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if data.len() >= 12 && &data[..4] == b"RIFF" && &data[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+
 /// The file name for a pasted image of this type, or why not.
 pub fn image_name(content_type: &str, data: &[u8]) -> Result<String, String> {
     let kind = content_type.split(';').next().unwrap_or("").trim().to_lowercase();
-    let (ext, ok) = match kind.as_str() {
-        "image/png" => ("png", data.starts_with(b"\x89PNG\r\n\x1a\n")),
-        "image/jpeg" => ("jpg", data.starts_with(b"\xff\xd8\xff")),
-        "image/gif" => ("gif", data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a")),
-        "image/webp" => ("webp", data.len() >= 12 && &data[..4] == b"RIFF" && &data[8..12] == b"WEBP"),
+    let ext = match kind.as_str() {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
         _ => return Err(format!("Only PNG, JPEG, GIF and WebP images can be pasted, not {}.", if kind.is_empty() { "this kind of file" } else { &kind })),
     };
     if data.is_empty() {
@@ -71,7 +83,7 @@ pub fn image_name(content_type: &str, data: &[u8]) -> Result<String, String> {
     if data.len() > MAX_BYTES {
         return Err("The image is larger than 100 MB.".into());
     }
-    if !ok {
+    if raster_mime(data) != Some(kind.as_str()) {
         return Err(format!("The pasted file is not a {} image.", ext.to_uppercase()));
     }
     Ok(format!("{}-{}.{ext}", stamp(), crate::auth::crypto::random_hex::<4>()))

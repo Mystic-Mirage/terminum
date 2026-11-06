@@ -303,7 +303,6 @@ pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
 /// page (AC-91).
 pub async fn remind(app: &Shared, ended: Vec<String>) {
     crate::page::unread::ended(app, &ended);           // a turn nobody saw end is unread (AC-93)
-    crate::page::marksfull::turn_ended(app, &ended);   // agents' records that went for room meanwhile (AC-98)
     // where the answer ended (AC-90): a hooked pane's was kept at its Stop (sock.rs)
     for k in ended.iter().filter(|k| !app.hooks.has(k)) {
         tokio::spawn(crate::page::answers::keep(app.clone(), k.clone()));

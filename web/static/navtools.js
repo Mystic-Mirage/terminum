@@ -9,6 +9,9 @@ import { hostAgents } from "./hostagents.js";
 import { inside, placeModal } from "./fabpane.js";
 import { banner } from "./banners.js";
 import { stalls } from "./nav.js";
+import { askConfirm } from "./dialogs.js";
+
+export { askConfirm, askName } from "./dialogs.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,38 +21,11 @@ for (const x of document.querySelectorAll("dialog.dlg .dhead .x:not([id])")) {
   x.onclick = () => { const d = x.closest("dialog"); if (d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel"); };
 }
 
-/** Asks `text` with a dialog: true when the user pressed `yes` (else Cancel, ×, Esc). Its question
- *  ("Close the session api?") is the title, what follows it the text. */
-export function askConfirm(text, yes) {
-  const box = $("confirmbox"), [, title = text, more = ""] = /^(.+?\?)\s+(.+)$/s.exec(text) ?? [];
-  $("confirmtitle").textContent = title;
-  $("confirmtext").textContent = more;
-  $("confirmtext").hidden = !more;
-  $("confirmok").textContent = yes;
-  box.returnValue = "";
-  box.showModal();
-  $("confirmok").focus();
-  return new Promise((resolve) => box.addEventListener("close", () => resolve(box.returnValue === "ok"), { once: true }));
-}
-
 /** Close Session (the menu's, a row's): asked first, as the program in it ends; then sent. */
-export async function closeSession(item, send) {
+export async function closeSession(item, send, tasks = []) {
   const prog = item.sub?.[0] || "a program";
-  if (await askConfirm(`Close the session ${item.title}? The program running in it (${prog}) ends.`, "Close Session")) send({ t: "kill", id: item.id });
-}
-
-/** Asks for a name with a dialog: the text typed (trimmed), or null for Cancel and Esc; `yes`
- *  names its button. Enter in the field is the button (the form's first, Cancel, would be). */
-export function askName(text, value, yes = "Rename") {
-  const box = $("namebox");
-  $("nametext").textContent = text;
-  $("nameok").textContent = yes;
-  $("namefield").value = value;
-  $("namefield").onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); box.close("ok"); } };
-  box.returnValue = "";
-  box.showModal();
-  $("namefield").select();
-  return new Promise((resolve) => box.addEventListener("close", () => resolve(box.returnValue === "ok" ? $("namefield").value.trim() : null), { once: true }));
+  const open = tasks.length ? ` ${tasks.join(", ")} ${tasks.length === 1 ? "is" : "are"} open in it.` : "";
+  if (await askConfirm(`Close the session ${item.title}? The program running in it (${prog}) ends.${open}`, "Close Session")) send({ t: "kill", id: item.id });
 }
 
 /** Wires the tools; `current()` is the shown pane's {group, item} or null, `onResize()` refits the terminal. */

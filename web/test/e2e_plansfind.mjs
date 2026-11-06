@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The Plan pane found before a plan (AC-97) against a fake terminumd, at both sizes: a coding
-// agent's row without a plan shows the header's Plan button and no progress circle; "Plan and Notes…" in a row's menu
+// agent's row without a plan shows the header's Plan button and no progress circle; "Plan and Tasks…" in a row's menu
 // and the header ⋯ menu, for any session; the pane without a plan says the agent sent none; a plan whose
 // agent exited is marked finished. Alone: node web/test/e2e_all.mjs webPlansFind.
 import { check, runningIn } from "./check.mjs";
@@ -33,7 +33,7 @@ export async function webPlansFind(browser, name) {
     await page.click("#curplan");
     await pause(page, 300);
     const empty = await paneText(page);
-    check("AC-97 the Plan pane without a plan says the agent sent none, then that it kept nothing (AC-98)", empty === "No plan: the agent has not sent one for this session.For youNothing kept for you by the agent.", empty);
+    check("AC-97 the Plan pane without a plan says the agent sent none, then that the session has no task (terminum-kanban.md AC-113)", empty === "No plan: the agent has not sent one for this session.TasksNo task in this session.", empty);
     await page.keyboard.press("Escape");
     await pause(page, 200);
 
@@ -42,12 +42,12 @@ export async function webPlansFind(browser, name) {
       el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.left + 40, clientY: r.top + 10 })); });
     await page.waitForSelector("#rowmenu[open]");
     const entry = await q(page, () => document.querySelector('#rowmenu button[data-action="plan"]')?.textContent);
-    check("AC-97 a row's menu has Plan and Notes… for any session", entry === "Plan and Notes…", entry);
+    check("AC-97 a row's menu has Plan and Tasks… for any session", entry === "Plan and Tasks…", entry);
     await page.click('#rowmenu button[data-action="plan"]');
     await pause(page, 300);
     const viaRow = await q(page, (b) => ({ asked: null, hidden: document.getElementById("curplan").hidden, shown: document.querySelector(`.item[data-id="${b}"]`)?.getAttribute("aria-current") }), B);
     const asked = f.sent.filter((m) => m.t === "plan").map((m) => m.key);
-    check("AC-97 Plan and Notes… shows the row's session and opens its Plan pane (no header button without an agent)",
+    check("AC-97 Plan and Tasks… shows the row's session and opens its Plan pane (no header button without an agent)",
       /^No plan: /.test(await paneText(page) ?? "") && asked.at(-1) === B && viaRow.hidden, JSON.stringify({ ...viaRow, asked }));
     const inView = await q(page, () => { const r = document.getElementById("planpane").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1 && r.top >= 0 && r.width > 200; });
     check("AC-97 the pane opened from a menu stands in the window", inView, String(inView));
@@ -60,7 +60,7 @@ export async function webPlansFind(browser, name) {
     await page.click("#menubtn");
     await pause(page, 200);
     const menuItem = await q(page, () => { const b = document.getElementById("planmenu"); return !b.hidden && b.getBoundingClientRect().height > 0 ? b.textContent : null; });
-    check("AC-97 the header ⋯ menu has Plan and Notes…", /^Plan and Notes…/.test(menuItem ?? ""), menuItem);
+    check("AC-97 the header ⋯ menu has Plan and Tasks…", /^Plan and Tasks…/.test(menuItem ?? ""), menuItem);
     await page.click("#planmenu");
     await pause(page, 300);
     const fin = await paneText(page);

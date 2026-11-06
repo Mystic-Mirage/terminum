@@ -18,7 +18,7 @@ AC = re.compile(r"\bAC-(\d{2,3})\b")
 HEAD_LINES = 6  # a source file names its cases at its top
 # what breaks everything when it breaks: signing in, the tmux client, a pane's page
 CRITICAL_CARGO = ["auth::", "tmux::", "page::client"]
-DOCKER = re.compile(r"e2e_remote_sshd")  # slow, and it needs Docker: only when changed itself
+DOCKER = re.compile(r"e2e_remote_sshd")  # needs Docker and built binaries as arguments: by hand, never here
 
 
 def git(*args, cwd=REPO):
@@ -113,7 +113,7 @@ def plan(files, cases, root=REPO, tests_of_cases=None):
     named_pages = sorted({pages[f] for f in web if f in pages})
     # every e2e_live*.mjs is a part of e2e_live.mjs, so it runs with the critical step
     shows = bool(rust) or any(f.startswith(("web/static/", "ui/src/")) for f in code) or any(f.startswith("web/test/e2e_live") for f in tests)
-    e2e = [f for f in sorted(tests) if re.fullmatch(r"scripts/e2e_\w+\.py", f) and (f in code or not DOCKER.search(f))]
+    e2e = [f for f in sorted(tests) if re.fullmatch(r"scripts/e2e_\w+\.py", f) and not DOCKER.search(f)]
     steps.append(("build", "make build"))
     if e2e or shows:  # what the e2e checks run
         steps.append(("debug-build", "cd terminumd && cargo build --locked"))

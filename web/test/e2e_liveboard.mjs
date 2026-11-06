@@ -8,6 +8,7 @@ import { check, until, within } from "./check.mjs";
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
 export async function liveBoard(page, { base, tmux, work, shots }) {
+  await sameKinds(page, base, false);
   const card = (id) => `.card[data-id="${id}"]`;
   const inColumn = (status) => page.evaluate((s) => [...document.querySelectorAll(`.col[data-status="${s}"] .card`)].map((c) => c.dataset.id), status);
   const make = async (title, { severity, text } = {}) => {
@@ -81,7 +82,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   // Move to…, the history
   await page.hover(card(second));
   await page.click(`${card(second)} .cmove`);
-  await page.click('.movemenu button:has-text("WAIT FOR HUMAN")');
+  await page.click('#moverows button:has-text("WAIT FOR HUMAN")');
   check("AC-107 Move to… moves it", await until(async () => (await inColumn("WAIT FOR HUMAN")).includes(second)));
   await page.dragAndDrop(card(urgent), '.col[data-status="DONE"]');
   check("AC-107 a drag across columns moves it", await until(async () => (await inColumn("DONE")).includes(urgent)));
@@ -107,7 +108,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click('.tasktext button:has-text("Save")');
   check("AC-107 a text changed says so", await until(async () => /changed its text/.test(await page.textContent("#taskbody .history"))));
   // a comment deleted and a purge go through terminumd's write checks
-  await page.click('.ev-comment button:has-text("Delete")');
+  await page.click('.ev-comment button[aria-label="Delete"]');
   await page.click("#confirmok");
   check("AC-108 a comment is deleted", await until(() => page.evaluate(() => !document.querySelector("#taskbody .ev-comment"))));
   check("AC-108 and the history says who did it", /deleted a comment/.test(await page.textContent("#taskbody .history")));
@@ -172,6 +173,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-113 and its status stays", (await inColumn("IN PROGRESS")).includes(first));
 
   // a project made on the board, in the session list too; filters in the URL
+  await page.click("#fproject summary");
   await page.click("#newproject");
   await page.fill("#namefield", "Billing");
   await page.press("#namefield", "Enter");
@@ -185,6 +187,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.press("#namefield", "Enter");
   check("AC-110 a taken name is said, and stays open", await until(async () => /already named Billing/.test(await page.textContent("#nameerror"))) && await page.isVisible("#namebox"));
   await page.click('#namebox button[value="cancel"]');
+  await page.click("#fproject summary");
   await page.click('#fproject label:has-text("Default")');
   await page.click("#fproject summary");
   await page.click("#fseverity summary");
@@ -232,17 +235,57 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.waitForSelector("#term", { state: "visible", timeout: 5000 });
 }
 
+/** The board's controls are the session page's kinds: measured, not read from a sheet (docs/UI-GUIDELINES.md §6). */
+async function sameKinds(page, base, phone) {
+  const look = (sel) => page.evaluate((s) => {
+    const e = [...document.querySelectorAll(s)].find((x) => x.getClientRects().length);
+    if (!e) return null;
+    const c = getComputedStyle(e);
+    return { fill: c.backgroundColor, image: c.backgroundImage === "none" ? "" : "matte", edge: c.boxShadow === "none" ? "" : "edge", radius: c.borderRadius, h: Math.round(e.getBoundingClientRect().height), font: c.fontFamily.split(",")[0] };
+  }, sel);
+  await page.goto(`${base}/sessions/`);
+  await page.waitForSelector("#filter", { state: "attached" });
+  await page.waitForTimeout(500);   // colors settle (motion.css), the theme is in
+  const theirs = { search: await look(".search"), key: await look(".icon"), track: await look(".seg") };
+  await page.goto(`${base}/kanban/`);
+  await page.waitForSelector(".card");
+  await page.waitForTimeout(500);
+  const ours = { search: await look("#filters .search"), key: await look("#boardhead .pick summary, #filtersbtn"), track: await look("#boardhead .seg") };
+  check(`look: Find is the session list's field (${phone ? "phone" : "wide"})`, ["fill", "edge", "radius"].every((k) => ours.search?.[k] === theirs.search?.[k]), JSON.stringify([ours.search, theirs.search]));
+  check("look: a board key is the page's key", ["image", "edge", "radius"].every((k) => ours.key?.[k] === theirs.key?.[k]), JSON.stringify([ours.key, theirs.key]));
+  check("look: its pages' switch is the page's segmented control", theirs.track === null || ["edge", "radius"].every((k) => ours.track?.[k] === theirs.track?.[k]), JSON.stringify([ours.track, theirs.track]));
+  const rules = await page.evaluate(() => ({
+    grain: [...document.styleSheets].some((s) => (s.href ?? "").endsWith("grain.css")), sheets: [...document.styleSheets].some((s) => (s.href ?? "").endsWith("sheets.css")), motion: [...document.styleSheets].some((s) => (s.href ?? "").endsWith("motion.css")),
+    words: [...document.querySelectorAll("#board button, #boardhead button")].filter((b) => /null|undefined/.test(b.textContent)).length,
+  }));
+  check("look: the board has the page's material, sheets and motion", rules.grain && rules.sheets && rules.motion);
+  check("look: no key says null", rules.words === 0, String(rules.words));
+  await page.click("#newtask");
+  await page.waitForSelector("#newbox[open]");
+  const fields = await page.evaluate(() => [...document.querySelectorAll("#newbox select.field, #newbox input.field")].map((e) => e.offsetHeight));
+  check("look: the window's fields stand as tall on every engine", Math.max(...fields) - Math.min(...fields) <= 2 && Math.min(...fields) >= 30, fields.join());
+  await page.click("#newclose");
+}
+
 /** A phone: one column at a time, Move to… and no sideways scroll (AC-105). */
 export async function liveBoardPhone(page, { base, shots }) {
+  await sameKinds(page, base, true);
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector("#colswitch button");
-  const shown = () => page.evaluate(() => [...document.querySelectorAll(".col")].filter((c) => c.offsetParent).map((c) => c.dataset.status));
+  const shown = () => page.evaluate(() => [...document.querySelectorAll(".col")].filter((c) => { const r = c.getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; }).map((c) => c.dataset.status));
   check("AC-105 a phone shows one column", (await shown()).join() === "TODO", (await shown()).join());
   await page.click('#colswitch button:has-text("DONE")');
-  check("AC-105 its switch names them and shows another", (await shown()).join() === "DONE", (await shown()).join());
+  check("AC-105 its switch names them and shows another", await until(async () => (await shown()).join() === "DONE"), (await shown()).join());
   const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   check("AC-105 no sideways scroll on a phone", wide <= 0, String(wide));
   const tap = await page.evaluate(() => Math.round(document.querySelector("#newtask").getBoundingClientRect().height));
   check("AC-105 touch targets", tap >= 40, String(tap));
+  const small = await page.evaluate(() => [...document.querySelectorAll("#boardhead button, #boardhead summary, #boardhead a, .card button")].filter((e) => e.getClientRects().length && (e.getBoundingClientRect().height < 34 || e.getBoundingClientRect().width < 34)).map((e) => e.textContent.trim() || e.getAttribute("aria-label")));
+  check("AC-105 every key of the head and a card takes a finger", !small.length, small.join());
+  const head = await page.evaluate(() => Math.round(document.querySelector("#boardhead").getBoundingClientRect().height));
+  check("AC-105 the head leaves the cards the room", head <= 112, String(head));
+  check("AC-105 many cards never squeeze the head over the switch", await page.evaluate(() => document.querySelector("#colswitch").getBoundingClientRect().top >= document.querySelector("#boardhead").getBoundingClientRect().bottom));
+  await page.evaluate(() => { const b = document.querySelector("#board"); b.scrollLeft = b.clientWidth * 2; });
+  check("AC-105 a swipe shows the next column and its tab follows", await until(() => page.evaluate(() => document.querySelector('#colswitch [aria-selected="true"]').dataset.status === "WAIT FOR HUMAN")));
   if (shots) await page.screenshot({ path: path.join(shots, "board-phone.png") });
 }

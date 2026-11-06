@@ -10,8 +10,10 @@ import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
 import { planPct, planTrack } from "./planrow.js";
 import { arranged } from "./reorder.js";
-import { textForm } from "./render.js";
+import { PROJECT_HUES, el, hueColor, iconButton, projectColor, projectHue } from "./listparts.js";
 import { taskUrl } from "./tasklink.js";
+
+export { el, projectColor };
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
 // but a quiet terminal mark while a shell, a monitor or a task it started still runs (terminumd reads
@@ -85,12 +87,6 @@ export function folderBar(item, shown = false, busy = false, project = null) {
   return d;
 }
 
-// Projects' colors (AC-92): ten hues far apart, in pastel (projects.css), so two projects never read as one
-const PROJECT_HUES = [25, 145, 265, 85, 205, 325, 55, 175, 295, 115];
-const hueColor = (h) => `oklch(var(--proj-l) var(--proj-c) ${h})`;
-const projectHue = (p) => PROJECT_HUES[(p.color ?? 0) % PROJECT_HUES.length];
-export const projectColor = (p) => hueColor(projectHue(p));
-
 /** The hue of the `n`th tmux group (AC-92): the palette's from its turn on, the first at least 60° from
  *  the part's over it (`above`; null: none) and from a project's under it (`below`, fixed; null: none). */
 export function groupHue(n, above, below = null) {
@@ -138,26 +134,9 @@ function matches(item, q) {
   return [item.title, item.host ?? "", ...subOf(item)].join(" ").toLowerCase().includes(q);
 }
 
-export function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = textForm(String(text));
-  return e;
-}
-
 /** A group's count: its sessions (its rows, not their panes or quick shells under them), said in words. */
 const sessionCount = (n) => el("span", "count", n ? `${n} session${n === 1 ? "" : "s"}` : "");   // a group without rows says its state instead
 
-/** A small icon button of the list (a header's, a row's Clone): its class, icon, label for a screen reader, tooltip. */
-function iconButton(cls, name, label, title, onClick) {
-  const b = el("button", cls);
-  b.type = "button";
-  b.title = title;
-  b.setAttribute("aria-label", label);
-  b.append(icon(name, 14));
-  b.addEventListener("click", (e) => { e.stopPropagation(); onClick(b); });
-  return b;
-}
 
 /** Open tasks by session (terminumd's): a row shows them, each opening its window on the board (AC-113). */
 let taskMarks = {}, projectTasks = {};
@@ -178,6 +157,12 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   const idx = el("span", "idx", child ? "" : item.index || "");
   if (item.index && !child) idx.title = item.host ?? "This machine";     // where the window runs
   head.append(idx, agentMark(item), el("span", "t", item.title));
+  for (const task of taskMarksOf(item.id)) {
+    const t = el("span", "taskmark", task);
+    t.title = `Open ${task} on the board`;
+    t.addEventListener("click", (e) => { e.stopPropagation(); location.href = taskUrl(task); });
+    head.append(t);
+  }
   if (item.plan) head.append(planPct(item, onPick));
   txt.append(head);
   if (item.plan) txt.append(planTrack(item.plan));
@@ -201,12 +186,6 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   }
   const bar = folderBar(item, item.id === current, item.state === "working", opts.project);
   b.append(bar, txt, st);
-  for (const task of taskMarksOf(item.id)) {
-    const t = el("span", "taskmark", task);
-    t.title = `Open ${task} on the board`;
-    t.addEventListener("click", (e) => { e.stopPropagation(); location.href = taskUrl(task); });
-    b.append(t);
-  }
   // its bookmarks and open reminders: a wavy orange and a wavy pink line at the row's right edge
   const has = marked.get(item.id);
   if (has) {

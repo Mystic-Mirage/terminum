@@ -13,6 +13,8 @@ pub struct Query {
     pub severities: Vec<String>,
     pub statuses: Vec<String>,
     pub owner: Option<String>,
+    /// one task: whether the board's filters show it
+    pub number: Option<i64>,
     /// an agent's reach: tasks of this pane (linked or made), or of this project
     pub reach: Option<(String, Option<String>)>,
     pub text: Option<String>,
@@ -55,6 +57,10 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
             let marks = values.iter().map(|v| { args.push(v.clone()); format!("?{}", args.len()) }).collect::<Vec<_>>().join(", ");
             text.push_str(&format!(" AND {column} IN ({marks})"));
         }
+    }
+    if let Some(n) = q.number {
+        args.push(n.to_string());
+        text.push_str(&format!(" AND t.number = ?{}", args.len()));
     }
     if let Some((pane, project)) = &q.reach {
         let any = reach_sql(pane, project.as_deref(), &mut args);

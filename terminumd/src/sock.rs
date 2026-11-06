@@ -134,12 +134,14 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     // that changed nothing the list shows
     if app.hooks.take_ended(&key) {
         crate::manager::hook_turn_ended(&app, &key, ev["event"].as_str().unwrap_or(""));
+        crate::tasks::tell::turn_ended(&app, &key);
     }
     if ev["event"] == "UserPromptSubmit" && let (Some(prompt), Some(cwd)) = (ev["prompt"].as_str(), ev["cwd"].as_str()) {
         let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook"}));
         let (app, key, host) = (app.clone(), key.clone(), server.name.clone());
         tokio::spawn(async move { crate::page::sent::keep(&app, &host, &cwd, &key, &prompt, info).await });
     }
+    crate::tasks::tell::session_ended(&app, &key, &ev);
     let remind = crate::plans::hook_event(&app, &key, &ev);
     // a human's move rides the same event (AC-114)
     let context = if crate::plans::carries_context(&ev) { crate::tasks::tell::with_lines(&app, &key, remind) } else { remind };

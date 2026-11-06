@@ -63,6 +63,8 @@ export const prove = () => proving().then((r) => r.state);
 export function invalidate() { proof = null; token = null; }
 
 const realFetch = window.fetch.bind(window);
+/** A request no answer came to says so in terminum's words: the browser's say nothing. */
+const reached = (go) => go().catch((e) => { throw e.name === "AbortError" || e.name === "TimeoutError" ? e : new TypeError("terminum's server does not answer."); });
 let refused = () => {};
 /** fn(known) when a request of the page's is refused as signed out: a 401 (known: false, ask
  *  /auth/check why) or a sign-in terminumd does not know (known: true). */
@@ -76,7 +78,7 @@ async function signed(input, init) {
   if (p.state !== "ok") throw new TypeError(p.state === "unknown" ? "Signed out: sign in again" : p.state === "down" ? "terminum's server is not running" : "terminum's server could not prove itself");
   const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
   if (p.cred) headers.set("X-TM-Session", p.cred);
-  try { return [await realFetch(input, { ...init, headers }), mine]; }
+  try { return [await reached(() => realFetch(input, { ...init, headers })), mine]; }
   catch (e) { if (proof === mine) invalidate(); throw e; }   // the server may be gone: prove the next one again
 }
 
@@ -87,7 +89,7 @@ async function signed(input, init) {
 window.fetch = async (input, init = {}) => {
   const url = new URL(input instanceof Request ? input.url : String(input), location.href);
   if (url.origin !== location.origin) return realFetch(input, init);
-  if (!secret) return realFetch(input, init);
+  if (!secret) return reached(() => realFetch(input, init));
   let [r, mine] = await signed(input, init);
   const again = !(input instanceof Request) && !(init.body instanceof ReadableStream);   // a body that can be sent twice
   const stale = r.status === 401 && again && secret && (await r.clone().json().catch(() => null))?.error === "bad_session";

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the board's parts share: terminumd's routes, small DOM helpers, dialogs and files.
 import * as signin from "./signin.js";
-import { el } from "./nav.js";
+import { el, iconButton } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 
-export { el };
+export { el, iconButton };
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
 export const $ = (id) => document.getElementById(id);
@@ -31,6 +31,13 @@ export async function api(path, { method = "GET", body } = {}) {
 
 /** One short message, where the action was taken cannot hold it. */
 export const say = (text) => toast(text, 4000);
+
+/** A JSON value kept on this browser; in private mode, this page's only. */
+export function read(key) { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } }
+export function write(key, v) { try { if (v) localStorage.setItem(key, JSON.stringify(v)); else localStorage.removeItem(key); } catch { /* private mode */ } }
+
+/** A text pressed ⌘Enter in goes where its button would. */
+export const onSend = (area, go) => area.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } });
 
 export function button(cls, text, onClick) {
   const b = el("button", cls, text);

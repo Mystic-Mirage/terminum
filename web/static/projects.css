@@ -7,6 +7,7 @@
 .grp.project { --name: color-mix(in srgb, var(--proj) 75%, var(--t-fg)); }   /* its name's color: the label, its rows' unread hatching */
 /* under its last session as much space as above its name (the header: its buttons and --row-inset round them; the name's line --name-h) */
 .grp:is(.project, .tinted) { --name-h: 16px; padding-bottom: calc(var(--icon-key-list) / 2 + var(--row-inset) - var(--name-h) / 2); }
+.grp.project:not(:has(.item)) { padding-bottom: 0; }   /* a project with no session: its head alone */
 @media (max-width: 860px), (pointer: coarse) { .grp:is(.project, .tinted) { --name-h: 18px; } }
 .grp.project h2 .label { color: var(--name); }
 .grp.project .item.on { background: color-mix(in srgb, var(--proj) 16%, transparent); }   /* the shown session: its project's tint, deeper */
@@ -70,5 +71,5 @@
 @media (hover: none) { #rowmenu button { height: 44px; } }
 #sessions .item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 /* a row's open task: opens its window on the board (terminum-kanban.md AC-113) */
-.item .taskmark { flex: none; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: 10.5px; font-variant-numeric: tabular-nums; color: var(--muted); background: var(--surface-3); }
+.item .taskmark { flex: none; white-space: nowrap; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-body); font-variant-numeric: tabular-nums; color: var(--muted); background: var(--surface-3); }
 @media (hover: hover) { .item .taskmark:hover { color: var(--t-fg); } }

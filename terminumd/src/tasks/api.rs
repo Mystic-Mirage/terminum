@@ -76,20 +76,33 @@ pub fn told(app: &Shared, task: &str) {
     });
 }
 
-/// A session's live state as the list shows it, or closed.
-fn session_of(app: &Shared, key: &str) -> Value {
-    match crate::page::marks::find_item(&app.layout.read(), key) {
-        Some(it) => json!({"key": key, "state": it["state"], "closed": false}),
-        None => json!({"key": key, "closed": true}),
+/// A link only to a session that is there: a page's picker can be older than the list (AC-133).
+fn session_gone(app: &Shared, body: &Value) -> bool {
+    let layout = app.layout.read();
+    body["session"].as_str().is_some_and(|key| !crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).any(|it| it["id"] == key))
+}
+
+/// A task with its session: `row` its row in the list, its live state, agent and why it failed or
+/// waits; none: closed.
+fn with_session(t: &Task, row: Option<&Value>) -> Value {
+    let mut v = serde_json::to_value(t).unwrap_or_default();
+    if let Some(key) = &t.session {
+        v["session"] = match row {
+            Some(it) => json!({"key": key, "state": it["state"], "agent": it["agent"], "why": it["why"], "closed": false}),
+            None => json!({"key": key, "closed": true}),
+        };
     }
+    v
 }
 
 fn card(app: &Shared, t: &Task) -> Value {
-    let mut v = serde_json::to_value(t).unwrap_or_default();
-    if let Some(key) = &t.session {
-        v["session"] = session_of(app, key);
-    }
-    v
+    let row = t.session.as_deref().and_then(|key| crate::page::marks::find_item(&app.layout.read(), key));
+    with_session(t, row.as_ref())
+}
+
+/// What a text is compared by: a save says which it began from (AC-133).
+fn text_rev(text: &str) -> String {
+    crate::auth::crypto::hex(&crate::auth::crypto::sha256(text.as_bytes()))
 }
 
 fn csv(q: &HashMap<String, String>, key: &str) -> Vec<String> {
@@ -103,6 +116,7 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         severities: csv(&q, "severity"),
         statuses: csv(&q, "status"),
         owner: q.get("owner").filter(|o| !o.is_empty()).cloned(),
+        number: q.get("id").and_then(|id| ops::number_of(id).ok()),
         reach: None,
         text: q.get("q").cloned(),
         with_subtasks: false,
@@ -112,7 +126,12 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
     let with_counts = q.get("counts").is_some_and(|c| c == "1");
     let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }))).await;
     match done {
-        Ok((tasks, counts)) => Json(json!({"tasks": tasks.iter().map(|t| card(&app, t)).collect::<Vec<_>>(), "counts": counts})).into_response(),
+        Ok((tasks, counts)) => {
+            let layout = app.layout.read();
+            let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
+            let shown: Vec<Value> = tasks.iter().map(|t| with_session(t, t.session.as_deref().and_then(|k| rows.get(k).copied()))).collect();
+            Json(json!({"tasks": shown, "counts": counts})).into_response()
+        }
         Err(e) => refuse(StatusCode::SERVICE_UNAVAILABLE, e),
     }
 }
@@ -166,6 +185,9 @@ fn ids(v: &Value, key: &str) -> Vec<String> {
 }
 
 async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
+    if session_gone(&app, &body) {
+        return refuse(StatusCode::BAD_REQUEST, "That session is gone.");
+    }
     let new = NewTask {
         title: text(&body, "title").unwrap_or_default(),
         text: text(&body, "text").unwrap_or_default(),
@@ -195,6 +217,7 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     let done = store(&app, move |tx| Ok((ops::get(tx, &wanted)?, ops::text_of(tx, &wanted)?, ops::history(tx, &wanted)?, files::of_task(tx, &wanted)?))).await;
     answer(done.map(|(t, body, history, attached)| {
         let mut v = card(&app, &t);
+        v["text_rev"] = json!(text_rev(&body));
         v["text"] = json!(body);
         v["history"] = history;
         v["files"] = json!(attached);
@@ -202,8 +225,12 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     }))
 }
 
-/// What a human changes on a card; `session_choice` answers the dialog of a move across projects.
+/// What a human changes on a card.
 async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
+    if session_gone(&app, &body) {
+        return refuse(StatusCode::BAD_REQUEST, "That session is gone.");
+    }
+    let began_from = text(&body, "text_rev");
     let wanted = id.clone();
     let moved_to = text(&body, "status");
     let to_status = moved_to.clone();
@@ -217,10 +244,15 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     let done = store(&app, move |tx| {
         let at = ops::now();
         let was = ops::get(tx, &wanted)?;
+        // the text is no longer the one the human began from: the page asks (AC-133)
+        if began_from.is_some_and(|rev| rev != text_rev(&ops::text_of(tx, &wanted).unwrap_or_default())) {
+            return Ok(Err((StatusCode::PRECONDITION_FAILED, "The text changed meanwhile.")));
+        }
         let mut follow = None;
         if let Some(project) = &to_project {
             match ops::change_project(tx, HUMAN, &wanted, project, choice.as_deref(), at)? {
-                ProjectMove::Ask => return Ok(None),
+                // it has a session: the page's dialog asks what becomes of it, and sends `session_choice`
+                ProjectMove::Ask => return Ok(Err((StatusCode::CONFLICT, "session_choice"))),
                 ProjectMove::SessionFollows(s) => follow = Some((s, project.clone())),
                 ProjectMove::Done => {}
             }
@@ -235,12 +267,11 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         if reorder {
             ops::reorder(tx, &wanted, before.as_deref(), at)?;
         }
-        Ok(Some((ops::get(tx, &wanted)?, was, follow)))
+        Ok(Ok((ops::get(tx, &wanted)?, was, follow)))
     }).await;
     let (task, was, follow) = match done {
-        Ok(Some(d)) => d,
-        // the page's dialog asks what becomes of the session, and sends `session_choice`
-        Ok(None) => return refuse(StatusCode::CONFLICT, "session_choice"),
+        Ok(Ok(d)) => d,
+        Ok(Err((status, why))) => return refuse(status, why),
         Err(e) => return refuse(StatusCode::BAD_REQUEST, e),
     };
     let note = match follow {

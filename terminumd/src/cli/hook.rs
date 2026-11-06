@@ -125,7 +125,7 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
     out.insert("pane".into(), json!(pane));
     out.insert("event".into(), json!(name));
     for (from, to, n) in [("session_id", "session", 100), ("agent_id", "sub", 100), ("agent_type", "subtype", 60),
-                          ("notification_type", "kind", 40), ("error", "error", 60), ("cwd", "cwd", 1000), ("model", "model", 80)] {
+                          ("notification_type", "kind", 40), ("error", "error", 60), ("reason", "reason", 40), ("cwd", "cwd", 1000), ("model", "model", 80)] {
         if let Some(v) = text(input, from, n) {
             out.insert(to.into(), json!(v));
         }

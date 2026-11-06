@@ -13,7 +13,9 @@
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="shapes.css">
+<link rel="stylesheet" href="planpane.css">
 <link rel="stylesheet" href="tmux.css">
+<link rel="stylesheet" href="projects.css">
 <link rel="stylesheet" href="kanban.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="markdown.css">
@@ -29,11 +31,11 @@
     <a href="/kanban/" aria-current="page">Kanban</a>
   </nav>
   <div id="filters">
+    <details id="fproject" class="pick" name="picks"><summary class="textkey" title="The project the board shows">All projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
     <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
       <input id="find" type="search" placeholder="Find tasks" aria-label="Find tasks" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
     <button id="filtersbtn" class="textkey" type="button" aria-expanded="false" aria-controls="picks">Filters</button>
     <div id="picks">
-      <details id="fproject" class="pick" name="picks"><summary class="textkey">Projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
       <details id="fseverity" class="pick" name="picks"><summary class="textkey">Severity</summary><div class="box menurows" role="group" aria-label="Severity"></div></details>
       <details id="fowner" class="pick" name="picks"><summary class="textkey">Owner</summary><div class="box menurows" role="group" aria-label="Owner"></div></details>
       <button id="clearfilters" class="textkey" type="button" hidden>Clear filters</button>

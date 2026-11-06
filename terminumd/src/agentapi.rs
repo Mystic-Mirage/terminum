@@ -171,13 +171,13 @@ fn clock(at: u64) -> String {
 
 /// The stored plan as lines: "[x] / [>] / [ ] / [!]" items, then doing, ETA and updated.
 pub fn plan_text(plans: &Plans, key: &str, working: bool, now: u64) -> String {
-    let Some(d) = plans.details(key, working, now).filter(|d| !d.items.is_empty() || d.doing.is_some()) else { return "No plan yet.".into() };
+    let Some(d) = plans.details(key, working, now).filter(|d| !d.items.is_empty() || d.row.doing.is_some()) else { return "No plan yet.".into() };
     let mut out: Vec<String> = d.title.iter().cloned().collect();
     for it in &d.items {
         let mark = match it.status.as_str() { "completed" => "[x]", "in_progress" => "[>]", "blocked" => "[!]", _ => "[ ]" };
         out.push(format!("{mark} {}", it.text));
     }
-    if let Some(doing) = &d.doing {
+    if let Some(doing) = &d.row.doing {
         out.push(format!("Doing: {doing}"));
     }
     if let Some(eta) = d.row.eta {

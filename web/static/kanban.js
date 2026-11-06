@@ -7,11 +7,14 @@ import "./press.js";
 import "./pop.js";
 import { pageColors } from "./contrast.js";
 import { askConfirm, askName } from "./dialogs.js";
-import { projectColor } from "./listparts.js";
 import { takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
-import { $, COLUMNS, SEVERITIES, api, button, el, iconButton, say } from "./kanbanutil.js";
+import { projectInk } from "./listparts.js";
+import { seeFolders } from "./nav.js";
+import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
+import { sessionStrip, sessionsColumn } from "./kanbanside.js";
+import { $, COLUMNS, api, button, el, iconButton, say } from "./kanbanutil.js";
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [] };
@@ -20,31 +23,9 @@ let counts = {};
 let shownColumn = "TODO";
 const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-reduced-motion: reduce)");
 let dragging = null;
+let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let loading = 0, changing = 0, chain = Promise.resolve();
 const BUILD = document.querySelector('meta[name="build"]').content;
-
-const filters = () => {
-  const q = new URLSearchParams(location.search);
-  const list = (k) => (q.get(k) ?? "").split(",").filter(Boolean);
-  return { project: list("project"), severity: list("severity"), owner: q.get("owner") ?? "", q: q.get("q") ?? "" };
-};
-
-function setFilters(next) {
-  const u = new URL(location.href);
-  for (const [k, v] of Object.entries({ ...filters(), ...next })) {
-    const s = Array.isArray(v) ? v.join(",") : v;
-    if (s) u.searchParams.set(k, s); else u.searchParams.delete(k);
-  }
-  history.replaceState(null, "", u);
-  drawFilters();
-  load();
-}
-
-function query(extra = {}) {
-  const f = filters(), p = new URLSearchParams();
-  for (const [k, v] of Object.entries({ project: f.project.join(","), severity: f.severity.join(","), owner: f.owner, q: f.q, ...extra })) if (v !== "" && v !== undefined) p.set(k, v);
-  return p.toString();
-}
 
 /** Above the board; a store set aside offers its way on, and only then is an empty one made (AC-119). */
 function banner(text) {
@@ -94,10 +75,8 @@ async function more(column) {
 }
 
 const projectOf = (id) => meta.projects.find((p) => p.id === id);
-/** A project's color, the session list's; Default has none. */
-const projectHue = (p) => (p?.color >= 0 ? projectColor(p) : "var(--muted)");
 
-/** What a task's session does now (AC-134): an agent gone quiet with its task open is said. */
+/** What a session's row cannot say (AC-136): an agent gone quiet with its task open, why it failed, a closed one. */
 function sessionLine(t) {
   const s = t.session;
   if (!s) return null;
@@ -106,9 +85,8 @@ function sessionLine(t) {
   if (s.closed) return line("closed", "session closed");
   if (s.state === "failed") return line("failed", `failed: ${(s.why || "an error").replaceAll("_", " ")}`);
   if (s.state === "waiting") return line("waiting", "waits for you", s.why);
-  if (s.state === "working") return line("working", "working");
-  if (!s.agent) return open ? line("stopped", "no agent") : null;
-  return open ? line("stopped", "stopped, task open") : line("", "idle");
+  if (s.state === "working" || !open) return null;
+  return line("stopped", s.agent ? "stopped, task open" : "no agent");
 }
 
 function showState(foot, t) {
@@ -117,11 +95,22 @@ function showState(foot, t) {
   if (line) foot.append(line);
 }
 
+/** Its session's row, the list's own, drawn anew only when that row changed (AC-134). */
+function showSession(c, t) {
+  const item = t.session && !t.session.closed ? liveRows.get(t.session.key) : null, p = projectOf(t.project);
+  const now = item ? JSON.stringify([item, p?.color]) : "";
+  if (now === c.rowDrawn) return;
+  c.rowDrawn = now;
+  c.querySelector(".csession")?.remove();
+  if (item) c.append(sessionStrip(item, p));
+}
+
 function card(t) {
   const c = el("article", `card sev-${t.severity}`);
   c.dataset.id = t.id;
   c.draggable = true;
   c.tabIndex = 0;
+  c.rowDrawn = "";
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
   const menu = iconButton("icon cmove", "ellipsis", "Move to…", "Move to…", (b) => moveMenu(t, b));
@@ -130,12 +119,13 @@ function card(t) {
   const foot = el("div", "cfoot");
   const p = projectOf(t.project);
   const proj = el("span", "cproj", p?.name ?? "Default");
-  proj.style.setProperty("--proj", projectHue(p));
+  proj.style.setProperty("--proj", projectInk(p));
   foot.append(proj, el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
   showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
+  showSession(c, t);
   c.addEventListener("click", () => openTask(t.id));
   c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) openTask(t.id); });
   c.addEventListener("dragstart", (e) => { dragging = t; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", t.id); c.classList.add("lifted"); });
@@ -206,6 +196,13 @@ function dropOn(column, before) {
   change(t, before ? { before } : { order_end: true });
 }
 
+function tabFor(name) {
+  const tab = button(null, name, () => showColumn(name));
+  tab.dataset.status = name;
+  tab.setAttribute("role", "tab");
+  return tab;
+}
+
 /** The columns stand once; a draw fills them, each keeping its scroll. */
 const columns = new Map(COLUMNS.map((column) => {
   const col = el("section", "col"), head = el("h2", "colhead"), count = el("span", "count"), list = el("div", "cards");
@@ -220,20 +217,22 @@ const columns = new Map(COLUMNS.map((column) => {
     const under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging?.id; });
     dropOn(column, under?.dataset.id);
   });
-  const tab = button(null, column, () => showColumn(column));
-  tab.dataset.status = column;
-  tab.setAttribute("role", "tab");
-  return [column, { col, count, list, tab, drawn: "" }];
+  return [column, { col, count, list, tab: tabFor(column), drawn: "" }];
 }));
-$("board").replaceChildren(...[...columns.values()].map((c) => c.col));
-$("colswitch").replaceChildren(...[...columns.values()].map((c) => c.tab));
+/** A phone's pages: the columns, then the project's sessions (AC-135). */
+const SESSIONS = "Sessions";
+const sessionsTab = tabFor(SESSIONS);
+const side = sessionsColumn({ chosen: () => filters().project, openTask, onCount: (n) => { sessionsTab.textContent = `${SESSIONS} ${n}`; } });
+const pages = new Map([...columns, [SESSIONS, { col: side.col, tab: sessionsTab }]]);
+$("board").replaceChildren(side.col, ...[...columns.values()].map((c) => c.col));
+$("colswitch").replaceChildren(...[...pages.values()].map((p) => p.tab));
 
 /** A column is built anew only when what it shows changed; a drag's card stays until it ends. */
 function draw() {
   if (dragging) return;
-  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = hasFilter();
+  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed();
   for (const [column, part] of columns) {
-    const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have, n, !!filtered]);
+    const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have.map((t) => ({ ...t, session: t.session?.key })), n, !!filtered]);   // a session's state changes on its card alone (sessionsCame)
     part.count.textContent = String(n);
     part.tab.textContent = `${column} ${n}`;
     if (shown === part.drawn) continue;
@@ -251,13 +250,13 @@ function draw() {
 /** A phone's one column, by its tab or a swipe. */
 function showColumn(column) {
   shownColumn = column;
-  columns.get(column).col.scrollIntoView({ inline: "start", block: "nearest", behavior: still.matches ? "auto" : "smooth" });
+  pages.get(column).col.scrollIntoView({ inline: "start", block: "nearest", behavior: still.matches ? "auto" : "smooth" });
   markTab();
 }
 
 function markTab() {
-  for (const [column, { tab }] of columns) {
-    const on = column === shownColumn;
+  for (const [name, { tab }] of pages) {
+    const on = name === shownColumn;
     if (tab.getAttribute("aria-selected") === String(on)) continue;
     tab.setAttribute("aria-selected", String(on));
     if (on) tab.scrollIntoView({ inline: "nearest", block: "nearest" });
@@ -266,44 +265,29 @@ function markTab() {
 
 $("board").addEventListener("scroll", () => {
   if (!narrow.matches) return;
-  const b = $("board"), now = COLUMNS[Math.round(b.scrollLeft / Math.max(1, b.clientWidth))];
+  const b = $("board"), now = [...pages.keys()][Math.round(b.scrollLeft / Math.max(1, b.clientWidth))];
   if (now && now !== shownColumn) { shownColumn = now; markTab(); }
 }, { passive: true });
 
-/** The session list changed: the pickers' sessions and the cards' states come with it, no task did. */
+/** The session list changed: the pickers' sessions, the cards' rows and states come with it, no task did. */
 function sessionsCame(groups) {
   const items = groups.flatMap((g) => g.items ?? []);
   meta.sessions = items.map((it) => ({ key: it.id, title: it.title }));
-  const live = new Map(items.map((it) => [it.id, it]));
+  liveRows = new Map(items.map((it) => [it.id, it]));
+  seeFolders(groups);
+  side.layout(groups);
+  const shown = new Map([...document.querySelectorAll(".card")].map((c) => [c.dataset.id, c]));
   for (const t of [...cards.values()].flat()) {
-    if (!t.session) continue;
-    const it = live.get(t.session.key);
+    const it = t.session && liveRows.get(t.session.key);
+    if (!t.session || (!it && t.session.closed)) continue;
     const now = it ? { key: it.id, state: it.state, agent: it.agent, why: it.why, closed: false } : { key: t.session.key, closed: true };
-    if (JSON.stringify(now) === JSON.stringify(t.session)) continue;
-    t.session = now;
-    const foot = document.querySelector(`.card[data-id="${t.id}"] .cfoot`);
-    if (foot) showState(foot, t);
+    const c = shown.get(t.id);
+    if (JSON.stringify(now) !== JSON.stringify(t.session)) {
+      t.session = now;
+      if (c) showState(c.querySelector(".cfoot"), t);
+    }
+    if (c) showSession(c, t);
   }
-}
-
-const hasFilter = () => { const f = filters(); return f.project.length || f.severity.length || f.owner || f.q; };
-
-function picks(box, options, chosen, onChange, extra) {
-  const inner = box.querySelector("div");
-  inner.replaceChildren(...options.map(({ id, name }) => {
-    const label = el("label", "pickrow");
-    const c = document.createElement("input");
-    c.type = "checkbox";
-    c.checked = chosen.includes(id);
-    c.addEventListener("change", () => onChange(id, c.checked));
-    label.append(c, document.createTextNode(name));
-    return label;
-  }));
-  if (extra) inner.append(extra);
-  box.classList.toggle("on", chosen.length > 0);
-  const summary = box.querySelector("summary");
-  summary.querySelector(".count")?.remove();
-  if (chosen.length) summary.append(el("span", "count", String(chosen.length)));
 }
 
 function newProject() {
@@ -318,35 +302,13 @@ function newProject() {
   return b;
 }
 
-/** One picker open at a time (their `name`); a press elsewhere or Esc closes it. */
-const closePickers = () => document.querySelectorAll(".pick[open]").forEach((d) => { d.open = false; });
-document.addEventListener("click", (e) => { if (!e.target.closest?.(".pick")) closePickers(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePickers(); });
-$("filtersbtn").addEventListener("click", () => {
-  const open = $("picks").classList.toggle("open");
-  $("filtersbtn").setAttribute("aria-expanded", String(open));
-});
-
-function drawFilters() {
-  const f = filters();
-  const toggled = (list, id, on) => (on ? [...list, id] : list.filter((x) => x !== id));
-  picks($("fproject"), meta.projects, f.project, (id, on) => setFilters({ project: toggled(filters().project, id, on) }), newProject());
-  picks($("fseverity"), SEVERITIES.map((s) => ({ id: s, name: s })), f.severity, (id, on) => setFilters({ severity: toggled(filters().severity, id, on) }));
-  picks($("fowner"), [{ id: "humans", name: "People" }, { id: "agents", name: "Agents" }], f.owner ? [f.owner] : [], (id, on) => setFilters({ owner: on ? id : "" }));
-  if ($("find").value !== f.q) $("find").value = f.q;
-  $("clearfilters").hidden = !hasFilter();
-  const on = f.project.length + f.severity.length + (f.owner ? 1 : 0);
-  $("filtersbtn").textContent = on ? `Filters ${on}` : "Filters";
-  if (on) $("picks").classList.add("open");
-}
-
 async function loadMeta() {
   try {
     meta = await api("/api/tasks/meta");
     if (meta.theme) pageColors(meta.theme);
     const gone = filters().project.filter((p) => !meta.projects.some((x) => x.id === p));
-    if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
-    drawFilters();
+    if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); bar.setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
+    bar.draw();
   } catch (e) {
     banner(`The board is out of date: ${e.message}`);
   }
@@ -359,6 +321,7 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
+const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); }, newProject });
 const windowed = taskWindow({ getMeta: () => meta });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden });
 
@@ -421,8 +384,6 @@ function buildCame(id) {
   go();
 }
 $("newtask").addEventListener("click", () => form.open());
-$("find").addEventListener("input", () => { clearTimeout($("find").wait); $("find").wait = setTimeout(() => setFilters({ q: $("find").value }), 200); });
-$("clearfilters").addEventListener("click", () => setFilters({ project: [], severity: [], owner: "", q: "" }));
 /** The columns are read again once a burst ends. */
 let readWait = 0, windowToo = false;
 function readSoon() {
@@ -443,7 +404,8 @@ function listen() {
       if (m.t === "taskchange") again(m.id);
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
       else if (m.t === "build") buildCame(m.id);
-      else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
+      else if (m.t === "taskmarks") side.marks(m);
+      else if (m.t === "projects") { side.projects(m.items ?? [], m.order ?? []); clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);
   });

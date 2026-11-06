@@ -78,7 +78,7 @@ pub async fn human_moved(app: &Shared, task: &Task) {
     say(app, &task.id, "Waits for the session's next tool call".to_string());
 }
 
-/// What a turn's end says of the task its session works on (AC-134), as hookstate read it: a turn
+/// What a turn's end says of the task its session works on (AC-136), as hookstate read it: a turn
 /// that ends in a question or while subagents run is no stop.
 fn ended_words(state: State, why: &str) -> Option<String> {
     match state {

@@ -8,6 +8,7 @@
 // phone shows the plan.
 import fs from "node:fs";
 import path from "node:path";
+import { mcpOpening, rpc } from "./boardkit.mjs";
 import { check, within } from "./check.mjs";
 import { ownTmp } from "./testrun.mjs";
 
@@ -25,7 +26,6 @@ function events(cwd) {
     update("1", "pending", "in_progress", 4), update("1", "in_progress", "completed", 5), update("2", "pending", "in_progress", 6)];
 }
 
-const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
 const call = (id, name, args) => rpc(id, "tools/call", { name, arguments: args });
 /** "17:40", the local time `at` (unix seconds), as terminumd's localtime_r says it. */
 const hhmm = (at) => { const d = new Date(at * 1000); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
@@ -86,8 +86,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     // 2. terminum mcp in the same pane: the tool plan wins over the MCP items; doing, ETA, a task made
     const before = Math.floor(Date.now() / 1000);
     const a = await mcp([
-      rpc(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } }),
-      rpc(null, "notifications/initialized"), rpc(2, "tools/list"),
+      ...mcpOpening, rpc(2, "tools/list"),
       call(3, "update_session_plan", { items: [{ text: "one", status: "completed" }, { text: "two", status: "pending" }], doing: "Checking the live page", eta_minutes: 30 }),
       call(4, "create_task", { title: "Parser drops a BOM", text: "<b>parser</b> drops a BOM in `src/parse.rs`" }),
       call(5, "get_session_plan", {})]);

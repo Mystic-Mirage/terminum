@@ -109,7 +109,8 @@ class Folders(unittest.TestCase):
         return path
 
     def test_old_test_folders_only(self):
-        wanted = {self.folder("tm-settings-1091-add"), self.folder("tmh-73077-64"), self.folder("tmsq-2ebwXs")}
+        wanted = {self.folder("tm-settings-1091-add"), self.folder("tmh-73077-64"), self.folder("tmsq-2ebwXs"),
+                  self.folder("fssh-5eali5_r"), self.folder(".fssh-5eali5_r")}
         self.folder("tm-young-1", old=False)
         for name in ["tmux-501", "tmate-501", "tmp-work", "tmp00004770", "terminum-audit-20261025", "TemporaryDirectory.x", "tm", "tm-", "other"]:
             self.folder(name)

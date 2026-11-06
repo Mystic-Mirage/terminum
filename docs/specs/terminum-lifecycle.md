@@ -6,16 +6,9 @@ Sibling of `terminum.md` (the core). This spec holds installing, running, restar
 
 | Field | Value |
 |---|---|
-| Version | 0.1.0 |
-| Date | 2026-11-06 |
-| Status | draft |
-| Author | Claude for the owner |
+| Status | current |
 
-Change log:
-
-| Version | Date | Change |
-|---|---|---|
-| 0.1.0 | 2026-11-06 | Split out of the core and terminal specs by scope, IDs kept. |
+A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
 ## 1. Overview
 
@@ -73,6 +66,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-96 | [SHOULD / P1] | After tmux restarts (a reboot, a killed server) a session's terminal begins with its last 300 lines from before the restart, and its menu opens them, the number set in settings.json. |
 | AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test is ended, dead tmux sockets and test folders are removed, and what may be someone's work is only named. |
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
+| AC-104 | [SHOULD / P1] | A finished worktree whose targeted checks are green lands by itself: merged into `origin/main` with what others landed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
 
 ## 5. BDD scenarios
 
@@ -349,15 +343,15 @@ Scenario: AC-102 failure — the helper cannot outlive its test by long
 ### AC-103 — The docs keep their shape [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-103 happy path — make test checks the shape
+Scenario: AC-103 happy path — make test reports the shape
   Given the specs in docs/specs, the docs and the code
   When make test runs scripts/check_docs.py
-  Then it prints "docs: 0 findings" and exits 0
+  Then it prints "docs: 0 findings"
 
-Scenario Outline: AC-103 error — a broken shape fails make test
+Scenario Outline: AC-103 edge — a broken shape is reported and blocks nothing
   Given <what>
-  When scripts/check_docs.py runs
-  Then it exits 1 and prints <message>
+  When make test runs scripts/check_docs.py
+  Then it exits 1 and prints <message>, and make test goes on: only failing tests block a release
 
   Examples:
     | what                                                  | message                                                       |
@@ -368,12 +362,12 @@ Scenario Outline: AC-103 error — a broken shape fails make test
     | a case with no scenarios                              | FAIL <spec>: AC-nn has no scenarios in section 5              |
     | a case with no line in section 11                     | FAIL <spec>: AC-nn has no line of proof in section 11         |
     | a relative link to a missing file                     | FAIL docs/USAGE.md: the link x.md leads nowhere               |
-    | an 11th row in a spec's change log                    | FAIL terminum.md: 11 change-log rows, at most 10: …           |
+    | a change log in a spec's section 0                    | FAIL <spec>: a change log in section 0: a spec is a snapshot, … |
 
-Scenario: AC-103 edge — a spec past 150 KB only warns
-  Given a spec of 160 KB
+Scenario: AC-103 edge — a spec has no size limit
+  Given a spec of 400 KB
   When scripts/check_docs.py runs
-  Then it prints "WARN terminum.md: 160 KB, past 150 KB: split it by scope" and exits 0
+  Then its size is no finding
 
 Scenario: AC-103 happy path — a review before a minor release
   Given the maintainer asks for a minor release
@@ -382,6 +376,104 @@ Scenario: AC-103 happy path — a review before a minor release
   And each requirement it deletes is named with what supersedes it, and one only absent in the code goes to the maintainer as a gap
 ```
 
+
+### AC-104 — A green worktree lands by itself [SHOULD / P1]
+
+```gherkin
+Scenario: AC-104 happy path — targeted checks green, the tree lands
+  Given the worktree fix-paste has its work committed
+  When the agent runs make land SLUG=fix-paste from the primary checkout
+  Then scripts/check_changed.py runs the security scan, the build, the tests of the changed files, the tests citing the acceptance cases on the changed lines, and the critical functions, not the full run
+  And on green the branch is merged with origin/main and pushed to origin main, never forced
+  And the primary checkout is fast-forwarded to it, the tree is deleted by scripts/delete_worktree.sh, and it prints "landed 4f2a91c07 on origin/main"
+
+Scenario: AC-104 failure — a red check lands nothing
+  Given a targeted check of the worktree fails
+  When make land runs
+  Then it exits 1 saying "targeted checks failed", shows the check's last lines, pushes nothing, and the tree stays
+
+Scenario: AC-104 edge — uncommitted work
+  Given the worktree holds an uncommitted file
+  When make land runs
+  Then it exits 1 saying "has uncommitted changes: commit them first" before any check
+
+Scenario: AC-104 edge — several worktrees land at once
+  Given worktrees one and two are each checked on their own
+  When one lands while two's checks run
+  Then two merges what one landed, and its checks run again only if both changed the same file
+  And only the merge and push take turns, so neither waits for the other's tests
+
+Scenario: AC-104 failure — others' code breaks the merged build
+  Given one tree renamed a function and another, touching other files, added a caller of it
+  When the second merges what the first landed
+  Then it builds again before it pushes, and on a failed build exits 1 saying "the build fails merged with origin/main", pushes nothing, and the tree stays
+
+Scenario: AC-104 failure — a new case with no test
+  Given a change with code that adds a heading "### AC-nnn — …" to a spec, and no test cites it
+  When its targeted checks run
+  Then they fail with "new cases no test cites: AC-nnn"
+
+Scenario: AC-104 edge — a case that is not built yet
+  Given a change with only docs that adds a case no test cites
+  When its targeted checks run
+  Then they pass: a spec may hold what is not built
+
+Scenario: AC-104 edge — a refused push
+  Given a hook refuses the push and origin/main has not moved
+  When make land pushes
+  Then it exits 1 at once, with the refusal's own words
+
+Scenario: AC-104 edge — a release is running
+  Given make release is running its long checks
+  When a tree lands
+  Then it pushes, the primary checkout stays where it is and it prints "primary checkout stays where it is: a release is running"
+  And the release goes on with the commit it checked, on origin/main though no longer its end
+
+Scenario: AC-104 edge — installing, on the maintainer's machine
+  Given TM_LAND_INSTALL=1 in the uncommitted local.mk
+  When a change with code lands
+  Then make build, make install and make installed run in the primary checkout before the next tree's turn, with their three results printed
+  And a change with only docs installs nothing
+
+Scenario: AC-104 failure — a conflict
+  Given a file changed differently in the worktree and on origin/main
+  When make land merges them
+  Then it exits 2 naming the file, pushes nothing, and leaves the conflict in the tree to resolve and commit before landing again
+
+Scenario: AC-104 edge — the primary checkout cannot move
+  Given the maintainer's uncommitted change is in the way of the fast-forward
+  When a landing ends
+  Then their change stays, the landing still counts, and it prints "primary checkout stays where it is: …"
+
+Scenario Outline: AC-104 — what a change is checked with
+  Given a change to <changed>
+  Then its targeted checks are <checks>
+
+  Examples:
+    | changed                       | checks                                                       |
+    | only docs                     | the security scan and the docs' report, which blocks nothing; no build |
+    | terminumd/src/hosts/tunnel.rs | the scan, builds, clippy, cargo test of hosts::tunnel and the critical modules, the real page in Chromium |
+    | web/static/banners.js         | the scan, builds, the tests citing its cases, the real page in Chromium |
+    | ui/src/tree.ts                | the scan, builds, the Panel's unit tests and browser check, the real page in Chromium |
+    | scripts/worktree.py           | the scan, the build, the scripts' unit tests                 |
+
+Scenario: AC-104 happy path — the full run is the release's gate
+  When the maintainer runs make release TAG=v0.32.0
+  Then the full check runs, once per tree: make test, clippy, the Panel, the live page, the page's browser checks, the security scan
+  And a failing test stops the release
+
+Scenario Outline: AC-104 edge — only failing tests block a release
+  Given <what>
+  When make release runs
+  Then the release goes on, and it says so
+
+  Examples:
+    | what                                          |
+    | a finding of scripts/check_docs.py            |
+    | no /docs-review since the last release        |
+    | a compiler or linker warning in the build     |
+    | a leftover of an old test run that stays      |
+```
 
 ## 6. Flow and sequence diagrams
 
@@ -440,7 +532,7 @@ No known gaps.
 | The Developer ID, the release key, each release's go-ahead | Owner |
 | Acceptance on the owner's Mac, phone and hosts | Owner |
 
-Docs' upkeep (AC-103), from its review: a gate in `scripts/release.py` on a review log was dropped, since a log row proves only a row and hotfixes come often; `/docs-review` is a step of a minor release. Rejected advice: deleting §10 outright (it keeps what is not built, so the sections stay the same in every spec), and fixing every test that leaves a folder before this change (`make release` sweeps them; the leak stays a test bug to fix).
+Docs' upkeep (AC-103): a script reports the shape and `/docs-review` keeps the rest, in a minor release's steps. Neither stops a release: a log of reviews would prove only a row, and only failing tests block.
 
 ## 9. Technical details and specifications
 
@@ -521,4 +613,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines`; `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

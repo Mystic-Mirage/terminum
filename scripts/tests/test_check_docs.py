@@ -12,12 +12,11 @@ SPEC.loader.exec_module(check_docs)
 
 WRONG = "terminum." + "md AC-39"  # the same: a citation that names the wrong spec
 GONE = "AC-" + "26"  # no spec has it; spelled so this file does not cite it
-LOG = "| 0.1.0 | 2026-01-01 | First. |\n"
 
 
 def spec(cases="| AC-01 | [MUST / P0] | The user types. |\n", scenarios="### AC-01 — Typing [MUST / P0]\n\n```gherkin\nScenario: AC-01 happy path\n```\n",
-         proof="- [x] AC-01 — web/test/e2e_x.mjs\n", log=LOG):
-    bodies = {0: f"| Version | 0.1.0 |\n\n{log}", 4: cases, 5: scenarios, 11: proof}
+         proof="- [x] AC-01 — web/test/e2e_x.mjs\n", log=""):
+    bodies = {0: f"| Status | current |\n\n{log}", 4: cases, 5: scenarios, 11: proof}
     return "# Spec\n\n" + "\n".join(f"## {i}. {title}\n\n{bodies.get(i, 'Text.')}\n" for i, title in enumerate(check_docs.SECTIONS))
 
 
@@ -85,8 +84,7 @@ class Shape(unittest.TestCase):
         self.write("x.rs", "// terminum-agents.md AC-39\n")
         self.assertEqual(check_docs.check_all(self.root), [])
 
-    def test_history_and_release_notes_may_cite_what_is_gone(self):
-        self.write("docs/specs/history/terminum.md", f"{GONE} and [a link](gone.md)\n")
+    def test_release_notes_may_cite_what_is_gone(self):
         self.write("docs/releases/v0.1.0.md", f"{GONE}\n")
         self.assertEqual(check_docs.check_all(self.root), [])
 
@@ -96,16 +94,14 @@ class Shape(unittest.TestCase):
         self.assertIn("docs/USAGE.md: the link specs/gone.md leads nowhere", problems)
         self.assertEqual(problems.count("leads nowhere"), 1)
 
-    def test_too_many_change_log_rows(self):
-        self.write("docs/specs/terminum.md", spec(log="".join(f"| 0.1.{i} | 2026-01-01 | Row. |\n" for i in range(11))))
-        self.assertIn("11 change-log rows, at most 10", self.problems())
+    def test_a_change_log_in_a_spec(self):
+        self.write("docs/specs/terminum.md", spec(log="| 0.1.0 | 2026-01-01 | First. |\n"))
+        self.assertIn("a spec is a snapshot", self.problems())
 
-    def test_a_big_spec_and_an_uncited_case_only_warn(self):
-        self.write("docs/specs/terminum.md", spec(cases="| AC-01 | [MUST / P0] | " + "x" * 160_000 + " |\n"))
+    def test_size_is_no_finding_and_an_uncited_case_only_warns(self):
+        self.write("docs/specs/terminum.md", spec(cases="| AC-01 | [MUST / P0] | " + "x" * 400_000 + " |\n"))
         self.assertEqual(check_docs.check_all(self.root), [])
-        found = "\n".join(check_docs.warnings(self.root))
-        self.assertIn("past 150 KB", found)
-        self.assertIn("no test cites AC-01", found)
+        self.assertEqual(check_docs.warnings(self.root), ["terminum.md: no test cites AC-01"])
 
     def test_a_copy_with_no_git_is_still_read(self):
         subprocess.run(["rm", "-rf", str(self.root / ".git")], check=True)

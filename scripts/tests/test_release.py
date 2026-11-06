@@ -83,7 +83,7 @@ class ReleaseTest(unittest.TestCase):
         (self.work / "f").write_text("2")
         self.assertIn("the tree has changes", self.refused(release.check_source, "v1.3.0"))
         git(self.work, "commit", "-qam", "two")
-        self.assertIn("HEAD is not origin/main", self.refused(release.check_source, "v1.3.0"))
+        self.assertIn("HEAD is not on origin/main", self.refused(release.check_source, "v1.3.0"))
         self.assertIn("v1.2.0 exists and is not HEAD", self.refused(release.check_source, "v1.2.0"))
 
     def test_a_head_moved_during_the_build_is_not_tagged(self):

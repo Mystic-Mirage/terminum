@@ -6,7 +6,7 @@
       fetch origin, then branch <kind>/<slug> (no upstream) from <ref> (default origin/main),
       check it out in .worktrees/<slug> and link it; warns when main has unpushed commits
   link [<path>]   share the primary checkout's local files with the tree at <path> (default:
-      this one): symlinks to its .toolchain, local.mk, CLAUDE.local.md, MEMORY.md and
+      this one): symlinks to its .toolchain, local.mk, CLAUDE.local.md, project-memory and
       .claude/settings.local.json; clones (copy-on-write where the disk can) of ui/node_modules
       when the lockfiles match and of terminumd/target/release (its dependencies' builds)
   list            every worktree: branch, uncommitted files, commits not in origin/main,
@@ -34,7 +34,7 @@ import time
 KINDS = ("feat", "fix", "test", "docs", "chore")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 # the primary checkout's local files every tree uses as they are: linked, never copied
-SHARED = (".toolchain", "local.mk", "CLAUDE.local.md", "MEMORY.md", ".claude/settings.local.json")
+SHARED = (".toolchain", "local.mk", "CLAUDE.local.md", "project-memory", ".claude/settings.local.json")
 # repository-wide and append-only; no trailing slash: a symlink to a folder is no folder to git
 EXCLUDES = ("/.worktrees", *(f"/{name}" for name in SHARED))
 # ignored but rebuilt by make or cargo: removing a tree may drop them

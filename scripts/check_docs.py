@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""The docs' shape, in `make check` (spec AC-103; what it cannot judge is /docs-review's):
-each spec's sections in order and its size; each acceptance case unique across the specs, tagged
+"""The docs' shape, reported by `make test` and blocking nothing (spec AC-103; what it cannot
+judge is /docs-review's): each spec's sections in order and its size; each acceptance case unique across the specs, tagged
 alike wherever it stands, with scenarios and a line of proof; every AC-nn cited in docs or code
 exists, in the spec named beside it; relative links in docs lead somewhere."""
 from pathlib import Path
@@ -15,8 +15,6 @@ SECTIONS = ["Metadata", "Overview", "Scope and non-goals", "Assumptions, depende
             "Recommendation and ownership", "Technical details and specifications", "Delivery stages",
             "Checklist with Definition of Done"]
 TAGS = {"[MUST / P0]", "[SHOULD / P1]", "[NICE TO HAVE / later]"}
-WARN_KB = 150
-MAX_LOG_ROWS = 10
 BUILD_DIRS = {"target", "node_modules", "dist", ".toolchain", ".worktrees", ".checks"}
 AC = re.compile(r"\bAC-(\d{2,3})\b")
 CITED = re.compile(r"\b(terminum(?:-[a-z]+)?\.md)\b[^\n.;|]{0,12}?\bAC-(\d{2,3})\b")
@@ -45,9 +43,8 @@ def check_spec(name, text):
     if [parts.get(i, ("",))[0] for i in range(len(SECTIONS))] != SECTIONS:
         problems.append(f"{name}: sections must be {', '.join(f'{i}. {t}' for i, t in enumerate(SECTIONS))}")
         return problems, {}, set()
-    log_rows = re.findall(r"^\| \d+\.\d+\.\d+ \|", parts[0][1], re.M)
-    if len(log_rows) > MAX_LOG_ROWS:
-        problems.append(f"{name}: {len(log_rows)} change-log rows, at most {MAX_LOG_ROWS}: older ones go to history/{name}")
+    if re.search(r"^\| \d+\.\d+\.\d+ \||^Change log", parts[0][1], re.M):
+        problems.append(f"{name}: a change log in section 0: a spec is a snapshot, git holds its history")
     tags, dropped = {}, set()
     for row in re.findall(r"^\| AC-(\d{2,3}) \|(.*)$", parts[4][1], re.M):
         number, rest = row
@@ -98,10 +95,9 @@ def check_all(root):
             if number in owner:
                 problems.append(f"AC-{number} in both {owner[number]} and {spec.name}")
             owner[number] = spec.name
-    history = root / "docs" / "specs" / "history"
     for path in tracked(root):
-        if path.suffix not in {".md", ".rs", ".py", ".sh", ".mjs", ".js", ".ts"} or path.is_relative_to(history) \
-                or path.is_relative_to(root / "docs" / "releases") or path.name == "CHANGELOG.md":
+        if path.suffix not in {".md", ".rs", ".py", ".sh", ".mjs", ".js", ".ts"} \
+                or path.is_relative_to(root / "docs" / "releases"):
             continue
         text = path.read_text(errors="replace")
         rel = path.relative_to(root)
@@ -123,9 +119,6 @@ def warnings(root):
     tests = "\n".join(path.read_text(errors="replace") for path in tracked(root)
                       if re.search(r"(^|/)(test|tests)/|_tests?\.|/e2e_|/bench_", str(path.relative_to(root))) and path.suffix in {".rs", ".py", ".sh", ".mjs"})
     for spec in sorted((root / "docs" / "specs").glob("terminum*.md")):
-        size = spec.stat().st_size // 1024
-        if size > WARN_KB:
-            found.append(f"{spec.name}: {size} KB, past {WARN_KB} KB: split it by scope")
         parts = sections(spec.read_text())
         staged = AC.findall(parts.get(10, ("", ""))[1])  # not built yet: nothing to test
         for number in re.findall(r"^### AC-(\d{2,3}) — ", parts.get(5, ("", ""))[1], re.M):

@@ -51,17 +51,12 @@ class PackageTest(unittest.TestCase):
             with self.assertRaises(package.agents.Failed):
                 package.binaries("v9", None, False, release=True)
 
-    def test_a_release_refuses_build_warnings_and_an_install_says_them(self):
+    def test_a_builds_warnings_are_said_and_block_nothing(self):
         warned = ["warning: ignoring deprecated linker optimization setting '1'"]
-        with mock.patch.object(package.agents, "WARNINGS", warned), mock.patch.dict(os.environ, {"TM_ALLOW_WARNINGS": ""}):
-            with self.assertRaises(package.agents.Failed) as e:
-                package.warned(release=True)
-            self.assertIn("deprecated linker", str(e.exception))
-            with mock.patch("sys.stderr") as err:
-                package.warned(release=False)                     # make install: said, not refused
-            self.assertIn("a release refuses them", "".join(c.args[0] for c in err.write.call_args_list))
-            with mock.patch.dict(os.environ, {"TM_ALLOW_WARNINGS": "1"}), mock.patch("sys.stderr"):
-                package.warned(release=True)                      # the maintainer's override, said
+        with mock.patch.object(package.agents, "WARNINGS", warned), mock.patch("sys.stderr") as err:
+            package.warned(release=True)
+            package.warned(release=False)
+        self.assertIn("deprecated linker", "".join(c.args[0] for c in err.write.call_args_list))
         with mock.patch.object(package.agents, "WARNINGS", []):
             package.warned(release=True)
 

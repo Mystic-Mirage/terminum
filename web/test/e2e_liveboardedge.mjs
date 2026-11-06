@@ -27,7 +27,13 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
   const isOpen = (sel) => page.evaluate((s) => document.querySelector(s).open, sel);
   const open = async () => { await page.goto(`${base}/kanban/`); await page.waitForSelector("#board .col"); await nap(250); };
   const drag = (id, column) => page.dragAndDrop(card(id), `.col[data-status="${column}"]`);
-  const newPane = (name) => { tmux("new-window", "-d", "-n", name); return tmux("list-panes", "-a", "-F", "#{window_name} #{pane_id}").split("\n").find((l) => l.startsWith(`${name} `)).split(" ")[1]; };
+  const panes = [];
+  const newPane = (name) => {
+    tmux("new-window", "-d", "-n", name);
+    const pane = tmux("list-panes", "-a", "-F", "#{window_name} #{pane_id}").split("\n").find((l) => l.startsWith(`${name} `)).split(" ")[1];
+    panes.push(pane);
+    return pane;
+  };
   const keyOf = async (pane) => { let k; await until(async () => (k = (await j("/api/tasks/meta")).sessions.find((s) => s.key.endsWith(`:${pane}`))?.key)); return k; };
   const hook = (pane, event, more = {}) => {
     const sock = tmux("display", "-p", "#{socket_path}"), pid = tmux("display", "-p", "#{pid}");
@@ -344,6 +350,8 @@ ${"z".repeat(400)}
     try { await f(); } catch (e) { check(`${name} ran to its end`, false, e.message.split("\n").slice(0, 6).join(" | ")); await page.unroute("**/*").catch(() => {}); }
     await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); }).catch(() => {});
   }
+  // this test's panes go, their agents' states with them: what follows measures a quiet page
+  for (const pane of panes) tmux("kill-pane", "-t", pane);
   // the checks after these stand on the session page
   await page.goto(`${base}/sessions/`);
   await page.waitForSelector("#term", { state: "attached" });

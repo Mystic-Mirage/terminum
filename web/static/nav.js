@@ -286,9 +286,8 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   const kindMark = (cls, title, inner = []) => { const k = el("span", `gkind ${cls}`); k.title = title; k.append(...inner); return k; };
   const drawProject = (p, id) => {
     const tops = topsOf(p);
-    if (!tops.length) return;                      // its sessions closed: terminumd forgets it at its next read
     const rows = tops.filter((t) => [t, ...kids(t)].some((it) => matches(it, q)));
-    if (q && !rows.length) return;
+    if (q && !rows.length) return;                 // a project with no session stands unless a filter is on
     shown += rows.length;
     const key = projectKey(p), closed = !q && collapsed.has(key);
     const sec = el("section", "grp project");
@@ -314,7 +313,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     h.append(t, acts);
     if (onProjectNew) acts.append(newButton(p.name, p.dir || "its folder", () => onProjectNew(p, tops.at(-1))));
     if (onProjectMenu) {
-      const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: new session, rename, move, ungroup, close`, (b) => onProjectMenu(p, b));
+      const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: new session, rename, move, delete, close`, (b) => onProjectMenu(p, b));
       m.setAttribute("aria-haspopup", "true");
       acts.append(m);
     }

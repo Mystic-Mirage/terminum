@@ -9,6 +9,7 @@ a killed tmux server. Browser checks of the page are in web/test.
 """
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -179,9 +180,12 @@ def main():
         ws.send({"t": "project", "action": "rename", "project": pj.get("id"), "name": "API"})
         renamed = ws.until(lambda m: m["t"] == "projects" and m["items"] and m["items"][0]["name"] == "API", 5)
         ws.send({"t": "project", "action": "remove", "id": created["id"]})
-        gone = ws.until(lambda m: m["t"] == "projects" and not m["items"], 5)
-        check("AC-92 renamed; its last session taken out, the project goes; kept in projects.json",
-              renamed is not None and gone is not None and json.load(open(os.path.join(t.app, "projects.json")))["projects"] == [], renamed)
+        gone = ws.until(lambda m: m["t"] == "projects" and m["items"] and not m["items"][0]["members"], 5)
+        with sqlite3.connect(f"file:{os.path.join(t.app, 'kanban.sqlite')}?mode=ro", uri=True) as stored:
+            kept = stored.execute("SELECT name FROM projects WHERE is_default = 0").fetchall()
+        stored.close()
+        check("AC-110 renamed; its last session taken out, the project stays; kept in the store",
+              renamed is not None and gone is not None and kept == [("API",)], renamed)
         tmux("kill-pane", "-t", twin["id"].rsplit(":", 1)[-1])
         # a tmux session's group renamed: its session, # and a leading - kept literally; a name tmux refuses said
         ws.send({"t": "renamegroup", "group": "local/notes", "name": "-n#otes"})

@@ -351,7 +351,7 @@ function drawNav() {
   if (reorder.dragging()) return;                  // the next layout redraws it
   renderNav($("sessions"), drawnGroups(), st.sid, $("filter").value, pick, st.collapsed, toggleGroup,
     bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true), tools.importTmux,
-    { projects: st.projects, onClone: cloneRow, order: st.listOrder, onProjectNew: (p, last) => send({ t: "clone", id: last.id, project: p.id }),
+    { projects: st.projects, onClone: cloneRow, order: st.listOrder, onProjectNew: (p, last) => rowMenu.newInProject(p, last?.id),
       onGroupNew: (g, last) => (last ? cloneRow(last) : send({ t: "new", group: g.wid })), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu });
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {

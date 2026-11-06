@@ -4,7 +4,7 @@
 // pane and bookmarks' pane show only its own; an agent creates, reads, changes and deletes its session's
 // records, the user's bookmark too; of its project's other sessions it reads and closes agents' records
 // and keeps no repeat, of no other session; a turn's end puts up only that session's reminders; a project
-// ungrouped leaves a session its records, a closed session orphans them.
+// deleted leaves a session its records, a closed session orphans them.
 import fs from "node:fs";
 import path from "node:path";
 import { check, shownPane, until } from "./check.mjs";
@@ -152,10 +152,11 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     await wait(500);
     check("AC-91 live: not another session's of its project", !rec(fromB["B later"])?.due, JSON.stringify(rec(fromB["B later"])));
 
-    // the project ungrouped, then a session closed
+    // the project deleted, then a session closed
     await page.click(`#sessions section[data-pid]:has(.item[data-id$=":${a.pane}"]) > h2`, { button: "right" });
-    await page.click('#rowmenu button[data-action="ungroup"]');
-    check("AC-33 live: the project goes", await until(() => !fs.readFileSync(path.join(app, "projects.json"), "utf8").includes("\"Notes\"")));
+    await page.click('#rowmenu button[data-action="deleteproject"]');
+    await page.click("#confirmok");
+    check("AC-33 live: the project goes", await until(() => page.evaluate(() => ![...document.querySelectorAll("#sessions section.project .label")].some((l) => l.textContent === "Notes"))));
     await wait(1000);
     check("AC-33 live: its sessions stay open, their records are not orphaned", !rec(fromB["B later"])?.orphaned && !rec(fromA["A asks"])?.orphaned, JSON.stringify(rec(fromB["B later"])));
     check("AC-33 live: the shown session still counts its own", await until(async () => (await count()) === "2"));

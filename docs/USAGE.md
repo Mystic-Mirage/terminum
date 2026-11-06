@@ -189,7 +189,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   a moment first; moving at once scrolls). Projects are named groups
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
   on every browser; a right click on a project's header, or its ⋯, opens its menu (New Window,
-  Rename, moves in the list, past tmux groups too, Ungroup, Close Project, which asks first); a tmux session's group
+  Rename, moves in the list, past tmux groups too, Delete Project, which moves its sessions and tasks to Default, Close Project, which closes its sessions and keeps it; both ask first); a tmux session's group
   has the same kind of menu (New Window, a window in that session; moves, Close Group).
   ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish);
   ⌘X cuts the text selected in a coding agent's input box.

@@ -98,7 +98,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => read(app, page, "files", |a, p| async move { files(&a, &p).await }),
         "size" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
-        "new" | "newsession" | "split" | "clone" | "rename" | "renamegroup" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
+        "new" | "newsession" | "split" | "clone" | "projectwindow" | "rename" | "renamegroup" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
         "plan" => super::plans::handle(app, page, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
         "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,

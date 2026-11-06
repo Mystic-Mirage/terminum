@@ -2,7 +2,7 @@
 // The session list's menus: a row's on a right click or a long press (Close Session, Clone, Add to Project,
 // Remove from Project, Mark as Unread or Read, Show Last 300 Lines (AC-96), Diagnostics (AC-100), Split Below, Right and Left (its quick shell, AC-88),
 // Move to the Top, to the Bottom, Up, Down, Move to Session…; AC-07, AC-92, AC-93), and a project's, on its ⋯ or a right click on its header (New Window, Rename, the same moves among the
-// projects, Ungroup, Close Project; AC-92), and a tmux session's group's, the same way (New Window,
+// projects, Delete Project, Close Project; AC-92), and a tmux session's group's, the same way (New Window,
 // moves among the groups, Close Group; AC-07). A move reorders the row among its group's: a project's
 // sessions in the project, a tmux session's windows in tmux; a project among the projects. Each is modal (a <dialog>): the
 // page is shaded and takes no press while it is open; a press outside it closes it and does
@@ -209,8 +209,27 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
   }
 
   /** A project's menu, under its ⋯ `b` or at x, y (a right click on its header): a new session in
-   *  its folder, Rename, moves among the projects as the list shows them, Ungroup (its sessions
-   *  stay, back in their tmux groups), Close Project (its sessions end, after asking). */
+   *  its folder, Rename, moves among the projects as the list shows them, Delete Project (asks; its
+   *  sessions stay, back in their tmux groups, its tasks in Default), Close Project (its sessions
+   *  end, after asking; the project stays). */
+  /** A new window of project `p`, after its session `last`; with none, on its host in its folder,
+   *  asked for once (AC-110). */
+  async function newInProject(p, last) {
+    if (last) return send({ t: "clone", id: last, project: p.id });
+    const dir = p.dir ? "" : (await askName(`The folder of ${p.name}`, "", "Open"))?.trim();
+    if (dir === undefined || (!p.dir && !dir)) return;
+    send({ t: "projectwindow", project: p.id, dir });
+  }
+
+  function plural(n, one) { return n === 1 ? `1 ${one}` : `${n} ${one}s`; }
+
+  /** Deleted only once asked (AC-110): nothing closes, nothing is lost. */
+  async function deleteProject(p, sessions) {
+    hide();
+    const them = `Its ${plural(sessions, "session")} and ${plural(p.tasks ?? 0, "task")} move to Default; nothing is closed.`;
+    if (await askConfirm(`Delete the project ${p.name}? ${them}`, "Delete Project")) send({ t: "project", action: "delete", project: p.id });
+  }
+
   function headMenu(p, b, x, y) {
     if (b && box.open && box.dataset.for === p.id) return hide();
     const here = p.members.filter((k) => item(k));
@@ -221,7 +240,7 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
       if (await askConfirm(`Close the project ${p.name} and ${them}? The programs running in them end.`, "Close Project")) for (const id of here) send({ t: "kill", id });
     };
     fill(p.name,
-      button("New Window", "new", () => { hide(); send({ t: "clone", id: here.at(-1), project: p.id }); }, here.length > 0),
+      button("New Window", "new", () => { hide(); newInProject(p, here.at(-1)); }),
       button("Rename…", "rename", () => { hide(); rename(p); }),
       document.createElement("hr"),
       button("Move to the Top", "top", () => move(0), i > 0),
@@ -229,7 +248,7 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
       button("Move Down", "down", () => move(i + 1), i >= 0 && i < last),
       button("Move to the Bottom", "bottom", () => move(last), i >= 0 && i < last),
       document.createElement("hr"),
-      button("Ungroup", "ungroup", () => { hide(); send({ t: "project", action: "delete", project: p.id }); }),
+      button("Delete Project…", "deleteproject", () => deleteProject(p, here.length)),
       button("Close Project…", "close", closeAll, here.length > 0));
     box.dataset.for = p.id;
     const r = b?.getBoundingClientRect();
@@ -330,5 +349,5 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     box.dataset.for = "";
     open(x, y, byFinger, keepKeys);
   }
-  return { headMenu, groupMenu, hide, show, rename, held, seen: (m) => { kept.seen(m); diag.seen(m); } };
+  return { headMenu, groupMenu, newInProject, hide, show, rename, held, seen: (m) => { kept.seen(m); diag.seen(m); } };
 }

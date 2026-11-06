@@ -125,18 +125,32 @@ pub fn retry_in(wanted: bool, agents: &str, refused_at: Option<Instant>, refusal
     Some(backoff(refusals).saturating_sub(now.duration_since(t)))
 }
 
-/// Waits for `closed` (the ssh child's end) or, with `retry`, that long; true when the retry
-/// time came first.
-pub async fn closed_or_retry(closed: impl std::future::Future, retry: Option<Duration>) -> bool {
-    match retry {
-        None => {
-            closed.await;
-            false
+/// How often the helper's stdin gets a line: its proof that this Mac still runs its ssh, whether
+/// or not Files keeps an event stream open to it (`agent::exit_when_unused` gives up after 90 s).
+const KEEP_ALIVE: Duration = Duration::from_secs(15);
+
+/// Never ends. A failed write is ignored: the ssh is gone, and its end is what the caller waits on.
+async fn keep_alive(stdin: &mut (impl tokio::io::AsyncWrite + Unpin)) {
+    use tokio::io::AsyncWriteExt;
+    loop {
+        tokio::time::sleep(KEEP_ALIVE).await;
+        let _ = stdin.write_all(b"\n").await;
+    }
+}
+
+/// Keeps the helper told while it waits for `closed` (the ssh child's end) or, with `retry`, that
+/// long; true when the retry time came first.
+pub async fn closed_or_retry(closed: impl std::future::Future, retry: Option<Duration>, stdin: &mut (impl tokio::io::AsyncWrite + Unpin)) -> bool {
+    let retried = async {
+        match retry {
+            Some(d) => tokio::time::sleep(d).await,
+            None => std::future::pending().await,
         }
-        Some(d) => tokio::select! {
-            _ = closed => false,
-            () = tokio::time::sleep(d) => true,
-        },
+    };
+    tokio::select! {
+        _ = closed => false,
+        () = retried => true,
+        () = keep_alive(stdin) => false,
     }
 }
 

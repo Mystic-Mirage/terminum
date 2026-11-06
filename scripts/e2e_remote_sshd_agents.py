@@ -233,6 +233,14 @@ def main():
         kept = [i for i in json.load(open(marks)).get("items", []) if i.get("by")] if os.path.exists(marks) else []
         check(f"[{v}] AC-99 the host row has the ETA, and the agent's note is its bookmark on the Mac (AC-98)", row is not None and any(i.get("note") == "host note" for i in kept), [row, kept])
 
+        # agents with files off, past the helper's 90 s rule (the longest wait here)
+        log = lambda: on_host("cat $HOME/.terminum/logs/agent.log")   # noqa: E731
+        starts, began = log().count('event="start"'), time.time()
+        while time.time() - began < 95 and "no Mac connected" not in log() and record(t, "devbox").get("agents") == "up":
+            time.sleep(1)
+        check(f"[{v}] AC-99 with files off the helper and the link stay past 90 s over real ssh ({time.time() - began:.0f} s)",
+              time.time() - began >= 95 and "no Mac connected" not in log() and log().count('event="start"') == starts, log()[-300:])
+
         # refused forward: alexb's sshd allows only local stream forwards
         st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refuser", "recipe": f"alexb@127.0.0.1 -p {BOB_PORT} -i {work}/key", "files": True})
         item_of(ws, "refuser")

@@ -152,9 +152,12 @@ async fn run_agent(socket: std::path::PathBuf) {
     let link = Link::Local { tmux: "tmux".into(), socket: "unused".into(), conf: "/dev/null".into() };
     let app = build_app(cfg, &Env { list_cache_mb: 32, ..env }, looks, link, "unused");
     let store = app.store.clone();
-    agent::exit_with_stdin(move || exit_with(&store, "ssh connection closed"));
+    let heard = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let line = heard.clone();
+    agent::exit_with_stdin(move || line.store(true, std::sync::atomic::Ordering::Relaxed), move || exit_with(&store, "ssh connection closed"));
     let (store, bus) = (app.store.clone(), app.bus.clone());
-    agent::exit_when_unused(move || bus.subscribers(), move || exit_with(&store, "no Mac connected for 90 s"));
+    let used = move || heard.swap(false, std::sync::atomic::Ordering::Relaxed) || bus.subscribers() > 0;
+    agent::exit_when_unused(used, move || exit_with(&store, "no Mac connected for 90 s"));
     ops::NO_FINDER.store(true, std::sync::atomic::Ordering::Relaxed);
     tokio::spawn(page::upload::sweep_daily(home.join(page::upload::REMOTE_DIR)));   // this host's pastes (AC-36)
     let store = app.store.clone();

@@ -85,9 +85,22 @@ fn retry_is_scheduled_only_for_a_refused_wanted_link() {
 async fn the_scheduler_ends_a_healthy_connection_at_the_retry_time() {
     // a Files connection that never closes on its own: the retry time ends the wait
     let start = tokio::time::Instant::now();
-    assert!(closed_or_retry(std::future::pending::<()>(), Some(RETRY)).await);
+    assert!(closed_or_retry(std::future::pending::<()>(), Some(RETRY), &mut tokio::io::sink()).await);
     assert_eq!(start.elapsed(), RETRY);
     // a connection that closes first is not a retry
-    assert!(!closed_or_retry(async {}, Some(RETRY)).await);
-    assert!(!closed_or_retry(tokio::time::sleep(Duration::from_secs(5)), None).await);
+    assert!(!closed_or_retry(async {}, Some(RETRY), &mut tokio::io::sink()).await);
+    assert!(!closed_or_retry(tokio::time::sleep(Duration::from_secs(5)), None, &mut tokio::io::sink()).await);
+}
+
+/// AC-99: the helper's stdin hears from the Mac for as long as its ssh runs, with no retry due.
+#[tokio::test(start_paused = true)]
+async fn the_helper_hears_a_line_every_15_s_until_the_ssh_ends() {
+    use tokio::io::AsyncReadExt;
+    let (mut stdin, mut helper) = tokio::io::duplex(64);
+    let closed = tokio::time::sleep(Duration::from_secs(100));
+    assert!(!closed_or_retry(closed, None, &mut stdin).await);
+    drop(stdin);
+    let mut got = Vec::new();
+    helper.read_to_end(&mut got).await.unwrap();
+    assert_eq!(got, b"\n\n\n\n\n\n", "six lines in 100 s, so 90 s never pass unheard");
 }

@@ -179,8 +179,8 @@ fn answer(out: &str) -> &str {
 struct Running {
     child: Child,
     agent_id: String,
-    /// the agent lives as long as its stdin is open
-    _stdin: tokio::process::ChildStdin,
+    /// the agent lives as long as its stdin is open, and hears from us on it
+    stdin: tokio::process::ChildStdin,
     /// what the helper said about the agents' link
     said: Option<super::link::Said>,
 }
@@ -262,7 +262,7 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&supe
         return Err(err.trim().lines().last().map_or_else(|| "the helper did not start".to_string(), str::to_string));
     };
     if !current(&agent_id) {
-        return Ok(Running { child, agent_id, _stdin: stdin, said });
+        return Ok(Running { child, agent_id, stdin, said });
     }
     // the socket appears once ssh listens; only a request answered shows the host forwards it
     let mut forwarded = None;
@@ -284,7 +284,7 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&supe
     if files && crate::hosts::files_state(app, host).as_deref() == Some("enabled") {
         crate::remote::register(app, host, Some((local, token)));
     }
-    Ok(Running { child, agent_id, _stdin: stdin, said })
+    Ok(Running { child, agent_id, stdin, said })
 }
 
 /// Keeps a host's helper connected while its files or its agents are enabled and its control
@@ -330,7 +330,7 @@ async fn keep(app: Shared, host: String) {
                 };
                 // -R refused: this connection (only this ssh) ends at the retry time, so a fixed
                 // sshd brings agents back without waiting for Files' connection to break
-                let again = super::link::closed_or_retry(run.child.wait(), retry).await;
+                let again = super::link::closed_or_retry(run.child.wait(), retry, &mut run.stdin).await;
                 if again {
                     tracing::info!(event = "agent.link_retry", host);
                     let _ = run.child.kill().await;

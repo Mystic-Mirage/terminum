@@ -5,7 +5,8 @@ terminumd, with this Mac playing the host through scripts/fake_ssh.py (a private
 a fake home with a stub `claude` and a ~/.codex folder). Checks: agents switched on (the
 per-agent lines, the plugin and Codex entries, the link socket), a hook and `terminum-host mcp`
 from a host pane reach that host's row (plan, doing, ETA, note, the prompt kept under the host),
-a pane of another tmux with the same socket name is not filed, a refused forward, agents off.
+a pane of another tmux with the same socket name is not filed, a refused forward, agents off,
+and agents with files off past the helper's 90 s rule (the longest wait here: about 95 s).
 
     python3 scripts/e2e_remote_agents.py   (needs terminumd built: cd terminumd && cargo build)
 """
@@ -20,6 +21,7 @@ import time
 from urllib.parse import urlencode
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import e2e_ws  # noqa: E402
 from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout  # noqa: E402
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own  # noqa: E402
@@ -83,6 +85,60 @@ def until(fn, pred, timeout):
             return v
         time.sleep(0.3)
     return v
+
+
+def hooks_known(sock, target, evdir, hb):
+    """Whether terminum remembers the pane's hooks: get_session_plan through `terminum-host mcp`
+    says HOOKS_OFF once its hook state is dropped."""
+    call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "get_session_plan", "arguments": {}}}
+    open(os.path.join(evdir, "get.in"), "w").write(json.dumps(mcp_lines()[0]) + "\n" + json.dumps(mcp_lines()[1]) + "\n" + json.dumps(call) + "\n")
+    out = os.path.join(evdir, "get.out")
+    if os.path.exists(out):
+        os.unlink(out)
+    done = f"get-done-{time.time():.0f}"   # the screen still shows the marker of an earlier call
+    in_pane(sock, target, f"{hb} mcp < get.in > get.out 2>&1; echo {done}", done)
+    answers = [json.loads(x) for x in open(out) if x.startswith("{")]
+    said = next((a for a in answers if a.get("id") == 2), {}).get("result", {})
+    return said.get("isError") is False and "hooks are not running" not in json.dumps(said)
+
+
+def agents_only(t, home, hb, pane):
+    """AC-99 "a link in use stays up with files off"; beside it, a helper with its stdin open that
+    nothing talks to: it must exit by the same 90 s rule. A flap fails at once, not at the end."""
+    st, body = unix_request(t.sock, "POST", "/hosts/files-remove", {"name": "devbox"})
+    check("setup: files off", st == 200, body)
+    st, body = unix_request(t.sock, "POST", "/hosts/agents-on", {"name": "devbox"})
+    up = until(lambda: host_rec(t), lambda h: h.get("agents") == "up", 15)
+    check("setup: agents on, files off, the link up", st == 200 and up.get("agents") == "up" and up.get("files") is None, (body, up))
+    evdir = os.path.join(home, "proj")
+    in_pane(REMOTE_SOCKET, pane, f'cd {evdir}; {hb} hook claude < ev0.json; echo "hook-rc=$?"', "hook-rc=")
+    check("AC-99 agents only: the pane's hook state is known", hooks_known(REMOTE_SOCKET, pane, evdir, hb), open(os.path.join(evdir, "get.out")).read()[-400:])
+    alog = os.path.join(home, ".terminum", "logs", "agent.log")
+    lines = lambda: open(alog).read()   # noqa: E731
+    starts = lines().count('event="start"')
+    lone_log = os.path.join(t.root, "lone.log")
+    lone = subprocess.Popen([e2e_ws.BIN, "--agent", "--socket", os.path.join(t.root, "l", "s"), "--log", lone_log],
+                            env={**t.env, "HOME": home}, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    lone.stdin.write(b"0123456789abcdef0123456789abcdef\n")
+    lone.stdin.flush()
+    began = time.time()
+    try:
+        while time.time() - began < 95 or lone.poll() is None:
+            if "no Mac connected" in lines() or host_rec(t).get("agents") != "up" or time.time() - began > 110:
+                break
+            time.sleep(1)
+        took = time.time() - began
+        check(f"AC-99 agents only: the helper stays past 90 s with no event stream ({took:.0f} s)",
+              took >= 95 and "no Mac connected" not in lines() and lines().count('event="start"') == starts, lines()[-300:])
+        check("AC-99 agents only: `terminum hosts` still says up", host_rec(t).get("agents") == "up", host_rec(t))
+        until(lambda: host_rec(t), lambda h: h.get("agents") == "up", 5)
+        check("AC-99 agents only: the hook state survives", hooks_known(REMOTE_SOCKET, pane, evdir, hb), open(os.path.join(evdir, "get.out")).read()[-400:])
+        lone_said = open(lone_log).read() if os.path.exists(lone_log) else ""
+        check("AC-82 a helper nothing connects to still exits after 90 s", lone.poll() is not None and "no Mac connected for 90 s" in lone_said, (lone.poll(), lone_said[-300:]))
+    finally:
+        if lone.poll() is None:
+            lone.kill()
+        lone.wait()
 
 
 def main():
@@ -215,6 +271,11 @@ def main():
         check("AC-99 agents off: the link socket is gone", not gone, gone)
         check("AC-99 agents off: the files helper kept (files on)", any(os.path.exists(os.path.join(home, ".terminum", "bin", n)) for n in ("terminumd-agent", "terminumd")),
               os.listdir(os.path.join(home, ".terminum", "bin")) if os.path.isdir(os.path.join(home, ".terminum", "bin")) else None)
+
+        # 7. agents with files off, past the helper's 90 s rule
+        t.stop()
+        t.start()
+        agents_only(t, home, hb, pane)
     finally:
         t.stop()
         if other:

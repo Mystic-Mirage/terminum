@@ -13,7 +13,8 @@ function top() {
   const from = term.offsetParent ? term.offsetTop : bar.offsetParent ? bar.offsetTop + bar.offsetHeight : null;
   if (from === null) return "";
   const over = ["markbar", "paused"].map($).filter((e) => !e.hidden && e.offsetParent);
-  return `${over.reduce((y, e) => Math.max(y, e.offsetTop + e.offsetHeight + 8), from + GAP)}px`;
+  const said = [...$("over").children].filter((e) => !e.hidden).map((e) => $("over").offsetTop + e.offsetTop + e.offsetHeight + 8);   // what is said over the terminal
+  return `${Math.max(from + GAP, ...said, ...over.map((e) => e.offsetTop + e.offsetHeight + 8))}px`;
 }
 
 /** Shows `text` for `ms`. */

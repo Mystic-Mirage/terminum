@@ -51,6 +51,40 @@ def typed_echo(ws, word):
     return time.time() - t0 if seen else None
 
 
+def late_window(t, ws, frozen, groups, local_pane, session, host_pane):
+    """A short hang: keys and a window asked of the host, the user moves on and does something else
+    there: all of it arrives in order, and the window takes nobody away."""
+    before = tmux(REMOTE, "list-windows", "-a", "-F", "#{window_id}").split()
+    os.kill(frozen, signal.SIGSTOP)
+    try:
+        ws.send({"t": "in", "data": "echo keys-for-host-$((5*5))\r"})
+        ws.send({"t": "new", "group": host_group(groups)["wid"]})
+        time.sleep(0.2)
+        t0 = time.time()
+        ws.send({"t": "sub", "id": local_pane, "cols": 90, "rows": 25})
+        opened = ws.until(lambda m: m["t"] == "screen" and m.get("sid") == local_pane, 5)
+        check("AC-132 a local pane opens with a host's keys and window waiting", opened is not None and time.time() - t0 < FAST, f"{time.time() - t0:.2f} s")
+        ws.send({"t": "rename", "id": local_pane, "name": "renamed-meanwhile"})
+        named = wait_layout(ws, lambda g: any(i["id"] == local_pane and i["title"] == "renamed-meanwhile" for x in g for i in x["items"]), 5)
+        check("AC-132 an action on this Mac finishes with the host's waiting", named is not None and time.time() - t0 < 2 * FAST, f"{time.time() - t0:.2f} s")
+        time.sleep(1.1)                 # one new window a second (AC-07)
+        t0 = time.time()
+        ws.send({"t": "new", "group": next(g for g in groups if not g.get("host"))["wid"]})
+        made = ws.until(lambda m: m["t"] == "created" and m["id"].startswith("tmux:local:"), 5)
+        check("AC-132 a window asked on this Mac comes at once, and shows", bool(made) and not made.get("stay") and time.time() - t0 < FAST, made)
+        ws.send({"t": "sub", "id": local_pane, "cols": 90, "rows": 25})
+    finally:
+        os.kill(frozen, signal.SIGCONT)
+    late = ws.until(lambda m: m["t"] == "created" and m["id"].startswith("tmux:devbox:"), 15)
+    check("AC-132 the host's window comes when it answers, and takes nobody away", bool(late) and late.get("stay") is True, late)
+    after = tmux(REMOTE, "list-windows", "-a", "-F", "#{window_id}").split()
+    check("AC-132 the host's window was made", len(after) == len(before) + 1, after)
+    screen = tmux(REMOTE, "capture-pane", "-p", "-t", host_pane.rsplit(":", 1)[1])
+    check("AC-132 the keys for the host went in", "keys-for-host-25" in screen, screen[-200:])
+    ws.send({"t": "sub", "id": host_pane, "cols": 90, "rows": 25})
+    ws.until(lambda m: m["t"] == "screen" and m.get("sid") == host_pane, 10)
+
+
 def main():
     t = Terminumd(free_port(), LOCAL)
     frozen = None
@@ -76,6 +110,7 @@ def main():
         check("AC-81 the host's pane shows", ws.until(lambda m: m["t"] == "screen", 10) is not None)
 
         frozen = int(tmux(REMOTE, "display-message", "-p", "#{pid}"))
+        late_window(t, ws, frozen, groups, local_pane, session, host_pane)
         os.kill(frozen, signal.SIGSTOP)
         ws.send({"t": "in", "data": "keys for a host that hangs\r"})
         ws.send({"t": "new", "group": host_group(groups)["wid"]})   # an action waiting on it

@@ -38,8 +38,6 @@ pub struct State {
     pub look: Look,
     /// its terminal is hidden behind Files or View (a phone): no screens captured or sent for it
     pub screens_off: bool,
-    /// the pane shown when it last asked for a window (AC-132)
-    pub asked_on: Option<String>,
     /// when this page last made a window, session or split (one a second, AC-07)
     pub last_new: Option<Instant>,
     /// typed, not yet handed to tmux
@@ -101,9 +99,8 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "files" => read(app, page, "files", |a, p| async move { files(&a, &p).await }),
         "size" | "mouse" => super::sizing::handle(app, page, t, &msg),
         "new" | "newsession" | "split" | "clone" | "rename" | "renamegroup" | "reorder" | "move" | "kill" => {
-            page.state.lock().asked_on = shown_key(page);    // a window that comes late takes nobody away (AC-132)
-            let (a, p, t) = (app.clone(), page.clone(), t.to_string());
-            action(app, page, &msg.clone(), async move { super::sessions::handle(&a, &p, &t, &msg).await });
+            let (a, p, t, asked) = (app.clone(), page.clone(), t.to_string(), shown_key(page));
+            action(app, page, &msg.clone(), super::sessions::ASKED_ON.scope(asked, async move { super::sessions::handle(&a, &p, &t, &msg).await }));
         }
         "plan" => super::plans::handle(app, page, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
@@ -127,7 +124,8 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         }
         "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => {
             let (a, p, t) = (app.clone(), page.clone(), t.to_string());
-            action(app, page, &msg.clone(), async move { super::sent::handle(&a, &p, &t, &msg).await });
+            let at = page.state.lock().shown.as_ref().map(|s| (s.key.clone(), s.server.clone(), s.pane.clone()));
+            action(app, page, &msg.clone(), async move { super::sent::handle(&a, &p, &t, &msg, at).await });
         }
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
@@ -163,13 +161,17 @@ fn shown_key(page: &Page) -> Option<String> {
     page.state.lock().shown.as_ref().map(|s| s.key.clone())
 }
 
-/// The server a message is about: its pane's, its group's or its place, else the shown pane's.
+/// The server a message is about: its pane's, its group's or its place, a new session's and a
+/// restore's on this Mac, else the shown pane's.
 fn lane_of(app: &Shared, page: &Page, msg: &Value) -> String {
+    if matches!(msg["t"].as_str(), Some("newsession" | "restore")) {
+        return app.tmux.local.id();
+    }
     if let Some((server, _)) = msg["id"].as_str().and_then(|id| app.tmux.resolve(id)) {
         return server.id();
     }
-    if let Some((prefix, _)) = msg["group"].as_str().and_then(|g| g.rsplit_once('/')) {
-        return prefix.to_string();
+    if let Some((server, _)) = msg["group"].as_str().and_then(|g| super::sessions::group(app, g)) {
+        return server.id();
     }
     msg["server"].as_str().map_or_else(|| shown_lane(page), str::to_string)
 }
@@ -265,9 +267,14 @@ pub async fn shown_cwd(page: &Page) -> Result<(String, Arc<Server>, String), (Op
         let s = st.shown.as_ref().ok_or((None, "No pane is shown.".to_string()))?;
         (s.key.clone(), s.server.clone(), s.pane.clone())
     };
+    cwd_of(&key, &server, &pane).await
+}
+
+/// `pane`'s key, server and folder.
+pub async fn cwd_of(key: &str, server: &Arc<Server>, pane: &str) -> Result<(String, Arc<Server>, String), (Option<String>, String)> {
     match server.run(format!("display -p -t {pane} '#{{pane_current_path}}'")).await {
-        Ok(lines) => Ok((key, server, lines.into_iter().next().unwrap_or_default())),
-        Err(e) => Err((Some(key), format!("The pane's folder is not known: {e}"))),
+        Ok(lines) => Ok((key.to_string(), server.clone(), lines.into_iter().next().unwrap_or_default())),
+        Err(e) => Err((Some(key.to_string()), format!("The pane's folder is not known: {e}"))),
     }
 }
 

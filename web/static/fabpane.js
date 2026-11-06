@@ -6,6 +6,7 @@
 // button, centered on it, or under it where the view is too narrow (then `data-under` is set).
 
 import { floats } from "./fold.js";   // a phone or a narrow window
+import { underBanners } from "./banners.js";
 import { columnX } from "./markpick.js";
 
 const GAP = 14;                // px between a button and its pane
@@ -88,7 +89,7 @@ function placeWindow(pane) {
   const area = pane.offsetParent?.getBoundingClientRect(), term = document.getElementById("term"), t = term.getBoundingClientRect();
   if (pane.hidden || !area) return;
   const right = columnX(term) - 14, left = Math.max(t.left + 16, right - 820);
-  const said = Math.max(t.top, ...[...document.querySelectorAll("#over > .banner")].filter((b) => !b.hidden).map((b) => b.getBoundingClientRect().bottom));
+  const said = underBanners(t.top);
   Object.assign(pane.style, { left: `${Math.round(left - area.left)}px`, top: `${Math.round(said + 12 - area.top)}px`,
     width: `${Math.round(right - left)}px`, height: `${Math.max(240, Math.round(t.bottom - said - 28))}px` });
   delete pane.dataset.under;

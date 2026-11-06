@@ -45,6 +45,8 @@ pub struct ServerList {
 struct State {
     requested: u64,
     running: bool,
+    /// a read finished, whatever it found
+    tried: bool,
     /// None until something was read
     told: Option<Told>,
     last_good: Vec<Value>,
@@ -77,9 +79,15 @@ impl ServerList {
         self.state.lock().told.clone()
     }
 
+    /// A read of it finished, whatever it found.
+    pub fn tried(&self) -> bool {
+        self.state.lock().tried
+    }
+
     /// Keeps what a read found; true when it is this server's own list, fresh (a turn may settle by it).
     fn store(&self, got: Got, now: Instant, off: bool) -> bool {
         let mut st = self.state.lock();
+        st.tried = true;
         match got {
             Got::Read { groups, absent, keys, ok } => {
                 if ok {

@@ -355,9 +355,9 @@ function drawNav() {
       onGroupNew: (g, last) => (last ? cloneRow(last) : send({ t: "new", group: g.wid })), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu });
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {
-    const next = st.sid && serverDown(st.groups, st.sid) ? null : place.next();   // its project's or group's first, else the list's (AC-92); it stays while its server is away (AC-132)
+    const stay = st.sid && serverDown(st.groups, st.sid), next = stay ? null : place.next();   // its project's or group's first, else the list's (AC-92); while its server is away, the pane (AC-132)
     if (next) select(next);
-    else showCurrent(null);
+    else showCurrent(stay ? undefined : null);     // undefined: its header stays as it is
     if (!st.sid && narrow.matches) openDrawer();
     return quick.sync();
   }

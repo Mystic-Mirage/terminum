@@ -217,9 +217,10 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
   const stalls = new Map();                        // server id -> [what, since (performance.now())]
   let stallTimer = 0;
   function showStall(m) {
+    if (m.clear) { stalls.clear(); stalled.clear(); }
     const key = m.key ?? m.server ?? "local", what = m.what ?? `tmux on ${(m.server ?? "local") === "local" ? "this Mac" : m.server}`;
     if (m.ok) { stalls.delete(key); stalled.delete(key); }
-    else if (!stalls.has(key)) { stalls.set(key, [what, performance.now() - (m.ms ?? 0)]); stalled.add(key); }
+    else if (!m.clear && !stalls.has(key)) { stalls.set(key, [what, performance.now() - (m.ms ?? 0)]); stalled.add(key); }
     clearInterval(stallTimer);
     sayStalls();
     if (stalls.size) stallTimer = setInterval(sayStalls, 1000);
@@ -227,7 +228,7 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
   // Only the shown pane's server: another's trouble is not this pane's (AC-132); its group in the
   // list says when its link drops.
   function sayStalls() {
-    const shown = current()?.group.server, mine = [...stalls].filter(([key]) => !shown || key === shown);
+    const found = current(), shown = found?.group.server, mine = found ? [...stalls].filter(([key]) => !shown || key === shown) : [];
     if (!mine.length) return banner("stall", "");
     banner("stall", mine.map(([, [what, since]]) =>
       `${what} is not responding (${Math.round((performance.now() - since) / 1000)} s)`).join(". "), mine.map(([key]) => key).join());   // the seconds are no news

@@ -122,6 +122,7 @@ fn kind_of(text: &str) -> String {
 /// What a page learns when it connects: the list, the stall line, bookmarks, settings and
 /// the last restore report.
 fn hello(app: &Shared, page: &Page) {
+    page.send_json(&json!({"t": "stall", "clear": true}));   // what it knew of stalls is from another connection, or terminumd
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
     crate::page::projects::hello(app, page);   // before the bookmarks: a project's ones never count as shown nowhere
     crate::page::marks::hello(app, page);

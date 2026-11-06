@@ -224,7 +224,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #stall, #sized { background: var(--warn-fill); color: #fff; padding: 6px 12px; }
 /* over the terminal's top rows, taking no room: a line that comes and goes never resizes a
    pane, which would make its program redraw (AC-132) */
-#over { position: relative; height: 0; z-index: 6; flex: none; }
+#over { position: relative; height: 0; z-index: 9; flex: none; }   /* over the floating buttons, its × in reach; under the drawer */
 /* a banner: its line and an × (banners.js) */
 .banner { display: flex; align-items: center; gap: 8px; }
 .banner[hidden] { display: none; }

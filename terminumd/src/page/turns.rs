@@ -41,16 +41,23 @@ impl Turns {
         self.pending.lock().iter().filter(|(_, (_, hook))| *hook).map(|(k, (at, _))| (k.clone(), now.duration_since(*at) >= limit)).collect()
     }
 
+    /// The panes whose turn just ended: they wait to settle by their own server's next list. Another
+    /// server's telling may be the first to see it (AC-132).
+    pub fn ended(&self, ended: Vec<String>, now: Instant) {
+        let mut pending = self.pending.lock();
+        for k in ended {
+            pending.entry(k).or_insert((now, false));
+        }
+    }
+
     /// Takes the panes `ended` just now and gives back, once, those of the server keyed by `server`
     /// that have stayed done for SETTLE; `busy(key)` says whether a pane is busy by that server's list,
     /// just read (None: not listed, gone). Only that list judges its panes: another server's says
     /// nothing of them, whatever it was read for (AC-132). A pane busy again, or gone, waits no more;
     /// one its hooks ended waits while busy (the screen tells background work its hooks do not).
     pub fn settle(&self, server: &str, ended: Vec<String>, busy: impl Fn(&str) -> Option<bool>, now: Instant) -> Vec<String> {
+        self.ended(ended, now);
         let mut pending = self.pending.lock();
-        for k in ended {
-            pending.entry(k).or_insert((now, false));
-        }
         let mut out = Vec::new();
         pending.retain(|k, (at, hook)| !k.starts_with(server) || match busy(k) {
             Some(false) if now.duration_since(*at) >= SETTLE => { out.push(k.clone()); false }
@@ -62,9 +69,10 @@ impl Turns {
     }
 
     /// How long until the first pane waiting now has stayed done for SETTLE (the loop reads the
-    /// list again then), None when none waits; a hook's end is read again with every list.
-    pub fn due_in(&self, now: Instant) -> Option<Duration> {
-        self.pending.lock().values().filter(|(_, hook)| !hook).map(|(at, _)| SETTLE.saturating_sub(now.duration_since(*at))).min()
+    /// list again then), None when none waits; a hook's end is read again with every list, and one
+    /// on a server `reachable` denies when it answers: its list is not asked for it (AC-132).
+    pub fn due_in(&self, now: Instant, reachable: impl Fn(&str) -> bool) -> Option<Duration> {
+        self.pending.lock().iter().filter(|(k, (_, hook))| !hook && reachable(k)).map(|(_, (at, _))| SETTLE.saturating_sub(now.duration_since(*at))).min()
     }
 }
 
@@ -81,9 +89,9 @@ mod tests {
         assert!(t.settle("", vec!["a".into()], idle, t0).is_empty(), "just done: it waits");
         assert!(t.settle("", vec![], idle, t0 + SETTLE / 2).is_empty());
         assert!(t.settle("", vec!["a".into()], idle, t0 + SETTLE / 2).is_empty(), "seen done again: still since t0");
-        assert_eq!(t.due_in(t0 + SETTLE / 2), Some(SETTLE / 2), "the loop reads the list again then");
+        assert_eq!(t.due_in(t0 + SETTLE / 2, |_| true), Some(SETTLE / 2), "the loop reads the list again then");
         assert_eq!(t.settle("", vec![], idle, t0 + SETTLE), ["a"], "done for SETTLE: ended, once");
-        assert_eq!(t.due_in(t0 + SETTLE), None);
+        assert_eq!(t.due_in(t0 + SETTLE, |_| true), None);
         assert!(t.settle("", vec![], idle, t0 + SETTLE * 3).is_empty());
     }
 
@@ -109,13 +117,25 @@ mod tests {
         assert_eq!(t.settle("tmux:devbox:default:", vec![], |_| Some(false), t0 + SETTLE), ["tmux:devbox:default:%1"]);
     }
 
+    /// AC-132: an end seen by another server's telling waits for its own list, and a pane on a server
+    /// that cannot be reached asks for no list.
+    #[test]
+    fn an_end_seen_elsewhere_waits_for_its_own_list() {
+        let t = Turns::default();
+        let t0 = Instant::now();
+        t.ended(vec!["tmux:devbox:default:%1".into()], t0);
+        assert_eq!(t.due_in(t0, |_| true), Some(SETTLE));
+        assert_eq!(t.due_in(t0, |_| false), None, "down: nothing to read it from");
+        assert_eq!(t.settle("tmux:devbox:default:", vec![], |_| Some(false), t0 + SETTLE), ["tmux:devbox:default:%1"]);
+    }
+
     #[test]
     fn a_hooks_end_comes_at_once_or_once_the_background_work_ended() {
         let t = Turns::default();
         let t0 = Instant::now();
         t.hook_ended("a", t0);
         t.hook_ended("b", t0);
-        assert_eq!(t.due_in(t0), None, "the list is read after every hook: no wake-up of its own");
+        assert_eq!(t.due_in(t0, |_| true), None, "the list is read after every hook: no wake-up of its own");
         let a_busy = |k: &str| Some(k == "a");
         assert_eq!(t.settle("", vec![], a_busy, t0), ["b"], "not busy: at once");
         assert!(t.settle("", vec![], a_busy, t0 + SETTLE * 3).is_empty(), "a shell it started still runs: it waits");

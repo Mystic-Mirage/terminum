@@ -342,6 +342,16 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
             }
         }
     }
+    if !due.is_empty() && server.backed_up() {
+        // not asked now: as last read, never "no state", which would end a turn (AC-132)
+        let g = states.lock();
+        for p in &due {
+            let key = server.key(&p.pane_id);
+            if named_agent(p) || g.codex(&key) {
+                out.insert(p.pane_id.clone(), g.last(&key));
+            }
+        }
+    }
     if due.is_empty() || server.backed_up() {
         return (out, behind);
     }
@@ -352,8 +362,15 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
     let answers = client.run_all(lines).await;
     for ((p, a), mark) in due.iter().zip(answers).zip(marks) {
         let key = server.key(&p.pane_id);
+        let unanswered = a.as_ref().err().is_some_and(|e| e == "tmux did not answer");
         let rows = a.ok();
         let mut g = states.lock();
+        if unanswered {
+            if named_agent(p) || g.codex(&key) {
+                out.insert(p.pane_id.clone(), g.last(&key));   // a slow link says nothing of the pane (AC-132)
+            }
+            continue;
+        }
         let codex = !named_agent(p) && rows.as_deref().map_or(g.codex(&key), agentstate::codex_screen);
         // a pane that cannot be read shows no state this time (AC-39 failure)
         let read = rows.map(|rows| g.limited(&key, agentstate::read(&p.pane_title, &rows), now));

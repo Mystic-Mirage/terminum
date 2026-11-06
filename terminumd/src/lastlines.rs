@@ -186,7 +186,8 @@ type Answered = Arc<parking_lot::Mutex<HashMap<String, (String, Instant)>>>;
 /// so one that hangs delays only its own lines (AC-132).
 pub async fn follow(app: Shared) {
     let answered: Answered = Arc::default();
-    let mut servers: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
+    // by the server itself: a host replaced by a new record is another server, whoever holds the old one
+    let mut servers: HashMap<usize, tokio::task::JoinHandle<()>> = HashMap::new();
     let mut swept = Instant::now();
     loop {
         tokio::time::sleep(EVERY).await;
@@ -199,7 +200,7 @@ pub async fn follow(app: Shared) {
         }
         servers.retain(|_, task| !task.is_finished());
         for s in app.tmux.all() {
-            servers.entry(s.id()).or_insert_with(|| tokio::spawn(keep_server(app.clone(), Arc::downgrade(&s), answered.clone())));
+            servers.entry(Arc::as_ptr(&s) as usize).or_insert_with(|| tokio::spawn(keep_server(app.clone(), Arc::downgrade(&s), answered.clone())));
         }
         if swept.elapsed() >= SWEEP_EVERY {
             swept = Instant::now();

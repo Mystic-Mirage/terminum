@@ -19,7 +19,7 @@ const NEW_EVERY: Duration = Duration::from_secs(1);
 
 /// The server and session a group id names (`Server::group_prefix`; a bare name is a session
 /// of the private server).
-fn group(app: &Shared, wid: &str) -> Option<(Arc<Server>, String)> {
+pub(super) fn group(app: &Shared, wid: &str) -> Option<(Arc<Server>, String)> {
     match wid.split_once('/') {
         Some(("local", s)) => Some((app.tmux.local.clone(), s.to_string())),
         Some((h, s)) => match h.strip_prefix("local:") {
@@ -62,13 +62,20 @@ pub(super) fn allowed_now(page: &Page) -> bool {
     true
 }
 
+tokio::task_local! {
+    /// The pane shown when the running action was asked for: it may wait long in its lane (AC-132).
+    pub(super) static ASKED_ON: Option<String>;
+}
+
 /// Something new was made: the list has it before the page is told to show it.
 async fn created(app: &Shared, page: &Page, server: &Arc<Server>, pane_id: &str, note: Option<String>) {
     crate::lists::refresh_server(app, server).await;
+    let listed = super::marks::find_item(&app.layout.read(), &server.key(pane_id)).is_some();
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
+    // the user went on meanwhile, or the list does not have it yet: they stay where they are (AC-132)
     let shown = page.state.lock().shown.as_ref().map(|s| s.key.clone());
-    let moved = page.state.lock().asked_on != shown;   // the user went on meanwhile: the list has it, they stay (AC-132)
-    page.send_json(&json!({"t": "created", "id": server.key(pane_id), "note": note, "stay": moved}));
+    let moved = ASKED_ON.try_with(|asked| *asked != shown).unwrap_or(false);
+    page.send_json(&json!({"t": "created", "id": server.key(pane_id), "note": note, "stay": moved || !listed}));
 }
 
 pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {

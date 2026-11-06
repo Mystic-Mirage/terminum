@@ -68,8 +68,6 @@ pub struct Typed {
 #[derive(Default)]
 pub struct Queue {
     items: VecDeque<Typed>,
-    /// bytes of `items`
-    bytes: usize,
     /// the servers a runner types to: each its own, so a hung one holds up only its keys (AC-132)
     running: Vec<Arc<Server>>,
 }
@@ -81,12 +79,13 @@ impl Typed {
 }
 
 impl Queue {
-    /// Takes `item` unless the queue is full (QUEUE_BYTES, QUEUE_ITEMS); false: refused.
+    /// Takes `item` unless its server's part is full (QUEUE_BYTES, QUEUE_ITEMS): a slow server's
+    /// pastes never refuse another's keys (AC-132); false: refused.
     fn push(&mut self, item: Typed) -> bool {
-        if self.items.len() >= QUEUE_ITEMS || self.bytes + item.size() > QUEUE_BYTES {
+        let (items, bytes) = self.items.iter().filter(|t| Arc::ptr_eq(&t.server, &item.server)).fold((0, 0), |(n, b), t| (n + 1, b + t.size()));
+        if items >= QUEUE_ITEMS || bytes + item.size() > QUEUE_BYTES {
             return false;
         }
-        self.bytes += item.size();
         self.items.push_back(item);
         true
     }
@@ -94,7 +93,6 @@ impl Queue {
     /// Drops what waits (its page closed).
     fn clear(&mut self) {
         self.items.clear();
-        self.bytes = 0;
     }
 
     /// The first of `server`'s items and those of the same pane right behind it among that
@@ -107,9 +105,7 @@ impl Queue {
             if !Arc::ptr_eq(&self.items[i].server, server) {
                 i += 1;
             } else if self.items[i].key == key {
-                let t = self.items.remove(i).expect("in range");
-                self.bytes -= t.size();
-                out.push(t);
+                out.push(self.items.remove(i).expect("in range"));
             } else {
                 break;
             }
@@ -418,24 +414,24 @@ mod tests {
         assert_eq!(q.batch(&local).unwrap().len(), 2, "same key in a row: one batch");
         assert_eq!(q.batch(&other).unwrap().len(), 1, "the same key on another server stays its own");
         assert!(q.batch(&local).is_none() && q.batch(&host).is_none() && q.items.is_empty());
-        assert_eq!(q.bytes, 0);
     }
 
     #[test]
     fn a_flood_past_the_bound_is_refused_and_memory_stays_bounded() {
         let mut q = Queue::default();
         let paste = "x".repeat(PASTE_MAX);
+        let host = item("", b"").server;
+        let on_host = |data: &str| { let mut t = item(data, b""); t.server = host.clone(); t };
         let mut taken = 0;
         for _ in 0..100 {
-            taken += usize::from(q.push(item(&paste, b"")));
+            taken += usize::from(q.push(on_host(&paste)));
         }
         assert_eq!(taken, QUEUE_BYTES / PASTE_MAX, "a few pastes wait; the rest are refused");
-        assert!(q.bytes <= QUEUE_BYTES);
-        assert!(!q.push(item("a", b"")), "full: even a key is refused until tmux takes some");
-        let first = q.items[0].server.clone();          // each item its own server here
-        q.batch(&first).unwrap();                       // one paste handed to tmux
-        assert_eq!(q.bytes, QUEUE_BYTES - PASTE_MAX);
-        assert!(q.push(item("a", b"")), "drained: typing goes again");
+        assert!(!q.push(on_host("a")), "full: even a key is refused until tmux takes some");
+        assert!(q.push(item("a", b"")), "AC-132: another server's keys are not");
+        let before = q.items.len();
+        assert_eq!(q.batch(&host).unwrap().len(), before - 1, "one pane's in a row: handed to tmux");
+        assert!(q.push(on_host("a")), "drained: typing goes again");
         // the words say the limits the code holds
         assert!(OVERLOAD.contains(&format!("{} MB", QUEUE_BYTES >> 20)) && PASTE_TOO_LARGE.contains(&format!("{} MB", PASTE_MAX >> 20)));
     }
@@ -443,10 +439,11 @@ mod tests {
     #[test]
     fn many_small_items_are_bounded_by_count_and_clear_drops_them() {
         let mut q = Queue::default();
-        let taken = (0..QUEUE_ITEMS + 5).filter(|_| q.push(item("", b"m"))).count();
+        let host = item("", b"").server;
+        let taken = (0..QUEUE_ITEMS + 5).filter(|_| { let mut t = item("", b"m"); t.server = host.clone(); q.push(t) }).count();
         assert_eq!(taken, QUEUE_ITEMS);
         q.clear();
-        assert!(q.items.is_empty() && q.bytes == 0);
+        assert!(q.items.is_empty());
     }
 
     #[test]

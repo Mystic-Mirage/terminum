@@ -15,6 +15,7 @@ use serde_json::{json, Value};
 
 use super::Page;
 use crate::app::Shared;
+use crate::tmux::server::Server;
 
 /// Keeps `text` sent in pane `key` of project (`host`, `path`) and tells the pages; a failure
 /// is logged (the user's command went to the terminal all the same).
@@ -39,9 +40,11 @@ fn title_of(app: &Shared, key: &str) -> String {
     super::marks::find_item(&app.layout.read(), key).and_then(|it| it["title"].as_str().map(str::to_string)).unwrap_or_default()
 }
 
-pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
+/// `at`: the pane shown (key, server, pane) when the page sent it; it may wait long in its server's
+/// lane, and what was typed there stays that pane's (AC-132).
+pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value, at: Option<(String, Arc<Server>, String)>) {
     let agent = msg["agent"].as_str().filter(|a| !a.is_empty());
-    let shown_key = page.state.lock().shown.as_ref().map(|s| s.key.clone());
+    let shown_key = at.as_ref().map(|(k, ..)| k.clone());
     let hooked = shown_key.as_ref().is_some_and(|k| app.hooks.has(k));
     let line = msg["line"].as_i64();
     if t == "sent" && agent.is_some() && hooked {
@@ -57,7 +60,11 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         return;
     }
     // the project: the pane's host ("local" for every server of this Mac) and folder
-    let (key, host, path) = match super::client::shown_cwd(page).await {
+    let found = match &at {
+        Some((key, server, pane)) => super::client::cwd_of(key, server, pane).await,
+        None => Err((None, "No pane is shown.".to_string())),
+    };
+    let (key, host, path) = match found {
         Ok((key, server, path)) => (key, server.name.clone(), path),
         Err((_, e)) => {
             page.send_json(&json!({"t": "sentone", "error": e}));

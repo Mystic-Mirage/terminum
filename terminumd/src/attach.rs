@@ -122,6 +122,9 @@ pub async fn ensure(app: &Shared, server: &Arc<Server>) -> (Vec<Value>, bool) {
         crate::restore_srv::users_local(app, server).await;
         running = server.local_sessions().await;
     }
+    if running.is_err() && server.connected() {
+        return (Vec::new(), false);              // a timeout on a client alive: nothing said of its sessions (AC-132)
+    }
     let sure = running.is_ok();
     let (running, why) = match running {
         Ok(Some(list)) => (list, None),

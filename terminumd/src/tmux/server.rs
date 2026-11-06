@@ -473,6 +473,7 @@ impl Server {
                     s.closed_by_user.store(by_user, Ordering::Relaxed);
                 }
                 tracing::info!(event = "client.end", server = %s.name, session, why);
+                s.list.mark_changed();
                 s.dirty.notify_one();
                 s.ended.notify_one();
             }

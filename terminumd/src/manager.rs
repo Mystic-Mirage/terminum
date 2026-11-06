@@ -94,6 +94,9 @@ fn set_problem(app: &Shared, problem: Option<String>) {
 
 /// One read of a server, on its own task (lists.rs): nothing here waits for another server.
 pub async fn read_one(app: &Shared, server: &Arc<Server>) -> Got {
+    if server.backed_up() {
+        return Got::Unread;                      // what was asked is still on its way: no more on top (AC-132)
+    }
     let mut absent = Vec::new();
     let mut sure = true;
     if server.is_users() {
@@ -122,9 +125,6 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str) -> Got {
         let mut gs = vec![g];
         gs.extend(crate::attach::host_waiting(&server, &why));
         return Got::Down(gs);
-    }
-    if server.backed_up() {
-        return Got::Unread;                      // what was asked is still on its way: no more on top (AC-132)
     }
     let host = (!local).then(|| server.name.clone());
     let home = if local { home.to_string() } else { server.home().await.unwrap_or_default() };
@@ -180,8 +180,8 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str) -> Got {
     out
 }
 
-/// What a server not read yet shows: a host says it is on its way, so a page showing its pane stays
-/// there (AC-14, AC-132); a local server's list is told first of all, so it has none.
+/// What a server not read yet shows: it says it is on its way, so a page showing its pane stays
+/// there (AC-14, AC-132).
 fn unread_groups(app: &Shared, server: &Arc<Server>) -> Vec<Value> {
     let reading = |mut g: Value| {
         if g["state"] == "attached" || g["state"] == "absent" {
@@ -191,7 +191,7 @@ fn unread_groups(app: &Shared, server: &Arc<Server>) -> Vec<Value> {
         g
     };
     let mut gs = Vec::new();
-    if !server.is_local() {
+    if !server.is_users() {
         gs.push(reading(layout::host_group(server, crate::hosts::files_state(app, &server.name).as_deref())));
     }
     gs.extend(crate::attach::host_waiting(server, "reading its list").into_iter().map(reading));
@@ -202,8 +202,8 @@ fn unread_groups(app: &Shared, server: &Arc<Server>) -> Vec<Value> {
 /// read; `fresh`: its own list came, so its turns settle by it, and only by it (AC-132).
 pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool) {
     let _one = app.refreshing.lock().await;
-    if app.tmux.local.list.told().is_none() {
-        return;                                  // a page reconnecting keeps its list until its own Mac's is read
+    if !app.tmux.local.list.tried() {
+        return;                                  // a page reconnecting keeps its list until its own Mac's was asked
     }
     let home_due = app.inventory_at.lock().is_none_or(|t| t.elapsed() > INVENTORY);
     let (mut groups, mut absent, mut live, mut complete) = (Vec::new(), Vec::new(), HashSet::new(), true);
@@ -256,6 +256,7 @@ pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool) {
         let busy = |k: &str| crate::page::marks::find_item(&layout, k).map(|it| crate::page::turns::busy(&it));
         app.turns.settle(&server.key(""), ended, busy, Instant::now())
     } else {
+        app.turns.ended(ended, Instant::now());  // another server's end, seen first here: its own list settles it
         Vec::new()
     };
     if !ended.is_empty() {
@@ -334,9 +335,12 @@ pub async fn run(app: Shared) {
         lists::request_all(&app);
         let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_in_sight() { EVERY } else { Duration::from_secs(30) };
         let wait = app.hooks.subs_due_in(Instant::now()).map_or(wait, |d| wait.min(d));   // a Stop's subagents, also out of sight (AC-39)
-        let wait = app.turns.due_in(Instant::now()).map_or(wait, |d| wait.min((d + Duration::from_millis(50)).max(SETTLE_POLL)));   // a turn's end, settled
         let until = tokio::time::Instant::now() + wait;
         loop {
+            // a turn's end, settled, also one that began since the list was asked (AC-132)
+            let reachable = |k: &str| app.tmux.resolve(k).is_some_and(|(s, _)| s.connected());
+            let due = app.turns.due_in(Instant::now(), reachable).map(|d| (d + Duration::from_millis(50)).max(SETTLE_POLL));
+            let turn = due.map_or(until, |d| until.min(tokio::time::Instant::now() + d));
             tokio::select! {
                 _ = app.dirty.notified() => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -346,7 +350,11 @@ pub async fn run(app: Shared) {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     lists::request_changed(&app);
                 }
-                _ = tokio::time::sleep_until(until) => break,
+                _ = tokio::time::sleep_until(turn.min(tokio::time::Instant::now() + SETTLE_POLL)) => {
+                    if tokio::time::Instant::now() >= turn {
+                        break;
+                    }
+                }
             }
         }
     }

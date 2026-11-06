@@ -14,18 +14,19 @@ const STALL = { t: "stall", server: "devbox", key: "devbox:default", what: "tmux
 export async function webIsolation(browser, name) {
   for (const [size, device] of SIZES) {
     runningIn(`${name} ${size}`);
-    const f = await openPage(browser, { device, layout: [local(), host("attached", rows())] });
+    const f = await openPage(browser, { device, layout: [host("attached", rows()), local()] });
     const { page, sent, say } = f;
     await drawn(page);
     const shown = () => sent.filter((m) => m.t === "sub").pop()?.id;
     // a click on a row, whatever covers it on a phone: what is checked is what follows
     const pick = async (id) => { await page.evaluate((i) => document.querySelector(`#sessions .item[data-id="${i}"]`)?.click(), id); await pause(page, 100); };
-    const listed = async (...groups) => { say({ t: "layout", groups }); await pause(page, 120); };
+    // the host's group above the local one: its rows going would move the local rows
+    const listed = async (h) => { say({ t: "layout", groups: [h, local()] }); await pause(page, 120); };
 
     // the link drops: the rows stay, dimmed, and the shown pane with them
     await pick(H1);
     const before = await page.evaluate((id) => document.querySelector(`#sessions .item[data-id="${id}"]`)?.getBoundingClientRect().top, L2);
-    await listed(local(), host("reconnecting", rows({ offline: true, state: null }), "reconnecting (1 s)"));
+    await listed(host("reconnecting", rows({ offline: true, state: null }), "reconnecting (1 s)"));
     const down = await page.evaluate(([id, other]) => {
       const row = document.querySelector(`#sessions .item[data-id="${id}"]`);
       return { dim: row?.classList.contains("offline"), opacity: row && getComputedStyle(row.querySelector(".txt")).opacity,
@@ -33,18 +34,19 @@ export async function webIsolation(browser, name) {
     }, [H1, L2]);
     check("AC-81 a dropped link: the shown pane stays", shown() === H1, shown());
     check("AC-81 a dropped link: its rows stay, dimmed", down.dim === true && Number(down.opacity) < 1, JSON.stringify(down));
-    check("AC-132 a dropped link moves no other row in the list", down.top === before, JSON.stringify({ before, top: down.top }));
-    await listed(local(), host("attached", rows()));
+    check("AC-81 a dropped link moves other rows by its state's one line, no more", Math.abs(down.top - before) < 30, JSON.stringify({ before, top: down.top }));
+    await listed(host("attached", rows()));
     check("AC-81 back: the same pane, its rows as before", shown() === H1 && !await page.locator(`#sessions .item.offline`).count(), shown());
 
     // no rows at all (terminumd restarted, the host not read yet): the page waits for its list
-    await listed(local(), host("reconnecting", [], "reading its list"));
-    check("AC-132 a host not read yet: the page stays on its pane", shown() === H1, shown());
-    await listed(local(), host("failed", [], "ssh: connect timed out"));
+    await listed(host("reconnecting", [], "reading its list"));
+    const header = await page.textContent("#current .t");
+    check("AC-132 a host not read yet: the page stays on its pane, its header too", shown() === H1 && header !== "Choose a session", JSON.stringify({ shown: shown(), header }));
+    await listed(host("failed", [], "ssh: connect timed out"));
     check("AC-132 a host failing: the page stays on its pane", shown() === H1, shown());
-    await listed(local(), host("attached", rows().slice(1)));
+    await listed(host("attached", rows().slice(1)));
     check("AC-92 a host's list, read, without the pane: it closed, the page goes on", shown() === H2, shown());
-    await listed(local(), host("attached", rows()));
+    await listed(host("attached", rows()));
 
     // a stall of the host, on a local pane: nothing said, nothing resized; its group says it
     await pick(L1);
@@ -52,7 +54,7 @@ export async function webIsolation(browser, name) {
     const term = () => page.evaluate(() => { const r = document.getElementById("term").getBoundingClientRect(); return `${Math.round(r.top)} ${Math.round(r.height)}`; });
     const banner = () => page.evaluate(() => { const e = document.getElementById("stall"); return e.hidden ? "" : e.textContent; });
     const sizes = () => sent.filter((m) => m.t === "size").length;
-    const was = await term(), n = sizes();
+    const was = await term();
     say({ ...STALL, ok: false });
     await pause(page, 200);
     check("AC-132 a host's stall says nothing over a local pane", await banner() === "", await banner());
@@ -78,15 +80,23 @@ export async function webIsolation(browser, name) {
     await pick(L1);
     await pause(page, 150);
     check("AC-132 leaving its pane takes the line off at once", await banner() === "", await banner());
-    check("AC-132 local pane back at its size", await term() === was || sizes() >= n, await term());
+    check("AC-132 local pane back as it was", await term() === was, JSON.stringify({ was, now: await term() }));
     say({ ...STALL, ok: true });
     await pause(page, 100);
+
+    // a new connection: what it knew of stalls is over (terminumd may have restarted)
+    say({ ...STALL, ok: false });
+    await pause(page, 100);
+    say({ t: "stall", clear: true });
+    await pause(page, 100);
+    const after = await page.evaluate(() => [...document.querySelectorAll("#sessions .hostgrp")].map((g) => g.textContent).join());
+    check("AC-132 a new connection forgets the stalls it knew", !after.includes("not responding"), after);
 
     // a window that comes late takes nobody away
     await pick(L2);
     say({ t: "created", id: H2, stay: true });
     await pause(page, 150);
-    check("AC-132 a late window leaves the user where they went", shown() === L2, shown());
+    check("AC-132 a window told to stay leaves the user where they went", shown() === L2, shown());
     say({ t: "created", id: H2 });
     await pause(page, 150);
     check("AC-07 a window asked from here is shown", shown() === H2, shown());

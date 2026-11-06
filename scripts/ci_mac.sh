@@ -55,7 +55,8 @@ ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4 "$host" 
     (cd ui && node test/e2e_panel.mjs)
     (cd terminumd && cargo build --locked)
     node web/test/e2e_all.mjs
-    TM_TEST_NO_CLAUDE=1 node web/test/e2e_live.mjs    # the real Claude Code needs a login and a region this run cannot promise; the maintainer's full run has it
+    # the real Claude Code needs a login and a region this run cannot promise: the full run on the Mac has it
+    TM_TEST_NO_CLAUDE=1 node web/test/e2e_live.mjs
 '"'" || rc=$?
 # the run ended (ssh says how): its lock goes, whatever its own trap did; a link that dropped
 # leaves it (the run may go on there)

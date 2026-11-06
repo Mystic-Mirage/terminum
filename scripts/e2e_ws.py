@@ -169,6 +169,7 @@ class Terminumd:
         self.env = {**os.environ, "TM_HOME": self.home, "TM_APP_DIR": self.app, "TM_PORT": str(port),
                     "TM_TMUX_SOCKET": tmux_socket, "TM_LOG": "info", **(env or {})}
         self.env.pop("TMUX", None)
+        self.env["HISTFILE"] = "/dev/null"   # an ending shell would write it into the folder being removed
         self.proc = None
         self.log_path = os.path.join(self.root, "terminumd.log")
 

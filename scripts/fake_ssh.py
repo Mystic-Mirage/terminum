@@ -193,7 +193,8 @@ def main():
     # bound before the command runs, as sshd answers the forward before the session starts
     remotes = [srv for spec in reverses if (srv := reverse(spec, opts, dest))]
     shim = tmux_shim(sock)
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("TMUX", "TM_"))}
+    # TMUX_TMPDIR stays: a run's private folder is where its tests look for this "host's" server
+    env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE") and not k.startswith("TM_")}
     env.update(HOME=home, PATH=shim + ":" + os.environ.get("PATH", "/usr/bin:/bin"), SHELL="/bin/sh")
     p = subprocess.Popen(["/bin/sh", "-c", command or "exec /bin/sh"], env=env, cwd=home, start_new_session=True)
 

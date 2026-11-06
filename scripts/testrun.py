@@ -5,7 +5,10 @@ checks in several worktrees (or sessions) at once never meet, and a run's cleanu
 socket files `kill-server` leaves behind, removed when the run exits (spec AC-102)."""
 import atexit
 import os
+import re
+import signal
 import socket
+import subprocess
 import tempfile
 import time
 
@@ -28,9 +31,31 @@ def short_tmp():
     return folder if len(folder) <= 40 else "/tmp"
 
 
+def own_server_pids(ps_text, names):
+    """The pids in `pid command` lines of tmux servers on these sockets: named with this run's pid."""
+    pids = []
+    for line in ps_text.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        if pid.isdigit() and any(re.search(rf"\btmux\b.* (-L |-S \S*/){re.escape(name)}( |$)", command) for name in names):
+            pids.append(int(pid))
+    return pids
+
+
+def end_own_servers():
+    """Ends each tmux server of an `own` name by its pid. `kill-server` misses one whose socket file has
+    gone: a dying server unlinks the file its successor made, when a client reconnects at that moment."""
+    listed = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    for pid in own_server_pids(listed, _sockets):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+
 def remove_dead_sockets():
-    """The socket file of each `own` name whose tmux server has gone (a killed one may take a moment
-    to); a live one stays and is seen."""
+    """Ends what still runs, then the socket file of each `own` name whose tmux server has gone (a killed
+    one may take a moment to)."""
+    end_own_servers()
     base = os.path.join(os.environ.get("TMUX_TMPDIR") or "/tmp", f"tmux-{os.getuid()}")
     for name in _sockets:
         path = os.path.join(base, name)

@@ -132,6 +132,7 @@ install: `make install` from the primary checkout only (a worktree's refused); `
 every change to the repository's files, however small, checkout clean or not: its own worktree (a hook refuses Claude Code's edits in the primary checkout; `TM_EDIT_PRIMARY=1` is the maintainer's, CONTRIBUTING.md "Hooks")
 make: `python3 scripts/worktree.py add <slug> --kind <kind>`: from the `origin/main` it just fetched, refuses when the fetch fails; !raw `git worktree add`
 commit there as you go: small single-concern, says why; only your paths (`git add <paths>`, !`-A`, !`.`)
+before landing: `/simplify` (`simplify` skill) over the tree's changes, unless already run over them; fixes applied, checks run on the result
 **land** when done: `make land SLUG=<slug>` from the primary checkout, no asking (AC-104): targeted checks green > merge with `origin/main` > push > fast-forward the primary checkout > delete the tree (`scripts/delete_worktree.sh`)
 red: nothing lands, tree stays; conflict: stays in the tree to resolve, commit, land again; several trees land at once, each tested alone
 `make land` is the one standing permission to push: !other push, !force-push, !publish without the user's request in this session

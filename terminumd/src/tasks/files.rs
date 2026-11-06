@@ -56,6 +56,7 @@ pub fn inline_mime(data: &[u8]) -> Option<&'static str> {
 }
 
 /// Writes the bytes then the row (no task yet); the bytes go again if the row is refused.
+/// `author`: who the row names until the file joins a task, whose event then says who.
 pub fn keep(store: &super::store::Store, dir: &Path, name: &str, author: &str, data: &[u8], at: i64) -> Result<File, String> {
     use std::io::Write;
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
@@ -144,6 +145,17 @@ pub fn sweep(store: &super::store::Store, dir: &Path, at: i64) -> Result<usize, 
     })?;
     for id in &gone {
         let _ = std::fs::remove_file(path_of(dir, id)?);
+    }
+    // bytes whose row a crash never wrote: old ones only, one may be on its way now
+    if let Ok(entries) = std::fs::read_dir(folder(dir)) {
+        let known: Vec<String> = store.with(|tx| tx.prepare("SELECT id FROM files").map_err(sql)?.query_map([], |r| r.get(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql))?;
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok()).is_some_and(|age| age.as_secs() as i64 > UNUSED_SECONDS);
+            if old && !known.contains(&name) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
     }
     Ok(gone.len())
 }

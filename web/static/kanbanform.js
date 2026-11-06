@@ -14,7 +14,7 @@ export function taskForm({ getMeta, getFilter, onMade }) {
   let files = [];
 
   const error = (text) => { $("newerror").textContent = text ?? ""; $("newerror").hidden = !text; };
-  const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, session: $("newsession").value, files });
+  const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files });
   const keep = () => write(DRAFT, draft());
 
   function fill(select, options, chosen) {
@@ -74,6 +74,7 @@ export function taskForm({ getMeta, getFilter, onMade }) {
     fill($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? saved.project ?? (filter.length === 1 ? filter[0] : "default"));
     fill($("newsession"), [["", "None"], ...meta.sessions.map((s) => [s.key, s.title || s.key])], given.session ?? saved.session ?? "");
     $("newsev").value = saved.severity ?? "P2";
+    fill($("newowner"), meta.users.map((u) => [u.id, u.name]), saved.owner ?? "human");
     $("newtitle").value = saved.title ?? "";
     $("newtext").value = given.text ? `${saved.text ? `${saved.text}\n\n` : ""}${given.text}` : saved.text ?? "";
     files = saved.files ?? [];
@@ -90,7 +91,7 @@ export function taskForm({ getMeta, getFilter, onMade }) {
     if (!d.title.trim()) { error("Title: 1–200 characters"); $("newtitle").focus(); return; }
     $("newcreate").disabled = true;
     try {
-      await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, session: d.session || undefined, files: files.map((f) => f.id) } });
+      await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, session: d.session || undefined, files: files.map((f) => f.id) } });
       write(DRAFT, null);
       files = [];
       box.close();

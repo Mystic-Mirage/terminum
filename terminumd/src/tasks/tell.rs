@@ -18,8 +18,15 @@ use crate::app::Shared;
 pub struct Lines(Mutex<HashMap<String, Vec<(String, String)>>>);
 
 impl Lines {
+    /// The newest few of a pane: a session with no next hook never holds many.
     fn push(&self, key: &str, task: &str, line: String) {
-        self.0.lock().entry(key.to_string()).or_default().push((task.to_string(), line));
+        const KEPT: usize = 20;
+        let mut all = self.0.lock();
+        let lines = all.entry(key.to_string()).or_default();
+        lines.push((task.to_string(), line));
+        if lines.len() > KEPT {
+            lines.remove(0);
+        }
     }
 
     fn take(&self, key: &str) -> Vec<(String, String)> {

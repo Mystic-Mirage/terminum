@@ -103,6 +103,9 @@ fn ac119_an_unreadable_file_is_set_aside_and_empty_only_when_asked() {
     assert_eq!(std::fs::read(path.with_file_name(main)).unwrap(), garbage, "kept whole");
     assert!(number_of_tasks(&s).is_err());
     assert!(!path.exists());
+    assert!(s.is_set_aside());
+    let restarted = Store::open(path.clone());
+    assert!(restarted.problem().unwrap().contains("set aside as") && !path.exists(), "a restart makes no empty one unasked");
     s.start_empty().unwrap();
     assert_eq!(number_of_tasks(&s).unwrap(), 0);
     assert_eq!(s.problem(), None);
@@ -142,6 +145,19 @@ fn ac119_the_quick_check_passes_a_healthy_store() {
     let s = Store::open(fresh("tasks-check"));
     s.quick_check();
     assert_eq!(s.problem(), None);
+}
+
+#[test]
+fn ac109_a_purged_text_leaves_the_file() {
+    let path = fresh("tasks-purge");
+    let s = Store::open(path.clone());
+    let secret = "sk-very-secret-value-0123456789";
+    s.with(|tx| tx.execute("INSERT INTO meta (key, value) VALUES ('k', ?1)", [secret]).map(|_| ()).map_err(|e| e.to_string())).unwrap();
+    s.checkpoint();
+    s.with(|tx| tx.execute("UPDATE meta SET value = '' WHERE key = 'k'", []).map(|_| ()).map_err(|e| e.to_string())).unwrap();
+    s.checkpoint();
+    let holds = |p: &Path| std::fs::read(p).is_ok_and(|b| b.windows(secret.len()).any(|w| w == secret.as_bytes()));
+    assert!(!holds(&path) && !holds(&path.with_file_name("kanban.sqlite-wal")), "neither the file nor its log holds it");
 }
 
 #[test]

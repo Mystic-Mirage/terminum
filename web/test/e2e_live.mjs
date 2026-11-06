@@ -319,6 +319,8 @@ try {
     purge();
     fs.rmSync(path.join(HOME, "themes"), { recursive: true, force: true });
     fs.rmSync(path.join(HOME, "custom.css"), { force: true });
+    // the next browser starts on an empty board with no records: a check finds its own by name
+    for (const f of fs.readdirSync(APP)) if (/^(kanban|web-bookmarks)/.test(f)) fs.rmSync(path.join(APP, f), { recursive: true, force: true });
     await start();
   }
 } finally {

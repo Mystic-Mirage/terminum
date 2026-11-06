@@ -35,6 +35,7 @@ CREATE TABLE tasks (
   owner TEXT NOT NULL REFERENCES users,
   by_agent INTEGER NOT NULL DEFAULT 0,
   session_key TEXT,
+  made_in TEXT,
   agent_session TEXT,
   budget_seconds INTEGER,
   archived_at INTEGER,

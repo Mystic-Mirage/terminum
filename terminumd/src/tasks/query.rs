@@ -14,6 +14,8 @@ pub struct Query {
     pub statuses: Vec<String>,
     pub owner: Option<String>,
     pub session: Option<String>,
+    /// an agent's reach: tasks of this pane (linked or made), or of this project
+    pub reach: Option<(String, Option<String>)>,
     pub text: Option<String>,
     pub with_subtasks: bool,
     pub after: i64,
@@ -33,6 +35,16 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
     if let Some(s) = &q.session {
         args.push(s.clone());
         text.push_str(&format!(" AND t.session_key = ?{}", args.len()));
+    }
+    if let Some((pane, project)) = &q.reach {
+        args.push(pane.clone());
+        let n = args.len();
+        let mut any = format!("t.session_key = ?{n} OR t.made_in = ?{n}");
+        if let Some(p) = project {
+            args.push(p.clone());
+            any.push_str(&format!(" OR t.project = ?{}", args.len()));
+        }
+        text.push_str(&format!(" AND ({any})"));
     }
     match q.owner.as_deref() {
         Some("agents") => text.push_str(" AND u.kind = 'agent'"),

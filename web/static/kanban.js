@@ -41,9 +41,24 @@ function query(extra = {}) {
   return p.toString();
 }
 
+/** Above the board; a store set aside offers its way on, and only then is an empty one made (AC-119). */
 function banner(text) {
-  $("boardbanner").textContent = text ?? "";
-  $("boardbanner").hidden = !text;
+  const box = $("boardbanner");
+  box.textContent = text ?? "";
+  box.hidden = !text;
+  if (text && meta.set_aside) {
+    const start = el("button", null, "Start empty");
+    start.type = "button";
+    start.addEventListener("click", async () => {
+      if (!await ask("Start with an empty store?", "The one set aside stays where it is, untouched.", "Start empty")) return;
+      try {
+        await api("/api/tasks/start-empty", { method: "POST", body: {} });
+        await loadMeta();
+        await load();
+      } catch (e) { say(e.message); }
+    });
+    box.append(" ", start);
+  }
 }
 
 /** Each column's first page; a failure keeps what is shown and says so (AC-105). */

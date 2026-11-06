@@ -78,6 +78,8 @@ fn prepare(mut conn: Connection, path: &Path) -> rusqlite::Result<Result<Connect
     }
     let _: String = conn.query_row("PRAGMA journal_mode=WAL", [], |r| r.get(0))?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
+    // a purge means it (AC-109): freed pages are overwritten, not left in the file
+    conn.pragma_update(None, "secure_delete", "ON")?;
     upgrade(&mut conn, path, &MIGRATIONS)?;
     let name = std::env::var("USER").unwrap_or_else(|_| "you".into());
     conn.execute("UPDATE users SET name = ?1 WHERE id = ?2 AND name = ''", (name, HUMAN))?;
@@ -86,11 +88,10 @@ fn prepare(mut conn: Connection, path: &Path) -> rusqlite::Result<Result<Connect
 
 fn open_file(path: &Path) -> Opened {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-    if let Some(dir) = path.parent() {
-        if let Err(e) = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir) {
+    if let Some(dir) = path.parent()
+        && let Err(e) = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir) {
             return Opened::Refused(format!("The tasks' store: {e}"));
         }
-    }
     // SQLite gives its -wal and -shm the main file's permissions
     if let Err(e) = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(path) {
         return Opened::Refused(format!("The tasks' store: {e}"));
@@ -102,6 +103,15 @@ fn open_file(path: &Path) -> Opened {
         Err(e) if is_broken(&e) => Opened::Broken(message(&e)),
         Err(e) => Opened::Refused(message(&e)),
     }
+}
+
+/// Beside the store while one is set aside: a restart must not make an empty one unasked (AC-119).
+fn marker(path: &Path) -> PathBuf {
+    path.with_file_name("kanban.sqlite.aside")
+}
+
+fn aside_message(aside: &str) -> String {
+    format!("The tasks' store could not be read and was set aside as {aside}.")
 }
 
 /// The store and its -wal and -shm go aside as `kanban.sqlite.bad-<time>`; where it went.
@@ -117,17 +127,24 @@ fn set_aside(path: &Path) -> String {
             }
         }
     }
-    aside.display().to_string()
+    let aside = aside.display().to_string();
+    if let Err(e) = std::fs::write(marker(path), &aside) {
+        tracing::warn!(event = "tasks.setaside", error = %e);
+    }
+    aside
 }
 
 fn state_of(path: &Path) -> State {
+    if let Ok(aside) = std::fs::read_to_string(marker(path)) {
+        return State::SetAside(aside_message(&aside));
+    }
     match open_file(path) {
         Opened::Ready(c) => State::Open(c),
         Opened::Refused(why) => State::Failed(why),
         Opened::Broken(why) => {
             let aside = set_aside(path);
             tracing::warn!(event = "tasks.broken", why = %why, aside = %aside);
-            State::SetAside(format!("The tasks' store could not be read and was set aside as {aside}."))
+            State::SetAside(aside_message(&aside))
         }
     }
 }
@@ -169,11 +186,14 @@ impl Store {
         }
     }
 
-    /// SQLite's quick check, once after the start, holding up no list: a corrupt file goes aside.
+    /// SQLite's quick check, once after the start, on a connection of its own: it holds up no
+    /// list. A corrupt file goes aside.
     pub fn quick_check(&self) {
-        let mut state = self.state.lock();
-        let State::Open(conn) = &*state else { return };
-        let verdict: rusqlite::Result<String> = conn.query_row("PRAGMA quick_check(1)", [], |r| r.get(0));
+        if !matches!(*self.state.lock(), State::Open(_)) {
+            return;
+        }
+        let verdict = Connection::open_with_flags(&self.path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .and_then(|c| c.query_row("PRAGMA quick_check(1)", [], |r| r.get::<_, String>(0)));
         let bad = match verdict {
             Ok(v) => (v != "ok").then_some(v),
             Err(e) if is_broken(&e) => Some(e.to_string()),
@@ -183,11 +203,25 @@ impl Store {
             }
         };
         if let Some(why) = bad {
+            let mut state = self.state.lock();
             *state = State::Failed(String::new());     // closes the file before it moves
             let aside = set_aside(&self.path);
             tracing::warn!(event = "tasks.broken", why = %why, aside = %aside);
-            *state = State::SetAside(format!("The tasks' store could not be read and was set aside as {aside}."));
+            *state = State::SetAside(aside_message(&aside));
         }
+    }
+
+    /// After a purge: what the write-ahead log still holds of the old text goes too (AC-109).
+    pub fn checkpoint(&self) {
+        if let State::Open(conn) = &*self.state.lock()
+            && let Err(e) = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(())) {
+                tracing::warn!(event = "tasks.checkpoint", error = %e);
+            }
+    }
+
+    /// Whether a store was set aside and waits for the user's Start empty.
+    pub fn is_set_aside(&self) -> bool {
+        matches!(*self.state.lock(), State::SetAside(_))
     }
 
     /// The user's press after a store went aside (AC-119).
@@ -196,9 +230,12 @@ impl Store {
         if !matches!(*state, State::SetAside(_)) {
             return Err("The tasks' store was not set aside.".into());
         }
+        std::fs::remove_file(marker(&self.path)).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(format!("The tasks' store: {e}")) })?;
         *state = state_of(&self.path);
-        match &*state {
-            State::Open(_) | State::Absent => Ok(()),
+        match &mut *state {
+            // an older projects.json is no copy of what was set aside: the user asked for empty
+            State::Open(c) => c.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('projects_imported', '1')", []).map(|_| ()).map_err(|e| message(&e)),
+            State::Absent => Ok(()),
             State::Failed(why) | State::SetAside(why) => Err(why.clone()),
         }
     }

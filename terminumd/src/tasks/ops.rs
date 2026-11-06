@@ -39,6 +39,8 @@ pub struct Task {
     pub owner_kind: String,
     pub by_agent: bool,
     pub session: Option<String>,
+    /// the pane of the agent that made it: an agent's reach (tools.rs)
+    pub made_in: Option<String>,
     pub files: i64,
     pub subtasks_done: i64,
     pub subtasks: i64,
@@ -49,7 +51,7 @@ pub(super) const TASK: &str = "SELECT t.number, t.project, (SELECT 'T-' || p.num
     t.owner, u.name, u.kind, t.by_agent, t.session_key,
     (SELECT count(*) FROM files f WHERE f.task = t.id),
     (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.status = 'DONE'),
-    (SELECT count(*) FROM tasks s WHERE s.parent = t.id), t.updated_at
+    (SELECT count(*) FROM tasks s WHERE s.parent = t.id), t.updated_at, t.made_in
     FROM tasks t JOIN users u ON u.id = t.owner";
 
 pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
@@ -69,6 +71,7 @@ pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
         subtasks_done: r.get(12)?,
         subtasks: r.get(13)?,
         updated_at: r.get(14)?,
+        made_in: r.get(15)?,
     })
 }
 
@@ -155,6 +158,7 @@ pub struct NewTask {
     pub owner: Option<String>,
     pub session: Option<String>,
     pub by_agent: bool,
+    pub made_in: Option<String>,
 }
 
 pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<Task, String> {
@@ -172,7 +176,8 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
         }
         None => None,
     };
-    let project = new.project.or_else(|| parent.as_ref().map(|(_, p)| p.clone())).unwrap_or_else(|| DEFAULT_PROJECT.to_string());
+    // a subtask stands in its parent's project, whatever was asked
+    let project = parent.as_ref().map(|(_, p)| p.clone()).or(new.project).unwrap_or_else(|| DEFAULT_PROJECT.to_string());
     check_project(tx, &project)?;
     if new.by_agent {
         let open: i64 = tx.query_row("SELECT count(*) FROM tasks WHERE project = ?1 AND by_agent = 1 AND archived_at IS NULL AND status <> 'DONE'", [&project], |r| r.get(0)).map_err(sql)?;
@@ -184,9 +189,9 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     let rank = top_rank(tx, "TODO", &severity)?;
     let number: i64 = tx.query_row("SELECT coalesce(max(number), 0) + 1 FROM tasks", [], |r| r.get(0)).map_err(sql)?;
     let key = crate::auth::crypto::random_hex::<16>();
-    tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, updated_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'TODO', ?7, ?8, ?9, ?10, ?11, ?12)",
-               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, at]).map_err(sql)?;
+    tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'TODO', ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, new.made_in, at]).map_err(sql)?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
     get(tx, &format!("T-{number}"))
 }
@@ -207,13 +212,11 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
         return Ok(task);
     }
     let key = key_of(tx, id)?;
-    if status == "IN PROGRESS" {
-        if let Some(session) = &task.session {
-            if let Some(other) = in_progress_of(tx, session, &key)? {
+    if status == "IN PROGRESS"
+        && let Some(session) = &task.session
+            && let Some(other) = in_progress_of(tx, session, &key)? {
                 return Err(format!("{} already works on {other}. Finish or move {other} first.", session_name(session)));
             }
-        }
-    }
     let rank = top_rank(tx, status, &task.severity)?;
     tx.execute("UPDATE tasks SET status = ?1, rank = ?2, updated_at = ?3 WHERE id = ?4", (status, rank, at, &key)).map_err(sql)?;
     let who = user_name(tx, author)?;
@@ -293,11 +296,10 @@ pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> 
 pub fn link(tx: &Transaction, author: &str, id: &str, session: Option<&str>, at: i64) -> Result<Task, String> {
     let key = key_of(tx, id)?;
     let task = get(tx, id)?;
-    if let (Some(s), "IN PROGRESS") = (session, task.status.as_str()) {
-        if let Some(other) = in_progress_of(tx, s, &key)? {
+    if let (Some(s), "IN PROGRESS") = (session, task.status.as_str())
+        && let Some(other) = in_progress_of(tx, s, &key)? {
             return Err(format!("{} already works on {other}. Finish or move {other} first.", session_name(s)));
         }
-    }
     tx.execute("UPDATE tasks SET session_key = ?1, updated_at = ?2 WHERE id = ?3", (session, at, &key)).map_err(sql)?;
     let who = user_name(tx, author)?;
     let said = if session.is_some() { format!("{who} linked a session") } else { format!("{who} unlinked its session") };
@@ -316,6 +318,10 @@ pub fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, unli
         link(tx, author, id, None, at)?;
     }
     let kids: Vec<String> = tx.prepare("SELECT id FROM tasks WHERE parent = ?1").map_err(sql)?.query_map([&key], |r| r.get(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
+    let held: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE parent = ?1 AND session_key IS NOT NULL", [&key], |r| r.get(0)).optional().map_err(sql)?;
+    if let Some(kid) = held {
+        return Err(format!("{kid} has a session of its own: unlink it first."));
+    }
     for k in kids.iter().chain(std::iter::once(&key)) {
         tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE id = ?3", (project, at, k)).map_err(sql)?;
         log(tx, k, author, "project", &format!("{who} moved it to {name}"), None, at)?;

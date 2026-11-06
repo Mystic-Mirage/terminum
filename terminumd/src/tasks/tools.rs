@@ -35,13 +35,15 @@ fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args[key].as_str().filter(|s| !s.is_empty()).ok_or_else(|| format!("{key} is required"))
 }
 
-fn may_read(who: &Who, me: &str, t: &Task) -> bool {
-    t.session.as_deref() == Some(who.key.as_str()) || t.owner == me || who.project.as_deref() == Some(t.project.as_str())
+/// Tasks of this pane, linked or made there, and of its project: never by a session's title, which
+/// two sessions can share (AC-110).
+fn may_read(who: &Who, t: &Task) -> bool {
+    t.session.as_deref() == Some(who.key.as_str()) || t.made_in.as_deref() == Some(who.key.as_str()) || who.project.as_deref() == Some(t.project.as_str())
 }
 
-fn visible(tx: &Transaction, who: &Who, me: &str, id: &str) -> Result<Task, String> {
+fn visible(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = ops::get(tx, id)?;
-    if may_read(who, me, &t) { Ok(t) } else { Err(format!("{id} is outside this session's project.")) }
+    if may_read(who, &t) { Ok(t) } else { Err(format!("{id} is outside this session's project.")) }
 }
 
 fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
@@ -59,27 +61,28 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
     let upload = if tool == "attach_file" { Some(file_of(who, args)?) } else { None };
     let at = ops::now();
     let kept = match upload {
-        Some((name, data)) => Some(files::keep(store, state_dir, &name, &format!("agent:{} · {}", who.agent, who.title), &data, at)?),
+        Some((name, data)) => Some(files::keep(store, state_dir, &name, super::store::DISPATCHER, &data, at)?),
         None => None,
     };
     store.with(|tx| {
-        let me = ops::agent_user(tx, &who.agent, &who.title)?;
+        // only what writes makes the agent's user: reading leaves no row
+        let me = || ops::agent_user(tx, &who.agent, &who.title);
         match tool {
             "list_tasks" => {
                 let q = Query {
-                    projects: who.project.iter().cloned().collect(),
+                    reach: Some((who.key.clone(), who.project.clone())),
                     statuses: args["status"].as_str().map(|s| vec![s.to_string()]).unwrap_or_default(),
                     severities: args["severity"].as_str().map(|s| vec![s.to_string()]).unwrap_or_default(),
                     with_subtasks: true,
                     ..Default::default()
                 };
                 let tasks = query::list(tx, &q)?;
-                let shown: Vec<&Task> = tasks.iter().filter(|t| may_read(who, &me, t)).collect();
-                Ok((format!("{DATA}\n{}", json!(shown)), Vec::new()))
+                let more = if tasks.len() == 200 { "\nThe first 200: ask by status or severity for others." } else { "" };
+                Ok((format!("{DATA}\n{}{more}", json!(tasks)), Vec::new()))
             }
             "get_task" => {
                 let id = arg(args, "id")?;
-                let t = visible(tx, who, &me, id)?;
+                let t = visible(tx, who, id)?;
                 let mut v = serde_json::to_value(&t).map_err(|e| e.to_string())?;
                 v["text"] = json!(ops::text_of(tx, id)?);
                 v["history"] = ops::history(tx, id)?;
@@ -94,8 +97,9 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 }
                 let parent = args["parent"].as_str().map(str::to_string);
                 if let Some(p) = &parent {
-                    visible(tx, who, &me, p)?;
+                    visible(tx, who, p)?;
                 }
+                let me = me()?;
                 let t = ops::create(tx, &me, NewTask {
                     title,
                     text: args["text"].as_str().map(rules::clean).unwrap_or_default(),
@@ -105,15 +109,17 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                     owner: Some(me.clone()),
                     session: None,
                     by_agent: true,
+                    made_in: Some(who.key.clone()),
                 }, at)?;
                 Ok((format!("Kept as {}, in TODO.", t.id), vec![t.id]))
             }
             "take_task" => {
                 let id = arg(args, "id")?;
-                let t = visible(tx, who, &me, id)?;
+                let t = visible(tx, who, id)?;
                 if t.session.is_some() {
                     return Err(format!("{id} has a session already."));
                 }
+                let me = me()?;
                 ops::link(tx, &me, id, Some(&who.key), at)?;
                 ops::edit(tx, &me, id, ops::Edit { owner: Some(me.clone()), ..Default::default() }, at)?;
                 Ok((format!("{id} is this session's now, in {}. move_task when you start on it.", t.status), vec![id.to_string()]))
@@ -121,33 +127,34 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             "move_task" => {
                 let (id, to) = (arg(args, "id")?, arg(args, "to")?);
                 own(tx, who, id)?;
-                ops::move_to(tx, &me, id, to, at)?;
+                ops::move_to(tx, &me()?, id, to, at)?;
                 Ok((format!("{id} is in {to}."), vec![id.to_string()]))
             }
             "add_comment" => {
                 let id = arg(args, "id")?;
-                visible(tx, who, &me, id)?;
-                ops::comment(tx, &me, id, &rules::clean(arg(args, "text")?), at)?;
+                visible(tx, who, id)?;
+                ops::comment(tx, &me()?, id, &rules::clean(arg(args, "text")?), at)?;
                 Ok((format!("Comment kept on {id}."), vec![id.to_string()]))
             }
             "finish_task" => {
                 let id = arg(args, "id")?;
                 own(tx, who, id)?;
+                let me = me()?;
                 ops::comment(tx, &me, id, &rules::clean(arg(args, "result")?), at)?;
                 ops::move_to(tx, &me, id, "DONE", at)?;
                 Ok((format!("{id} is DONE, with your result."), vec![id.to_string()]))
             }
             "attach_file" => {
                 let id = arg(args, "task")?;
-                visible(tx, who, &me, id)?;
+                visible(tx, who, id)?;
                 let file = kept.as_ref().ok_or("No file")?;
-                let event = ops::comment(tx, &me, id, &format!("Attached {}", file.name), at)?;
+                let event = ops::comment(tx, &me()?, id, &format!("Attached {}", file.name), at)?;
                 files::attach(tx, std::slice::from_ref(&file.id), id, Some(&event))?;
                 Ok((format!("{} is on {id}.", file.name), vec![id.to_string()]))
             }
             "get_file" => {
                 let (id, name) = (arg(args, "task")?, arg(args, "name")?);
-                visible(tx, who, &me, id)?;
+                visible(tx, who, id)?;
                 let file = files::of_task(tx, id)?.into_iter().find(|f| f.name == name).ok_or_else(|| format!("{id} has no file {name}."))?;
                 if who.dir.is_none() {
                     return Err("Files of a task reach a host only as text in get_task for now.".into());
@@ -156,12 +163,11 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             }
             other => Err(format!("unknown tool {other}")),
         }
-    }).map_err(|e| {
+    }).inspect_err(|_e| {
         if let Some(f) = &kept {
             let _ = std::fs::remove_file(files::folder(state_dir).join(&f.id));
             let _ = store.with(|tx| tx.execute("DELETE FROM files WHERE id = ?1", [&f.id]).map(|_| ()).map_err(ops::sql));
         }
-        e
     })
 }
 
@@ -178,7 +184,8 @@ fn file_of(who: &Who, args: &Value) -> Result<(String, Vec<u8>), String> {
         return Err("From a host give {task, name, text}.".into());
     };
     let path = arg(args, "path")?;
-    let (resolved, folder) = (std::fs::canonicalize(path).map_err(|e| format!("{path}: {e}"))?, std::fs::canonicalize(dir).map_err(|e| format!("{dir}: {e}"))?);
+    // a relative path is the session's, never terminumd's own folder
+    let (resolved, folder) = (std::fs::canonicalize(Path::new(dir).join(path)).map_err(|e| format!("{path}: {e}"))?, std::fs::canonicalize(dir).map_err(|e| format!("{dir}: {e}"))?);
     if !resolved.starts_with(&folder) {
         return Err(format!("{path} is outside this session's folder."));
     }

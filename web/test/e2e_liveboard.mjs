@@ -94,9 +94,21 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-108 CLOSE moves nothing", (await inColumn("WAIT FOR HUMAN")).includes(second));
   // an edit of the text
   await page.click('.tasktext button:has-text("Edit")');
+  await page.fill(".tasktext textarea", "typed and not saved");
+  await page.selectOption("#taskbody .fieldgrid label:has-text(\"Severity\") select", "P3");
+  await page.waitForTimeout(500);
+  check("AC-107 a field changed keeps a text being typed", await page.inputValue(".tasktext textarea") === "typed and not saved");
   await page.fill(".tasktext textarea", "new text");
   await page.click('.tasktext button:has-text("Save")');
   check("AC-107 a text changed says so", await until(async () => /changed its text/.test(await page.textContent("#taskbody .history"))));
+  // a comment deleted and a purge go through terminumd's write checks
+  await page.click('.ev-comment button:has-text("Delete")');
+  await page.click("#confirmok");
+  check("AC-108 a comment is deleted", await until(() => page.evaluate(() => !document.querySelector("#taskbody .ev-comment"))));
+  check("AC-108 and the history says who did it", /deleted a comment/.test(await page.textContent("#taskbody .history")));
+  await page.click('.tasktext button:has-text("Purge text")');
+  await page.click("#confirmok");
+  check("AC-109 a text is purged", await until(async () => /purged its text/.test(await page.textContent("#taskbody .history"))));
   await page.click("#taskclose");
 
   // a deep link, files by header only
@@ -112,6 +124,10 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   const secret = await page.evaluate(() => localStorage.getItem("tm.session"));
   const byAddress = await fetch(`${base}/api/task-files/${seen}?t=${secret}`).then((r) => r.status);
   check("AC-09 never an address", byAddress === 401, String(byAddress));
+  await page.click("#taskbody .filelist button[aria-label^=\"Delete\"]");
+  await page.click("#confirmok");
+  check("AC-109 a file can be deleted for good", await until(async () => /deleted the file shot.png/.test(await page.textContent("#taskbody .history"))));
+  check("AC-109 its bytes are gone", await page.evaluate(async (id) => (await fetch(`/api/task-files/${id}`)).status, seen) === 404);
   await page.click("#taskclose");
 
   // a session: one IN PROGRESS at a time, closed is said
@@ -180,6 +196,11 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click("#tosessions");
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 10000 });
   check("AC-110 and the session list shows it, with no session", await until(() => page.isVisible('#sessions section.project .label:has-text("Billing")')));
+  await page.click('#sessions section.project:has(.label:has-text("Billing")) > h2', { button: "right" });
+  await page.click('#rowmenu button[data-action="deleteproject"]');
+  check("AC-110 Delete Project says what moves", /Its 0 sessions and 0 tasks move to Default; nothing is closed\./.test(await page.textContent("#confirmtext")), await page.textContent("#confirmtext"));
+  await page.click("#confirmok");
+  check("AC-110 and it goes", await until(() => page.evaluate(() => ![...document.querySelectorAll("#sessions section.project .label")].some((l) => l.textContent === "Billing"))));
 
   // what an agent or a page wrote stays text
   await page.goto(`${base}/kanban/`);

@@ -8,24 +8,30 @@ const time = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: 
 
 export function taskWindow({ getMeta, onChange }) {
   const box = $("taskbox"), body = $("taskbody");
-  let shown = null, draftFiles = [];
+  let shown = null;
 
+  /** A change of a field: whether terminumd took it. A text being typed stays (refresh). */
   const patch = async (id, change) => {
+    let took = false;
     try {
-      await api(`/api/tasks/${id}`, { method: "PATCH", body: change });
+      const answered = await api(`/api/tasks/${id}`, { method: "PATCH", body: change });
+      if (answered.note) say(answered.note);
+      took = true;
     } catch (e) {
       if (e.message === "session_choice") return moveAcross(id, change);
       say(e.message);
     }
     onChange();
-    return refresh(true);
+    await refresh();
+    return took;
   };
 
   /** A task with a session moving to another project: its session goes too, or is unlinked (AC-113). */
   async function moveAcross(id, change) {
     const how = await choose(`${id} has a session. What becomes of it?`, "A session stands in one project.", [["move", "Move the session too"], ["unlink", "Unlink the session"]]);
-    if (how) await patch(id, { ...change, session_choice: how });
-    else refresh();
+    if (how) return patch(id, { ...change, session_choice: how });
+    refresh(true);
+    return false;
   }
 
   function select(label, options, value, onChange2) {
@@ -67,7 +73,7 @@ export function taskWindow({ getMeta, onChange }) {
       area.setAttribute("aria-label", "Text, Markdown");
       const save = el("button", "primary", "Save");
       save.type = "button";
-      save.addEventListener("click", () => patch(t.id, { text: area.value }));
+      save.addEventListener("click", async () => { if (await patch(t.id, { text: area.value })) refresh(true); });
       const cancel = el("button", null, "Cancel");
       cancel.type = "button";
       cancel.addEventListener("click", () => refresh(true));
@@ -102,7 +108,7 @@ export function taskWindow({ getMeta, onChange }) {
       del.setAttribute("aria-label", `Delete ${f.name}`);
       del.addEventListener("click", async () => {
         if (await ask(`Delete ${f.name}?`, "Its bytes leave the store for good.", "Delete")) {
-          await api(`/api/task-files/${f.id}`, { method: "DELETE" }).catch((e) => say(e.message));
+          await api(`/api/task-files/${f.id}`, { method: "DELETE", body: {} }).catch((e) => say(e.message));
           onChange();
           refresh();
         }
@@ -131,8 +137,10 @@ export function taskWindow({ getMeta, onChange }) {
           const save = el("button", "primary", "Save");
           save.type = "button";
           save.addEventListener("click", async () => {
-            await api(`/api/tasks/${t.id}/comments/${e.id}`, { method: "PATCH", body: { text: area.value } }).catch((err) => say(err.message));
-            refresh(true);
+            try {
+              await api(`/api/tasks/${t.id}/comments/${e.id}`, { method: "PATCH", body: { text: area.value } });
+              refresh(true);
+            } catch (err) { say(err.message); }
           });
           said.replaceChildren(area, row(save));
           area.focus();
@@ -141,7 +149,7 @@ export function taskWindow({ getMeta, onChange }) {
         del.type = "button";
         del.addEventListener("click", async () => {
           if (await ask("Delete this comment?", null, "Delete")) {
-            await api(`/api/tasks/${t.id}/comments/${e.id}`, { method: "DELETE" }).catch((err) => say(err.message));
+            await api(`/api/tasks/${t.id}/comments/${e.id}`, { method: "DELETE", body: {} }).catch((err) => say(err.message));
             refresh();
           }
         });
@@ -163,11 +171,14 @@ export function taskWindow({ getMeta, onChange }) {
     area.setAttribute("aria-label", "Comment");
     area.value = sessionStorage.getItem(`tm.comment.${t.id}`) ?? "";
     area.addEventListener("input", () => sessionStorage.setItem(`tm.comment.${t.id}`, area.value));
+    // the files of a comment being written: kept with its text, or the sweep would take them
+    const filesKey = `tm.commentfiles.${t.id}`;
+    const dropped = () => { try { return JSON.parse(sessionStorage.getItem(filesKey) ?? "[]"); } catch { return []; } };
     const add = async (list) => {
       for (const f of list) {
         try {
           const kept = await upload(f);
-          draftFiles.push(kept);
+          sessionStorage.setItem(filesKey, JSON.stringify([...dropped(), kept.id]));
           area.value += `${area.value && !area.value.endsWith("\n") ? "\n" : ""}${fileMarkdown(kept)}\n`;
           sessionStorage.setItem(`tm.comment.${t.id}`, area.value);
         } catch (e) { say(e.message); }
@@ -182,10 +193,10 @@ export function taskWindow({ getMeta, onChange }) {
     close.addEventListener("click", async () => {
       if (area.value.trim()) {
         try {
-          await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: area.value, files: draftFiles.map((f) => f.id) } });
+          await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: area.value, files: dropped() } });
         } catch (e) { say(e.message); return; }
         sessionStorage.removeItem(`tm.comment.${t.id}`);
-        draftFiles = [];
+        sessionStorage.removeItem(filesKey);
         onChange();
       }
       box.close();
@@ -210,7 +221,6 @@ export function taskWindow({ getMeta, onChange }) {
   }
 
   async function open(id) {
-    draftFiles = [];
     draw(await api(`/api/tasks/${id}`));
     if (!box.open) box.showModal();
   }

@@ -11,7 +11,7 @@
 //! (AC-33): orphaned once the project is deleted, or its session closes (bookmarks_scope.rs).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -58,6 +58,10 @@ pub enum Closed {
 pub struct Projects {
     /// where they are kept; in tests of the rules alone, none
     store: Option<Arc<Store>>,
+    /// projects.json, read once by the first load that succeeds
+    legacy: PathBuf,
+    /// the store's were read: until then nothing here may be written over them
+    loaded: bool,
     list: Vec<Project>,
     /// each server's identity (its `@terminum-id`) by its keys' start, as its members were read
     servers: BTreeMap<String, String>,
@@ -90,20 +94,39 @@ fn name_ok(name: &str) -> Result<String, String> {
 impl Projects {
     /// The store's; a store that cannot be used leaves none, its message logged and on the board.
     pub fn load(store: Arc<Store>, projects_json: &Path) -> Projects {
-        let saved = stored::load(&store, projects_json).unwrap_or_else(|e| {
+        let mut ps = Projects { store: Some(store), legacy: projects_json.to_path_buf(), ..Projects::default() };
+        if let Err(e) = ps.reload() {
             tracing::warn!(event = "projects.unread", error = %e);
-            Saved::default()
-        });
-        let mut ps = Projects { store: Some(store), list: saved.list, servers: saved.servers, fresh: HashMap::new(), recheck: None, untold: false, order: saved.order, tasks: HashMap::new(), marks: BTreeMap::new() };
-        ps.refresh_counts();
+        }
         ps
+    }
+
+    /// Reads them from the store, over what memory holds.
+    pub fn reload(&mut self) -> Result<(), String> {
+        let Some(store) = &self.store else { return Ok(()) };
+        let saved = stored::load(store, &self.legacy)?;
+        (self.list, self.servers, self.order) = (saved.list, saved.servers, saved.order);
+        self.loaded = true;
+        self.untold = true;
+        self.refresh_counts();
+        Ok(())
+    }
+
+    /// `change` holds only if the store took it; refused, nothing changed (AC-119).
+    fn kept<T>(&mut self, change: impl FnOnce(&mut Self) -> Result<T, String>) -> Result<T, String> {
+        let before = self.saved();
+        let done = change(self).and_then(|v| self.save().map(|()| v));
+        if done.is_err() {
+            (self.list, self.servers, self.order) = (before.list, before.servers, before.order);
+        }
+        done
     }
 
     /// Reads the tasks by project again: whether they changed. Off the async workers.
     pub fn refresh_counts(&mut self) -> bool {
         let Some(store) = &self.store else { return false };
         use crate::tasks::ops::sql;
-        let (counts, marks) = store.with(|tx| {
+        let counts_marks = store.with(|tx| {
             let mut st = tx.prepare("SELECT project, count(*) FROM tasks WHERE archived_at IS NULL GROUP BY project").map_err(sql)?;
             let counts = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(sql)?.collect::<Result<HashMap<_, _>, _>>().map_err(sql)?;
             let mut st = tx.prepare("SELECT session_key, 'T-' || number FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number").map_err(sql)?;
@@ -113,7 +136,9 @@ impl Projects {
                 marks.entry(key).or_default().push(id);
             }
             Ok((counts, marks))
-        }).unwrap_or_default();
+        });
+        // a passing failure says nothing about the tasks: the last numbers stand
+        let Ok((counts, marks)) = counts_marks else { return false };
         let changed = counts != self.tasks || marks != self.marks;
         self.tasks = counts;
         self.marks = marks;
@@ -138,11 +163,14 @@ impl Projects {
     }
 
     /// Writes them to the store (each change does; after `seen` or `restarted`, their caller).
-    pub fn save(&self) -> Result<(), String> {
-        match &self.store {
-            Some(store) => store.with(|tx| stored::write(tx, &self.saved())),
-            None => Ok(()),
+    pub fn save(&mut self) -> Result<(), String> {
+        let Some(store) = self.store.clone() else { return Ok(()) };
+        if !self.loaded {
+            // memory is empty because the store could not be read: never written over it
+            self.reload()?;
+            return Err("The tasks' store could not be read before: try again.".into());
         }
+        store.with(|tx| stored::write(tx, &self.saved()))
     }
 
     /// A name no other project has (AC-110).
@@ -161,22 +189,24 @@ impl Projects {
     /// made from the pane's host and folder), after `after` when that is a member, else last;
     /// out of any other. The project's id.
     pub fn add(&mut self, key: &str, to: Option<&str>, after: Option<&str>, host: Option<String>, dir: String, name: Option<&str>) -> Result<String, String> {
-        let id = match to {
-            Some(id) => self.find(id)?.id.clone(),
-            None => self.make(name, host, dir)?,
-        };
-        if self.find(&id)?.members.len() >= MOST_MEMBERS {
-            return Err(format!("At most {MOST_MEMBERS} sessions in a project."));
-        }
-        let p = self.find(&id)?;
-        p.members.retain(|m| m != key);
-        let at = after.and_then(|a| p.members.iter().position(|m| m == a)).map_or(p.members.len(), |i| i + 1);
-        p.members.insert(at, key.to_string());
-        for p in self.list.iter_mut().filter(|p| p.id != id) {
+        let id = self.kept(|ps| {
+            let id = match to {
+                Some(id) => ps.find(id)?.id.clone(),
+                None => ps.make(name, host, dir)?,
+            };
+            if ps.find(&id)?.members.len() >= MOST_MEMBERS {
+                return Err(format!("At most {MOST_MEMBERS} sessions in a project."));
+            }
+            let p = ps.find(&id)?;
             p.members.retain(|m| m != key);
-        }
+            let at = after.and_then(|a| p.members.iter().position(|m| m == a)).map_or(p.members.len(), |i| i + 1);
+            p.members.insert(at, key.to_string());
+            for p in ps.list.iter_mut().filter(|p| p.id != id) {
+                p.members.retain(|m| m != key);
+            }
+            Ok(id)
+        })?;
         self.fresh.insert(key.to_string(), Instant::now());
-        self.save()?;
         Ok(id)
     }
 
@@ -200,34 +230,41 @@ impl Projects {
 
     /// A project made on the board, with no session (AC-110). Its id.
     pub fn create(&mut self, name: &str, host: Option<String>, dir: String) -> Result<String, String> {
-        let id = self.make(Some(name), host, dir)?;
-        self.save()?;
-        Ok(id)
+        self.kept(|ps| ps.make(Some(name), host, dir))
     }
 
     /// The folder a project asks for at its first [+] (AC-110).
     pub fn set_dir(&mut self, id: &str, dir: String) -> Result<(), String> {
-        self.find(id)?.dir = dir;
-        self.save()
+        self.kept(|ps| {
+            ps.find(id)?.dir = dir;
+            Ok(())
+        })
     }
 
     /// Takes pane `key` out of its project, which stays.
     pub fn remove(&mut self, key: &str) -> Result<(), String> {
-        self.prune(|m| m != key);
-        self.save()
+        self.kept(|ps| {
+            ps.prune(|m| m != key);
+            Ok(())
+        })
     }
 
     pub fn rename(&mut self, id: &str, name: &str) -> Result<(), String> {
         let name = name_ok(name)?;
         self.name_free(&name, Some(id))?;
-        self.find(id)?.name = name;
-        self.save()
+        self.kept(|ps| {
+            ps.find(id)?.name = name;
+            Ok(())
+        })
     }
 
     /// The project goes in one transaction: its sessions are back in their tmux groups, its tasks
     /// in Default (AC-110). Refused by the store, nothing changes.
     pub fn delete(&mut self, id: &str) -> Result<(), String> {
         let name = self.find(id)?.name.clone();
+        if self.store.is_some() && !self.loaded {
+            return Err("The tasks' store could not be read: try again.".into());
+        }
         let mut after = self.saved();
         after.list.retain(|p| p.id != id);
         if let Some(store) = &self.store {
@@ -248,9 +285,11 @@ impl Projects {
             return Err("That order is too long".into());
         }
         let at = |p: &Project| ids.iter().position(|i| i.strip_prefix("p:") == Some(p.id.as_str())).unwrap_or(usize::MAX);
-        self.list.sort_by_key(|p| at(p));
-        self.order = ids.to_vec();
-        self.save()
+        self.kept(|ps| {
+            ps.list.sort_by_key(|p| at(p));
+            ps.order = ids.to_vec();
+            Ok(())
+        })
     }
 
     /// The session list's order as `order` got it.
@@ -260,10 +299,11 @@ impl Projects {
 
     /// Project `id`'s sessions in the order of `keys` (those not named keep their order, after).
     pub fn members(&mut self, id: &str, keys: &[String]) -> Result<(), String> {
-        let p = self.find(id)?;
         let at = |m: &String| keys.iter().position(|k| k == m).unwrap_or(usize::MAX);
-        p.members.sort_by_key(|m| at(m));
-        self.save()
+        self.kept(|ps| {
+            ps.find(id)?.members.sort_by_key(|m| at(m));
+            Ok(())
+        })
     }
 
     /// The panes of a server whose list was just read (`prefix` its keys' start, `identity` its

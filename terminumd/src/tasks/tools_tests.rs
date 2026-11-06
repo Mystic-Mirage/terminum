@@ -84,6 +84,42 @@ fn ac115_a_session_in_default_reaches_only_its_own_and_what_it_made() {
 }
 
 #[test]
+fn ac110_two_default_sessions_of_one_title_share_nothing() {
+    let (s, dir) = fresh("tt-same-title");
+    let a = who(None);
+    let b = Who { key: OTHER.into(), ..who(None) };
+    let made = call(&s, &dir, &a, "create_task", json!({"title": "a's gap"})).unwrap();
+    let id = made.trim_start_matches("Kept as ").trim_end_matches(", in TODO.").to_string();
+    assert!(call(&s, &dir, &a, "get_task", json!({"id": id})).is_ok());
+    assert!(call(&s, &dir, &b, "get_task", json!({"id": id})).is_err(), "the same title gives no reach");
+    assert!(!call(&s, &dir, &b, "list_tasks", json!({})).unwrap().contains(&format!("\"{id}\"")));
+}
+
+#[test]
+fn ac115_reading_makes_no_user_row() {
+    let (s, dir) = fresh("tt-read");
+    call(&s, &dir, &who(Some("api")), "list_tasks", json!({})).unwrap();
+    let agents: i64 = s.with(|tx| tx.query_row("SELECT count(*) FROM users WHERE kind = 'agent'", [], |r| r.get(0)).map_err(ops::sql)).unwrap();
+    assert_eq!(agents, 0);
+}
+
+#[test]
+fn ac115_a_list_is_cut_after_an_agent_s_reach_and_says_so() {
+    let (s, dir) = fresh("tt-cut");
+    let w = who(None);
+    for n in 0..200 {
+        s.with(|tx| ops::create(tx, HUMAN, NewTask { title: format!("busy {n}"), severity: Some("P0".into()), ..Default::default() }, 1)).unwrap();
+    }
+    let mine = task(&s, "default", Some(KEY));
+    let listed = call(&s, &dir, &w, "list_tasks", json!({})).unwrap();
+    assert!(listed.contains(&format!("\"{mine}\"")), "its own, past the board's first 200");
+    for n in 0..200 {
+        s.with(|tx| ops::create(tx, HUMAN, NewTask { title: format!("in api {n}"), project: Some("api".into()), ..Default::default() }, 1)).unwrap();
+    }
+    assert!(call(&s, &dir, &who(Some("api")), "list_tasks", json!({})).unwrap().ends_with("ask by status or severity for others."));
+}
+
+#[test]
 fn ac115_a_free_task_can_be_taken_one_with_a_session_cannot() {
     let (s, dir) = fresh("tt-take");
     let w = who(Some("api"));
@@ -120,13 +156,13 @@ fn ac109_an_agent_s_file_stays_inside_its_folder_or_comes_as_text() {
     let mut w = who(Some("api"));
     w.dir = Some(work.display().to_string());
     let id = task(&s, "api", Some(KEY));
-    // the agent's user exists once it has called once
-    call(&s, &dir, &w, "list_tasks", json!({})).unwrap();
     call(&s, &dir, &w, "attach_file", json!({"task": id, "path": work.join("out.log")})).unwrap();
     let list = s.with(|tx| files::of_task(tx, &id)).unwrap();
     assert_eq!(list[0].name, "out.log");
     assert!(call(&s, &dir, &w, "attach_file", json!({"task": id, "path": dir.join("secret.txt")})).unwrap_err().contains("outside this session's folder"));
     assert!(call(&s, &dir, &w, "attach_file", json!({"task": id, "path": work.join("link.txt")})).unwrap_err().contains("outside"), "judged on resolved paths");
+    call(&s, &dir, &w, "attach_file", json!({"task": id, "path": "out.log"})).unwrap();
+    assert_eq!(s.with(|tx| files::of_task(tx, &id)).unwrap().len(), 2, "a relative path is the session's");
     let got = call(&s, &dir, &w, "get_file", json!({"task": id, "name": "out.log"})).unwrap();
     assert!(got.contains(&list[0].id));
     w.dir = None;

@@ -154,6 +154,11 @@ fn ac112_one_level_of_subtasks_counted_on_the_parent_and_moved_with_it() {
     s.with(|tx| tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('web', 'web', 1, '', 0)", []).map_err(sql)).unwrap();
     s.with(|tx| set_project(tx, HUMAN, &up, "web", false, 2)).unwrap();
     assert_eq!(s.with(|tx| get(tx, &kid.id)).unwrap().project, "web");
+    let asked = s.with(|tx| create(tx, HUMAN, NewTask { title: "kid2".into(), parent: Some(up.clone()), project: Some("default".into()), ..Default::default() }, 1)).unwrap();
+    assert_eq!(asked.project, "web", "a subtask stands in its parent's project");
+    s.with(|tx| link(tx, HUMAN, &asked.id, Some("tmux:local:t:%1"), 1)).unwrap();
+    let refused = s.with(|tx| set_project(tx, HUMAN, &up, "default", false, 2));
+    assert_eq!(refused.unwrap_err(), format!("{} has a session of its own: unlink it first.", asked.id));
 }
 
 #[test]
@@ -178,12 +183,12 @@ fn ac111_filters_hold_together_and_count_columns() {
     let agent = s.with(|tx| agent_user(tx, "claude", "api")).unwrap();
     let w = s.with(|tx| create(tx, &agent, NewTask { title: "web one".into(), text: "retry here".into(), project: Some("web".into()), severity: Some("P1".into()), owner: Some(agent.clone()), by_agent: true, ..Default::default() }, 1)).unwrap();
     let ids = |q: Query| s.with(|tx| list(tx, &q)).unwrap().into_iter().map(|t| t.id).collect::<Vec<_>>();
-    assert_eq!(ids(Query { projects: vec!["web".into()], ..Default::default() }), [w.id.clone()]);
-    assert_eq!(ids(Query { severities: vec!["P0".into()], ..Default::default() }), [a.clone()]);
-    assert_eq!(ids(Query { owner: Some("agents".into()), ..Default::default() }), [w.id.clone()]);
+    assert_eq!(ids(Query { projects: vec!["web".into()], ..Default::default() }), vec![w.id.clone()]);
+    assert_eq!(ids(Query { severities: vec!["P0".into()], ..Default::default() }), vec![a.clone()]);
+    assert_eq!(ids(Query { owner: Some("agents".into()), ..Default::default() }), vec![w.id.clone()]);
     assert_eq!(ids(Query { text: Some("retry".into()), ..Default::default() }).len(), 2, "title or text");
-    assert_eq!(ids(Query { text: Some("100%".into()), ..Default::default() }), [a.clone()], "a % is itself");
-    assert_eq!(ids(Query { text: Some(w.id.clone()), ..Default::default() }), [w.id.clone()], "by its ID");
+    assert_eq!(ids(Query { text: Some("100%".into()), ..Default::default() }), vec![a.clone()], "a % is itself");
+    assert_eq!(ids(Query { text: Some(w.id.clone()), ..Default::default() }), vec![w.id.clone()], "by its ID");
     assert_eq!(ids(Query { projects: vec!["default".into()], severities: vec!["P1".into()], ..Default::default() }).len(), 1);
     let c = s.with(|tx| counts(tx, &Query { severities: vec!["P1".into()], ..Default::default() })).unwrap();
     assert_eq!((c["TODO"].as_i64(), c["DONE"].as_i64()), (Some(2), Some(0)));

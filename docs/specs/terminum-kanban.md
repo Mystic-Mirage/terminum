@@ -542,6 +542,8 @@ Comments and history are one table, `events`: a window lists them in one order. 
 | AC-116 | No record offers Make a task. | `web/static/marks.js` |
 | AC-117 | No banner or count on the Kanban link. | `web/static/kanban.js` |
 | AC-118 | No archive: nothing leaves the board by itself. | `terminumd/src/tasks/query.rs` |
+| AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
+| AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
 | AC-120 | A host's agent lists, reads and writes tasks over its link; get_file says it cannot yet, and a long get_task is not paged. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
@@ -568,7 +570,7 @@ CREATE TABLE servers (start TEXT PRIMARY KEY, terminum_id TEXT NOT NULL);  -- ea
 CREATE TABLE project_members (project TEXT REFERENCES projects, pane_key TEXT UNIQUE, place INTEGER);
 CREATE TABLE tasks (id TEXT PRIMARY KEY, number INTEGER UNIQUE NOT NULL, project TEXT REFERENCES projects, parent TEXT REFERENCES tasks,
   title TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, severity TEXT NOT NULL, rank REAL NOT NULL, owner TEXT REFERENCES users,
-  by_agent INTEGER NOT NULL, session_key TEXT, agent_session TEXT, budget_seconds INTEGER, archived_at INTEGER, updated_at INTEGER NOT NULL);
+  by_agent INTEGER NOT NULL, session_key TEXT, made_in TEXT, agent_session TEXT, budget_seconds INTEGER, archived_at INTEGER, updated_at INTEGER NOT NULL);
 CREATE TABLE events (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, at INTEGER NOT NULL, author TEXT REFERENCES users, kind TEXT NOT NULL, text TEXT, data TEXT);
 CREATE INDEX events_task ON events (task, at);
 CREATE TABLE files (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, event TEXT REFERENCES events, name TEXT NOT NULL, bytes INTEGER NOT NULL, mime TEXT NOT NULL);

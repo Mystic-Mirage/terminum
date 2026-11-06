@@ -104,6 +104,55 @@ fn ac110_a_project_is_not_lost_when_the_store_refuses_its_deletion() {
 }
 
 #[test]
+fn ac119_projects_are_never_written_over_a_store_that_could_not_be_read() {
+    use std::os::unix::fs::PermissionsExt;
+    let (store, json) = stored("projects-failed");
+    let mut ps = reloaded(&store, &json);
+    ps.add(A, None, None, None, "/a".into(), Some("Keep me")).unwrap();
+    ps.seen("tmux:local:terminum:", Some("m1"), &[A].into_iter().collect());
+    ps.save().unwrap();
+    let path = json.with_file_name("kanban.sqlite");
+    drop(ps);
+    drop(store);
+    let mode = |m| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o000);
+    let store = Arc::new(Store::open(path.clone()));
+    let mut failed = reloaded(&store, &json);
+    assert!(failed.list().is_empty() && store.problem().is_some(), "it could not be read");
+    mode(0o600);
+    failed.seen("tmux:local:terminum:", Some("m1"), &HashSet::new());
+    assert!(failed.save().is_err(), "the first save after it comes back writes nothing, and reads them");
+    assert_eq!(failed.list()[0].name, "Keep me", "memory holds the store's now");
+    assert_eq!(reloaded(&store, &json).list()[0].name, "Keep me", "and the store still does");
+    failed.rename(&failed.list()[0].id.clone(), "Kept").unwrap();
+    assert_eq!(reloaded(&store, &json).list()[0].name, "Kept", "changes reach it again");
+}
+
+#[test]
+fn ac119_a_change_the_store_refuses_stays_out_of_memory() {
+    let (store, json) = stored("projects-refused-change");
+    let mut ps = reloaded(&store, &json);
+    let p = ps.add(A, None, None, None, "/a".into(), Some("One")).unwrap();
+    store.with(|tx| tx.execute_batch("CREATE TRIGGER no BEFORE UPDATE ON projects BEGIN SELECT RAISE(ABORT, 'refused'); END;").map_err(|e| e.to_string())).unwrap();
+    assert!(ps.rename(&p, "Two").is_err());
+    assert_eq!(ps.list()[0].name, "One");
+}
+
+#[test]
+fn ac119_start_empty_does_not_bring_an_old_projects_json_back() {
+    let (_, json) = stored("projects-empty");
+    let path = json.with_file_name("kanban.sqlite");
+    std::fs::write(&json, json!({"projects": [{"id": "p1", "name": "old", "color": 2, "host": null, "dir": "/x", "members": []}]}).to_string()).unwrap();
+    std::fs::write(&path, vec![0x5a; 8192]).unwrap();
+    let store = Arc::new(Store::open(path));
+    store.start_empty().unwrap();
+    let mut ps = reloaded(&store, &json);
+    assert!(ps.list().is_empty(), "the user asked for empty");
+    ps.create("Billing", None, String::new()).unwrap();
+    assert_eq!(reloaded(&store, &json).list()[0].name, "Billing", "and what they make stays");
+}
+
+#[test]
 fn ac110_a_project_made_with_no_session_stands_and_takes_its_folder_later() {
     let mut ps = store();
     let p = ps.create("Billing", None, String::new()).unwrap();

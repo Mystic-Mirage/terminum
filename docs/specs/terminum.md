@@ -13,7 +13,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Who it affects.** Developers on macOS who run shells, tmux sessions, ssh sessions and coding agents, locally and on remote hosts, and read them on a Mac, an iPad or a phone.
 
-**Expected outcome.** Terminals live in tmux. One Rust server, `terminumd`, is tmux's control client for a private local server and for each remote host over ssh, and serves one page to a browser: Safari or Chrome on the Mac, Safari on an iPhone. The pane's size follows the view that shows it, so text is laid out for the screen it is read on. Screens are tmux's own grid: terminumd never emulates a terminal. Sessions outlive terminumd, the page and the window. Everything is configurable from files in `~/.terminum/`.
+**Expected outcome.** Terminals live in tmux. One Rust server, `terminumd`, is tmux's control client for a private local server and for each remote host over ssh, and serves one page to a browser (AS-07). The pane's size follows the view that shows it, so text is laid out for the screen it is read on. Screens are tmux's own grid: terminumd never emulates a terminal. Sessions outlive terminumd, the page and the window. Everything is configurable from files in `~/.terminum/`.
 
 **Scenario.** Alex opens the page on a phone. The pane is 48 columns wide, laid out by Claude Code itself for that width; the Mac's window of the same pane is wide again when Alex brings it to the front. `mc` fills the phone's screen as a 48×30 grid, arrows and F-keys work, a tap is a click. A key echoes in 25 ms.
 
@@ -29,7 +29,7 @@ Out of scope (explicit):
 - Terminal emulation of our own (no VT parser in terminumd or the page): tmux is the emulator. Inline images (OSC 1337, sixel) are not shown in the terminal, as tmux does not keep them (images named in the output open as widgets, `terminum-terminal.md`).
 - A native terminal renderer (Metal, ligatures): the page draws text with web fonts; the browser is the renderer.
 - Shells outside tmux: every local terminal is a tmux pane.
-- Windows, and Linux desktops as the place of the page: terminumd runs as a server on Ubuntu/Debian (terminum-lifecycle.md AC-08) and as a remote host's agent; Finder and default apps are a Mac's only. The page works in any modern browser; acceptance is on a Mac browser and an iPhone (OQ-04).
+- Windows, and Linux desktops as the place of the page: terminumd runs as a server on Ubuntu/Debian (terminum-lifecycle.md AC-08) and as a remote host's agent; Finder and default apps are a Mac's only. The page works in any modern browser; acceptance is on the clients of AS-07.
 - Several users or several passwords; HTTPS of our own (use `tailscale serve`).
 
 ## 3. Assumptions, dependencies, open questions
@@ -41,7 +41,7 @@ Assumptions:
 | AS-01 | Control mode (`tmux -C`) delivers `%output`, `%layout-change`, `%window-add`, `%window-close`, `%window-renamed`, `%session-changed`, `%sessions-changed`, `%pane-mode-changed`, `%extended-output`, `%pause`, `%continue`, and `%begin`/`%end` blocks for commands in order. | Claude | verified (man tmux 3.6a) |
 | AS-02 | A control client attached with `-f ignore-size` does not take part in window sizing, so `window-size manual` plus `resize-window -x -y` sets a window's size exactly, also while another client is attached. | Claude | verified on tmux 3.6a; `scripts/e2e_core.py` |
 | AS-03 | `capture-pane -p -e -J -t %N -S a -E b` returns the pane's rows with SGR sequences and joins rows tmux wrapped (never past `-E`), so hard line ends are where `-J` left a line break; a joined line is cut back into rows at `#{pane_width}` cells (wide characters two cells; one that would straddle the edge goes to the next row). SGR state runs across the lines of one capture. `-e` also emits OSC 8 links, whose address is kept with the cells (terminum-terminal.md AC-35); tmux 3.6a ends a link at every row's end and does not open it again on the next, so a link that runs past a row is a link on its first row only. | Claude | verified on tmux 3.6a; `screen/rows_tests.rs`, a real tmux fixture |
-| AS-04 | `#{history_size}` is the number of lines above the screen until `history-limit` is reached; after that tmux drops the oldest lines silently. terminumd's config sets `history-limit 12000` (OQ-01). | Claude | verified (man tmux) |
+| AS-04 | `#{history_size}` is the number of lines above the screen until `history-limit` is reached; after that tmux drops the oldest lines silently. terminumd's config sets `history-limit` (OQ-01). | Claude | verified (man tmux) |
 | AS-05 | `send-keys -l` delivers text as typed, key names (`Up`, `C-c`, `F5`, `BTab`) are encoded by tmux for the pane's mode (application cursor keys included), and `send-keys -H` sends hex bytes, so a mouse report (`ESC [ < 0;10;5 M`) reaches a program that asked for mouse events. | Claude | verified: `tmux/keys_tests.rs`, `scripts/e2e_core.py` (AC-06) |
 | AS-06 | `%output` carries the pane's raw output as octal-escaped text and arrives for panes of every window of the attached session, not of other sessions; a `%output` is only a signal to capture, never parsed for content (one exception: section 6). | Claude | verified on tmux 3.6a |
 | AS-07 | The clients are Safari or Chrome on the Mac (a window 1400 px and wider) and Safari on an iPhone; the page's e2e checks run in Chromium and WebKit at both sizes. | Owner | stated |
@@ -66,12 +66,12 @@ Open questions:
 
 | ID | Question | Owner | Status | Decision |
 |---|---|---|---|---|
-| OQ-01 | Which tmux server holds local terminals: the user's default server or a private `-L terminum` server? | Owner | resolved | A private server: socket `terminum`, started by terminumd with its own config `~/.terminum/tmux.conf` (history-limit 12000, window-size latest (terminumd sets `manual` per window while a page sizes it, AC-13), extended-keys on, focus-events on, escape-time 0; the user may edit it), so the user's sessions and `~/.tmux.conf` are never touched; `tmux -L terminum attach` from any terminal still works. Owner, 2026-10-15. Since 0.8.0 the user may also attach sessions of their own server by name (AC-89); terminumd still never starts it or makes sessions there. |
-| OQ-02 | How many control clients: one per server, or one per session? | Claude | resolved | One per session for notices and typing (AS-06), plus one bulk client per server for history pages, search, `list-panes` and layout reads, so a bulk read never queues ahead of an echo. 2026-10-15 |
-| OQ-03 | When two clients of different widths show one pane (a phone and the Mac's browser), whose width wins? | Owner | resolved | The active page (in sight and focused): it sizes on opening, on becoming active and on typing (AC-13). Owner, 2026-10-19. |
-| OQ-04 | Does an app replace the browser for daily use on the Mac, or is a browser tab enough? | Owner | resolved | No app: the clients to build and test for are a browser on the Mac (wide screen, 1400 px and more) and Safari on an iPhone (mobile). terminum-lifecycle.md AC-11 dropped. Owner, 2026-10-15. |
-| OQ-06 | Should the page ship JetBrains Mono Nerd Font as woff2 (OFL) so the phone shows the Mac's font, or keep `local()` with Menlo as the fallback? | Owner | resolved | Ship it (2026-10-25): JetBrains Mono Nerd Font Mono 2.304 of Nerd Fonts 3.4.0, Regular and Bold text subsets (77 and 79 KB) and the icons apart (890 KB, fetched when one shows), after the theme's font in every list (AC-12). |
-| OQ-05 | Absolute line numbers after `history-limit` is reached (AS-04) or a resize re-wrapped the history (AS-09): keep counting by matching rows, or reset the page's history? | Claude | resolved | Reset when the last frame's rows cannot be matched, counted on where they can (AC-02); bookmarks and search marks are found again by their text. 2026-10-15; matching rows since 2026-10-21. |
+| OQ-01 | Which tmux server holds local terminals: the user's default server or a private `-L terminum` server? | Owner | resolved | A private server: socket `terminum`, started by terminumd with its own config `~/.terminum/tmux.conf` (history-limit 12000, window-size latest (per window: AC-13), extended-keys on, focus-events on, escape-time 0; the user may edit it), so the user's sessions and `~/.tmux.conf` are never touched; `tmux -L terminum attach` from any terminal works. The user may also attach sessions of their own server by name (AC-89). |
+| OQ-02 | How many control clients: one per server, or one per session? | Claude | resolved | One per session for notices and typing (AS-06), plus one bulk client per server for history pages, search, `list-panes` and layout reads, so a bulk read never queues ahead of an echo. |
+| OQ-03 | When two clients of different widths show one pane (a phone and the Mac's browser), whose width wins? | Owner | resolved | The active page (AC-13). |
+| OQ-04 | Does an app replace the browser for daily use on the Mac, or is a browser tab enough? | Owner | resolved | No app: the clients to build and test for are those of AS-07. terminum-lifecycle.md AC-11 is dropped. |
+| OQ-06 | Should the page ship JetBrains Mono Nerd Font as woff2 (OFL) so the phone shows the Mac's font, or keep `local()` with Menlo as the fallback? | Owner | resolved | Ship it: JetBrains Mono Nerd Font Mono 2.304 of Nerd Fonts 3.4.0, after the theme's font in every list (AC-12). |
+| OQ-05 | Absolute line numbers after `history-limit` is reached (AS-04) or a resize re-wrapped the history (AS-09): keep counting by matching rows, or reset the page's history? | Claude | resolved | Reset when the last frame's rows cannot be matched, counted on where they can (AC-02); bookmarks and search marks are found again by their text. |
 
 ## 4. Acceptance cases
 
@@ -121,7 +121,7 @@ Scenario: AC-01 happy path — a folder's color
   Then the bar left of each row (and of the header's title), at one place in every row, is a pastel color of its folder: rows in the same folder (on the same host) share it, folders not inside one another get hues as far apart as their count allows
   And a folder inside another listed folder gets a hue near that folder's, the nearer the deeper it lies, yet its own; "~" and "/" are no parent; a row with no folder has a grey bar
   And on a light theme the same hues are darker, so the bar keeps 3:1 against the list
-  And with "Follow the agent's folder" on (AC-19), a row whose coding agent works in another folder (a worktree it moved to, as its hooks last said: terminum-files.md AC-51) names that folder on its second line, its bar takes that folder's color and the filter finds it by it; off, the pane's own folder
+  And with "Follow the agent's folder" on (`page.followAgent`, section 9), a row whose coding agent works in another folder (a worktree it moved to, as its hooks last said: terminum-files.md AC-51) names that folder on its second line, its bar takes that folder's color and the filter finds it by it; off, the pane's own folder
 Scenario: AC-01 happy path — the list follows tmux
   Given the page is open
   When the user runs "tmux new-window -n build" in any terminal
@@ -149,7 +149,7 @@ Scenario: AC-01 failure — tmux is missing
 Scenario: AC-02 happy path — open a pane
   Given pane %3 is 150×50 with 4,200 lines of history
   When the user opens it
-  Then within 1 s the page shows the theme, the last 1000 history lines and the screen (50 rows) with the cursor, in the session's theme
+  Then within 1 s the page shows the last 1000 history lines and the screen (50 rows) with the cursor, in the session's theme
   And scrolling up loads older lines 1000 at a time, up to 10,000 (TM_HISTORY)
   And every line is tmux's: rows tmux wrapped join when copied, a hard line end stays one (AS-03)
   And the view stays on the last line through what settles late (fonts, widgets, images, a phone's list closing, the keyboard), until 4 s after the first frame or the user scrolls, presses, types or selects text, or a jump to a line takes the view
@@ -160,7 +160,7 @@ Scenario: AC-02 happy path — output streams
 Scenario: AC-02 edge — the pane prints while its history is read
   Given a frame said tmux's history holds h rows, and before the rows that scrolled off are read the pane prints 60 more (a coding agent's long result, over a host's ssh)
   Then terminumd's capture reaches 64 rows above the range (further once more when more scrolled) and comes with #{history_size} and #{pane_width} read before and after it, and the rows asked for are taken from where the rows that scrolled meanwhile moved them: the page gets the rows it numbered, never those 60 rows on shown in their place (a paragraph doubled, text out of its place); rows tmux no longer has are empty, never others
-  And where the count cannot say how far rows moved (a history that shrank, or 90% of history-limit or more: tmux drops a tenth at once) one capture from 512 rows above the range down to the screen's end finds the last frame's top screen rows (six, two at least not blank) where they moved, and they number the rows (further once more when tmux still has rows above its reach); a width that changed meanwhile, those rows found nowhere or at two moves (output that repeats itself), sends no rows and the next frame starts the page's history anew
+  And where the count cannot say how far rows moved (a history that shrank, or 90% of history-limit or more: AS-09) one capture from 512 rows above the range down to the screen's end finds the last frame's top screen rows (six, two at least not blank) where they moved, and they number the rows (further once more when tmux still has rows above its reach); a width that changed meanwhile, those rows found nowhere or at two moves (output that repeats itself), sends no rows and the next frame starts the page's history anew
   And at 90% of history-limit or more a count the same as the frame's may be a trim and as many rows again: the screen's top rows (six), read with the capture, say whether anything moved; when they changed, the rows are found as above, and found nowhere (drawn over in place: a progress bar) the count numbers them
   And at history-limit, where tmux's count leaves several numbers of rows that scrolled off, the screen's top rows (half of those that moved, six at most) say which: the bottom rows are a coding agent's to redraw (its spinner, its input) and never decide it, so the screen's rows are never appended as rows that scrolled off (an answer drawn twice)
   And the page fills a folded line only into the record of its own number
@@ -210,7 +210,7 @@ Scenario: AC-03 happy path — paste
   And a paste holding control characters other than newline and tab is refused with "The text holds control characters and was not sent"
   And where the page may not read the clipboard (denied, or not HTTPS), Paste opens a field to paste into: Send, or ⌘Enter or Ctrl+Enter in it, sends its text; a plain Enter is a new line
   And a clipboard read or image conversion begun in one pane cannot paste or upload into another pane shown before it completes; the page says that nothing was pasted
-  And text that starts with "-" (a paste on a host, a name, a path the Files panel types) is text: tmux takes a word that starts with "-" before the first other word for a flag, so every such argument comes after "--" (a paste of "-x …" said "invalid flag -")
+  And text that starts with "-" (a paste on a host, a name, a path the Files panel types) is text: tmux takes a word that starts with "-" before the first other word for a flag, so every such argument comes after "--" (else a paste of "-x …" says "invalid flag -")
   When the user selects lines in the history, copies them (⌘C) and presses ⌘V with the keys anywhere but a field (the selection, the list, a button)
   Then the terminal's input takes the keys back first and the text is pasted into the pane at its cursor, typing going on there without a click (not under a dialog, nor while Files is shown in the terminal's place)
 Scenario: AC-03 happy path — undo and redo
@@ -221,7 +221,7 @@ Scenario: AC-03 happy path — undo and redo
   When the user presses ⌘X with text selected in a coding agent's input box
   Then the text is copied and deleted from the box as Backspace over a selection deletes it (terminum-terminal.md AC-40), the input keeping the keys; a selection elsewhere (the output, the history) is left as it is, as a page's text is
   When on a phone the user rests a finger on the keyboard button (half a second), or holds one still on the terminal's input (the cursor's row, an agent's input box) for half a second and lifts it
-  Then the page's own menu opens there, modal, each item only when it applies: Cut, Clear and Copy while text is selected in the input box (Cut and Clear delete it as Backspace over a selection does, terminum-terminal.md AC-40; Cut copies it first), Paste (left out when the browser lets the page read the clipboard and it is empty; Safari never does: there a Paste of an empty clipboard says "Nothing to paste: the clipboard holds no text." and sends nothing; Safari asks once, with its own small Paste, before the page may read the clipboard: one read for an image or text, never two), Undo where the program has an undo key, Redo after the page's Undo where the program has a redo key (fish); they do as ⌘X, ⌘V, ⌘Z and ⌘⇧Z
+  Then the page's own menu opens there, modal, each item only when it applies: Cut, Clear and Copy while text is selected in the input box (Clear deletes it as Cut does, without the copy), Paste (left out when the browser lets the page read the clipboard and it is empty; Safari never does: there a Paste of an empty clipboard says "Nothing to paste: the clipboard holds no text." and sends nothing; Safari asks once, with its own small Paste, before the page may read the clipboard: one read for an image or text, never two), Undo where the program has an undo key, Redo after the page's Undo where the program has a redo key (fish); they do as ⌘X, ⌘V, ⌘Z and ⌘⇧Z
   And with the on-screen keyboard up (the input has the keys) the menu opens without taking them: the keyboard stays up and the menu stays where it opened, centered above it, over a shade that closes it
   And a finger that rests and then slides moves the cursor, one that moves at once scrolls; neither opens the menu; iOS's own undo on the input (three fingers, a shake) undoes as ⌘Z does
   When on a phone the user swipes quickly along the input (under 0.3 s, at least 48 px, at least twice as far across as up or down, not from a screen edge)
@@ -268,7 +268,7 @@ Scenario: AC-04 happy path — one view, re-flowed to the browser
   And on the normal screen nothing is scaled or scrolled sideways: a row wider than the view wraps at its edge; while the pane has the view's width its rows stay as the program laid them out (its hanging indents too)
 Scenario: AC-04 edge — a pane wider or narrower than the view
   Given the pane's width is not the view's: a window of several panes (never resized, AC-13), another page's size, a refused resize, the 45-column floor, a view whose new width is on its way to tmux
-  Then on the normal screen its lines re-flow to the view's width (Wrap), at the chosen text size: a line tmux wrapped is one line again, prose a program wrapped at the pane's width re-joins (a word broken at the edge without a space), list items, agent marks and numbered lines start lines, separator lines span the view, a line wider than the view wraps at its edge; never scaled, never scrolled sideways, and a narrow pane's lines fill the view; once the pane has the view's width again its rows are drawn as laid out
+  Then on the normal screen its lines re-flow to the view's width (Wrap), at the chosen text size: a line tmux wrapped is one line again, prose a program wrapped at the pane's width re-joins (a word broken at the edge without a space), list items, agent marks and numbered lines start lines, separator lines span the view, and a narrow pane's lines fill the view
   And a full-screen program (AC-05) is drawn as its grid: scaled down to the view's width, at the chosen size with the rest by scrolling sideways when that would make the text smaller than 7 px (the smallest size − and + allow); "Sized for another screen (W×H)" says so when another page sized it
 Scenario: AC-04 edge — the view changes width
   Given this page sized the pane to its view (its columns are the ones it sent)
@@ -279,7 +279,6 @@ Scenario: AC-04 edge — another pane opened
   When the user opens another pane (the list, ⌘[ ⌘], a bookmark, a new window) whose window has another size than this view's grid
   Then the page lays the new pane's session out first (its own docked Files, terminum-files.md AC-70) and sends "sub" with the grid that leaves; terminumd sizes the window to it before the pane's first frame (AC-13), so that frame comes at this view's grid
   And the view keeps showing the pane shown before, still (never blank), until that first frame, 1.5 s at most, then draws the new pane at once, at the chosen text size: no frame at the window's old size is drawn first, so the text size never jumps; a window of several panes (never resized) comes at its own size, re-flowed to the view
-  And a second window resized within a second of the first is not held back: the once-a-second limit is a window's
 ```
 
 ### AC-05 — Full-screen programs [SHOULD / P1]
@@ -320,7 +319,7 @@ Scenario: AC-06 happy path — a trackpad on a far host
   Given Codex asked for the mouse on a host 50 ms away and the user scrolls with a trackpad (120 small wheel events a second)
   Then each text line scrolled is one wheel step, at most one an event (a wheel's notch is one), and a frame's steps go as one message with their count
   And terminumd hands the reports that came while one round trip was on its way to tmux in the next, as one "send-keys -H", in order with the keys typed; the page's other messages never wait for them
-  And the program has every step and the screen is drawn within 0.2 s of the last event (it was 5.8 s for 120 events)
+  And the program has every step and the screen is drawn within 0.2 s of the last event
 Scenario: AC-06 happy path — touch
   When the user taps a cell, or swipes up or down in the grid
   Then a tap is a click at that cell, a swipe is wheel events, a two-finger tap is a right click; a long press selects text as in the terminal (no event sent)
@@ -329,7 +328,7 @@ Scenario: AC-06 edge — the program did not ask for the mouse
   Then clicks move no cursor and send nothing; a tap on the cursor's row opens the keyboard, elsewhere it leaves it as it was, as in the terminal; the wheel scrolls the page
 Scenario: AC-06 edge — coding agents and selection
   Given Codex on the alternate screen asked for the mouse
-  Then the wheel and a swipe go to it (it scrolls its own transcript), but presses and drags select text as on any page; on any program Shift held while pressing selects text instead of sending the press
+  Then the wheel and a swipe go to it (it scrolls its own transcript), but presses and drags select text as on any page
   And on the normal screen nothing is sent: the wheel scrolls the history
 Scenario: AC-06 happy path — what a full-screen program selected
   Given a full-screen program on the alternate screen has the mouse (Claude Code in its fullscreen mode, vim with "set mouse=a")
@@ -343,7 +342,7 @@ Scenario: AC-06 edge — a clipboard write nobody asked for
   Then nothing is shown or kept, nor decoded (only a page waiting for it has its base64 read); a clipboard read (52;c;?) is never answered; a write over 1 MB of text and one cut by tmux's flow control (%pause) are dropped; control characters but tab and line ends are taken out of what is shown, so a Copy pasted into a terminal never sends keys (ESC [201~ would end a bracketed paste), and so are bidi controls, zero-width characters, the soft hyphen, word joiners and tag characters, never ZWNJ and ZWJ, line separators becoming line ends (a pasted Copy never reads otherwise than it runs)
   And the program's own copy (pbcopy, tmux's buffer) is left as it is
 Scenario: AC-06 happy path — Shift selects in every browser
-  Given a full-screen program has the mouse and the terminal has the keys (its keyboard field holds the page's caret)
+  Given any full-screen program has the mouse and the terminal has the keys (its keyboard field holds the page's caret)
   When the user holds Shift and drags over its text in Safari, Chrome or Firefox
   Then the browser selects from the press to the release (a new selection, never the caret's or an old one extended), nothing reaches the program, and Copy, [+] and Ask show as for any selection
   And the next press without Shift goes to the program and ends that selection: the keyboard field has the keys again on the release, and what the program then copies is what the buttons hold
@@ -364,7 +363,7 @@ Scenario: AC-07 happy path — new window, new session, split
   And on a computer (a fine pointer, wider than 860 px) the foot is one slim row of its buttons' icons (the bookmarks' count beside theirs) with a ▸ at its right: one toggle button ("Session tools", its expanded state said to assistive tech; the icons are not buttons of their own); a click on it (Enter or Space) unfolds it upward within 0.2 s into New session, Bookmarks / Reminders, Add host and Attach tmux sessions and the version under them, the row staying on top with ▾; they stay until that row is clicked again (the pointer passing over or leaving it changes nothing), and the page remembers the state for the next load (a split's embedded page keeps none); while folded its buttons are out of the keyboard's way; a click on it while a form of theirs is open folds it and closes the form, as Esc does; [+] in the list's head opens its form with the foot left as it was (with reduced motion they appear and go without moving); a touch screen or a narrow window shows the four as a row of blobs, never folded
 Scenario: AC-07 happy path — Clone and the row's menu
   Then every row has a Clone button at its right end, in a column of its own, shown while the pointer is over the row or the keyboard's focus is in it (a touch screen has no hover: there it is always shown)
-  And a tmux session's group has a menu as a row's, on a right click on its header and on its ⋯ (a host's or an attached session's ⋯ keeps its own menu): New Window (a window after its last row, as Clone), Rename… (asks with the group's name; renames its tmux session, the name taken literally, `:` and `.` refused in words; the group keeps its place and its fold), Move to the Top, Up, Down, to the Bottom (among the list's projects and groups, every page's, as a drag; AC-92), Close Group… (red: asks "Close the group <name> and its N sessions? …", then closes each); collapsed or filtered, the group keeps them: its sessions come from the list, not from its rows drawn
+  And a tmux session's group has a menu as a row's, on a right click on its header and on its ⋯ (a host's or an attached session's ⋯ keeps its own menu): New Window (a window after its last row, as Clone), Rename… (asks with the group's name; renames its tmux session, the name taken literally, `:` and `.` refused in words; the group keeps its fold, its place: AC-92), Move to the Top, Up, Down, to the Bottom (among the list's projects and groups, every page's, as a drag; AC-92), Close Group… (red: asks "Close the group <name> and its N sessions? …", then closes each); collapsed or filtered, the group keeps them: its sessions come from the list, not from its rows drawn
   And a pane under its window (a coding agent's subagent, a quick shell) has none: the pointer over it shows no Clone, its window's stays on that window's own row, at its middle
   When the user presses Clone on window "api" (or picks Clone in its menu)
   Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" (right after it, in its folder, a shell: its program is not copied) and the page shows the new pane within 2 s (the `new` message, a group's window after the shown pane's, stays for scripts); a session of a project gives the project's window (AC-92); one a second per client, as New window; a host that is not attached offers no Clone
@@ -376,7 +375,7 @@ Scenario: AC-07 happy path — rename and reorder
   Then terminumd runs "rename-window -t @2 'deploy'" and "select-pane -t %3 -T 'deploy'", and the list, the header and tmux's own status line show it within 2 s; an empty name restores "automatic-rename on"
   When the user drags a window's row above another in its group (no grip: the row itself; with a mouse once it moved 6 px, a press that does not move still opens it; a finger rests 0.35 s on the row, which lifts, then moves, and the list scrolls by itself near its top and bottom edge; a finger that lifts without moving opens the row's menu; a finger that moves before then scrolls the list; while the list is filtered rows do not move, and a finger resting half a second opens the menu)
   Then the row follows the pointer, a dashed outline of its size stands where it will land, among its group's rows only; Esc or a cancelled touch puts it back
-  And on release terminumd runs "move-window -s main:3 -t main:1" (and renumbers) and the list shows the new order within 2 s; rows of another session are never moved by a drag; a project's or a group's header drags it among the list's projects and groups (every page's, AC-92)
+  And on release terminumd runs "move-window -s main:3 -t main:1" (and renumbers) and the list shows the new order within 2 s; rows of another session are never moved by a drag; a project's or a group's header: AC-92
 Scenario: AC-07 happy path — move a window to another session
   When the user picks "Move to Session…" in a window's row menu (shown when its tmux server has another session) and chooses "notes"
   Then terminumd runs "move-window -s main:3 -t notes:" and the window appears under "notes"; tmux keeps its panes running
@@ -405,9 +404,9 @@ Scenario: AC-07 failure — tmux refuses
 ```gherkin
 Scenario: AC-09 happy path — every browser signs in with the password
   Given the user ran "terminum password" and typed a password of at least 8 characters twice
-  Then web.json (0600) holds it as a salted PBKDF2-SHA256 hash (600,000 iterations; a hash of fewer, as before 0.18.9, is made again with 600,000 at the next right password, never over a password set meanwhile), every sign-in made before is revoked and every open page closes
+  Then web.json (0600) holds it as a salted PBKDF2-SHA256 hash (600,000 iterations; a hash of fewer is made again with 600,000 at the next right password, never over a password set meanwhile), every sign-in made before is revoked and every open page closes
   When a browser opens the page (the Mac's at "http://127.0.0.1:48080/", another device's through "tailscale serve") and sends the password in its form
-  Then terminumd answers {"secret"}: a 256-bit sign-in (kept as its SHA-256 and proof key in state/signins.json, 0600, at most 20, 30 days), which the page keeps in its own origin's storage (not a cookie: a cookie on 127.0.0.1 would reach every local port) and sends as the header "X-TM-Session" on requests and as the WebSocket's subprotocol, never in an address: an image, a video, a document's stylesheet or a download is fetched with the header and shown from a "blob:" address (one copied from the page, as Copy Image Address does, signs nothing in); a blob: has the page's origin, so only a picture, a video, a sound or a PDF keeps its type there: an SVG is shown from a "data:" address and any other file as bytes, and none opened as a page (Open Image in New Tab) runs in terminum's origin; the page's address never holds it
+  Then terminumd answers {"secret"}: a 256-bit sign-in (kept as its SHA-256 and proof key in state/signins.json, 0600, at most 20, the oldest dropped, 30 days), which the page keeps in its own origin's storage (not a cookie: a cookie on 127.0.0.1 would reach every local port) and sends as the header "X-TM-Session" on requests and as the WebSocket's subprotocol, never in an address: an image, a video, a document's stylesheet or a download is fetched with the header and shown from a "blob:" address (one copied from the page, as Copy Image Address does, signs nothing in); a blob: has the page's origin, so only a picture, a video, a sound or a PDF keeps its type there: an SVG is shown from a "data:" address and any other file as bytes, and none opened as a page (Open Image in New Tab) runs in terminum's origin; the page's address never holds it
 Scenario: AC-09 happy path — no password yet
   Given no password is set (a new install)
   Then the page's form says "No password is set yet. On the Mac, run: terminum password" and cannot be sent, and asks again every 5 s; "POST /auth/login" answers 503 no_password; "terminum status" says "password: not set — no browser signs in: terminum password"; "terminum open" says to set it first
@@ -430,12 +429,12 @@ Scenario: AC-09 failure — wrong passwords
 Scenario: AC-09 edge — signed out
   When the user chooses Sign out in the menu
   Then that browser's sign-in is revoked ("POST /auth/logout" with its X-TM-Session), forgotten by the page, and the form shows
-  When the page's sign-in has expired (30 days) or was revoked ("terminum signout", a new password)
+  When the page's sign-in has expired or was revoked ("terminum signout", a new password)
   Then the page drops it from its storage and shows the form with "Signed out: sign in again."; the page behind stays as it is, unsaved edits in its editor included, until the user signs in again
-Scenario: AC-09 edge — the sign-ins of 0.5.0
-  Given an install of 0.5.0 or before (sign-ins from one-time codes on 127.0.0.1:47900, cookie sign-ins of the second listener)
-  When the new build starts
-  Then local-sessions.json and web-sessions.json are removed: their secrets stay in the storage of an origin any program may serve now, so none is carried over; web.json's "enabled", "host", "port" and "history" are dropped and its password kept
+Scenario: AC-09 edge — the sign-ins of an old install
+  Given an install that holds sign-ins from one-time codes on 127.0.0.1:47900 or cookie sign-ins of a second listener
+  When terminumd starts
+  Then local-sessions.json and web-sessions.json are removed: their secrets stay in the storage of an origin any program may serve, so none is carried over; web.json's "enabled", "host", "port" and "history" are dropped and its password kept
 Scenario: AC-09 security — the page proves the server, and never sends its secret
   Given another program may hold the port (terminumd down during a load)
   When the page or the Files panel loads or reconnects
@@ -476,7 +475,7 @@ Scenario: AC-10 edge — Tailscale Funnel
 Scenario: AC-12 happy path — defaults
   Given a fresh install
   Then "~/.terminum/themes/local.json" and "remote.json" exist (section 9) and settings.json says {"themes": {"default": "local", "hosts": {"*": "remote"}}}
-  And a local pane is shown in "local" and a remote host's pane in "remote": the page's chrome mixes the theme's background and foreground, the terminal uses its ANSI palette, bold color and cursor colors, the font is "JetBrainsMonoNFM-Regular" at 15; a device that does not have the theme's font (an iPhone) uses the shipped JetBrains Mono Nerd Font Mono (web/static/fonts: a text file per weight of about 77 KB, Latin, Greek, Cyrillic, symbols, box drawing and powerline; the icons in one of about 890 KB fetched only when an icon shows), a device that has it fetches none of them
+  And a local pane is shown in "local" and a remote host's pane in "remote": the page's chrome mixes the theme's background and foreground, the terminal uses its ANSI palette, bold color and cursor colors, the font is "JetBrainsMonoNFM-Regular" at 15; a device that does not have the theme's font (an iPhone) uses the shipped JetBrains Mono Nerd Font Mono (web/static/fonts: Regular and Bold text files of about 77 and 79 KB, Latin, Greek, Cyrillic, symbols, box drawing and powerline; the icons in one of about 890 KB fetched only when an icon shows), a device that has it fetches none of them
   And the text size is the theme's (settings.json's page.textSize over it; on a phone 14 at most); the menu's − and + step from it, a step remembered per browser, so a theme's new size still shows
 Scenario: AC-12 happy path — rules and live changes
   When the user writes {"hosts": {"devbox": "work"}, "sessions": {"notes": "paper"}} into settings.json and a "work.json" theme
@@ -505,7 +504,7 @@ Scenario: AC-13 happy path — the active page sizes the pane
   Then the window is 180×50 again; a page sizes on opening the pane, on becoming the active page (in sight and, on a computer, focused), and on typing; a change of its view's size (a split, a dragged edge, the keyboard, the phone's toolbar) resizes only a window this page already sizes or nobody does, so a phone's toolbar never takes the window from the Mac being typed on; a window is resized at most once a second per client (another window at once: switching panes waits for none), and a size held back for that second is dropped when a later one comes (a dragged window reaches tmux at its first and its last size: each narrowing re-wraps the pane, and a program that redraws, such as Claude Code, leaves its old top lines in the history, as it does on each switch between pages of different sizes)
 Scenario: AC-13 edge — the smallest and the largest grid
   When a page's view holds fewer than 45×14 cells (a phone's split, a narrow window, big text) or more than 240×70 (a large display)
-  Then terminumd sizes the window to 45 to 240 columns and 14 to 70 rows: an iPhone in portrait at 13 px holds the smallest, about a 1920×1200 window the largest; a pane wider than the view is re-flowed to it (a full-screen program: scaled, 7 px at least), rows the view does not hold scroll, and a view larger than the grid leaves the rest blank; a view under 20×5 (an animation, a dragged edge, a hidden part) sends no size and the pane keeps its own
+  Then terminumd sizes the window to 45 to 240 columns and 14 to 70 rows: an iPhone in portrait at 13 px holds the smallest, about a 1920×1200 window the largest; a pane wider than the view is drawn as AC-04 says, rows the view does not hold scroll, and a view larger than the grid leaves the rest blank; a view under 20×5 (an animation, a dragged edge, a hidden part) sends no size and the pane keeps its own
 Scenario: AC-13 edge — a resize that fails
   Given a pane's resize waits on a tmux server that stalled, and the user shows another pane
   When tmux refuses it or the server goes
@@ -518,7 +517,7 @@ Scenario: AC-13 edge — the page that sized it is put away
   Then the window goes to the Mac's view at once, without a key, and a hidden page's new size takes nothing
 Scenario: AC-13 edge — a window of several panes
   Given %3's window holds three panes (split by the user's own tmux, an agent such as Claude Code's teammates, or restored, terminum-lifecycle.md AC-15) and %3 is 31 of its 45 columns
-  Then no page resizes it, and nothing is drawn over the terminal: %3's lines re-flow to the view's width (AC-04), a full-screen program in it is drawn scaled
+  Then no page resizes it, and nothing is drawn over the terminal: %3 is drawn as a pane of another width (AC-04)
   And prose Claude Code wrapped at 31 columns re-joins and fills the view; a line it laid out for 31 columns (a table, a box) stays as it was drawn
   And a window whose shown pane the user's own tmux zoomed ("resize-pane -Z") is sized as a window of one pane
 Scenario: AC-13 edge — another tmux client is attached
@@ -535,7 +534,7 @@ Scenario: AC-13 failure — the resize is refused
 Scenario: AC-18 happy path — the panel
   Given a touch screen or a window narrower than 861 px
   Then two floating buttons at the bottom right open and close the keyboard and the hot keys panel (hidden until asked, remembered per browser), with the ⓘ button for an agent's status lines
-  And every other floating button (find, the sent history, Attach: several files uploaded where the pane's shell runs, their paths typed at the cursor as Upload does, without Enter; the bookmarks, the reminders' bell, the split: terminum-files.md AC-57, terminum-terminal.md AC-91, AC-88; each while it applies) folds into one button ⟨…⟩ at the terminal's top right, where find stood; it carries the bookmarks' count and the reminders' pink (a ring while one is up, no blink) while they have them; a tap unfolds them in a column under it, and 3 s later (a finger on the column holds them; a press on one, a tap elsewhere or a scroll sooner) they fold again; find's field opens at the top right where the fold stands, a pane opened from one opens centered (below); a computer keeps its column and has no Attach (Upload, a drop)
+  And every other floating button (find, the sent history, Attach: several files uploaded where the pane's shell runs, their paths typed at the cursor as Upload does, without Enter; the bookmarks, the reminders' bell, the split: terminum-files.md AC-57, terminum-terminal.md AC-91, AC-88; each while it applies) folds into one button ⟨…⟩ at the terminal's top right, where find stands on a computer; it carries the bookmarks' count and the reminders' pink (a ring while one is up, no blink) while they have them; a tap unfolds them in a column under it, and 3 s later (a finger on the column holds them; a press on one, a tap elsewhere or a scroll sooner) they fold again; find's field opens at the top right where the fold stands, a pane opened from one opens centered (below); a computer keeps its column and has no Attach (Upload, a drop)
   And while terminal text is selected, Copy, [+] and Ask stand in that place instead (terminum-terminal.md AC-37, terminum-files.md AC-57)
   And while a finger scrolls the terminal, from its first move until it lifted and the terminal stopped scrolling, every floating button ("To the bottom" too) is out of sight (the text under them can be read) and takes no tap; back 1 s after
   And while the user scrolls the terminal by wheel, key or scroll bar (wide or phone), the floating buttons' column fades and takes no tap, back 1 s after the scroll stops or at once with the pointer near it or the focus on it; the page's own scroll (output followed) and a scroll while a pane it opened is open (find's field, the sent history, bookmarks, reminders) leave it
@@ -561,7 +560,6 @@ Scenario: AC-18 edge — where the keys go
 ```gherkin
 Scenario: AC-19 happy path — custom.css and settings.json
   Given "~/.terminum/custom.css" sets "#nav { --nav-w: 360px }" and settings.json {"page": {"textSize": 15}}
-  And settings.json's page.followAgent (true by default) is the menu's "Follow the agent's folder" for a browser that did not choose
   Then the page loads "/custom.css" after its own stylesheets (CSP: style-src 'self'; the copy last fetched, kept with the sign-in in the origin's storage and dropped at sign-out, at once at load, so the page never draws without it) and applies the settings as defaults for a browser with no choice of its own; a change to either file reaches every page within 1 s without reload
 Scenario Outline: AC-19 error — a setting that is wrong
   Given settings.json holds "<value>"
@@ -573,9 +571,9 @@ Scenario Outline: AC-19 error — a setting that is wrong
     | {not json                     | settings.json: line 1: expected a value                   |
     | {"tmux": {"history": 5}}      | settings.json: tmux.history must be 1000–1000000          |
 Scenario: AC-19 happy path — the menu's Markdown size and history lines
-  When the user steps "Markdown size" (10–32 px; settings.json page.markdownSize is the default, 14)
+  When the user steps "Markdown size" (settings.json page.markdownSize is the default)
   Then rendered Markdown (widgets, sent history, reminders, Files and View) takes it at once; the step is kept in this browser
-  When the user sets "History lines" (1000–1000000)
+  When the user sets "History lines"
   Then terminumd writes tmux.history in settings.json and sets tmux's history-limit on terminum's tmux server: terminals opened from then on keep that many lines; a change of tmux.history in the file does the same
 Scenario: AC-19 edge — nothing is refused silently
   Then every key of settings.json is listed in a section 9: this spec's or the one it points to; an unknown key is reported once ("settings.json: unknown key foo") and ignored
@@ -586,28 +584,28 @@ Scenario: AC-19 edge — nothing is refused silently
 ```gherkin
 Scenario: AC-20 happy path — memory and CPU
   Given 60 panes in 2 sessions (AS-08), two pages open, each showing a pane that prints a line a second
-  Then terminumd's RSS stays under 60 MB and its CPU under 2 % (scripts/bench_load.py samples ps for 5 minutes); with no output and no page, under 0.5 % CPU
-  And the page's JS heap stays under 150 MB with 10,000 history lines loaded (the ?trace=2 report)
+  Then terminumd's RSS stays under 60 MB and its CPU under 2 % (scripts/bench_load.py samples ps -o rss and -o %cpu for 5 minutes); with no output and no page, under 0.5 % CPU
+  And the page's JS heap stays under 150 MB with 10,000 history lines loaded (the ?trace=2 report, by hand: section 7)
 Scenario: AC-20 happy path — latency
   When scripts/bench_echo.py types 200 keys into a local shell and times each echo (?trace=1 stages)
-  Then the median from the key's arrival at terminumd to the changed row sent is under 25 ms and p95 under 60 ms; a capture and encode of a 200×60 pane takes under 3 ms; frames are at most 30 a second
+  Then the median from the key's arrival at terminumd to the changed row sent is under 25 ms and p95 under 60 ms; a capture and encode (cut, SGR, diff) of a 200×60 pane takes under 3 ms (`cargo bench frame` on fixtures); frames are at most 30 a second per shown pane (the ?trace=1 report)
 Scenario: AC-20 failure — a budget is missed
-  Then an echo that never arrives counts as a failed measurement, never as a sample to omit; p95 uses the nearest-rank percentile and every benchmark failure exits non-zero
-  And the bench exits non-zero naming the number and the budget; the Definition of Done is not met until it passes on the delivered tree
+  Then an echo that never arrives counts as a failed measurement, never as a sample to omit; p95 uses the nearest-rank percentile
+  And every benchmark failure exits non-zero, naming the number and the budget; the Definition of Done is not met until it passes on the delivered tree
 ```
 
 ### AC-88 — Quick shell [SHOULD / P1]
 
 ```gherkin
 Scenario: AC-88 edge — the split's buttons
-  Then a computer splits with the header's button (and ⌘D, ⌘⇧D, its row's menu's Split Below, Right, Left), a phone with the split among the folded floating buttons (AC-18); a split's page shows none of the terminal's floating buttons
+  Then a computer splits with the header's button (and the keys below, its row's menu: AC-07), a phone with the split among the folded floating buttons (AC-18); a split's page shows none of the terminal's floating buttons
 Scenario: AC-88 happy path — open, use, close
   Given the page on a computer shows pane %3 (claude) in /Users/alex/work/api
   When the user presses the quick shell button in the header (or "Quick shell below" / "Quick shell on the left" in the menu)
   Then terminumd runs "new-window -d -a -t @2 -c '/Users/alex/work/api'" and marks the new window with "@tm-quick %3", and the page shows its shell under the terminal (or on its left) in a third of the view, its keys going there while it has the focus; its row in the list sits under %3's, as "quick shell"
   When the user drags the edge between the two
   Then both terminals resize when the drag ends (6 rows or 20 columns at least, 80 % at most), and this browser remembers the share for that side
-  When the user presses ⌘D, or ⌘⇧D or the split button (under the magnifier at the terminal's top right; a phone's among the folded floating buttons)
+  When the user presses ⌘D, or ⌘⇧D or the split button (under the magnifier at the terminal's top right)
   Then the pane's quick shell opens on the right (⌘D) or below, or the one it has moves there; the browser's own ⌘D (bookmark) does not come
   When the user presses ⇄ on its bar
   Then it moves to the other side
@@ -641,21 +639,21 @@ Scenario: AC-92 happy path — a project lets its agents share records
 Scenario: AC-92 happy path — a project
   When the user picks Add to Project… → New project… in the menu of "api" (in ~/work/api)
   Then a dialog asks its name at once ("Group 1" suggested, Enter or Create takes it, Cancel makes none) and terminumd makes it (the lowest "Group N" free when no name comes), its color the first of ten pastel hues far apart no other project has, its folder ~/work/api; it keeps it in projects.json and tells every page
-  And the list shows the projects, first until the user moves one or a tmux group, each a group tinted and named in its color (under its last session as much space as above its name), with its sessions (the shown one's row a deeper tint of it, not a box of its own), their bars in the project's color (not the folder's), their panes and quick shells under them; their tmux groups list them no more (a group left empty goes); a project's rows are counted there
+  And the list shows the projects, each a group tinted and named in its color (under its last session as much space as above its name), with its sessions (the shown one's row a deeper tint of it, not a box of its own), their bars in the project's color (not the folder's), their panes and quick shells under them; their tmux groups list them no more (a group left empty goes); a project's rows are counted there
   And every other group (a tmux session's, a host's) is tinted too, its name kept in the list's color: in a hue at least 60° from the part's above it and from a project's right under it, so neighbors never run together
   And projects and tmux groups stand in one order, every page's, kept by terminumd in projects.json: Move to the Top, Up, Down, to the Bottom and a drag by the header go past either kind; a new project stands after the last project, a new group at the end; before the first move the projects stand first and the groups as this browser last kept them; a move under a filter leaves the parts it hides in their places; a rename keeps the group's place, also when tmux refuses the name
   And a project's header and a tmux group's have the same New Window button, a plain [+], the first of their buttons, the same size, words and act (a window after its last session, in its folder, as the menu's New Window; a group with no session: a new window in that tmux session)
-  And left of the name, after the chevron, a 4 px dot in its color says a project (a tag on what the user gathered) and a thin >_ in the name's color a tmux session, with its words on hover; the counts of all stand in one column whatever buttons a header has
+  And left of the name, after the chevron, a 4 px dot in its color says a project (a tag on what the user gathered) and a thin >_ in the name's color a tmux session, with its words on hover
   When the user adds "docs" to Group 1, or a second project
   Then "docs" joins Group 1 (a session is in one project at most: added to another, it moves); Group 2 takes the next color
 Scenario: AC-92 happy path — new sessions, order, names
   When the user presses the project's [+]
-  Then a window opens right after its last session, in the project's folder (the session's own when that folder is gone), and joins the project; Clone of a project's session joins it right after that session
-  When the user drags a project by its header, or a session in it (as a row is dragged, AC-07), or picks a move in a session's menu
-  Then the projects (every page's order) or its sessions are in that order
+  Then the window opens as above (the session's own folder when the project's is gone) and joins the project; Clone of a project's session joins it right after that session
+  When the user drags a session in it (as a row is dragged, AC-07), or picks a move in a session's menu
+  Then its sessions are in that order
   When the user picks Rename… in the project's menu (its ⋯, or a right click on its header, as a row's menu) (or double-clicks its name) and types "API" (Enter or Rename), or picks Ungroup
-  Then it is named "API" (1–40 characters), or it goes and its sessions are back in their tmux groups
-  And the menu also has New Window (as its [+]: a window after its last session, in the project), Move to the Top, Up, Down, to the Bottom (among the list's projects and tmux groups as it shows them, off at an end), and Close Project… (red): it asks "Close the project <name> and its N sessions? The programs running in them end." and, confirmed, closes each of its sessions; Cancel closes nothing
+  Then it is named "API" (1–40 characters; another length is refused), or it goes and its sessions are back in their tmux groups
+  And the menu also has New Window (as its [+]), Move to the Top, Up, Down, to the Bottom (as the list shows them, off at an end), and Close Project… (red): it asks "Close the project <name> and its N sessions? The programs running in them end." and, confirmed, closes each of its sessions; Cancel closes nothing
 Scenario: AC-92 edge — the shown session closes
   When the session or pane a page shows closes (from any page, or its program ended)
   Then the page shows the first session the list has in the same project, top to bottom; outside projects the first of the same tmux group
@@ -712,7 +710,7 @@ Scenario: AC-89 edge — one tmux reached twice
 Scenario: AC-89 edge — the user's tmux.conf
   Then terminumd's control clients are clients of the user's server ("tmux -N … attach-session -E": they never start it, and the session's environment is not updated from terminumd's): hooks such as client-attached and plugins such as tmux-resurrect see them; a session attached on a server of another tmux version says tmux's own message ("protocol version mismatch")
   When the user detaches a session, terminum stops, or the socket goes from settings.json
-  Then the windows terminumd sized there get tmux's own size back ("set-option -w -u window-size"); terminumd marks each window it sizes there "@tm-sized", so after a crash or a dropped host link the marked windows no page shows get their size back when the server is attached again
+  Then the windows terminumd sized there get tmux's own size back; terminumd marks each window it sizes there "@tm-sized", so after a crash or a dropped host link the marked windows no page shows get their size back when the server is attached again
 ```
 
 ### AC-100 — A pane's diagnostics for a bug report [NICE TO HAVE / later]
@@ -775,7 +773,7 @@ flowchart LR
   TD -- "ssh -L socket" --> AG
 ```
 
-terminumd is the only process between a client and tmux. It listens on 127.0.0.1 only; other devices come through `tailscale serve`, which adds HTTPS. Every client gets the same page and signs in with the same password (AC-09, AC-10). Remote hosts are two ssh processes: the control client for terminals (terminum-remote.md AC-81) and the agent for files (terminum-remote.md AC-82).
+terminumd is the only process between a client and tmux; its listener and sign-in: AC-09, AC-10. Remote hosts are two ssh processes: the control client for terminals (terminum-remote.md AC-81) and the agent for files (terminum-remote.md AC-82).
 
 ### A key and its echo (AC-03, AC-02, AC-20)
 
@@ -795,7 +793,7 @@ sequenceDiagram
   P->>P: draw changed rows (< 16 ms)
 ```
 
-`%output` is the wake-up; the content comes from `capture-pane`, so terminumd never interprets escape sequences other than SGR in the capture. The one exception is narrow: a clipboard write (OSC 52) in a pane's `%output` is decoded (a line without one costs a search), its control characters but tab and line ends dropped and what hides what a line runs (termtext.rs `clean`: bidi controls, zero-width characters, the soft hyphen, word joiners, line separators and tag characters), and it goes on only while a page's mouse release to that full-screen pane (from when it was handed to tmux, never while it waited behind a paste) is less than 2 s old: to that page alone as `copied` (AC-06), shown as the program copied it. The write is read from the output, whatever `set-clipboard` is (terminum's own server keeps it off; a host's or the user's server is theirs) and whatever the program or host does with its own copy. Captures are coalesced to one per 33 ms per shown pane and page; one `%output` wakes every page that shows the pane (each keeps its own wake-up, so an output while it captures is seen at its next wait); a pane nobody shows is never captured.
+`%output` is the wake-up; the content comes from `capture-pane`, so terminumd never interprets escape sequences other than SGR in the capture. The one exception is narrow: a clipboard write (OSC 52) in a pane's `%output` is decoded (a line without one costs a search), cleaned as AC-06 says (termtext.rs `clean`), and it goes on only within AC-06's 2 s of a page's mouse release to that full-screen pane (from when it was handed to tmux, never while it waited behind a paste): to that page alone as `copied`, shown as the program copied it. The write is read from the output, whatever `set-clipboard` is (terminum's own server keeps it off; a host's or the user's server is theirs) and whatever the program or host does with its own copy. Captures are per shown pane and page, at AC-02's rate; one `%output` wakes every page that shows the pane (each keeps its own wake-up, so an output while it captures is seen at its next wait).
 
 ### Who sizes a pane (AC-04, AC-13)
 
@@ -806,7 +804,7 @@ stateDiagram-v2
   Sized --> Other: another page becomes active (focus, in sight) or types there
   Other --> Sized: this page becomes active again or types
   Sized --> Other: this page is hidden: a page still looking takes it at once
-  note right of Other: drawn as it is; scaled to the width when wider (7 px at least)
+  note right of Other: drawn as a pane of another width (AC-04)
 ```
 
 ## 7. Current behavior and gaps
@@ -822,7 +820,7 @@ stateDiagram-v2
 
 ## 8. Recommendation and ownership
 
-**Recommended approach.** One Rust process, `terminumd`, is the control client of each tmux server (`tmux -C attach-session -f ignore-size`): a reader task for notices and `%begin`/`%end` answers, a writer with a queue of commands and their waiters. For each shown pane a frame task waits for `%output` (or a look every second, for what comes without a notice), runs `capture-pane` and `display`, cuts and parses the rows into the page's line format, diffs against the last frame and sends the changed rows; history pages are `capture-pane -S -E` ranges. Typing is `send-keys` and tmux buffers. Sessions are tmux commands. The page draws lines the server owns; a browser tab is the client on the Mac and on the phone (OQ-04).
+**Recommended approach.** One Rust process, `terminumd`, is the control client of each tmux server (`tmux -C attach-session -f ignore-size`): a reader task for notices and `%begin`/`%end` answers, a writer with a queue of commands and their waiters. For each shown pane a frame task captures, diffs against the last frame and sends the changed rows; the commands are in section 9, "The control client". The page draws lines the server owns; a browser tab is the client on the Mac and on the phone (OQ-04).
 
 **Rejected alternatives.**
 - A VT emulator in terminumd fed by `%output` (`alacritty_terminal`): tmux already keeps the grid, the history and the sizes, and a second emulator would have to agree with it on every escape sequence. It stays the upgrade path if `capture-pane` proves too slow for many shown panes (AC-20).
@@ -834,26 +832,16 @@ stateDiagram-v2
 
 ### Interfaces
 
-Sign-in: `POST /auth/login {"password"}` → `{"secret"}` (401 `wrong`, 429 `locked` with `retry`, 503 `no_password`); the page keeps the secret in its origin's storage. Every request needs `X-TM-Session: <credential>` (never in the query: images are fetched with it and shown from `blob:`), the WebSocket the credential as its subprotocol. Errors are `{"error": "<code>", "message": "<text>"}`.
+Sign-in: `POST /auth/login {"password"}` → `{"secret"}` (401 `wrong`, 429 `locked` with `retry`, 503 `no_password`); keeping and sending it: AC-09. Errors are `{"error": "<code>", "message": "<text>"}`.
 
-What each request may do (forwarded: it carries Forwarded, X-Forwarded-* or Tailscale-*, as through `tailscale serve`):
-
-| Request | The Mac's own browser (127.0.0.1, not forwarded) | Forwarded (another device) |
-|---|---|---|
-| page, `/ws` (screens, typing, sessions, bookmarks, search, traces), `/fb/` files (ls, file, raw, fs/*, workspace, prefs), uploads | yes | yes |
-| `/fb/api/os/*` (Finder, default app), `/fb/api/terminal/*` (insert a path, cd) | yes | 403 `not_here` |
-| `addhost`, `hostaction`, `addtmux`, `detachtmux`, `tmuxsessions`, `restore` (page messages) | yes | yes |
-| `updatechoice` (page message) | yes | ignored |
-| `password`, `signout` of every browser | CLI over the socket only | CLI over the socket only |
-| `/api/hello`, `/auth/check`, `/auth/login`, `/auth/logout` | yes | yes |
-| through Tailscale Funnel (`Tailscale-Funnel-Request`) | 403 `funnel` | 403 `funnel` |
+A forwarded request may do everything but what AC-10 refuses it, so: the page, `/ws` (screens, typing, sessions, bookmarks, search, traces), `/fb/` files (ls, file, raw, fs/*, workspace, prefs), uploads, the page messages `addhost`, `hostaction`, `addtmux`, `detachtmux`, `tmuxsessions`, `restore`, and `/api/hello`, `/auth/check`, `/auth/login`, `/auth/logout`. The `password` and `signout` of every browser are the CLI's, over the socket only, for every client (AC-09). `/fb/api/terminal/*` inserts a path or does a cd.
 
 | Method and path | Purpose | Case |
 |---|---|---|
 | `GET /` | the page; `/?embed=<key>` a quick shell's page | all, AC-88 |
 | `GET /ws` | the page's WebSocket (below) | AC-01–07 |
 | `GET /fb/`, `/fb/api/*` | the Files panel and its API; `X-TM-Host` for a remote host | `terminum-files.md` |
-| `GET /api/hello?n=&id=` | the proof (no sign-in): `{"proof": HMAC-SHA256(proof key, "tm-hello-v1:" + n), "boot"}`, boot this process's 256 random bits, which the page's credential `<id>.<HMAC-SHA256(proof key, "tm-cred-v1:" + boot)>` is made with; 404 `unknown_signin` for an unknown id | AC-09 |
+| `GET /api/hello?n=&id=` | the proof (no sign-in): `{"proof", "boot"}`, both made and used as AC-09 says | AC-09 |
 | `GET /custom.css`, `/api/settings` | the user's stylesheet and the page settings | AC-19 |
 | `GET /auth/check`, `POST /auth/login`, `POST /auth/logout` | 204 when signed in, else 401 with `login` `password` or `none`; the sign-in; this browser's sign-out | AC-09 |
 | `GET /health`, `POST /password`, `POST /signout` on `terminumd.sock` | the CLI | terminum-lifecycle.md AC-08, AC-09 |
@@ -872,7 +860,7 @@ WebSocket messages, page → terminumd:
 | `more` | `before, to?` | older history lines |
 | `size` | `cols, rows, typing` | the view's grid; `typing` says the page acted (AC-13) |
 | `pause`, `resume` | `hidden` | out of focus (false) or hidden (true, or none); in sight and active again (AC-02, AC-13) |
-| `screens` | `on` | false: the page's terminal is hidden behind Files or View (no frames for it); true: shown again, sent anew (AC-02) |
+| `screens` | `on` | false: the page's terminal is hidden behind Files or View; true: shown again (AC-02) |
 | `new`, `newsession`, `split`, `clone`, `rename`, `renamegroup`, `reorder`, `move`, `kill` | `group`, `name`, `dir`, `id`, `how`, `ids`, `session` | sessions (AC-07) |
 | `project` | `action`… | projects (AC-92) |
 | `quick`, `quickside` | `id`… | quick shell (AC-88) |
@@ -894,21 +882,21 @@ A screen frame: `{"t":"screen","sid":"tmux:local:terminum:%3","full":false,"n":5
 
 | Item | Design |
 |---|---|
-| Process | one `tmux -C -u -L <socket> attach-session -f ignore-size -t =<session>` per session (notices, typing, screens; OQ-02) and one bulk client per server (`-f ignore-size,no-output`: history pages, search, `list-panes`, layout) for the local server; for a host one `ssh <options> -- <destination> 'tmux -u -C new-session -A -f ignore-size -s terminum'`; stdin takes commands, one a line (a line `a ; b` is answered by several blocks and a failure stops the rest), written at once and answered in order |
+| Process | one `tmux -C -u -L <socket> attach-session -f ignore-size -t =<session>` per session (screens too; OQ-02) and one bulk client per server (`-f ignore-size,no-output`, OQ-02) for the local server; for a host one `ssh <options> -- <destination> 'tmux -u -C new-session -A -f ignore-size -s terminum'`; stdin takes commands, one a line (a line `a ; b` is answered by several blocks and a failure stops the rest), written at once and answered in order |
 | Arguments | one function builds every tmux argument: single-quoted with `'\''` for a quote (no `$VAR`, no `~` inside), `#` doubled to `##` in arguments tmux expands as formats (AS-11), control characters refused before a command is formed; a round-trip test on `tmux -L tm-test` creates windows and folders named `a#{pane_id}`, `#(id)`, `#S`, `$HOME`, `~x`, `a;b`, `it's` and reads them back exactly |
-| Frame | on `%output %N` for a shown pane: capture when the pane has been quiet 6 ms (33 ms after the notice at most) when it was idle (no capture in the last 33 ms), else at the next 33 ms tick; a frame task per shown pane: `capture-pane -p -e -J -t %N -S 0 -E <rows-1>` and `display -p -t %N -F '#{cursor_x}␉#{cursor_y}␉#{alternate_on}␉#{history_size}␉#{pane_width}␉#{pane_height}␉#{mouse_any_flag}␉#{mouse_sgr_flag}␉#{history_limit}␉#{cursor_flag}␉#{window_id}␉#{window_zoomed_flag}␉#{window_panes}␉#{pane_active}␉#{pid}␉#{pane_current_command}␉#{pane_current_path}'`; both written at once; a shown pane is also looked at every second (a safety net: AS-06 holds); another server pid than the first frame's ends the pane ("This pane has closed") |
-| Rows | the joined capture is cut at `pane_width` cells (`unicode-width`), each row `{"r": runs, "e": hard}` where `e` is true on the last row of a joined line; the cursor cell gets the cursor flag; a row with a changed key is sent, others reused |
+| Frame | on `%output %N` for a shown pane: capture as AC-02 says when it was idle (no capture in the last 33 ms), else at the next 33 ms tick; a frame task per shown pane: `capture-pane -p -e -J -t %N -S 0 -E <rows-1>` and `display -p -t %N -F '#{cursor_x}␉#{cursor_y}␉#{alternate_on}␉#{history_size}␉#{pane_width}␉#{pane_height}␉#{mouse_any_flag}␉#{mouse_sgr_flag}␉#{history_limit}␉#{cursor_flag}␉#{window_id}␉#{window_zoomed_flag}␉#{window_panes}␉#{pane_active}␉#{pid}␉#{pane_current_command}␉#{pane_current_path}'`; both written at once; a shown pane is also looked at every second (a safety net: AS-06 holds); another server pid than the first frame's ends the pane ("This pane has closed") |
+| Rows | the joined capture is cut as AS-03 says (`unicode-width`), each row `{"r": runs, "e": hard}` where `e` is true on the last row of a joined line; the cursor cell gets the cursor flag; a row with a changed key is sent, others reused |
 | SGR | `CSI … m` only: 0, 1, 2, 3, 4, 5, 7, 8, 9, 21–29, 30–37, 39, 40–47, 49, 90–97, 100–107, 38/48;5;n, 38/48;2;r;g;b; OSC 8 links (AS-03); everything else in the capture is text |
-| History | absolute line `a` of the screen's top = rows tmux dropped + `history_size`; while it grows, the rows that scrolled off are appended; at the limit tmux drops its oldest tenth before adding a row, so the rows that scrolled off are the fewest consistent with the new count (the screen's shift decides between counts a tenth apart); a shrink no trim explains (a clear) or a new width (a re-wrap, AS-09) resets the page's history (OQ-05); a redraw in place is no scroll; `more` asks the bulk client `capture-pane -p -e -J -S -<n> -E -<m>` |
-| Typing | `send-keys -t %N -l '<text>'` for text runs, `send-keys -t %N <names…>` for named keys (`S-Enter`, `C-Enter` with `extended-keys on`, `extended-keys-format csi-u`, AS-10), `send-keys -H` only for mouse reports built from terminumd's own tables (SGR when `#{mouse_sgr_flag}`, else X10) and for Shift/Ctrl+Enter on a server with `extended-keys off` or without `extended-keys-format` (tmux before 3.5; AC-03 edge), never for bytes from the page; a queue per client, one command in flight, later keys coalesced |
-| Paste | a paste between the bracketed-paste markers goes through a buffer: on the Mac a 0600 file in `TM_APP_DIR` and `load-buffer -b tm-<n>`, on a host `set-buffer -b tm-<n>` in 64 KB parts; then `paste-buffer -p -d -b tm-<n> -t %N`. Text without the markers goes as typed keys, in parts of 512 bytes |
-| Sizing | `set-option -w -t @W window-size manual` then `resize-window -t @W -x C -y R` (a window of one pane, or whose shown pane the user's own tmux zoomed), a window of several panes in sight is never resized; at most once a second per page and window, the newest held-back size only; who sizes: AC-13; a window of the user's own tmux gets `set-option -w -u window-size` back and is marked `@tm-sized` while sized (AC-89) |
+| History | absolute line `a` of the screen's top = rows tmux dropped + `history_size`; while it grows, the rows that scrolled off are appended; at the limit (AS-09) the rows that scrolled off are the fewest consistent with the new count (the screen's shift decides between counts a tenth apart); a shrink no trim explains (a clear) or a new width (a re-wrap, AS-09) resets the page's history (OQ-05); a redraw in place is no scroll; `more` asks the bulk client `capture-pane -p -e -J -S -<n> -E -<m>` |
+| Typing | text and named keys as AC-03 says (`S-Enter`, `C-Enter`: AS-10), `send-keys -H` only for mouse reports built from terminumd's own tables (SGR when `#{mouse_sgr_flag}`, else X10) and for Shift/Ctrl+Enter where AC-03 and AS-10 say, never for bytes from the page; a queue per client, one command in flight, later keys coalesced |
+| Paste | a paste between the bracketed-paste markers goes through a buffer (the commands: AC-03; the Mac's 0600 file is in `TM_APP_DIR`). Text without the markers goes as typed keys, in AC-03's parts |
+| Sizing | `set-option -w -t @W window-size manual` then `resize-window -t @W -x C -y R`; which windows, who and how often: AC-13; a window of the user's own tmux: AC-89 |
 | Sessions | `list-panes -a -F '#{session_name}␉#{window_index}␉#{window_id}␉#{window_name}␉#{automatic-rename}␉#{pane_id}␉#{pane_index}␉#{pane_title}␉#{pane_current_command}␉#{pane_current_path}␉#{alternate_on}␉#{pane_active}␉#{host}␉#{@tm-quick}␉#{@tm-quick-side}␉#{session_id}␉#{@tm-title}'` every 2 s while a page looks and at once (coalesced 100 ms) on `%window-*`, `%layout-change`, `%session*` notices; the agent's state from the last 25 rows of its screen, read only when its title changed or 6 s passed |
 | Key | `tmux:<host>:<socket>:%N`; `local` for this Mac; the socket name |
 
 ### Data formats
 
-Theme `~/.terminum/themes/local.json` (the defaults, shipped in `terminumd/assets/themes/` and written at install). The font is used through `local()`; a device without it (an iPhone) gets the shipped JetBrains Mono Nerd Font Mono (`web/static/fonts/fonts.css`, OFL-1.1; OQ-06).
+Theme `~/.terminum/themes/local.json` (the defaults, shipped in `terminumd/assets/themes/` and written at install). The font is used through `local()`; the shipped font for a device without it (AC-12) is `web/static/fonts/fonts.css`, OFL-1.1 (OQ-06).
 
 ```json
 {"name": "local", "font": "JetBrainsMonoNFM-Regular", "size": 15,
@@ -944,7 +932,7 @@ The checkpoint also names its server's identity: `"identity": "6db00afe9596fc57"
 
 Last lines `state/lastlines/local@terminum/6db00afe9596fc57_3.json` (terminum-lifecycle.md AC-96; `…_3.before.json` from before a restart): `{"key": "tmux:local:terminum:%3", "session": "main", "window": "api", "dir": "/Users/alex/work/api", "at": 1792000000, "text": "…"}`.
 
-Sign-ins `state/signins.json`, 0600: `{"items": [{"sha256": "…", "id": "…", "proof_key": "…", "expires": 1794592000, "by": "password"}]}` (at most 20, oldest dropped; 30 days). Workspaces, bookmarks and the password live in `workspaces.json`, `web-bookmarks.json` and `web.json`.
+Sign-ins `state/signins.json` (AC-09): `{"items": [{"sha256": "…", "id": "…", "proof_key": "…", "expires": 1794592000, "by": "password"}]}`. Workspaces, bookmarks and the password live in `workspaces.json`, `web-bookmarks.json` and `web.json`.
 
 ### Configuration
 
@@ -953,15 +941,15 @@ Sign-ins `state/signins.json`, 0600: `{"items": [{"sha256": "…", "id": "…", 
 | `port` / `TM_PORT` | `48080` | `48081` | the page's port on 127.0.0.1 |
 | `tmux.socket` / `TM_TMUX_SOCKET` | `terminum` | `tm-test` | the local server's `-L` name (OQ-01); its config `~/.terminum/tmux.conf` |
 | `TM_TMUX` | `tmux` on PATH, then Homebrew's and the system's folders | `/opt/homebrew/bin/tmux` | the tmux binary |
-| `attach` | `{}` | `{"default": ["work"]}` | sessions of the user's own tmux servers on this Mac by `-L` socket ("default": plain `tmux`); a host's are `hosts.<name>.attach` (terminum-remote.md); at most 32 in all (AC-89) |
+| `attach` | `{}` | `{"default": ["work"]}` | sessions of the user's own tmux servers on this Mac by `-L` socket ("default": plain `tmux`); a host's are `hosts.<name>.attach` (terminum-remote.md); how many: AC-89 |
 | `tmux.history` | `12000` | `20000` | `history-limit`, 1000–1000000 (AC-19) |
 | `TM_HISTORY` | `10000` | `20000` | lines a page may load |
-| `size`, `page.lines`, `page.screenMode` | — | — | no longer used: reported once (AC-19) |
+| `size`, `page.lines`, `page.screenMode` | — | — | not used: reported once (AC-19) |
 | `themes.default`, `themes.hosts`, `themes.sessions` | local, hosts `*` remote | — | theme rules (AC-12) |
 | `page.textSize` | `13` | `15` | text size, 8–40 (AC-19) |
-| `page.markdownSize` | `14` | `16` | rendered Markdown's size, 10–32 (AC-19) |
+| `page.markdownSize` | `14` | `16` | rendered Markdown's size, 10–32 px (AC-19) |
 | `page.colorScheme` | none | `"Nord"` | the menu's color scheme (AC-12) |
-| `page.followAgent` | `true` | `false` | "Follow the agent's folder" for a browser with no choice (AC-01, AC-19) |
+| `page.followAgent` | `true` | `false` | the menu's "Follow the agent's folder" for a browser with no choice (AC-01) |
 | `page.widgets`, `page.folds` | `true` | `false` | widgets and folds for a browser with no choice (`terminum-terminal.md`) |
 | `TM_WRITABLE_ROOTS` | `$HOME:/tmp` | `$HOME:/tmp:/opt/work` | Roots |
 | `TM_APP_DIR` | `~/.terminum/state` | `/tmp/tm-test` | state folder; tests use a private one |
@@ -974,41 +962,33 @@ Listed elsewhere: `restore`, `lastLines` and the install's variables in `terminu
 
 | Operation | Target | Measured by |
 |---|---|---|
-| Key → changed row sent (local shell) | p50 < 25 ms, p95 < 60 ms | `scripts/bench_echo.py` (200 keys, ?trace=1 stages) |
-| Capture + cut + SGR + diff, 200×60 | < 3 ms | `cargo bench frame` on fixtures |
-| Frames per shown pane | ≤ 30/s; one capture per 33 ms | ?trace=1 report |
 | Open a pane (theme, 1000 lines, screen) | p95 < 1 s | no measurement (section 7) |
 | List refresh with 60 panes | < 50 ms terminumd time | `scripts/bench_load.py` |
-| terminumd RSS, 60 panes, 2 pages | < 60 MB | `scripts/bench_load.py` (`ps -o rss`) |
-| terminumd CPU, 60 panes, 2 pages; idle | < 2 %; < 0.5 % | `scripts/bench_load.py` (`ps -o %cpu`) |
-| Page heap, 10,000 lines | < 150 MB | ?trace=2 state, by hand (section 7) |
 | 500K-entry folder, first page | p95 < 2.5 s | `scripts/bench_ls.sh` |
+
+The other budgets are in AC-20's scenarios.
 
 ### Constraints and limits
 
 | Limit | Value | When exceeded |
 |---|---|---|
-| History a page may load | 10,000 lines (`TM_HISTORY`) | older lines are not offered; the note at the top says so |
-| tmux history | `history-limit` 12,000 in terminumd's tmux.conf (AS-04) | tmux drops the oldest; numbering per OQ-05 |
+| History a page may load | `TM_HISTORY` lines | older lines are not offered; the note at the top says so |
+| tmux history | `history-limit` of terminumd's tmux.conf (OQ-01) | tmux drops the oldest (AS-04); numbering per OQ-05 |
 | Paste | 1 MB | refused: "Paste is larger than 1 MB" |
 | Typing waiting for tmux, per page | 4 MB or 10,000 keys, pastes and mouse reports | refused: "tmux is not keeping up: more than 4 MB of typing waits for it — this input was not sent"; a closed page's waiting input is dropped |
 | Commands waiting to be written to a control client | 16 MB | the command fails at once: "tmux is not keeping up: too many commands wait for it" |
-| A set-buffer command | 64 KB | split into parts |
-| A pane's grid | 45×14 to 240×70 | a smaller view draws the pane scaled down; a larger one leaves the rest blank |
-| Resizes per page and window | 1 a second | later ones wait for the next second |
-| New sessions, windows, splits per page | 1 a second | "Wait a second: one new window, session or split a second." |
 | Pages per terminumd | 100 WebSockets | the 101st is refused with 503 `too_many_pages`, "Too many pages" |
-| Sign-ins | 20, 30 days each | the oldest is dropped |
 | Control command answer | 10 s | the client is ended and started again (terminum-lifecycle.md AC-14) |
 | Theme, settings and hot keys files | 64 KB each | refused with a toast |
 | Window and session names | 100 characters, no control characters | refused inline: "A name is at most 100 characters." |
-| Project names | 1–40 characters | refused |
+
+Limits told in their cases: a set-buffer command (AC-03), a pane's grid and resizes (AC-13), new sessions, windows and splits (AC-07), sign-ins (AC-09), project names (AC-92), attached sessions (AC-89).
 
 ### Security
 
-- The listener: `127.0.0.1:<port>` only; other devices come through `tailscale serve`, which adds HTTPS (the plain HTTP on loopback never leaves the Mac). Every browser signs in with the password (PBKDF2-SHA256, brakes per address and for all, one check at a time); the sign-in is kept by the page in its origin's storage and sent as a header (not a cookie: cookies on 127.0.0.1 ignore the port and would reach every local server the user opens); the page proves the server first (`/api/hello`); the Host is `127.0.0.1:<port>` exactly, a `*.ts.net` name or one of `allow_hosts`; writes need `Content-Type: application/json` and the exact `Origin` of the name's scheme (only the Mac's own, unforwarded requests may leave it out); the WebSocket needs the exact `Origin`; no CORS headers; Tailscale Funnel is refused. Forwarded requests (any forwarding header: `tailscale serve` passes the browser's Host through as it came) may not use Finder or type a path into a terminal; a signed-in user has a shell anyway, so this guards against accidents, not a boundary. launchd holds the port from the moment the agent is loaded (socket activation), also while terminumd is down, restarting or upgraded, so no other program can serve a page in the page's origin. Residual: before the agent is first loaded (or after `terminum uninstall`, or when the port was already taken at bootstrap, which `terminum status` reports; and on Linux or with `TM_NO_LAUNCHD`, where terminumd binds the port itself) another program can bind `127.0.0.1:<port>` and serve its own page, which can ask for the password (the proof protects only a page that is already loaded and reconnects); `tailscale serve` then forwards to it as well. Any local program can try passwords on loopback, against the brakes. A script injected into the page could read the storage, which the CSP is there to prevent.
-- tmux commands: every user string is one quoted argument with `#` doubled where tmux expands formats (AS-11, probed: a folder named `#(cmd)` would run `cmd`); control characters are refused before a command is formed; keys go as names; `-H` only from terminumd's tables; `send-keys -l` is never given a newline the user did not type.
-- The page: CSP as AC-09; terminal output is text; Markdown raw HTML off; Mermaid strict; links open new tabs with `noopener`.
+- The listener, the sign-in, Host and Origin: AC-09, AC-10. Writes need `Content-Type: application/json`; only the Mac's own, unforwarded requests may leave the `Origin` out; no CORS headers. launchd holds the port from the moment the agent is loaded (socket activation), also while terminumd is down, restarting or upgraded, so no other program can serve a page in the page's origin. Residual: before the agent is first loaded (or after `terminum uninstall`, or when the port was already taken at bootstrap, which `terminum status` reports; and on Linux or with `TM_NO_LAUNCHD`, where terminumd binds the port itself) another program can bind `127.0.0.1:<port>` and serve its own page, which can ask for the password (the proof protects only a page that is already loaded and reconnects); `tailscale serve` then forwards to it as well. Any local program can try passwords on loopback, against the brakes. A script injected into the page could read the storage, which the CSP is there to prevent.
+- tmux commands: arguments and typing as "The control client" says (AS-11, probed: a folder named `#(cmd)` would run `cmd`); `send-keys -l` is never given a newline the user did not type.
+- The page: CSP as AC-09; terminal output is text; Markdown raw HTML off; links open new tabs with `noopener`.
 - Files: writes under Roots on resolved paths; Trash only; regular files only; as `terminum-files.md`.
 - Nothing leaves the Mac by itself except the daily release check (one HEAD request) and the ssh connections the user configured.
 

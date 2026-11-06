@@ -11,34 +11,115 @@ fn store() -> Projects {
     Projects::default()
 }
 
+/// Projects kept in a store of their own, with projects.json beside it.
+fn stored(name: &str) -> (Arc<Store>, std::path::PathBuf) {
+    let dir = crate::testutil::fresh_dir(name);
+    (Arc::new(Store::open(dir.join("kanban.sqlite"))), dir.join("projects.json"))
+}
+
+fn reloaded(store: &Arc<Store>, json: &std::path::Path) -> Projects {
+    Projects::load(store.clone(), json)
+}
+
 #[test]
-fn invalid_project_schemas_are_backed_up_before_a_later_save() {
-    let dir = crate::testutil::fresh_dir("projects-schema");
-    let path = dir.join("projects.json");
-    assert!(Projects::load(path.clone()).list().is_empty(), "missing state starts empty");
-    for malformed in [
-        json!({"projects": [{"name": "recoverable", "members": []}], "servers": {}}),
-        json!({"projects": {}, "servers": {}}),
-        json!({"projects": [], "servers": []}),
-        json!([]),
-    ] {
-        let original = malformed.to_string();
-        std::fs::write(&path, &original).unwrap();
-        let projects = Projects::load(path.clone());
-        let backup = path.with_extension("json.bak");
-        assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
-        assert!(!path.exists(), "invalid schema must be set aside before writing");
-        projects.save().unwrap();
-        assert_eq!(std::fs::read_to_string(backup).unwrap(), original);
+fn ac110_projects_json_is_copied_once_and_left_in_place() {
+    let (store, json) = stored("projects-import");
+    let older = json!({"projects": [{"id": "p1", "name": "work", "color": 2, "host": null, "dir": "/sandbox", "members": [A]}],
+        "servers": {"tmux:local:terminum:": "server1"}, "order": ["g:local/main", "p:p1"]});
+    std::fs::write(&json, older.to_string()).unwrap();
+    let mut ps = reloaded(&store, &json);
+    assert_eq!(ps.list(), [Project { id: "p1".into(), name: "work".into(), color: 2, host: None, dir: "/sandbox".into(), members: vec![A.into()] }]);
+    assert_eq!(ps.list_order(), ["g:local/main", "p:p1"], "tmux groups keep their places");
+    assert_eq!(ps.servers.get("tmux:local:terminum:").map(String::as_str), Some("server1"), "and the servers' identities");
+    assert_eq!(std::fs::read_to_string(&json).unwrap(), older.to_string(), "left for an older terminum");
+    ps.rename("p1", "api").unwrap();
+    std::fs::write(&json, json!({"projects": []}).to_string()).unwrap();
+    assert_eq!(reloaded(&store, &json).list()[0].name, "api", "read once: the store is the owner since");
+}
+
+#[test]
+fn ac110_an_unreadable_projects_json_is_set_aside_and_the_store_starts_empty() {
+    for malformed in [json!({"projects": {}}), json!({"projects": [], "servers": []}), json!([])] {
+        let (store, json) = stored("projects-schema");
+        std::fs::write(&json, malformed.to_string()).unwrap();
+        assert!(reloaded(&store, &json).list().is_empty());
+        assert_eq!(std::fs::read_to_string(json.with_extension("json.bak")).unwrap(), malformed.to_string());
     }
-    std::fs::write(&path, "{}").unwrap();
-    assert!(Projects::load(path.clone()).list().is_empty(), "missing keys keep empty defaults");
-    let valid = json!({"projects": [{"id": "p1", "name": "work", "color": 2, "host": null,
-        "dir": "/sandbox", "members": [A]}], "servers": {"tmux:local:terminum:": "server1"}, "order": ["g:local/main", "p:p1"]});
-    std::fs::write(&path, valid.to_string()).unwrap();
-    Projects::load(path.clone()).save().unwrap();
-    assert_eq!(serde_json::from_str::<Value>(&std::fs::read_to_string(path).unwrap()).unwrap(), valid);
-    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn ac110_every_change_reaches_the_store() {
+    let (store, json) = stored("projects-saved");
+    let mut ps = reloaded(&store, &json);
+    let p1 = ps.add(A, None, None, Some("devbox.example".into()), "/a".into(), Some("API")).unwrap();
+    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
+    let p2 = ps.create("Billing", None, String::new()).unwrap();
+    ps.order(&[format!("p:{p2}"), "g:local/main".into(), format!("p:{p1}")]).unwrap();
+    ps.members(&p1, &[B.into(), A.into()]).unwrap();
+    ps.seen("tmux:local:terminum:", Some("m1"), &[A, B].into_iter().collect());
+    ps.save().unwrap();
+    let back = reloaded(&store, &json);
+    assert_eq!(back.list(), ps.list(), "names, colors, hosts, folders, members and their order");
+    assert_eq!(back.list_order(), ps.list_order());
+    assert_eq!(back.servers, ps.servers);
+    assert_eq!(back.list()[0].name, "Billing", "in the list's order");
+}
+
+fn task_in(store: &Store, project: &str, number: i64) {
+    store.with(|tx| {
+        tx.execute("INSERT INTO tasks (id, number, project, title, body, status, severity, rank, owner, updated_at)
+                    VALUES (?1, ?2, ?3, 't', '', 'TODO', 'P2', 0, 'human', 0)", (format!("t{number}"), number, project)).map_err(|e| e.to_string())
+    }).unwrap();
+}
+
+fn project_of_task(store: &Store, number: i64) -> String {
+    store.with(|tx| tx.query_row("SELECT project FROM tasks WHERE number = ?1", [number], |r| r.get(0)).map_err(|e| e.to_string())).unwrap()
+}
+
+#[test]
+fn ac110_deleting_a_project_moves_its_tasks_to_default_and_says_so() {
+    let (store, json) = stored("projects-delete");
+    let mut ps = reloaded(&store, &json);
+    let p1 = ps.add(A, None, None, None, "/a".into(), Some("Billing")).unwrap();
+    let p2 = ps.add(B, None, None, None, "/b".into(), None).unwrap();
+    task_in(&store, &p1, 1);
+    task_in(&store, &p2, 2);
+    ps.delete(&p1).unwrap();
+    assert!(ps.of(A).is_none(), "its session is back in its tmux group");
+    assert_eq!(project_of_task(&store, 1), "default");
+    assert_eq!(project_of_task(&store, 2), p2, "another project's stays");
+    let said: String = store.with(|tx| tx.query_row("SELECT text FROM events WHERE task = 't1'", [], |r| r.get(0)).map_err(|e| e.to_string())).unwrap();
+    assert_eq!(said, "Project Billing was deleted: moved to Default");
+    assert!(reloaded(&store, &json).list().iter().all(|p| p.id != p1), "gone from the store");
+}
+
+#[test]
+fn ac110_a_project_is_not_lost_when_the_store_refuses_its_deletion() {
+    let (store, json) = stored("projects-refused");
+    let mut ps = reloaded(&store, &json);
+    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
+    store.with(|tx| tx.execute_batch("CREATE TRIGGER no BEFORE DELETE ON projects BEGIN SELECT RAISE(ABORT, 'refused'); END;").map_err(|e| e.to_string())).unwrap();
+    assert!(ps.delete(&p1).is_err());
+    assert!(ps.of(A).is_some(), "nothing changed");
+}
+
+#[test]
+fn ac110_a_project_made_with_no_session_stands_and_takes_its_folder_later() {
+    let mut ps = store();
+    let p = ps.create("Billing", None, String::new()).unwrap();
+    assert_eq!(ps.list()[0].members.len(), 0);
+    ps.set_dir(&p, "/Users/alex/billing".into()).unwrap();
+    assert_eq!(ps.list()[0].dir, "/Users/alex/billing");
+    assert_eq!(ps.create("Billing", None, String::new()).unwrap_err(), "A project is already named Billing");
+    assert_eq!(ps.create(" default ", None, String::new()).unwrap_err(), "The name Default is taken");
+    assert_eq!(ps.create("", None, String::new()).unwrap_err(), "A project's name has 1–40 characters");
+    let p2 = ps.create("Web", None, String::new()).unwrap();
+    assert_eq!(ps.rename(&p2, "Billing").unwrap_err(), "A project is already named Billing");
+    assert!(ps.rename(&p2, "Web").is_ok(), "its own name is free");
+    for n in 0..48 {
+        ps.create(&format!("P{n}"), None, String::new()).unwrap();
+    }
+    assert_eq!(ps.create("One more", None, String::new()).unwrap_err(), "50 projects at most: delete one first");
 }
 
 #[test]
@@ -59,7 +140,7 @@ fn a_new_project_is_named_and_colored_apart_from_the_others() {
 }
 
 #[test]
-fn a_pane_is_in_one_project_and_an_empty_one_goes() {
+fn ac110_a_pane_is_in_one_project_and_an_empty_one_stays() {
     let mut ps = store();
     let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
     ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
@@ -67,7 +148,8 @@ fn a_pane_is_in_one_project_and_an_empty_one_goes() {
     assert_eq!(ps.of(B).unwrap().id, p2, "moved, not copied");
     assert_eq!(ps.of(A).unwrap().members, [A]);
     ps.remove(A).unwrap();
-    assert!(ps.list().iter().all(|p| p.id != p1), "its last session left: the project goes");
+    let empty = ps.list().iter().find(|p| p.id == p1).unwrap();
+    assert!(empty.members.is_empty(), "its last session left: the project stays");
     assert!(ps.add(A, Some("nope"), None, None, "/".into(), None).is_err());
 }
 
@@ -105,7 +187,7 @@ fn closed_panes_leave_when_their_server_is_read() {
     ps.seen("tmux:devbox:default:", Some("d1"), &HashSet::new());
     ps.fresh.clear();
     assert!(ps.seen("tmux:devbox:default:", Some("d1"), &HashSet::new()).0);
-    assert!(ps.list().is_empty());
+    assert!(ps.list()[0].members.is_empty(), "the project stays, with no session");
 }
 
 /// A tmux server started anew numbers its panes anew: its old members never name new panes.
@@ -126,7 +208,7 @@ fn a_server_started_anew_keeps_projects_only_through_its_restore() {
     // started anew without a restore: its %7 is another pane now
     let seven: HashSet<&str> = ["tmux:local:terminum:%7"].into_iter().collect();
     assert_eq!(ps.seen("tmux:local:terminum:", Some("m3"), &seven), (true, Closed::All), "bookmarks: all its panes' closed");
-    assert!(ps.list().is_empty(), "another server's pane %7 is not the project's");
+    assert!(ps.list()[0].members.is_empty(), "another server's pane %7 is not the project's");
 }
 
 /// A restore again passes over the sessions still running: paired with themselves, they keep their projects.

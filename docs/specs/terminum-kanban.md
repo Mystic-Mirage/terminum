@@ -562,7 +562,7 @@ The board is a second page (`web/static/kanban.html`), plain JavaScript, using t
 
 ```sql
 CREATE TABLE users (id TEXT PRIMARY KEY, kind TEXT CHECK (kind IN ('human','agent','system')), name TEXT NOT NULL, role TEXT NOT NULL);
-CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT UNIQUE NOT NULL, color INTEGER, host TEXT, dir TEXT, memory_warn_gib REAL, memory_end_gib REAL, is_default INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, color INTEGER NOT NULL, host TEXT, dir TEXT NOT NULL, place INTEGER NOT NULL, is_default INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE list_order (place INTEGER PRIMARY KEY, part TEXT NOT NULL);  -- projects and tmux groups, "g:<group>"
 CREATE TABLE servers (start TEXT PRIMARY KEY, terminum_id TEXT NOT NULL);  -- each server's identity by its keys' start
 CREATE TABLE project_members (project TEXT REFERENCES projects, pane_key TEXT UNIQUE, place INTEGER);

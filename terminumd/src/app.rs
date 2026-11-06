@@ -89,6 +89,8 @@ pub struct App {
     pub marks_full: crate::page::marksfull::Full,
     /// named groups of sessions in the list (AC-92)
     pub projects: Mutex<crate::page::projects::Projects>,
+    /// the tasks' store (terminum-kanban.md AC-119)
+    pub tasks: Arc<crate::tasks::store::Store>,
     /// panes whose agent ended a turn nobody has looked at since (AC-93)
     pub unread: Mutex<crate::page::unread::Marks>,
     /// turn ends read from the screen, waiting to stay so (AC-91, AC-93)

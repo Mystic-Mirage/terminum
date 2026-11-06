@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Projects (AC-92): named groups of sessions in the list, the same on every page, kept in
-//! `projects.json`. Each has a name ("Group 1" …), a color of its own (the lowest of COLORS no
+//! Projects (AC-92, AC-110): named groups of sessions in the list, the same on every page, kept
+//! in the tasks' store (tasks/projects.rs). Each has a name ("Group 1" …), a color of its own (the lowest of COLORS no
 //! other project has: the page's palette, far apart), the host and folder of the session it
 //! was made from (its [+] opens a window there) and its sessions by pane key, in the list's
 //! order. A pane that closed leaves its project when its server's list is read (one added in
 //! the last seconds is spared: a read on its way may not have it yet); a project with no
-//! session left goes. A tmux server started anew numbers its panes anew: restored, its
+//! session left stays. A tmux server started anew numbers its panes anew: restored, its
 //! sessions keep their projects (restore says which pane is which); else its panes leave
 //! them, never naming other panes. A bookmark made in a project's session is the project's
-//! (AC-33): orphaned once the project goes, or its session closes (bookmarks_scope.rs).
+//! (AC-33): orphaned once the project is deleted, or its session closes (bookmarks_scope.rs).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,8 @@ use serde_json::{json, Value};
 
 use super::Page;
 use crate::app::Shared;
+use crate::tasks::projects::{self as stored, Saved};
+use crate::tasks::store::Store;
 
 /// The page's palette of project colors.
 pub const COLORS: usize = 10;
@@ -53,7 +56,8 @@ pub enum Closed {
 
 #[derive(Default)]
 pub struct Projects {
-    path: PathBuf,
+    /// where they are kept; in tests of the rules alone, none
+    store: Option<Arc<Store>>,
     list: Vec<Project>,
     /// each server's identity (its `@terminum-id`) by its keys' start, as its members were read
     servers: BTreeMap<String, String>,
@@ -67,37 +71,50 @@ pub struct Projects {
     order: Vec<String>,
 }
 
-/// A project's name as typed (trimmed): a short name (settings::is_short_name).
+/// A project's name as typed (trimmed): a short name (settings::is_short_name), and not Default's.
 fn name_ok(name: &str) -> Result<String, String> {
     let n = name.trim();
-    if crate::settings::is_short_name(n) { Ok(n.to_string()) } else { Err("A project's name has 1–40 characters".into()) }
+    if !crate::settings::is_short_name(n) {
+        return Err("A project's name has 1–40 characters".into());
+    }
+    if n.eq_ignore_ascii_case("default") {
+        return Err("The name Default is taken".into());
+    }
+    Ok(n.to_string())
 }
 
 impl Projects {
-    pub fn load(path: PathBuf) -> Projects {
-        // one that cannot be read is set aside (projects.json.bak), never written over
-        let (list, servers, order) = crate::auth::store::read_or_set_aside(&path, |v| {
-            if !v.is_object() {
-                return Err("expected a projects object".into());
-            }
-            let list = serde_json::from_value(v.get("projects").cloned().unwrap_or_else(|| json!([]))).map_err(|e| e.to_string())?;
-            let servers = serde_json::from_value(v.get("servers").cloned().unwrap_or_else(|| json!({}))).map_err(|e| e.to_string())?;
-            let order = serde_json::from_value(v.get("order").cloned().unwrap_or_else(|| json!([]))).map_err(|e| e.to_string())?;
-            Ok((list, servers, order))
-        }).unwrap_or_default();
-        Projects { path, list, servers, fresh: HashMap::new(), recheck: None, untold: false, order }
+    /// The store's; a store that cannot be used leaves none, its message logged and on the board.
+    pub fn load(store: Arc<Store>, projects_json: &Path) -> Projects {
+        let saved = stored::load(&store, projects_json).unwrap_or_else(|e| {
+            tracing::warn!(event = "projects.unread", error = %e);
+            Saved::default()
+        });
+        Projects { store: Some(store), list: saved.list, servers: saved.servers, fresh: HashMap::new(), recheck: None, untold: false, order: saved.order }
     }
 
     pub fn list(&self) -> &[Project] {
         &self.list
     }
 
-    /// Writes projects.json (each change does; after `seen` or `restarted`, their caller).
+    fn saved(&self) -> Saved {
+        Saved { list: self.list.clone(), servers: self.servers.clone(), order: self.order.clone() }
+    }
+
+    /// Writes them to the store (each change does; after `seen` or `restarted`, their caller).
     pub fn save(&self) -> Result<(), String> {
-        if self.path.as_os_str().is_empty() {
-            return Ok(());                                  // in tests: kept in memory
+        match &self.store {
+            Some(store) => store.with(|tx| stored::write(tx, &self.saved())),
+            None => Ok(()),
         }
-        crate::config::write_private(&self.path, json!({"projects": self.list, "servers": self.servers, "order": self.order}).to_string().as_bytes()).map_err(|e| format!("projects.json: {e}"))
+    }
+
+    /// A name no other project has (AC-110).
+    fn name_free(&self, name: &str, but: Option<&str>) -> Result<(), String> {
+        if self.list.iter().any(|p| p.name == name && Some(p.id.as_str()) != but) {
+            return Err(format!("A project is already named {name}"));
+        }
+        Ok(())
     }
 
     fn find(&mut self, id: &str) -> Result<&mut Project, String> {
@@ -108,23 +125,11 @@ impl Projects {
     /// made from the pane's host and folder), after `after` when that is a member, else last;
     /// out of any other. The project's id.
     pub fn add(&mut self, key: &str, to: Option<&str>, after: Option<&str>, host: Option<String>, dir: String, name: Option<&str>) -> Result<String, String> {
-        let named = name.map(name_ok).transpose()?;
         let id = match to {
             Some(id) => self.find(id)?.id.clone(),
-            None => {
-                if self.list.len() >= MOST {
-                    return Err(format!("At most {MOST} projects."));
-                }
-                let taken = |n: usize| self.list.iter().any(|p| p.name == format!("Group {n}"));
-                let n = (1..).find(|n| !taken(*n)).unwrap_or(1);
-                let color = (0..COLORS).find(|c| !self.list.iter().any(|p| p.color == *c)).unwrap_or(self.list.len() % COLORS);
-                let id = crate::auth::crypto::random_hex::<6>();
-                self.list.push(Project { id: id.clone(), name: named.unwrap_or_else(|| format!("Group {n}")), color, host, dir, members: Vec::new() });
-                id
-            }
+            None => self.make(name, host, dir)?,
         };
         if self.find(&id)?.members.len() >= MOST_MEMBERS {
-            self.list.retain(|p| !p.members.is_empty());   // a project made just now goes again
             return Err(format!("At most {MOST_MEMBERS} sessions in a project."));
         }
         let p = self.find(&id)?;
@@ -134,13 +139,43 @@ impl Projects {
         for p in self.list.iter_mut().filter(|p| p.id != id) {
             p.members.retain(|m| m != key);
         }
-        self.list.retain(|p| !p.members.is_empty());
         self.fresh.insert(key.to_string(), Instant::now());
         self.save()?;
         Ok(id)
     }
 
-    /// Takes pane `key` out of its project (an empty project goes).
+    /// A new project with no session (AC-110): named `name`, else "Group N"; the first color no
+    /// other has. Its id; the caller saves.
+    fn make(&mut self, name: Option<&str>, host: Option<String>, dir: String) -> Result<String, String> {
+        let named = name.map(name_ok).transpose()?;
+        if let Some(n) = &named {
+            self.name_free(n, None)?;
+        }
+        if self.list.len() >= MOST {
+            return Err(format!("{MOST} projects at most: delete one first"));
+        }
+        let taken = |n: usize| self.list.iter().any(|p| p.name == format!("Group {n}"));
+        let n = (1..).find(|n| !taken(*n)).unwrap_or(1);
+        let color = (0..COLORS).find(|c| !self.list.iter().any(|p| p.color == *c)).unwrap_or(self.list.len() % COLORS);
+        let id = crate::auth::crypto::random_hex::<6>();
+        self.list.push(Project { id: id.clone(), name: named.unwrap_or_else(|| format!("Group {n}")), color, host, dir, members: Vec::new() });
+        Ok(id)
+    }
+
+    /// A project made on the board, with no session (AC-110). Its id.
+    pub fn create(&mut self, name: &str, host: Option<String>, dir: String) -> Result<String, String> {
+        let id = self.make(Some(name), host, dir)?;
+        self.save()?;
+        Ok(id)
+    }
+
+    /// The folder a project asks for at its first [+] (AC-110).
+    pub fn set_dir(&mut self, id: &str, dir: String) -> Result<(), String> {
+        self.find(id)?.dir = dir;
+        self.save()
+    }
+
+    /// Takes pane `key` out of its project, which stays.
     pub fn remove(&mut self, key: &str) -> Result<(), String> {
         self.prune(|m| m != key);
         self.save()
@@ -148,15 +183,26 @@ impl Projects {
 
     pub fn rename(&mut self, id: &str, name: &str) -> Result<(), String> {
         let name = name_ok(name)?;
+        self.name_free(&name, Some(id))?;
         self.find(id)?.name = name;
         self.save()
     }
 
-    /// The project goes; its sessions are back in their tmux groups.
+    /// The project goes in one transaction: its sessions are back in their tmux groups, its tasks
+    /// in Default (AC-110). Refused by the store, nothing changes.
     pub fn delete(&mut self, id: &str) -> Result<(), String> {
-        self.find(id)?;
-        self.list.retain(|p| p.id != id);
-        self.save()
+        let name = self.find(id)?.name.clone();
+        let mut after = self.saved();
+        after.list.retain(|p| p.id != id);
+        if let Some(store) = &self.store {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+            store.with(|tx| {
+                stored::move_tasks_to_default(tx, id, &name, now)?;
+                stored::write(tx, &after)
+            })?;
+        }
+        self.list = after.list;
+        Ok(())
     }
 
     /// The session list's order `ids`, projects and tmux groups together; the projects follow it
@@ -229,13 +275,12 @@ impl Projects {
         changed
     }
 
-    /// Members `keep` refuses go, and projects left empty with them; how many members went.
+    /// Members `keep` refuses go, their projects staying; how many went.
     fn prune(&mut self, keep: impl Fn(&str) -> bool) -> usize {
         let before: usize = self.list.iter().map(|p| p.members.len()).sum();
         for p in self.list.iter_mut() {
             p.members.retain(|m| keep(m));
         }
-        self.list.retain(|p| !p.members.is_empty());
         before - self.list.iter().map(|p| p.members.len()).sum::<usize>()
     }
 
@@ -336,7 +381,7 @@ fn told(app: &Shared, done: Result<Result<Vec<super::bookmarks::Item>, super::bo
     }
 }
 
-/// projects.json written off the async workers.
+/// Written to the store off the async workers.
 async fn save(app: &Shared) {
     let a = app.clone();
     if let Ok(Err(e)) = tokio::task::spawn_blocking(move || a.projects.lock().save()).await {

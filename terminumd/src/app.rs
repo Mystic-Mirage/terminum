@@ -52,9 +52,11 @@ pub struct App {
     pub offers: Mutex<std::collections::HashMap<String, serde_json::Value>>,
     /// why the local server cannot be used (tmux missing), shown instead of the list
     pub tmux_problem: Mutex<Option<String>>,
-    /// the list must be read again (shared by every tmux server)
+    /// every server's list must be read again
     pub dirty: Arc<tokio::sync::Notify>,
-    /// one list refresh at a time
+    /// tmux said a server's list changed: that server's is read again (lists.rs)
+    pub changed: Arc<tokio::sync::Notify>,
+    /// one telling of the list at a time; no read holds it
     pub refreshing: tokio::sync::Mutex<()>,
     /// the last workspace inventory (AC-71)
     pub inventory_at: Mutex<Option<Instant>>,

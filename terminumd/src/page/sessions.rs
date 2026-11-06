@@ -63,10 +63,12 @@ pub(super) fn allowed_now(page: &Page) -> bool {
 }
 
 /// Something new was made: the list has it before the page is told to show it.
-async fn created(app: &Shared, page: &Page, server: &Server, pane_id: &str, note: Option<String>) {
-    crate::manager::refresh(app).await;
+async fn created(app: &Shared, page: &Page, server: &Arc<Server>, pane_id: &str, note: Option<String>) {
+    crate::lists::refresh_server(app, server).await;
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
-    page.send_json(&json!({"t": "created", "id": server.key(pane_id), "note": note}));
+    let shown = page.state.lock().shown.as_ref().map(|s| s.key.clone());
+    let moved = page.state.lock().asked_on != shown;   // the user went on meanwhile: the list has it, they stay (AC-132)
+    page.send_json(&json!({"t": "created", "id": server.key(pane_id), "note": note, "stay": moved}));
 }
 
 pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
@@ -88,9 +90,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         _ => Ok(()),
     };
     match result {
-        Ok(()) if matches!(t, "rename" | "renamegroup" | "reorder" | "move" | "kill") => {
-            crate::manager::refresh(app).await;
-        }
+        Ok(()) if matches!(t, "rename" | "renamegroup" | "reorder" | "move" | "kill") => crate::lists::request_all(app),
         Ok(()) => {}
         Err(e) => error(page, e, None),
     }
@@ -275,7 +275,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
             let got = crate::hosts::agents::set_agents(app, &s("name"), on).await;
             let (ok, lines) = match got { Ok(l) => (true, l), Err(e) => (false, vec![e]) };
             page.send_json(&json!({"t": "hostagents", "name": s("name"), "on": on, "ok": ok, "lines": lines}));
-            crate::manager::refresh(app).await;
+            crate::lists::request_all(app);
             return;
         }
         "hostaction" => crate::hosts::action(app, &s("name"), &s("action")).await,
@@ -305,7 +305,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         _ => Ok(()),
     };
     match result {
-        Ok(()) => crate::manager::refresh(app).await,
+        Ok(()) => crate::lists::request_all(app),
         Err(e) => error(page, e, None),
     }
 }

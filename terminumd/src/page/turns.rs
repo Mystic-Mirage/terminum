@@ -41,22 +41,22 @@ impl Turns {
         self.pending.lock().iter().filter(|(_, (_, hook))| *hook).map(|(k, (at, _))| (k.clone(), now.duration_since(*at) >= limit)).collect()
     }
 
-    /// Takes the panes `ended` just now and gives back, once, those that have stayed done for
-    /// SETTLE; `busy(key)` says whether a pane is busy now (None: not listed, gone when the list
-    /// is `complete`: a host that did not answer this time keeps its panes waiting). A pane busy
-    /// again, or gone, waits no more; one its hooks ended waits while busy (the screen tells
-    /// background work its hooks do not).
-    pub fn settle(&self, ended: Vec<String>, busy: impl Fn(&str) -> Option<bool>, complete: bool, now: Instant) -> Vec<String> {
+    /// Takes the panes `ended` just now and gives back, once, those of the server keyed by `server`
+    /// that have stayed done for SETTLE; `busy(key)` says whether a pane is busy by that server's list,
+    /// just read (None: not listed, gone). Only that list judges its panes: another server's says
+    /// nothing of them, whatever it was read for (AC-132). A pane busy again, or gone, waits no more;
+    /// one its hooks ended waits while busy (the screen tells background work its hooks do not).
+    pub fn settle(&self, server: &str, ended: Vec<String>, busy: impl Fn(&str) -> Option<bool>, now: Instant) -> Vec<String> {
         let mut pending = self.pending.lock();
         for k in ended {
             pending.entry(k).or_insert((now, false));
         }
         let mut out = Vec::new();
-        pending.retain(|k, (at, hook)| match busy(k) {
+        pending.retain(|k, (at, hook)| !k.starts_with(server) || match busy(k) {
             Some(false) if now.duration_since(*at) >= SETTLE => { out.push(k.clone()); false }
             Some(false) => true,
             Some(true) => *hook,
-            None => !complete,
+            None => false,
         });
         out
     }
@@ -78,23 +78,35 @@ mod tests {
         let t = Turns::default();
         let t0 = Instant::now();
         let idle = |_: &str| Some(false);
-        assert!(t.settle(vec!["a".into()], idle, true, t0).is_empty(), "just done: it waits");
-        assert!(t.settle(vec![], idle, true, t0 + SETTLE / 2).is_empty());
-        assert!(t.settle(vec!["a".into()], idle, true, t0 + SETTLE / 2).is_empty(), "seen done again: still since t0");
+        assert!(t.settle("", vec!["a".into()], idle, t0).is_empty(), "just done: it waits");
+        assert!(t.settle("", vec![], idle, t0 + SETTLE / 2).is_empty());
+        assert!(t.settle("", vec!["a".into()], idle, t0 + SETTLE / 2).is_empty(), "seen done again: still since t0");
         assert_eq!(t.due_in(t0 + SETTLE / 2), Some(SETTLE / 2), "the loop reads the list again then");
-        assert_eq!(t.settle(vec![], idle, true, t0 + SETTLE), ["a"], "done for SETTLE: ended, once");
+        assert_eq!(t.settle("", vec![], idle, t0 + SETTLE), ["a"], "done for SETTLE: ended, once");
         assert_eq!(t.due_in(t0 + SETTLE), None);
-        assert!(t.settle(vec![], idle, true, t0 + SETTLE * 3).is_empty());
+        assert!(t.settle("", vec![], idle, t0 + SETTLE * 3).is_empty());
     }
 
     #[test]
     fn working_again_or_gone_ends_nothing() {
         let t = Turns::default();
         let t0 = Instant::now();
-        t.settle(vec!["a".into(), "b".into()], |_| Some(false), true, t0);
+        t.settle("", vec!["a".into(), "b".into()], |_| Some(false), t0);
         // a works again (the next step of its turn), b closed
-        assert!(t.settle(vec![], |k| (k == "a").then_some(true), true, t0 + Duration::from_secs(1)).is_empty());
-        assert!(t.settle(vec![], |_| Some(false), true, t0 + SETTLE * 2).is_empty(), "neither waits any more");
+        assert!(t.settle("", vec![], |k| (k == "a").then_some(true), t0 + Duration::from_secs(1)).is_empty());
+        assert!(t.settle("", vec![], |_| Some(false), t0 + SETTLE * 2).is_empty(), "neither waits any more");
+    }
+
+    /// AC-132: a list read on one server neither ends nor drops another server's turn.
+    #[test]
+    fn a_server_settles_only_its_own_panes() {
+        let t = Turns::default();
+        let t0 = Instant::now();
+        t.settle("", vec!["tmux:devbox:default:%1".into(), "tmux:local:t:%1".into()], |_| Some(false), t0);
+        let local = "tmux:local:t:";
+        assert_eq!(t.settle(local, vec![], |_| Some(false), t0 + SETTLE), ["tmux:local:t:%1"], "its own, by its own list");
+        assert!(t.settle(local, vec![], |_| None, t0 + SETTLE).is_empty(), "the host's pane is not in that list: not gone");
+        assert_eq!(t.settle("tmux:devbox:default:", vec![], |_| Some(false), t0 + SETTLE), ["tmux:devbox:default:%1"]);
     }
 
     #[test]
@@ -105,14 +117,14 @@ mod tests {
         t.hook_ended("b", t0);
         assert_eq!(t.due_in(t0), None, "the list is read after every hook: no wake-up of its own");
         let a_busy = |k: &str| Some(k == "a");
-        assert_eq!(t.settle(vec![], a_busy, true, t0), ["b"], "not busy: at once");
-        assert!(t.settle(vec![], a_busy, true, t0 + SETTLE * 3).is_empty(), "a shell it started still runs: it waits");
-        assert_eq!(t.settle(vec![], |_| Some(false), true, t0 + SETTLE * 3), ["a"], "the shell ended: its turn ends, once");
-        assert!(t.settle(vec![], |_| Some(false), true, t0 + SETTLE * 4).is_empty());
+        assert_eq!(t.settle("", vec![], a_busy, t0), ["b"], "not busy: at once");
+        assert!(t.settle("", vec![], a_busy, t0 + SETTLE * 3).is_empty(), "a shell it started still runs: it waits");
+        assert_eq!(t.settle("", vec![], |_| Some(false), t0 + SETTLE * 3), ["a"], "the shell ended: its turn ends, once");
+        assert!(t.settle("", vec![], |_| Some(false), t0 + SETTLE * 4).is_empty());
         t.hook_ended("c", t0);
-        assert!(t.settle(vec![], |_| None, false, t0).is_empty() && t.hooked(t0).get("c") == Some(&false), "its host did not answer: it waits");
+        assert_eq!(t.hooked(t0).get("c"), Some(&false), "its host's list not read: it waits");
         assert_eq!(t.hooked(t0 + crate::tmux::agentstate::BACKGROUND_LIMIT).get("c"), Some(&true), "ten minutes on: only its agents count");
-        assert!(t.settle(vec![], |_| None, true, t0).is_empty() && t.settle(vec![], |_| Some(false), true, t0).is_empty(), "closed: no end");
+        assert!(t.settle("", vec![], |_| None, t0).is_empty() && t.settle("", vec![], |_| Some(false), t0).is_empty(), "closed: no end");
         assert!(t.hooked(t0).is_empty());
     }
 

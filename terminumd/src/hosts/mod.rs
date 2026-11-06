@@ -156,7 +156,7 @@ pub fn sync(app: &Shared) {
         if let Some(old) = app.tmux.remove_host(name) {
             let_go(app, old);
         }
-        let server = Server::new(name, "default", Link::Ssh { ssh: ssh_bin(), args }, app.dirty.clone());
+        let server = Server::new(name, "default", Link::Ssh { ssh: ssh_bin(), args }, app.changed.clone());
         *server.only.lock() = Some(attach);
         app.tmux.add_host(server.clone());
         if off {

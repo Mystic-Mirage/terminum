@@ -148,7 +148,7 @@ async fn resize(app: &Shared, page: &Arc<Page>, opening: bool) -> bool {
         }
     }
     if !page.state.lock().active() {
-        Box::pin(handover(app, page)).await;   // hidden while it resized: its handover came first and saw nothing to give
+        handover(app, page);                   // hidden while it resized: its handover came first and saw nothing to give
     }
     true
 }
@@ -194,7 +194,7 @@ fn later(app: &Shared, page: &Arc<Page>, why: Why) {
 /// `page` was hidden: a window it sized goes to the pages still looking at it (AC-13), so a
 /// locked phone never keeps a computer's view at the phone's size; one of the user's own tmux
 /// that no page looks at gets tmux's own size back (AC-89).
-pub async fn handover(app: &Shared, page: &Arc<Page>) {
+pub fn handover(app: &Shared, page: &Arc<Page>) {
     let Some((server, pane, f)) = shown_window(page) else { return };
     let key = (server.id(), f.window.clone());
     if app.sizes.0.lock().get(&key).and_then(|w| w.by) != Some(page.id) {
@@ -202,9 +202,9 @@ pub async fn handover(app: &Shared, page: &Arc<Page>) {
     }
     let others: Vec<_> = viewers(app, &server, &f.window).into_iter().filter(|v| v.id != page.id && v.state.lock().active()).collect();
     if others.is_empty() && users_pane(&server, &pane) {
-        // awaited: the page's next message (its resume) comes after it
+        // sent now, in order: the page's next message (its resume) comes after it, and waits for nothing
         if app.sizes.0.lock().remove(&key).is_some_and(|w| w.manual) {
-            let _ = server.run_all_on(&pane, own_size(&f.window)).await;
+            server.send_on(&pane, own_size(&f.window));
         }
         return;
     }
@@ -247,7 +247,7 @@ pub async fn typed(app: &Shared, page: &Arc<Page>) {
 
 /// The page stopped showing `old` (another pane, or it closed): a window no page in sight shows
 /// goes back to tmux's policy (a hidden page showing it sizes it again when back, AC-89).
-pub async fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
+pub fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
     let Some(f) = old.ctl.fields.lock().clone() else { return };
     let key = (old.server.id(), f.window.clone());
     let others = viewers(app, &old.server, &f.window).into_iter().any(|p| p.id != page.id && p.state.lock().active());
@@ -264,7 +264,7 @@ pub async fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
         w
     };
     if win.manual && !others {
-        let _ = old.server.run_all_on(&old.pane, own_size(&f.window)).await;
+        old.server.send_on(&old.pane, own_size(&f.window));   // sent now, in order; nothing waits for that server (AC-132)
     }
 }
 
@@ -274,7 +274,7 @@ fn own_size(window: &str) -> Vec<String> {
 }
 
 /// `size` and `mouse` from the page.
-pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
+pub fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     match t {
         "size" => {
             if view_of(page, msg) {

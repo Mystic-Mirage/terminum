@@ -99,7 +99,7 @@ pub fn sync(app: &Shared) {
     for (socket, sessions) in wanted {
         // made with its sessions: never for a moment a server whose every session is listed
         let server = app.tmux.attached_or(&socket, || {
-            let s = Server::new("local", &socket, Link::Local { tmux: tmux.clone(), socket: socket.clone(), conf: "/dev/null".into() }, app.dirty.clone());
+            let s = Server::new("local", &socket, Link::Local { tmux: tmux.clone(), socket: socket.clone(), conf: "/dev/null".into() }, app.changed.clone());
             *s.only.lock() = Some(sessions.clone());
             s
         });

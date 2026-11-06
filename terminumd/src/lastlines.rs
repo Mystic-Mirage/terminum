@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -128,8 +129,6 @@ struct Pane {
 pub struct Seen {
     identity: String,
     panes: HashMap<String, Pane>,
-    /// when its server last answered: the sweep keeps only these servers' lines as current
-    ok: Option<Instant>,
 }
 
 impl Seen {
@@ -143,7 +142,7 @@ impl Seen {
                 panes.insert(format!("%{n}"), Pane::default());
             }
         }
-        Seen { identity: identity.to_string(), panes, ok: None }
+        Seen { identity: identity.to_string(), panes }
     }
 
     /// The panes of this read to capture: never read, or their window printed in or after the
@@ -180,34 +179,51 @@ impl Seen {
     }
 }
 
-/// Keeps the panes' last lines while `lastLines` is on, every 5 s.
+/// When each server last answered, under which identity: what the hourly sweep keeps.
+type Answered = Arc<parking_lot::Mutex<HashMap<String, (String, Instant)>>>;
+
+/// Keeps the panes' last lines while `lastLines` is on, every 5 s: each server on a task of its own,
+/// so one that hangs delays only its own lines (AC-132).
 pub async fn follow(app: Shared) {
-    let mut seen: HashMap<String, Seen> = HashMap::new();
-    let (mut round, mut swept) = (0u64, Instant::now());
+    let answered: Answered = Arc::default();
+    let mut servers: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
+    let mut swept = Instant::now();
     loop {
         tokio::time::sleep(EVERY).await;
-        round += 1;
-        let n = wanted(&app);
-        if n == 0 {
-            seen.clear();
+        if wanted(&app) == 0 {
             let dir = root(&app);
             if dir.exists() {
                 let _ = tokio::task::spawn_blocking(move || off(&dir)).await;
             }
             continue;
         }
+        servers.retain(|_, task| !task.is_finished());
         for s in app.tmux.all() {
-            if s.is_local() || round % HOST_ROUNDS == 0 {
-                keep(&app, &s, n, &mut seen).await;
-            }
+            servers.entry(s.id()).or_insert_with(|| tokio::spawn(keep_server(app.clone(), Arc::downgrade(&s), answered.clone())));
         }
         if swept.elapsed() >= SWEEP_EVERY {
             swept = Instant::now();
             // the servers that answered since the last sweep: a host gone or removed ages
-            let current: HashMap<String, String> = seen.iter().filter(|(_, s)| s.ok.is_some_and(|t| t.elapsed() < SWEEP_EVERY))
-                .map(|(id, s)| (folder(id), s.identity.clone())).collect();
+            let current: HashMap<String, String> = answered.lock().iter().filter(|(_, (_, t))| t.elapsed() < SWEEP_EVERY)
+                .map(|(id, (identity, _))| (folder(id), identity.clone())).collect();
             let dir = root(&app);
             let _ = tokio::task::spawn_blocking(move || sweep(&dir, &current, KEEP_OLD)).await;
+        }
+    }
+}
+
+/// One server's rounds, until it goes.
+async fn keep_server(app: Shared, server: std::sync::Weak<Server>, answered: Answered) {
+    let (mut seen, mut round) = (Seen::default(), 0u64);
+    loop {
+        tokio::time::sleep(EVERY).await;
+        round += 1;
+        let Some(s) = server.upgrade() else { return };
+        let n = wanted(&app);
+        if n == 0 {
+            seen = Seen::default();
+        } else if s.is_local() || round % HOST_ROUNDS == 0 {
+            keep(&app, &s, n, &mut seen, &answered).await;
         }
     }
 }
@@ -224,8 +240,8 @@ fn off(dir: &Path) {
 
 /// One round on a server: one read of its panes and the captures of those due, on one control
 /// client (a server that died fails them, never answers for another), then the files written.
-async fn keep(app: &Shared, s: &Server, n: usize, seen: &mut HashMap<String, Seen>) {
-    let Some(c) = s.bulk() else { return };
+async fn keep(app: &Shared, s: &Server, n: usize, mine: &mut Seen, answered: &Answered) {
+    let Some(c) = s.bulk().filter(|_| !s.backed_up()) else { return };
     let Some(Ok(lines)) = c.run_all(vec![format!("list-panes -a -F '{FIELDS}'")]).await.pop() else { return };
     // the identity of every pane listed, shown or not: a server none of whose sessions is shown
     // any more (the user detached them) still loses their panes' lines
@@ -236,11 +252,10 @@ async fn keep(app: &Shared, s: &Server, n: usize, seen: &mut HashMap<String, See
     };
     let rows = rows(&lines, |session| s.shows(session));
     let dir = root(app).join(folder(&s.id()));
-    let mine = seen.entry(s.id()).or_default();
     if mine.identity != identity {
         *mine = Seen::new(&identity, &dir);
     }
-    mine.ok = Some(Instant::now());
+    answered.lock().insert(s.id(), (identity.clone(), Instant::now()));
     let due = mine.due(&rows);
     let cmds: Vec<String> = due.iter().flat_map(|r| captures(r, n)).collect();
     let at = crate::auth::store::unix_now();          // before: output during the captures is read again

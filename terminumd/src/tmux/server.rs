@@ -63,6 +63,7 @@ pub struct Server {
     inner: Mutex<Inner>,
     wakes: Mutex<HashMap<String, watch::Sender<()>>>,
     printed: Mutex<HashMap<String, u64>>,
+    pub list: crate::lists::ServerList,
     /// the list must be read again (a window, pane, session or layout changed)
     pub dirty: Arc<Notify>,
     /// a control client ended (the manager reconnects or reports)
@@ -93,7 +94,7 @@ pub struct Server {
 }
 
 impl Server {
-    /// `dirty` is shared by every server: one list refresh reads them all.
+    /// `dirty`: told when tmux says this server's list changed (lists.rs).
     pub fn new(name: &str, socket: &str, link: Link, dirty: Arc<Notify>) -> Arc<Server> {
         Arc::new(Server {
             name: name.to_string(),
@@ -102,6 +103,7 @@ impl Server {
             inner: Mutex::default(),
             wakes: Mutex::default(),
             printed: Mutex::default(),
+            list: Default::default(),
             dirty,
             ended: Arc::new(Notify::new()),
             status: Mutex::new(Status::Connecting),
@@ -242,7 +244,8 @@ impl Server {
     /// Forgets wake-ups nobody holds any more.
     pub fn prune_wakes(&self) {
         self.wakes.lock().retain(|_, tx| tx.receiver_count() > 0);
-        self.printed.lock().retain(|p, _| self.wakes.lock().contains_key(p));
+        let inner = self.inner.lock();
+        self.printed.lock().retain(|p, _| inner.panes.contains_key(p) || self.wakes.lock().contains_key(p));
     }
 
     /// Whether any control client is alive.

@@ -2,9 +2,10 @@
 //! `GET /ws`: the page's WebSocket (spec §9). The guard checked the sign-in and the Origin
 //! before the upgrade; the page's secret came as the subprotocol pair ["tm", secret], so the
 //! answer names "tm". The first message is the build (a page of another build reloads,
-//! AC-16), then the list, its bookmarks and settings. Messages are handled in order; reads
-//! that wait on tmux or ssh run beside the loop (`reads`). A closed page ends the reader, the
-//! writer, the stream and its reads at once (`Page::closed`).
+//! AC-16), then the list, its bookmarks and settings. Messages are handled in order; nothing here
+//! waits on tmux or ssh: reads and actions run beside the loop, in a lane per server (`reads`,
+//! AC-132). A closed page ends the reader, the writer, the stream and its reads at once
+//! (`Page::closed`); its actions finish.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -99,8 +100,6 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
             continue;
         };
         let (began, kind) = (std::time::Instant::now(), msg["t"].as_str().unwrap_or("").to_string());
-        // never cut part-way (a pane switch takes `shown` before handing the old size back): each
-        // tmux command it waits on gives up on its own (ANSWER_WAIT)
         client::handle(&app, &page, msg).await;
         page.tracer.lock().handled(&kind, began);
     }
@@ -108,8 +107,7 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
     writer.abort();
     let shown = page.state.lock().shown.take();
     if let Some(old) = shown {
-        // handing the size back waits on tmux: bounded, and the pane is released either way
-        let _ = tokio::time::timeout(SEND_WAIT, super::sizing::left(&app, &page, &old)).await;
+        super::sizing::left(&app, &page, &old);
     }
     app.pages.remove(page.id);
     tracing::info!(event = "page.close", page = page.id, pages = app.pages.count());

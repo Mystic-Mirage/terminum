@@ -21,6 +21,27 @@ pub type OnCopy = Arc<dyn Fn(String) + Send + Sync>;
 pub(super) type Armed = Mutex<HashMap<String, (Instant, OnCopy)>>;
 
 impl Server {
+    /// Lines for the control client of `pane`'s session, in order after what it was sent before;
+    /// nothing waits for them (their answers do not matter): what was asked goes first even if
+    /// this server hangs (AC-132).
+    pub fn send_on(&self, pane: &str, lines: Vec<String>) {
+        if let Some(c) = self.client(pane) {
+            for line in lines {
+                drop(c.send(line));
+            }
+        }
+    }
+
+    /// What was asked of it is still on its way (AC-132): no more on top of it.
+    pub fn backed_up(&self) -> bool {
+        self.bulk().is_some_and(|c| c.waiting() >= crate::tmux::control::STALL)
+    }
+
+    /// What says a pane's screen may have changed: new control clients, or its output.
+    pub fn printed_mark(&self, pane: &str) -> (u64, u64) {
+        (self.generation.load(std::sync::atomic::Ordering::Relaxed), self.printed(pane))
+    }
+
     /// A page's mouse release went to the pane `%N`: what its program copies within
     /// `COPY_WAIT` goes to `to` (the latest page's release wins).
     pub fn arm_copy(&self, pane: &str, to: OnCopy) {
@@ -75,12 +96,15 @@ pub(super) async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::Unbou
                 s.woke(Some(&pane));
             }
             Notice::Changed => {
+                s.list.mark_changed();
                 s.dirty.notify_one();
                 // a resize or a zoom redraws shown panes: capture them now
                 s.woke(None);
             }
             Notice::Copy(pane, b64) => s.copied(&pane, &b64),
             Notice::Pause(pane) => {
+                // its last bytes may never come as `%output`: as good as printed (AC-132)
+                *s.printed.lock().entry(pane.clone()).or_insert(0) += 1;
                 // flow control on a slow link: shown panes are captured anyway, so go on
                 if let Some(c) = s.client(&pane) {
                     drop(c.send(format!("refresh-client -A '{pane}:continue'")));

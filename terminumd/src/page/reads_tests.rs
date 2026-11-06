@@ -5,7 +5,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
 
-use super::{spawn, WAITING};
+use super::{spawn, spawn_action, ACTIONS_WAITING, WAITING};
 use crate::page::{trace, Page, Pages};
 
 fn page() -> (Arc<Page>, tokio::sync::mpsc::Receiver<String>, ()) {
@@ -72,4 +72,40 @@ async fn closed_returns_at_once_for_a_closed_page_and_wakes_on_close() {
     p.close();
     tokio::time::timeout(Duration::from_millis(500), waiter).await.expect("close did not wake the waiter").unwrap();
     tokio::time::timeout(Duration::from_millis(50), p.closed()).await.expect("an already closed page waited");
+}
+
+/// AC-132: a hung server holds up only its own actions.
+#[tokio::test]
+async fn an_action_waits_only_behind_its_own_server() {
+    let (p, _rx, _d) = page();
+    let (_hold, never) = oneshot::channel::<()>();
+    assert!(spawn_action(&p, "devbox:default", async move { let _ = never.await; }));
+    let (done, got) = oneshot::channel();
+    assert!(spawn_action(&p, "local:terminum", async move { let _ = done.send(()); }));
+    tokio::time::timeout(Duration::from_secs(1), got).await.expect("another server's action waited").unwrap();
+    tokio::time::sleep(Duration::from_millis(20)).await;     // the worker took it
+    for _ in 0..ACTIONS_WAITING {
+        assert!(spawn_action(&p, "devbox:default", async {}));
+    }
+    assert!(!spawn_action(&p, "devbox:default", async {}), "bounded: refused in words");
+}
+
+/// AC-132: a page that closes never cuts a write in two: what runs and what waits finish, in order.
+#[tokio::test]
+async fn actions_finish_in_order_after_their_page_closed() {
+    let (p, _rx, _d) = page();
+    let (gate, open) = oneshot::channel::<()>();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let (s1, s2) = (seen.clone(), seen.clone());
+    assert!(spawn_action(&p, "devbox:default", async move { let _ = open.await; s1.lock().push(1); }));
+    assert!(spawn_action(&p, "devbox:default", async move { s2.lock().push(2); }));
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    p.close();
+    drop(p);
+    gate.send(()).unwrap();
+    for _ in 0..100 {
+        if seen.lock().len() == 2 { break; }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(*seen.lock(), [1, 2]);
 }

@@ -123,9 +123,9 @@ fn background_work_alone_counts_for_ten_minutes() {
     assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT * 2), (Working, false), "a shell again: it counts anew");
     assert_eq!(s.limited("k", spinning, t0 + BACKGROUND_LIMIT * 3), (Working, false), "a new turn");
     assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT * 3), (Working, false), "its background work counts anew");
-    s.store("k", "", t0, (Done, true), false);
+    s.store("k", "", t0, (0, 0), (Done, true), false);
     assert!(s.behind("k"), "the mark is kept between reads");
-    s.store("k", "", t0, (Done, false), false);
+    s.store("k", "", t0, (0, 0), (Done, false), false);
     assert!(!s.behind("k"));
 }
 
@@ -246,21 +246,40 @@ fn only_the_last_rows_count() {
     assert_eq!(state_of("", &[]), Done);
 }
 
+/// AC-132: an idle agent's screen costs a slow link nothing: it is read again when its pane printed
+/// or its client changed, and once in a while all the same.
+#[test]
+fn a_screen_that_printed_nothing_is_read_only_rarely() {
+    let mut s = States::new();
+    let t0 = Instant::now();
+    s.store("k", "t", t0, (1, 5), (Done, false), false);
+    let at = |secs| t0 + Duration::from_secs(secs);
+    assert!(!s.due("k", "t", at(1), (1, 6)), "printed, but STATE_EVERY has not passed");
+    assert!(s.due("k", "t", at(1), (1, 5)) == false && s.due("k", "new", at(1), (1, 5)), "a new title at once");
+    assert!(!s.due("k", "t", at(STATE_EVERY.as_secs()), (1, 5)), "printed nothing");
+    assert!(s.due("k", "t", at(STATE_EVERY.as_secs()), (1, 6)), "printed");
+    assert!(s.due("k", "t", at(STATE_EVERY.as_secs()), (2, 5)), "new control clients: it may have printed unseen");
+    assert!(!s.due("k", "t", at(STATE_QUIET.as_secs() - 1), (1, 5)));
+    assert!(s.due("k", "t", at(STATE_QUIET.as_secs()), (1, 5)), "a notice may have been lost");
+}
+
 #[test]
 fn the_screen_is_read_again_only_on_a_new_title_or_after_a_while() {
     let mut s = States::new();
     let t0 = Instant::now();
     let mut reads = 0;
-    for (title, at) in [("✳ x", 0), ("✳ x", 1), ("◐ x", 2), ("◐ x", 3), ("◐ x", 3 + STATE_EVERY.as_secs())] {
+    // the pane prints all along (each step a new mark)
+    for (n, (title, at)) in [("✳ x", 0), ("✳ x", 1), ("◐ x", 2), ("◐ x", 3), ("◐ x", 3 + STATE_EVERY.as_secs())].into_iter().enumerate() {
         let now = t0 + Duration::from_secs(at);
-        if s.due("tmux:local:terminum:%1", title, now) {
+        let mark = (0, n as u64);
+        if s.due("tmux:local:terminum:%1", title, now, mark) {
             reads += 1;
-            s.store("tmux:local:terminum:%1", title, now, (Waiting, false), false);
+            s.store("tmux:local:terminum:%1", title, now, mark, (Waiting, false), false);
         }
         assert_eq!(s.last("tmux:local:terminum:%1"), Some(Waiting));
     }
     assert_eq!(reads, 3);
-    assert!(s.due("tmux:local:terminum:%2", "✳ x", t0), "another pane");
+    assert!(s.due("tmux:local:terminum:%2", "✳ x", t0, (0, 0)), "another pane");
     s.forget("tmux:local:terminum:%1");
     assert_eq!(s.last("tmux:local:terminum:%1"), None);
 }
@@ -270,7 +289,7 @@ fn the_cache_stays_small() {
     let mut s = States::new();
     let now = Instant::now();
     for n in 0..KEEP + 1 {
-        s.store(&format!("k{n}"), "", now, (Done, false), false);
+        s.store(&format!("k{n}"), "", now, (0, 0), (Done, false), false);
     }
     assert!(s.panes.len() <= KEEP);
     assert_eq!(s.last(&format!("k{KEEP}")), Some(Done), "the newest is kept");

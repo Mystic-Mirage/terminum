@@ -60,7 +60,7 @@ async fn open(app: &Shared, page: &Arc<Page>, id: &str, side: &str) -> Result<()
             new_pane.to_string()
         }
     };
-    crate::manager::refresh(app).await;
+    crate::lists::refresh_server(app, &server).await;
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
     page.send_json(&json!({"t": "quickmade", "id": server.key(&quick), "for": parent}));
     Ok(())
@@ -71,6 +71,6 @@ async fn set_side(app: &Shared, id: &str, side: &str) -> Result<(), String> {
     let (server, pane) = app.tmux.resolve(id).ok_or(super::CLOSED)?;
     let window = window_of(&server, &pane).await?;
     server.run(format!("set-option -w -t {window} @tm-quick-side {side}")).await.map_err(|e| said(&e))?;
-    crate::manager::refresh(app).await;
+    crate::lists::request(app, &server);
     Ok(())
 }

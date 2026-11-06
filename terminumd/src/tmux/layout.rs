@@ -316,7 +316,7 @@ async fn background(server: &Server, panes: &[(&PaneFields, bool)]) -> Vec<Optio
 
 /// The screens of `panes`, read now.
 async fn captured(server: &Server, panes: &[&PaneFields]) -> Vec<Result<Vec<String>, String>> {
-    let Some(client) = server.bulk().filter(|_| !panes.is_empty()) else { return panes.iter().map(|_| Err(String::new())).collect() };
+    let Some(client) = server.bulk().filter(|_| !panes.is_empty() && !server.backed_up()) else { return panes.iter().map(|_| Err(String::new())).collect() };
     client.run_all(panes.iter().map(|p| format!("capture-pane -p -J -t {}", p.pane_id)).collect()).await
 }
 
@@ -333,7 +333,7 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
         }
         let key = server.key(&p.pane_id);
         let g = states.lock();
-        if g.due(&key, &p.pane_title, now) {
+        if g.due(&key, &p.pane_title, now, server.printed_mark(&p.pane_id)) {
             due.push(p);
         } else if named || g.codex(&key) {
             out.insert(p.pane_id.clone(), g.last(&key));
@@ -342,13 +342,15 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
             }
         }
     }
-    if due.is_empty() {
+    if due.is_empty() || server.backed_up() {
         return (out, behind);
     }
+    // from before the read: what prints during it is read next time
+    let marks: Vec<(u64, u64)> = due.iter().map(|p| server.printed_mark(&p.pane_id)).collect();
     let lines: Vec<String> = due.iter().map(|p| format!("capture-pane -p -J -t {}", p.pane_id)).collect();
     let Some(client) = server.bulk() else { return (out, behind) };
     let answers = client.run_all(lines).await;
-    for (p, a) in due.iter().zip(answers) {
+    for ((p, a), mark) in due.iter().zip(answers).zip(marks) {
         let key = server.key(&p.pane_id);
         let rows = a.ok();
         let mut g = states.lock();
@@ -356,7 +358,7 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
         // a pane that cannot be read shows no state this time (AC-39 failure)
         let read = rows.map(|rows| g.limited(&key, agentstate::read(&p.pane_title, &rows), now));
         if let Some(r) = read {
-            g.store(&key, &p.pane_title, now, r, codex);
+            g.store(&key, &p.pane_title, now, mark, r, codex);
         }
         if named_agent(p) || codex {
             out.insert(p.pane_id.clone(), read.map(|r| r.0));

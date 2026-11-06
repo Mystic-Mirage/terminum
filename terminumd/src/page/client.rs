@@ -38,6 +38,8 @@ pub struct State {
     pub look: Look,
     /// its terminal is hidden behind Files or View (a phone): no screens captured or sent for it
     pub screens_off: bool,
+    /// the pane shown when it last asked for a window (AC-132)
+    pub asked_on: Option<String>,
     /// when this page last made a window, session or split (one a second, AC-07)
     pub last_new: Option<Instant>,
     /// typed, not yet handed to tmux
@@ -81,7 +83,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
     match t {
         "sub" => {
             super::sizing::view_of(page, &msg);       // its grid with it: the first frame comes at it (AC-04)
-            subscribe(app, page, &s("id")).await
+            subscribe(app, page, &s("id"))
         }
         "in" => super::typing::typed(app, page, s("data"), msg["k"].as_u64()),
         "paste" => super::typing::paste(app, page, s("data"), msg["bracket"].as_bool().unwrap_or(true)),
@@ -97,35 +99,54 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "find" => super::find::start(app, page, &msg),
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => read(app, page, "files", |a, p| async move { files(&a, &p).await }),
-        "size" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
-        "new" | "newsession" | "split" | "clone" | "rename" | "renamegroup" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
+        "size" | "mouse" => super::sizing::handle(app, page, t, &msg),
+        "new" | "newsession" | "split" | "clone" | "rename" | "renamegroup" | "reorder" | "move" | "kill" => {
+            page.state.lock().asked_on = shown_key(page);    // a window that comes late takes nobody away (AC-132)
+            let (a, p, t) = (app.clone(), page.clone(), t.to_string());
+            action(app, page, &msg.clone(), async move { super::sessions::handle(&a, &p, &t, &msg).await });
+        }
         "plan" => super::plans::handle(app, page, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
-        "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,
+        "quick" | "quickside" => {
+            let (a, p, t) = (app.clone(), page.clone(), t.to_string());
+            action(app, page, &msg.clone(), async move { super::quick::handle(&a, &p, &t, &msg).await });
+        }
         // a host's ssh, helper copy and install take up to minutes: the page's loop goes on (it waits for the answer)
         "addhost" | "hostaction" | "hostagents" => {
             let (app, page) = (app.clone(), page.clone());
             tokio::spawn(async move { super::sessions::admin(&app, &page, msg["t"].as_str().unwrap_or(""), &msg).await });
         }
-        "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => super::sessions::admin(app, page, t, &msg).await,
+        "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => {
+            let (a, p, t) = (app.clone(), page.clone(), t.to_string());
+            action(app, page, &msg.clone(), async move { super::sessions::admin(&a, &p, &t, &msg).await });
+        }
         "updatechoice" if !page.web => {
             if let Err(e) = crate::release::choose(app, &s("action"), msg["tag"].as_str()) {
                 error(page, e, None);
             }
         }
-        "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => super::sent::handle(app, page, t, &msg).await,
+        "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => {
+            let (a, p, t) = (app.clone(), page.clone(), t.to_string());
+            action(app, page, &msg.clone(), async move { super::sent::handle(&a, &p, &t, &msg).await });
+        }
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),
         "marksfullseen" => super::marksfull::seen(app, &s("scope"), msg["remind"] == true),
         "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
-        "lastlines" => crate::lastlines::show(app, page, &s("id")).await,
-        "diag" => super::diag::show(app, page, &s("id")).await,
+        "lastlines" => {
+            let id = s("id");
+            read(app, page, "lastlines", move |a, p| async move { crate::lastlines::show(&a, &p, &id).await });
+        }
+        "diag" => {
+            let id = s("id");
+            read(app, page, "diag", move |a, p| async move { super::diag::show(&a, &p, &id).await });
+        }
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
             // a page before 0.24.32 sends no `hidden`: it was hidden
             look(page, if msg["hidden"] == false { Look::Away } else { Look::Hidden });
-            super::sizing::handover(app, page).await;
+            super::sizing::handover(app, page);
         }
         "resume" => resume(app, page),
         "screens" => screens(page, msg["on"] != false),
@@ -133,22 +154,53 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
     }
 }
 
-/// Runs a read in its lane (`reads`); a full lane is said on the page.
+/// The shown pane's server, what its lanes go by (AC-132).
+fn shown_lane(page: &Page) -> String {
+    page.state.lock().shown.as_ref().map_or_else(|| "none".to_string(), |s| s.server.id())
+}
+
+fn shown_key(page: &Page) -> Option<String> {
+    page.state.lock().shown.as_ref().map(|s| s.key.clone())
+}
+
+/// The server a message is about: its pane's, its group's or its place, else the shown pane's.
+fn lane_of(app: &Shared, page: &Page, msg: &Value) -> String {
+    if let Some((server, _)) = msg["id"].as_str().and_then(|id| app.tmux.resolve(id)) {
+        return server.id();
+    }
+    if let Some((prefix, _)) = msg["group"].as_str().and_then(|g| g.rsplit_once('/')) {
+        return prefix.to_string();
+    }
+    msg["server"].as_str().map_or_else(|| shown_lane(page), str::to_string)
+}
+
+/// Runs what may wait on a server's tmux in that server's lane (`reads`), in order, never cut
+/// part-way; a full lane is said on the page.
+fn action<Fut>(app: &Shared, page: &Arc<Page>, msg: &Value, work: Fut)
+where
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    if !super::reads::spawn_action(page, &lane_of(app, page, msg), work) {
+        error(page, "Too many actions are waiting for that server; try again in a moment.", None);
+    }
+}
+
+/// Runs a read in its lane (`reads`), one per kind and server; a full lane is said on the page.
 fn read<F, Fut>(app: &Shared, page: &Arc<Page>, kind: &'static str, work: F)
 where
     F: FnOnce(Shared, Arc<Page>) -> Fut,
     Fut: std::future::Future<Output = ()> + Send + 'static,
 {
-    if !super::reads::spawn(page, kind, work(app.clone(), page.clone())) {
+    if !super::reads::spawn(page, &format!("{kind} {}", shown_lane(page)), work(app.clone(), page.clone())) {
         error(page, "Too many reads of the history or folder are waiting; try again in a moment.", None);
     }
 }
 
 /// Shows pane `key`: its theme, history and screen, then every change (AC-02).
-pub async fn subscribe(app: &Shared, page: &Arc<Page>, key: &str) {
+pub fn subscribe(app: &Shared, page: &Arc<Page>, key: &str) {
     let old = page.state.lock().shown.take();
     if let Some(old) = old {
-        super::sizing::left(app, page, &old).await;
+        super::sizing::left(app, page, &old);
         drop(old);
     }
     let Some((server, pane)) = app.tmux.resolve(key) else {

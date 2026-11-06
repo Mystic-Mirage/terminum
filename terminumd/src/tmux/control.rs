@@ -25,6 +25,9 @@ use tokio::sync::{mpsc, oneshot};
 pub const ANSWER_WAIT: Duration = Duration::from_secs(10);
 /// A command this old means a hung client even while other bytes arrive (AC-132).
 const ANSWER_MOST: Duration = Duration::from_secs(60);
+/// A server whose oldest command waited this long is said to stall (AC-03), and nothing more is
+/// asked of it for the list while it does (AC-132).
+pub const STALL: Duration = Duration::from_millis(3000);
 /// stderr kept to say why a client ended (ssh's "Permission denied (publickey)").
 const STDERR_KEPT: usize = 4096;
 /// How long the reason waits for stderr's end once stdout ended (a child left holding it).

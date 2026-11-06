@@ -12,6 +12,7 @@
 #   make package    the release package in dist/package (tarball, install.sh, SHA256SUMS)
 #   make release TAG=vX.Y.Z   tag HEAD, build, sign (key via ssh-agent and the Keychain) and
 #                   publish; only when the maintainer asks for it (CLAUDE.md §10)
+#   make rehearse TAG=vX.Y.Z  what make release does, stopping before anything is signed or public
 #   make land SLUG=x  a worktree's targeted checks, then merged, pushed, the checkout updated, the tree deleted
 #   make leftovers  what old test runs left (AC-102); END=1 removes it, as make release does first
 #   make signing-key       the maintainer's release key (once)
@@ -40,7 +41,7 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release signing-key
+.PHONY: all build ui terminumd test check test-mac primary-checkout install install-stage installed hooks upgrade rollback uninstall package agents toolchain land leftovers release rehearse signing-key
 
 # this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
 # package's terminumd for it
@@ -133,6 +134,11 @@ leftovers:
 release:
 	@test -n "$(TAG)" || { echo "usage: make release TAG=v0.3.0"; exit 2; }
 	python3 scripts/release_turn.py "$(TAG)"
+
+# its own target, no variable of release's: a mistyped variable would publish
+rehearse:
+	@test -n "$(TAG)" || { echo "usage: make rehearse TAG=v0.3.0"; exit 2; }
+	python3 scripts/release_turn.py --rehearse "$(TAG)"
 
 # the maintainer's release key, once (run it in your own terminal: it asks for a passphrase)
 signing-key:

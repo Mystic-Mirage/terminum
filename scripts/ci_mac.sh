@@ -5,8 +5,8 @@
 # (no builds, dependencies, local files or state) goes to <runner>:~/ci/terminum; there run
 # make test, the launchd test under its own label, the Files panel's and the page's browser
 # checks (WebKit on macOS is the iPhone's engine). Nothing is installed there: the runner's own
-# terminum, if any, is never touched. Its output is evidence, not a gate: run it before a
-# release and after macOS-specific changes.
+# terminum, if any, is never touched. `make release` runs it after the full checks.
+# Exit: 0 passed; 1 tests failed; 2 they could not run (no answer, a link that dropped, setup); 3 busy.
 #
 #   make test-mac            or   TM_MAC_RUNNER=mac-runner make test-mac
 set -euo pipefail
@@ -28,18 +28,18 @@ stage=""
 trap '[ -z "$stage" ] || rm -rf "$stage"; [ $running = 1 ] || ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "rmdir ci/terminum.lock" \
     || echo "ci_mac: $host:~/ci/terminum.lock was left: remove it" >&2' EXIT
 stage=$(mktemp -d /tmp/tm-ci-src.XXXXXX)
-python3 "$repo/scripts/ci_source.py" "$repo" "$stage"
+python3 "$repo/scripts/ci_source.py" "$repo" "$stage" || exit 2
 # Preserve the runner's existing caches and local configuration; selection of outbound files
 # has already happened in the source staging step above.
 rsync -a --delete \
     --exclude .git --exclude target --exclude node_modules --exclude ui/dist --exclude dist \
     --exclude .toolchain --exclude local.mk --exclude CLAUDE.local.md --exclude MEMORY.md --exclude project-memory \
     --exclude '.env*' --exclude workspaces.json --exclude .claude --exclude .codex \
-    "$stage/" "$host:ci/terminum/"
+    "$stage/" "$host:ci/terminum/" || exit 2
 running=1
 # a login shell for Homebrew's PATH; no tmux there would skip every check of a real tmux
 rc=0
-ssh -o BatchMode=yes "$host" 'bash -lc '"'"'
+ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4 "$host" 'bash -lc '"'"'
     set -euo pipefail
     trap "rmdir ~/ci/terminum.lock 2>/dev/null || true" EXIT
     cd ~/ci/terminum
@@ -47,11 +47,12 @@ ssh -o BatchMode=yes "$host" 'bash -lc '"'"'
     command -v tmux >/dev/null || { echo "ci_mac: no tmux on the runner: its tmux checks would be skipped (brew install tmux)" >&2; exit 4; }
     # the Rust of the Linux CI, for this run only: the default toolchain of the runner stays as it is
     export RUSTUP_TOOLCHAIN=1.98.1
-    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal >/dev/null
+    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal >/dev/null || exit 4
     echo "== $(hostname) $(sw_vers -productVersion), load $(sysctl -n vm.loadavg)"
     make test
     (cd terminumd && TM_LAUNCHD_TEST=1 cargo test --locked --test launchd)
-    (cd ui && npx playwright-core install chromium webkit >/dev/null && node test/e2e_panel.mjs)
+    (cd ui && npx playwright-core install chromium webkit >/dev/null) || exit 4
+    (cd ui && node test/e2e_panel.mjs)
     (cd terminumd && cargo build --locked)
     node web/test/e2e_all.mjs
     node web/test/e2e_live.mjs
@@ -64,4 +65,8 @@ else
     ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" 'rmdir ci/terminum.lock 2>/dev/null || true' \
         || echo "ci_mac: $host:~/ci/terminum.lock was left: remove it" >&2
 fi
-exit "$rc"
+case $rc in
+    0) exit 0 ;;
+    255|4) echo "ci_mac: the checks could not run on $host" >&2; exit 2 ;;
+    *) echo "ci_mac: tests failed on $host" >&2; exit 1 ;;
+esac

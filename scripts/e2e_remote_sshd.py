@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Remote hosts over real ssh (terminum-remote.md AC-81–AC-84): a Linux container with sshd
-and tmux on 127.0.0.1:2222 (Docker), a throwaway key, and a private terminumd whose build
+and tmux on a free port (Docker), a throwaway key, and a private terminumd whose build
 carries the Linux helper. Checks: the host's session over ssh, typing, a dropped link,
 enabling files (the static Linux helper copied and listing), and AC-84: a helper of another
 build is replaced by this build's at terminumd's next start, and the page is told.
@@ -25,7 +25,8 @@ from e2e_remote import api, host_group  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 
-PORT, SOCKET, NAME, SSH_PORT = free_port(), own("tm-test-rsshd"), "tm-test-sshd", 2222
+PORT, SOCKET, NAME, SSH_PORT = free_port(), own("tm-test-rsshd"), f"tm-test-sshd-{os.getpid()}", free_port()
+COULD_NOT_RUN = 75   # no test ran: the image, its packages or Docker (scripts/check_docker.py)
 HOME = "/home/alex"
 OLD = "0123456789ab"
 
@@ -99,7 +100,11 @@ def main():
     work = tempfile.mkdtemp(prefix="tmr-", dir=short_tmp())
     t = None
     try:
-        wrapper = start_host(work)
+        try:
+            wrapper = start_host(work)
+        except (RuntimeError, OSError) as e:
+            print(f"could not run: {e}")
+            sys.exit(COULD_NOT_RUN)
         import e2e_ws
         e2e_ws.BIN = stage(work, sys.argv[1], sys.argv[2])
         t = Terminumd(PORT, SOCKET, env={"TM_SSH": wrapper})

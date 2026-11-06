@@ -76,7 +76,7 @@ class CiMacTest(unittest.TestCase):
 
     def test_a_dropped_link_leaves_the_lock_and_says_so(self):
         r, log = self.run_script(self.root, 255)
-        self.assertEqual(r.returncode, 255)
+        self.assertEqual(r.returncode, 2, "could not run: it stops no release")
         self.assertIn("remove ~/ci/terminum.lock", r.stderr)
         self.assertTrue((self.root / "runner/ci/terminum.lock").is_dir(), "the run may go on there")
 

@@ -26,14 +26,6 @@ PY
 }
 id=$(tree_id) || { echo "check: no tree id (not a git checkout?)" >&2; exit 2; }
 mkdir -p .checks
-if [ "${1:-}" != --force ] && [ -f ".checks/$id.ok" ]; then
-  echo "check: passed already on $id at $(cat ".checks/$id.ok") (--force runs it again)"; exit 0
-fi
-find .checks -name '*.log' ! -name "$id.*" -delete   # earlier trees' logs; their passes stay
-# the commit-time scan (CLAUDE.md §2) only knows other machines' names from the patterns file
-[ -n "$(git config core.hooksPath)" ] || echo "WARN no git hooks: make hooks (security_check before each commit)"
-[ -n "${TM_PRIVATE_PATTERNS:-}" ] || [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/terminum/private-patterns" ] \
-  || echo "WARN no private patterns: ~/.config/terminum/private-patterns (other machines' names)"
 failed=()
 step() {   # step <name> <command…>: its output to the log, one line here; what it leaves fails it (check_step.py)
   local name=$1; shift
@@ -41,12 +33,27 @@ step() {   # step <name> <command…>: its output to the log, one line here; wha
   if python3 -I scripts/check_step.py "$@" >"$log" 2>&1; then echo "ok   $name ($((SECONDS - t0)) s)"
   else echo "FAIL $name ($((SECONDS - t0)) s): $log"; tail -n 15 "$log" | sed 's/^/     /'; failed+=("$name"); fi
 }
+if [ "${1:-}" != --force ] && [ -f ".checks/$id.ok" ]; then
+  if [ -f ".checks/$id.docker-skip" ] && python3 scripts/check_docker.py --can-run; then   # a pass without Docker, and it works now
+    echo "check: passed on $id without Docker, which works now: its step runs"
+    step docker python3 scripts/check_docker.py "$id"
+    [ ${#failed[@]} -eq 0 ] || { rm -f ".checks/$id.ok"; echo "check: FAIL on $id: docker"; exit 1; }
+    exit 0
+  fi
+  echo "check: passed already on $id at $(cat ".checks/$id.ok") (--force runs it again)"; exit 0
+fi
+find .checks \( -name '*.log' -o -name '*.docker-skip' \) ! -name "$id.*" -delete   # earlier trees'; their passes stay
+# the commit-time scan (CLAUDE.md §2) only knows other machines' names from the patterns file
+[ -n "$(git config core.hooksPath)" ] || echo "WARN no git hooks: make hooks (security_check before each commit)"
+[ -n "${TM_PRIVATE_PATTERNS:-}" ] || [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/terminum/private-patterns" ] \
+  || echo "WARN no private patterns: ~/.config/terminum/private-patterns (other machines' names)"
 step test make test
 step clippy bash -c 'cd terminumd && cargo clippy --locked --all-targets -- -D warnings'
 step panel bash -c 'cd ui && node test/e2e_panel.mjs'
 step live bash -c 'cd terminumd && cargo build --locked && cd .. && node web/test/e2e_live.mjs'
-# every e2e script but Docker's, which take built binaries as arguments and are run by hand
+# every e2e script but Docker's, which take built binaries as arguments: their own step
 step e2e bash -c 'for f in scripts/e2e_*.py; do case $f in *remote_sshd*) ;; *) python3 "$f" || exit 1 ;; esac; done'
+step docker python3 scripts/check_docker.py "$id"
 step install env TERMINUMD_BIN=terminumd/target/debug/terminumd bash scripts/e2e_install.sh
 if [ "$(uname -s)" = Darwin ]; then step page node web/test/e2e_all.mjs
 else echo "SKIP page (web/test/e2e_all.mjs measures a Mac's browsers: make test-mac)"; fi

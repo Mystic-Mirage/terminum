@@ -15,7 +15,7 @@ use std::io;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
-/// The user's own: bookmarks, and open reminders (bookmarks_room.rs); agents' have their own (agentmarks.rs).
+/// The user's own: bookmarks, and open reminders (bookmarks_room.rs); agents' older ones stay apart.
 pub const MAX_ITEMS: usize = 300;
 pub const MAX_REMINDERS: usize = 100;
 /// Characters of selected text kept (a longer one is cut).
@@ -301,7 +301,7 @@ impl Store {
     }
 
     /// New bookmarks, saved once: all or none. The user's within their limits; an agent's
-    /// (`by`) never count against them (agentmarks.rs keeps its own limits).
+    /// (`by`) never count against them.
     pub fn add_all(&mut self, new: Vec<NewMark>) -> Result<Vec<Item>, MarkError> {
         self.replace_all(&[], new)
     }

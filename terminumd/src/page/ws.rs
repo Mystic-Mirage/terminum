@@ -129,7 +129,6 @@ fn hello(app: &Shared, page: &Page) {
     crate::page::marks::hello(app, page);
     crate::looks::hello(app, page);
     crate::restore::hello(app, page);
-    super::marksfull::hello(app, page);
     crate::release::hello(page);
     if let Some(m) = app.tmux_problem.lock().clone() {
         page.send_json(&json!({"t": "error", "msg": m}));

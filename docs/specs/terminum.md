@@ -819,7 +819,6 @@ stateDiagram-v2
 | AC-20 | "Open a pane, p95 < 1 s" has no measurement: `e2e_term.mjs` checks what history pages draw and times nothing. | `web/test/e2e_term.mjs:114` |
 | AC-20 | "Page heap under 150 MB" is read by hand from `?trace=2`'s state, and only where the browser has `performance.memory`. | `web/static/tracebuf.js:280` |
 | AC-20 | The budgets run by hand: `Makefile` has no bench target, and `make test` tests the bench scripts, not the budgets. | `scripts/bench_load.py:7` |
-| AC-92 | An empty project goes, projects live in `projects.json` and Ungroup is the way out; `terminum-kanban.md` AC-110 and AC-119 replace these. | `terminumd/src/page/projects.rs:127`, `terminumd/src/page/projects.rs:155` |
 
 ## 8. Recommendation and ownership
 

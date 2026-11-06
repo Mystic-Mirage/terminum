@@ -3,8 +3,8 @@
 // terminumd's own order of messages. The shown session's close shows its project's first session, and
 // its row never stands in its tmux group on the way; its project's only session closed, the project
 // goes and the top of the list is shown.
-import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { check, shownPane, until, within } from "./check.mjs";
 
 export async function liveListPlace(page, { tmux, work, app }) {
@@ -32,18 +32,18 @@ export async function liveListPlace(page, { tmux, work, app }) {
   const a = await open("place-a"), b = await open("place-b");
   await toProject(a, "Place");
   await toProject(b, null);
-  const file = path.join(app, "projects.json");
+  const stored = new DatabaseSync(path.join(app, "kanban.sqlite"), { readOnly: true });
   // one order for projects and tmux groups: a group goes above the project, kept by terminumd, on a reload too
   const parts = () => page.evaluate(() => [...document.querySelectorAll("#sessions section.grp[data-part]")].map((s) => s.dataset.part));
   const wid = (await parts()).find((p) => p.startsWith("g:"));
   await page.click(`#sessions section[data-part="${wid}"] > h2`, { button: "right" });
   await page.click('#rowmenu button[data-action="top"]');
   check("AC-92 live: a tmux group's Move to the Top stands above the project", await until(async () => (await parts())[0] === wid), JSON.stringify(await parts()));
-  check("AC-92 live: terminumd keeps the one order", await until(() => JSON.parse(fs.readFileSync(file, "utf8")).order?.[0] === wid), fs.readFileSync(file, "utf8").slice(0, 200));
+  check("AC-92 live: terminumd keeps the one order", await until(() => stored.prepare("SELECT part FROM list_order ORDER BY place").get()?.part === wid), String(stored.prepare("SELECT count(*) AS n FROM list_order").get().n).slice(0, 200));
   await page.reload();
   await page.waitForSelector("#sessions section.grp[data-part]", { timeout: 8000 });
   check("AC-92 live: after a reload too", await until(async () => (await parts())[0] === wid), JSON.stringify(await parts()));
-  const kept = (name) => { try { return fs.readFileSync(file, "utf8").includes(`"${name}"`); } catch { return false; } };
+  const members = (name) => stored.prepare("SELECT count(*) AS n FROM project_members m JOIN projects p ON p.id = m.project WHERE p.name = ?").get(name).n;
 
   // a member just added and closed: the list without it is told at once, the projects when its 5 s
   // end, with no list to go with them: the row menu offers only the projects the page was told of.
@@ -51,12 +51,12 @@ export async function liveListPlace(page, { tmux, work, app }) {
   const c = await open("place-c");
   await toProject(c, "Spared");
   tmux("kill-pane", "-t", c);
-  const gone = await until(() => !kept("Spared"), 10000);
+  const gone = await until(() => members("Spared") === 0, 10000);
   await page.waitForTimeout(300);
   await projectMenu(shown);
   const offered = await page.locator('#rowmenu button:has-text("Spared")').count();
   await page.keyboard.press("Escape");
-  check("AC-92 a member just added closes: its project goes after 5 s and every page is told, with no other change", gone && !offered, JSON.stringify({ gone, offered }));
+  check("AC-110 a member just added closes: it leaves after 5 s, its project stays, with no other change", gone && offered === 1, JSON.stringify({ gone, offered }));
 
   await page.click(row(a));
   await page.waitForTimeout(300);
@@ -74,8 +74,9 @@ export async function liveListPlace(page, { tmux, work, app }) {
   tmux("kill-pane", "-t", b);
   await within("AC-92 its project's only session closes: the page shows the top of the list", () =>
     page.waitForFunction((id) => document.querySelector('#sessions .item[aria-current="true"]')?.dataset.id === id, top, { timeout: 5000 }));
-  await within("AC-92 and the project goes", () => page.waitForFunction(() => ![...document.querySelectorAll("#sessions section.project .label")].some((l) => l.textContent === "Place"), null, { timeout: 2000 }));
-  check("AC-92 the project of a closed only session leaves projects.json", await until(() => !kept("Place"), 10000));
+  await within("AC-110 and the project stays, with no session", () => page.waitForFunction(() => [...document.querySelectorAll("#sessions section.project .label")].some((l) => l.textContent === "Place"), null, { timeout: 2000 }));
+  check("AC-110 the project of a closed only session stays in the store", await until(() => members("Place") === 0, 10000) && stored.prepare("SELECT count(*) AS n FROM projects WHERE name = 'Place'").get().n === 1);
+  stored.close();
 
   await page.click(row(shown));
   await page.waitForTimeout(500);

@@ -9,6 +9,8 @@ import { highlightInto } from "./highlight";
 /** Markdown → HTML, as the panel renders a document; images show as their alt text (the page
  *  loads no image a terminal's text names, local or remote). Links are the page's to handle. */
 export const markdownHtml = (text: string): string => renderMd(text, { dir: "/", imagePath: () => "" });
+/** A task's Markdown (terminum-kanban.md AC-109): the same rules, and its own files' pictures. */
+export const taskMarkdownHtml = (text: string): string => renderMd(text, { dir: "/", imagePath: (p) => (p.startsWith("/api/task-files/") ? p : "") });
 
 /** Highlights `code` into `into` (tok-* spans); false when the language is not known. `lang`
  *  is a fence's word ("py") or a file's name ("tool.py"). */

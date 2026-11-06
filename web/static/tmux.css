@@ -84,7 +84,7 @@ body:not([data-shown="term"]) #termrow { display: none; }
 #quickbtn[aria-pressed="true"] { color: var(--accent); }
 
 /* a page in embed mode is only a terminal: the quick shell inside its pane's page */
-body.embed #nav, body.embed #scrim, body.embed #bar, body.embed #asks, body.embed #restored, body.embed #sized, body.embed #marksfull, body.embed #stall,
+body.embed #nav, body.embed #scrim, body.embed #bar, body.embed #asks, body.embed #restored, body.embed #sized, body.embed #stall,
 body.embed #sidehead, body.embed #files, body.embed #filewin, body.embed #viewnote, body.embed #fabs, body.embed #hotkeys { display: none !important; }
 body.embed #app { grid-template-columns: 1fr; }
 

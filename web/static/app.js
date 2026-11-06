@@ -7,7 +7,7 @@ import "./press.js";                                // a pressed blob's pulse (m
 import "./pop.js";                                  // where a window flies out of (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
-import { findItem, listParts, renderNav, seeWaits } from "./nav.js";
+import { findItem, listParts, renderNav, seeWaits, setTaskMarks, taskMarksOf } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
 import { sessionDrawer } from "./drawer.js";
@@ -16,7 +16,6 @@ import { colorSchemes } from "./schemes.js";
 import { menuPrefs } from "./prefs.js";
 import { markDoc } from "./markdoc.js";
 import { reminders as reminderBox } from "./reminders.js";
-import { marksFull } from "./marksfull.js";
 import { listFoot, showBuild } from "./foot.js";
 import { cellAt, cursorCell, shellMove } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
@@ -284,7 +283,6 @@ function onMessage(m) {
     case "copied": sizing.onCopied(m); break;   // what a full-screen program copied after our release (AC-06)
     case "settings": settings.apply(m); break;
     case "restore": if (!embedded) menu.showRestore(m.report); break;
-    case "marksfull": if (!embedded) full.show(m.items); break;   // agents' records that went for room (AC-98)
     case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files
     case "quickmade": quick.made(m); break;
     case "hostadded": case "hostagents": tools.hostAnswer(m); break;
@@ -299,6 +297,7 @@ function onMessage(m) {
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
     case "projects": st.projects = Array.isArray(m.items) ? m.items : []; st.listOrder = Array.isArray(m.order) ? m.order : []; place.note(); bookmarks.changed(); break;   // the list, and the projects the list below it names
+    case "taskmarks": setTaskMarks(m); bookmarks.changed(); break;   // the rows' marks, the Plan button (terminum-kanban.md AC-113)
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }
@@ -336,11 +335,6 @@ const ask = askBox({ send, toChat: (text, stay) => input.paste(text, stay ? "ask
   pane: () => ({ cols: view.cols, rows: view.rows, used: view.boxHeight }), asked: asked.asked, toast });
 bookmarks.onAsk = (text, line) => ask.open(text, line);
 const reminded = reminderBox({ marks: bookmarks });
-const full = marksFull({ box: $("marksfull"), send, open: (b) => {   // that pane gone: the list below the sessions
-  if (!findItem(st.groups, b.sid)) return bookmarks.toggleList(true);
-  if (st.sid !== b.sid) pick(b.sid);
-  requestAnimationFrame(() => (b.remind ? reminded.open() : bookmarks.togglePane(true, "bookmark")));
-} });
 listFoot({ store });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
 bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };
@@ -351,7 +345,7 @@ function drawNav() {
   if (reorder.dragging()) return;                  // the next layout redraws it
   renderNav($("sessions"), drawnGroups(), st.sid, $("filter").value, pick, st.collapsed, toggleGroup,
     bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true), tools.importTmux,
-    { projects: st.projects, onClone: cloneRow, order: st.listOrder, onProjectNew: (p, last) => send({ t: "clone", id: last.id, project: p.id }),
+    { projects: st.projects, onClone: cloneRow, order: st.listOrder, onProjectNew: (p, last) => rowMenu.newInProject(p, last?.id),
       onGroupNew: (g, last) => (last ? cloneRow(last) : send({ t: "new", group: g.wid })), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu });
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {
@@ -373,7 +367,7 @@ function toggleGroup(key) {
 
 // The header (header.js): the title, then the folder with its Copy, the window, what runs there.
 const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
-  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), records: () => bookmarks.agentRecords(), toast });
+  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), tasks: () => taskMarksOf(st.sid), toast });
 
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;

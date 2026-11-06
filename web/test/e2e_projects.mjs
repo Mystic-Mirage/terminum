@@ -142,7 +142,7 @@ export async function webProjects(browser, name) {
   const focused = await page.evaluate(() => document.activeElement?.dataset.action);
   check("AC-07 the row's menu opens with its focus on Clone, never on Close Session above it (Enter asks nothing)", focused === "clone", String(focused));
   check("AC-07 a right click opens the row's menu, Close Session first; the moves its place allows",
-    items.join() === "Close Session,Clone,Add to Project…,Plan and Notes…,Mark as Unread,Diagnostics…,Split Below,Split Right,Split Left,Move to the Top,Move Up,Move Down,Move to the Bottom,Move to Session…", items.join());
+    items.join() === "Close Session,Clone,New Task…,Add to Project…,Plan and Tasks…,Mark as Unread,Diagnostics…,Split Below,Split Right,Split Left,Move to the Top,Move Up,Move Down,Move to the Bottom,Move to Session…", items.join());
   // each item with its icon, Close Session's a red ×; the three splits side by side, each drawn
   const menuLook = await page.evaluate(() => {
     const shown = [...document.querySelectorAll("#rowmenu[open] button:not([data-action=x])")].filter((b) => b.getClientRects().length);
@@ -216,6 +216,17 @@ export async function webProjects(browser, name) {
   check("AC-92 a project's rows share its color, another project's differs", grouped.same && grouped.apart, JSON.stringify(grouped));
   check("AC-92 left of the name a project has its dot, 4 px, a tmux group its >_ in the name's color", grouped.mark.every(Boolean), JSON.stringify(grouped.mark));
   check("AC-92 under a project's last session as much space as above its name", grouped.pad[0] > 0 && grouped.pad[0] === grouped.pad[1], JSON.stringify(grouped.pad));
+  // a project with no session stands, its [+] asks for the folder once (AC-110)
+  f.say({ t: "projects", items: [P1, P2, { id: "p9", name: "Billing", color: 4, host: null, dir: "", members: [] }] });
+  await pause(page, 200);
+  const emptyRow = await page.evaluate(() => { const s = document.querySelector('#sessions section[data-pid="p9"]'); return s && { name: s.querySelector("h2 .label").textContent, rows: s.querySelectorAll(".item").length }; });
+  check("AC-110 a project with no session stands in the list", emptyRow?.name === "Billing" && emptyRow.rows === 0, JSON.stringify(emptyRow));
+  await page.hover('#sessions section[data-pid="p9"] > h2');
+  await page.click('#sessions section[data-pid="p9"] > h2 .new');
+  await page.fill("#namefield", "/Users/alex/billing");
+  await page.keyboard.press("Enter");
+  await pause(page, 100);
+  check("AC-110 its [+] asks for the folder and opens a window there", JSON.stringify(last(sent, "projectwindow")) === JSON.stringify({ t: "projectwindow", project: "p9", dir: "/Users/alex/billing" }), JSON.stringify(last(sent, "projectwindow")));
   f.say({ t: "projects", items: [{ ...P1, members: [ID(1), ID(3), ID(4)] }, P2] });
   await pause(page, 200);
   const m2 = await mark();
@@ -241,7 +252,7 @@ export async function webProjects(browser, name) {
   const byDouble = last(sent, "project");
   check("AC-92 a double click on a project's name renames it too", byDouble?.action === "rename" && byDouble.project === "p2" && byDouble.name === "Docs", JSON.stringify(byDouble));
   // a right click on a project's header: its menu as a row's (New Window, Rename, moves among the
-  // projects, Ungroup, Close Project, which asks first and closes every session of it)
+  // projects, Delete Project, Close Project, which asks first and closes every session of it)
   const headAt = (pid) => page.click(`#sessions section[data-pid="${pid}"] h2 .label`, { button: "right" });
   await headAt("p1");
   const pmenu = await menuItems(page);
@@ -253,8 +264,8 @@ export async function webProjects(browser, name) {
   await headAt("p1");
   await page.click('#rowmenu button[data-action="new"]');
   const made = last(sent, "clone");
-  check("AC-92 a right click on a project's header opens its menu: New Window, Rename, moves in the list, Ungroup, Close Project",
-    JSON.stringify(pmenu) === JSON.stringify(["New Window", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Ungroup", "Close Project…"])
+  check("AC-92 a right click on a project's header opens its menu: New Window, Rename, moves in the list, Delete Project, Close Project",
+    JSON.stringify(pmenu) === JSON.stringify(["New Window", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Delete Project…", "Close Project…"])
     && JSON.stringify(moved?.ids?.slice(0, 2)) === JSON.stringify(["p:p2", "p:p1"]) && moved.action === "order" && second.includes("Move Up-") && second.includes("Move Down")
     && JSON.stringify(made) === JSON.stringify({ t: "clone", id: ID(3), project: "p1" }), JSON.stringify({ pmenu, moved, second, made }));
   const kills = sent.filter((m) => m.t === "kill").length;
@@ -348,7 +359,7 @@ export async function webProjects(browser, name) {
   });
   await pause(p.page, 100);
   check("AC-07 the finger's lift asks nothing: Close Session, now first, stays unpressed", under && !await p.page.evaluate(() => document.getElementById("confirmbox").open));
-  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Close Session" && held[1] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Notes…") && held.includes("Diagnostics…") && held.length === 12, held.join());
+  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Close Session" && held[1] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Tasks…") && held.includes("Diagnostics…") && held.length === 13, held.join());
   const pm = await mark(p.page);
   check("AC-93 on a phone too an unread row is hatched", pm.hatched && !pm.blob, JSON.stringify(pm));
   check("AC-07 on a phone (no hover) Clone is always there", await clone(p.page, 2) === "0.8");

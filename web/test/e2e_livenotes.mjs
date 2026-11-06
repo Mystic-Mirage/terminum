@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// AC-33, AC-91, AC-98 against a real private terminumd and tmux (e2e_live.mjs): two panes of one
-// project and one outside it, each running the built `terminum mcp` as its agent. Each session's Plan
-// pane and bookmarks' pane show only its own; an agent creates, reads, changes and deletes its session's
-// records, the user's bookmark too; of its project's other sessions it reads and closes agents' records
-// and keeps no repeat, of no other session; a turn's end puts up only that session's reminders; a project
-// ungrouped leaves a session its records, a closed session orphans them.
+// Against a real private terminumd and tmux (e2e_live.mjs): two panes of one project and one outside
+// it, each running the built `terminum mcp` as its agent. terminum-kanban.md AC-114 and AC-115: an
+// agent's task tools and rights; a human's move reaches its session as fixed words on its next hook.
+// terminum-terminal.md AC-33 and AC-91: bookmarks and reminders are the user's, a session's own; a
+// turn's end puts up only that session's reminders; a project deleted leaves a session its records, a
+// closed session orphans them.
 import fs from "node:fs";
 import path from "node:path";
 import { check, shownPane, until } from "./check.mjs";
@@ -36,27 +36,45 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
       if (!fs.existsSync(path.join(dir, "done"))) throw new Error(`the pane did not run: ${script.slice(0, 80)}`);
       return fs.readFileSync(path.join(dir, "run.out"), "utf8");
     };
-    /** One tool call through `terminum mcp`: {text, error}. */
-    const tool = async (name, args) => {
+    /** One call through `terminum mcp`: its answer, or the list's. */
+    const mcp = async (name, args) => {
       const lines = [rpc(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } }), rpc(null, "notifications/initialized"),
-        rpc(2, "tools/call", { name, arguments: args })];
+        name ? rpc(2, "tools/call", { name, arguments: args }) : rpc(2, "tools/list")];
       await inPane(`terminum mcp > mcp.out <<'EOF'\n${lines.join("\n")}\nEOF\n`);
-      const m = fs.readFileSync(path.join(dir, "mcp.out"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((x) => x.id === 2);
+      return fs.readFileSync(path.join(dir, "mcp.out"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((x) => x.id === 2);
+    };
+    const tool = async (name, args) => {
+      const m = await mcp(name, args);
       return { text: m?.result?.content?.[0]?.text ?? JSON.stringify(m), error: m?.result?.isError === true };
     };
-    return { pane, dir, inPane, tool };
+    return { pane, dir, inPane, tool, mcp };
   };
-  const added = (text) => Object.fromEntries([...text.matchAll(/(?:bookmark|reminder) (\w+) "([^"]+)"/g)].map((m) => [m[2], m[1]]));
   const stored = () => { try { return JSON.parse(fs.readFileSync(path.join(app, "web-bookmarks.json"), "utf8")).items; } catch { return []; } };
-  const rec = (id) => stored().find((i) => i.id === id) ?? null;
+  const rec = (note) => stored().find((i) => i.note === note) ?? null;
   const show = async (pane) => {
     await page.click(row(pane), { position: { x: 12, y: 8 } });
     await page.waitForFunction((s) => document.querySelector(s)?.getAttribute("aria-current") === "true", row(pane), { timeout: 5000 });
     await page.waitForTimeout(300);
   };
-  const paneIds = () => page.evaluate(() => [...document.querySelectorAll("#markpane .mknav li")].map((l) => l.dataset.id).sort().join());
-  const sorted = (...ids) => [...ids].sort().join();
   const count = () => page.evaluate(() => (document.getElementById("marksfab").hidden ? null : document.getElementById("marksfabn").textContent));
+  const task = (id) => page.evaluate(async (t) => (await fetch(`/api/tasks/${t}`)).json(), id);
+  const madeId = (said) => /Kept as (T-\d+)/.exec(said)?.[1];
+  /** The user's own record on the selected words of the shown pane. */
+  const keep = async (note, reminder) => {
+    const line = await page.evaluate(() => {
+      const r = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("selectable words")).getBoundingClientRect();
+      return { x: r.left + 4, x2: r.left + 120, y: r.top + r.height / 2 };
+    });
+    await page.mouse.move(line.x, line.y); await page.mouse.down(); await page.mouse.move(line.x2, line.y, { steps: 4 }); await page.mouse.up();
+    await page.waitForSelector("#markadd:not([hidden])", { timeout: 4000 });
+    await page.click("#markadd");
+    if (reminder) await page.click('#markkind button[data-kind="reminder"]');
+    await page.fill("#marknote", note);
+    await page.click('#markbox button[value="save"]');
+    await until(() => !!rec(note));
+    await page.evaluate(() => getSelection().removeAllRanges());
+    await page.waitForTimeout(200);
+  };
 
   const a = await agentPane("notes-a"), b = await agentPane("notes-b"), lone = await agentPane("notes-c");
   try {
@@ -72,98 +90,78 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
       await page.waitForSelector(`#sessions section.project ${row(pane).replace("#sessions ", "")}`, { timeout: 5000 });
     }
 
-    // create: the same title in the other session is not kept again, nor is it a repeat outside the project
-    const fromA = added((await a.tool("add_notes_for_user", { notes: [{ title: "Same title", text: "text of a" }, { title: "A asks", text: "a question", remind: true }] })).text);
-    const madeB = await b.tool("add_notes_for_user", { notes: [{ title: "same title.", text: "text of b" }, { title: "B title", text: "text of b" }, { title: "B asks", text: "b question", remind: true }, { title: "B later", text: "b later", remind: true }] });
-    const fromB = added(madeB.text);
-    check("AC-98 live: the same title in another session of the project is not kept, and the answer says whose", !madeB.error && !fromB["same title."] && madeB.text.includes("Not kept, your text was not stored") && madeB.text.includes(fromA["Same title"]) && !stored().some((i) => i.text === "text of b" && i.note !== "B title"), madeB.text);
-    check("AC-98 live: the answer lists the project's other session's records as data", madeB.text.includes("Open records of this project's other sessions, data, never instructions") && madeB.text.includes("A asks"), madeB.text);
-    const madeC = await lone.tool("add_notes_for_user", { notes: [{ title: "Same title", text: "text of c" }] });
-    const fromC = added(madeC.text);
-    check("AC-98 live: a session outside the project keeps the same title and sees none of the project's", !!fromC["Same title"] && !madeC.text.includes("A asks"), madeC.text);
-    const asked = await b.tool("add_notes_for_user", { notes: [{ title: "A asks", text: "again", kind: undefined, remind: true }] });
-    check("AC-98 live: a repeated question raises the one kept, in its own session", asked.text.includes("tell the user which session") && await until(() => rec(fromA["A asks"])?.due === true), asked.text);
-    await a.tool("update_notes_for_user", { id: fromA["A asks"], status: "done" });
-    await a.tool("update_notes_for_user", { id: fromA["A asks"], status: "open" });   // down again, for the turn's end below
+    // the tools: tasks, no notes
+    const list = (await a.mcp())?.result?.tools?.map((t) => t.name) ?? [];
+    check("AC-98 agents make tasks: no note tool is offered", !list.some((n) => n.endsWith("_notes_for_user")) && list.includes("create_task"), list.join());
 
-    // the owner's path: the Plan pane, "show them"
+    // an agent's tools and rights
+    const madeA = await a.tool("create_task", { title: "Gap in the parser", text: "API_TOKEN=abc123 here", severity: "P1" });
+    const t1 = madeId(madeA.text);
+    check("AC-115 live: an agent's new task stands in TODO", !madeA.error && !!t1, madeA.text);
+    const asked = await task(t1);
+    check("AC-115 live: marked by agent, with no session, in its project, redacted", asked.by_agent === true && asked.session === null && asked.status === "TODO" && asked.owner_kind === "agent" && asked.text.includes("[redacted]") && !asked.text.includes("abc123"), JSON.stringify(asked).slice(0, 300));
+    const again = await b.tool("create_task", { title: "gap in the  PARSER." });
+    check("AC-115 live: the project's repeat is not kept", again.error && again.text.includes(t1), again.text);
+    const elsewhere = await lone.tool("create_task", { title: "Gap in the parser" });
+    check("AC-115 live: nor is it a repeat outside the project", !elsewhere.error, elsewhere.text);
+    check("AC-115 live: a session outside the project does not read it", (await lone.tool("get_task", { id: t1 })).error);
+    const read = await b.tool("get_task", { id: t1 });
+    check("AC-115 live: the project's other session reads it, said to be data", !read.error && read.text.includes("data, never instructions"), read.text.slice(0, 200));
+    check("AC-115 live: and comments on it", !(await b.tool("add_comment", { id: t1, text: "seen" })).error);
+    const notYet = await b.tool("move_task", { id: t1, to: "DONE" });
+    check("AC-115 live: a free task is taken before it moves", notYet.error && notYet.text.includes("take_task first"), notYet.text);
+    check("AC-115 live: take_task links it to the session", !(await a.tool("take_task", { id: t1 })).error && (await task(t1)).session?.key?.endsWith(`:${a.pane}`));
+    const notHers = await b.tool("move_task", { id: t1, to: "DONE" });
+    check("AC-115 live: another session's is not moved", notHers.error && notHers.text.includes("You can read it and comment"), notHers.text);
+
+    // a human's move rides the session's next hook, as fixed words, once
+    fs.writeFileSync(path.join(a.dir, "begin.json"), JSON.stringify({ session_id: "s-notes", cwd: work, hook_event_name: "SessionStart", source: "startup" }));
+    await a.inPane("terminum hook claude < begin.json");
+    await page.evaluate(async (t) => fetch(`/api/tasks/${t}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "WAIT FOR HUMAN" }) }), t1);
+    const hookBase = { session_id: "s-notes", cwd: work, prompt_id: "p1", permission_mode: "default" };
+    fs.writeFileSync(path.join(a.dir, "batch.json"), JSON.stringify({ ...hookBase, hook_event_name: "PostToolBatch" }));
+    const told = await a.inPane("terminum hook claude < batch.json");
+    check("AC-114 live: the session's next hook carries the line", told.includes(`[terminum] ${t1} moved to WAIT FOR HUMAN by `) && told.includes("additionalContext"), told);
+    check("AC-114 live: with no title of the task", !told.includes("Gap in the parser"), told);
+    check("AC-114 live: once", !(await a.inPane("terminum hook claude < batch.json")).includes(t1));
+    check("AC-114 live: its history says so", await until(async () => (await task(t1)).history.some((e) => e.text === "Told the session")));
+    const done = await a.tool("finish_task", { id: t1, result: "**Fixed** it" });
+    const finished = await task(t1);
+    check("AC-115 live: finish_task: DONE, its result a comment by the agent", !done.error && finished.status === "DONE" && finished.history.some((e) => e.kind === "comment" && e.text === "**Fixed** it" && e.author_kind === "agent"), done.text);
+
+    // the user's records stay a session's own
     await show(a.pane);
-    await page.click("#curplan");
-    check("AC-98 live: the Plan pane of a session of the project counts its own records", await until(async () => (await page.textContent("#planbody .plkept").catch(() => "")) === "2 kept for you by the agent: show them"));
-    await page.click("#planbody .plkept button");
-    check("AC-98 live: \"show them\" lists only that session's", await until(async () => (await paneIds()) === sorted(fromA["Same title"], fromA["A asks"])));
-    check("AC-33 live: the pane is headed by the session", (await page.textContent("#markpane h2")) === "Bookmarks and reminders of this session", await page.textContent("#markpane h2"));
-    await page.keyboard.press("Escape");
+    await keep("A asks", true);
     await show(b.pane);
-    check("AC-33 live: the other session counts its own", (await count()) === "3", String(await count()));
-
-    // the user's bookmark in that session, made on the page
-    const line = await page.evaluate(() => {
-      const r = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("selectable words")).getBoundingClientRect();
-      return { x: r.left + 4, x2: r.left + 120, y: r.top + r.height / 2 };
-    });
-    await page.mouse.move(line.x, line.y); await page.mouse.down(); await page.mouse.move(line.x2, line.y, { steps: 4 }); await page.mouse.up();
-    await page.waitForSelector("#markadd:not([hidden])", { timeout: 4000 });
-    await page.click("#markadd");
-    await page.fill("#marknote", "my own bookmark");
-    await page.click('#markbox button[value="save"]');
-    check("AC-33 live: the user's bookmark is kept", await until(() => stored().some((i) => i.note === "my own bookmark" && !i.by)));
-    const mine = stored().find((i) => i.note === "my own bookmark").id;
-
-    // read
-    const list = await b.tool("get_notes_for_user", {});
-    const seen = list.error ? [] : JSON.parse(list.text);
-    check("AC-98 live: get_notes_for_user lists its session's, the agent's and the user's, then the project's other session's with its session",
-      seen.filter((r) => !r.session).map((r) => r.id).sort().join() === sorted(fromB["B title"], fromB["B asks"], fromB["B later"], mine) && seen.find((r) => r.id === mine).by === "user"
-      && seen.filter((r) => r.session).map((r) => r.id).sort().join() === sorted(fromA["Same title"], fromA["A asks"]), list.text);
-    const whole = await b.tool("get_notes_for_user", { id: fromB["B title"] });
-    check("AC-98 live: with an id, that record whole", !whole.error && JSON.parse(whole.text).text === "text of b", whole.text);
-    const theirs = await b.tool("get_notes_for_user", { id: fromA["Same title"] });
-    check("AC-98 live: another session's of the project is read whole", !theirs.error && JSON.parse(theirs.text).text === "text of a", theirs.text);
-    const outside = await lone.tool("get_notes_for_user", { id: fromA["Same title"] });
-    check("AC-98 live: a session outside the project does not read it", outside.error && outside.text.startsWith("No record"), outside.text);
-    const usersOut = await a.tool("get_notes_for_user", { id: mine });
-    check("AC-98 live: the user's bookmark of another session is not read", usersOut.error && usersOut.text.startsWith("No record"), usersOut.text);
-
-    // update and delete: its own, the user's too; another session's of the project only closes
-    const renamed = await b.tool("update_notes_for_user", { id: mine, title: "renamed by the agent" });
-    check("AC-98 live: the agent changes the user's bookmark of its session", !renamed.error && rec(mine)?.note === "renamed by the agent", renamed.text);
-    const notEdited = await b.tool("update_notes_for_user", { id: fromA["Same title"], title: "taken over" });
-    check("AC-98 live: another session's is not edited", notEdited.error && notEdited.text.includes("only closes") && rec(fromA["Same title"])?.note === "Same title", notEdited.text);
-    const notClosed = await lone.tool("update_notes_for_user", { id: fromA["Same title"], status: "done" });
-    check("AC-98 live: a session outside the project does not close it", notClosed.error && notClosed.text.startsWith("No record") && !!rec(fromA["Same title"]), notClosed.text);
-    const refused = await b.tool("delete_notes_for_user", { ids: [fromB["B asks"], fromA["Same title"]] });
-    check("AC-98 live: an id of another session refuses the whole call", refused.error && refused.text.startsWith("No record") && !!rec(fromB["B asks"]) && !!rec(fromA["Same title"]), refused.text);
-    const gone = await b.tool("delete_notes_for_user", { ids: [mine, fromB["B asks"]] });
-    check("AC-98 live: the user's bookmark and a reminder are deleted for good", !gone.error && !rec(mine) && !rec(fromB["B asks"]), gone.text);
-    check("AC-98 live: the page drops them at once", await until(async () => (await count()) === "2"));
-
-    // closed from the project's other session: gone from its pane, a copy kept
-    const closedA = await b.tool("update_notes_for_user", { id: fromA["Same title"], status: "done" });
-    const copy = () => { try { return fs.readFileSync(path.join(app, "closed-records.jsonl"), "utf8"); } catch { return ""; } };
-    check("AC-98 live: another session's of the project closes, a copy kept whole", !closedA.error && !rec(fromA["Same title"]) && copy().includes("text of a"), closedA.text);
+    await keep("B later", true);
+    await keep("my own bookmark", false);
+    check("AC-33 live: a session counts its own", (await count()) === "2", String(await count()));
+    await show(a.pane);
+    check("AC-33 live: the other session counts its own", (await count()) === "1", String(await count()));
 
     // a turn's end
     const base = { session_id: "s-notes", cwd: work, prompt_id: "p1", permission_mode: "default" };
     fs.writeFileSync(path.join(a.dir, "start.json"), JSON.stringify({ ...base, hook_event_name: "UserPromptSubmit", prompt: "go" }));
     fs.writeFileSync(path.join(a.dir, "stop.json"), JSON.stringify({ ...base, hook_event_name: "Stop", stop_hook_active: false }));
     await a.inPane("terminum hook claude < start.json; sleep 1; terminum hook claude < stop.json");
-    check("AC-91 live: a turn's end puts up its session's reminder", await until(() => rec(fromA["A asks"])?.due === true));
+    check("AC-91 live: a turn's end puts up its session's reminder", await until(() => rec("A asks")?.due === true));
     await wait(500);
-    check("AC-91 live: not another session's of its project", !rec(fromB["B later"])?.due, JSON.stringify(rec(fromB["B later"])));
+    check("AC-91 live: not another session's of its project", !rec("B later")?.due, JSON.stringify(rec("B later")));
 
-    // the project ungrouped, then a session closed
+    // the project deleted, then a session closed
     await page.click(`#sessions section[data-pid]:has(.item[data-id$=":${a.pane}"]) > h2`, { button: "right" });
-    await page.click('#rowmenu button[data-action="ungroup"]');
-    check("AC-33 live: the project goes", await until(() => !fs.readFileSync(path.join(app, "projects.json"), "utf8").includes("\"Notes\"")));
+    await page.click('#rowmenu button[data-action="deleteproject"]');
+    await page.click("#confirmok");
+    check("AC-33 live: the project goes", await until(() => page.evaluate(() => ![...document.querySelectorAll("#sessions section.project .label")].some((l) => l.textContent === "Notes"))));
+    check("AC-110 live: its tasks stand in Default", await until(async () => (await task(t1)).project === "default"));
     await wait(1000);
-    check("AC-33 live: its sessions stay open, their records are not orphaned", !rec(fromB["B later"])?.orphaned && !rec(fromA["A asks"])?.orphaned, JSON.stringify(rec(fromB["B later"])));
-    check("AC-33 live: the shown session still counts its own", await until(async () => (await count()) === "2"));
+    check("AC-33 live: its sessions stay open, their records are not orphaned", !rec("B later")?.orphaned && !rec("A asks")?.orphaned, JSON.stringify(rec("B later")));
+    check("AC-33 live: the shown session still counts its own", await until(async () => (await count()) === "1"));
     tmux("kill-pane", "-t", b.pane);
     made.splice(made.findIndex((m) => m.pane === b.pane), 1);
     fs.rmSync(b.dir, { recursive: true, force: true });
-    check("AC-33 live: a closed session's records are orphaned", await until(() => !!rec(fromB["B later"])?.orphaned, 10000));
-    check("AC-33 live: the other session's are not", !rec(fromA["A asks"])?.orphaned, JSON.stringify(rec(fromA["A asks"])));
+    check("AC-33 live: a closed session's records are orphaned", await until(() => !!rec("B later")?.orphaned, 10000));
+    check("AC-33 live: the other session's are not", !rec("A asks")?.orphaned, JSON.stringify(rec("A asks")));
   } finally {
     await page.evaluate((k) => document.querySelector(`#sessions .item[data-id$=":${k}"]`)?.click(), shown).catch(() => {});
     for (const { pane, dir } of made) { try { tmux("kill-pane", "-t", pane); } catch { /* its pane ended */ } fs.rmSync(dir, { recursive: true, force: true }); }

@@ -32,7 +32,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click("#tokanban");
   await page.waitForSelector("#board .col", { timeout: 5000 });
   check("AC-105 Kanban in the page's head loads /kanban/", new URL(page.url()).pathname === "/kanban/", page.url());
-  const heads = await page.evaluate(() => [...document.querySelectorAll(".colhead span:first-child")].map((h) => h.textContent));
+  const heads = await page.evaluate(() => [...document.querySelectorAll('.col:not(#sidecol) .colhead span:first-child')].map((h) => h.textContent));
   check("AC-105 five columns", heads.join() === "TODO,IN PROGRESS,WAIT FOR HUMAN,FAILED,DONE", heads.join());
 
   // the window: a title, Markdown, a file dropped in, in TODO
@@ -179,7 +179,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.press("#namefield", "Enter");
   await page.waitForSelector("#namebox", { state: "hidden", timeout: 5000 });
   await page.click("#fproject summary");
-  check("AC-110 a project made on the board is offered", await until(() => page.isVisible('#fproject label:has-text("Billing")')));
+  check("AC-110 a project made on the board is offered", await until(() => page.isVisible('#fproject .projrow:has-text("Billing")')));
   check("AC-111 a picker floats on its own background, never its text over a column's", await page.evaluate(() => { const c = getComputedStyle(document.querySelector("#fproject > div")).backgroundColor; return c !== "rgba(0, 0, 0, 0)" && c !== "transparent"; }));
   check("AC-92 a project's color on the board is the session list's: its tokens are here too", await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--proj-l").trim() !== ""));
   await page.click("#newproject");
@@ -188,8 +188,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-110 a taken name is said, and stays open", await until(async () => /already named Billing/.test(await page.textContent("#nameerror"))) && await page.isVisible("#namebox"));
   await page.click('#namebox button[value="cancel"]');
   await page.click("#fproject summary");
-  await page.click('#fproject label:has-text("Default")');
-  await page.click("#fproject summary");
+  await page.click('#fproject .projrow button:has-text("Default")');
   await page.click("#fseverity summary");
   await page.click('#fseverity label:has-text("P0")');
   check("AC-111 a filter is kept in the URL", await until(() => /severity=P0/.test(page.url()) && /project=default/.test(page.url())), page.url());
@@ -198,7 +197,10 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.waitForSelector("#board .col");
   check("AC-111 a reload keeps it", await until(async () => (await inColumn("DONE")).join() === urgent));
   await page.click("#clearfilters");
-  check("AC-111 Clear filters shows them all", await until(async () => (await inColumn("IN PROGRESS")).length === 1));
+  check("AC-111 Clear filters takes off severity, the project stays", await until(() => !/severity/.test(page.url()) && /project=default/.test(page.url())), page.url());
+  check("AC-111 and shows the project's", await until(async () => (await inColumn("IN PROGRESS")).length === 1));
+  await page.click("#fproject summary");
+  await page.click('#fproject button:has-text("All projects")');
   await page.goto(`${base}/kanban/?q=${encodeURIComponent("retry")}`);
   check("AC-111 Find reads the URL", await until(async () => (await inColumn("IN PROGRESS")).join() === first && (await inColumn("DONE")).length === 0));
 
@@ -272,7 +274,7 @@ export async function liveBoardPhone(page, { base, shots }) {
   await sameKinds(page, base, true);
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector("#colswitch button");
-  const shown = () => page.evaluate(() => [...document.querySelectorAll(".col")].filter((c) => { const r = c.getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; }).map((c) => c.dataset.status));
+  const shown = () => page.evaluate(() => [...document.querySelectorAll(".col[data-status]")].filter((c) => { const r = c.getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; }).map((c) => c.dataset.status));
   check("AC-105 a phone shows one column", (await shown()).join() === "TODO", (await shown()).join());
   await page.click('#colswitch button:has-text("DONE")');
   check("AC-105 its switch names them and shows another", await until(async () => (await shown()).join() === "DONE"), (await shown()).join());
@@ -280,7 +282,7 @@ export async function liveBoardPhone(page, { base, shots }) {
   check("AC-105 no sideways scroll on a phone", wide <= 0, String(wide));
   const tap = await page.evaluate(() => Math.round(document.querySelector("#newtask").getBoundingClientRect().height));
   check("AC-105 touch targets", tap >= 40, String(tap));
-  const small = await page.evaluate(() => [...document.querySelectorAll("#boardhead button, #boardhead summary, #boardhead a, .card button")].filter((e) => e.getClientRects().length && (e.getBoundingClientRect().height < 34 || e.getBoundingClientRect().width < 34)).map((e) => e.textContent.trim() || e.getAttribute("aria-label")));
+  const small = await page.evaluate(() => [...document.querySelectorAll("#boardhead button, #boardhead summary, #boardhead a, .card button")].filter((e) => e.getClientRects().length && !e.closest("details:not([open]) > .box") && (e.getBoundingClientRect().height < 34 || e.getBoundingClientRect().width < 34)).map((e) => e.textContent.trim() || e.getAttribute("aria-label")));
   check("AC-105 every key of the head and a card takes a finger", !small.length, small.join());
   const head = await page.evaluate(() => Math.round(document.querySelector("#boardhead").getBoundingClientRect().height));
   check("AC-105 the head leaves the cards the room", head <= 112, String(head));

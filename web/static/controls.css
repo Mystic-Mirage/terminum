@@ -61,10 +61,10 @@
   background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
 
 /* ---- fields: a recess at rest; in focus edged in the accent, its fill as at rest (no gradient) ---- */
-:is(.field, .search, .filter, .inline-edit input, #findq) { border: 0; border-radius: var(--key-r); color: inherit;
+:is(.field, .search, .filter, .inline-edit input), #findq { border: 0; border-radius: var(--key-r); color: inherit;
   background-color: var(--field-fill); box-shadow: var(--field-edge); }
 :is(#mbtext, #marktext, #asktext) { border-radius: var(--key-r); box-shadow: var(--field-edge); }   /* a quote: a field's recess, the terminal's ground */
-:is(.field, .search, .filter, .inline-edit input, #findq):is(:focus, :focus-within) { outline: none;
+:is(.field, .search, .filter, .inline-edit input):is(:focus, :focus-within), #findq:focus { outline: none;
   box-shadow: var(--field-focus-edge); }
 :is(.field, .search) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) is lit for its input */
 

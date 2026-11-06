@@ -31,7 +31,7 @@ fn plan_items_not_taken_when_the_agents_tool_feeds_it() {
     let (t, err, _) = go(&p, &c, "update_session_plan", json!({"items": [{"text": "x", "status": "completed"}], "doing": "d"}));
     assert!(!err && t.contains("not taken") && t.contains("0 of 1 completed"), "{t}");
     let d = p.details(&c.key, false, 2).unwrap();
-    assert_eq!((d.items[0].text.as_str(), d.doing.as_deref()), ("own", Some("d")));
+    assert_eq!((d.items[0].text.as_str(), d.row.doing.as_deref()), ("own", Some("d")));
 }
 
 #[test]

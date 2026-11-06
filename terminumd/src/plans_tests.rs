@@ -31,7 +31,7 @@ fn task_ops_build_the_plan_and_its_percent() {
     p.hook(K, "claude", Some("s1"), &json!({"op": "set", "id": "1", "status": "completed"}), T0 + 5);
     p.hook(K, "claude", Some("s1"), &json!({"op": "set", "id": "2", "status": "in_progress", "text": "beta two"}), T0 + 5);
     assert_eq!(items(&p), vec![pair("alpha", "completed"), pair("beta two", "in_progress"), pair("gamma", "pending")]);
-    assert_eq!(p.row(K, true, T0 + 5), Some(Row { done: 1, total: 3, pct: 33, eta: None, updated: T0 + 5, stale: false, partial: false }));
+    assert_eq!(p.row(K, true, T0 + 5), Some(Row { done: 1, total: 3, pct: 33, eta: None, updated: T0 + 5, stale: false, partial: false, doing: None }));
     p.hook(K, "claude", Some("s1"), &json!({"op": "set", "id": "3", "status": "deleted"}), T0 + 6);
     assert_eq!(p.row(K, true, T0 + 6).unwrap().pct, 50, "deleted: removed, not counted");
     assert_eq!((percent(2, 3), percent(0, 0), percent(1, 8)), (67, 0, 13));
@@ -57,18 +57,18 @@ fn mcp_items_only_while_no_tool_plan() {
     let up = |list: &[(&str, &str)]| Update { items: Some(list.iter().map(|(t, s)| pair(t, s)).collect()), ..Default::default() };
     assert!(p.mcp(K, "codex", Some("x1"), Update { eta_minutes: Some(20), doing: Some("reading".into()), ..up(&[("read", "in_progress"), ("fix", "blocked")]) }, T0));
     let d = p.details(K, true, T0).unwrap();
-    assert_eq!((d.source, d.doing.as_deref(), d.row.eta, d.row.total), (Source::Mcp, Some("reading"), Some(T0 + 1200), 2));
+    assert_eq!((d.source, d.row.doing.as_deref(), d.row.eta, d.row.total), (Source::Mcp, Some("reading"), Some(T0 + 1200), 2));
     assert_eq!(items(&p)[1], pair("fix", "blocked"));
     // a built-in plan replaces MCP items; doing stays
     p.hook(K, "codex", Some("x1"), &json!({"op": "all", "items": [{"text": "one", "status": "pending"}]}), T0 + 60);
     let d = p.details(K, true, T0 + 60).unwrap();
-    assert_eq!((d.source, d.doing.as_deref(), d.row.eta), (Source::Tool, Some("reading"), None), "items changed without an eta: eta dropped");
+    assert_eq!((d.source, d.row.doing.as_deref(), d.row.eta), (Source::Tool, Some("reading"), None), "items changed without an eta: eta dropped");
     assert!(!p.mcp(K, "codex", Some("x1"), Update { title: Some("Port".into()), eta_minutes: Some(5), ..up(&[("other", "pending")]) }, T0 + 90));
     let d = p.details(K, true, T0 + 90).unwrap();
     assert_eq!((d.items.len(), d.title.as_deref(), d.row.eta, d.eta_given), (1, Some("Port"), Some(T0 + 390), Some(T0 + 90)), "title and eta kept on a tool plan");
     // Claude Code names no session to an MCP server: the plan's own
     assert!(p.mcp(K, "codex", None, Update { doing: Some(String::new()), ..Default::default() }, T0 + 99));
-    assert_eq!(p.details(K, true, T0 + 99).unwrap().doing, None, "an empty doing clears it");
+    assert_eq!(p.details(K, true, T0 + 99).unwrap().row.doing, None, "an empty doing clears it");
     assert_eq!(p.archived(), 0);
 }
 

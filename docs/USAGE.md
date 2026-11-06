@@ -168,7 +168,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   terminal (Enter) goes there; Resolve (or Delete) settles one, a reminder resolved and a bookmark
   deleted, with Undo for 5 seconds; Esc closes the window. The bar over the terminal has the same
   Resolve.
-- **Tasks** (Kanban in the page's head, `/kanban/`; ⌘Enter in a text keeps it, a file dropped on the board starts a task; a card says what became of its session's agent): tasks in TODO, IN PROGRESS, WAIT FOR HUMAN,
+- **Tasks** (Kanban in the page's head, `/kanban/`; ⌘Enter in a text keeps it, a file dropped on the board starts a task; a card carries its session's row, a press opens the session, and says what became of its agent; the project key in the head chooses the project, its sessions stand beside the columns): tasks in TODO, IN PROGRESS, WAIT FOR HUMAN,
   FAILED and DONE, with a severity, an owner, a project, Markdown comments and files; New task
   takes files dropped or pasted in, also from a session's menu or a terminal's selection (the
   bookmark dialog's New task from selection). A task can be linked to a session: its row shows the

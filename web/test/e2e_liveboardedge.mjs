@@ -1,44 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What breaks a board's flow, against a real private terminumd and tmux (e2e_live.mjs; terminum-kanban.md
-// AC-132, AC-133): an agent that stops, runs out of limits or dies with its task open; a card dragged
+// AC-136, AC-133): an agent that stops, runs out of limits or dies with its task open; a card dragged
 // and straight back, answers out of order, a drag under another's change, the network or terminumd
 // gone in a move, an edit over another's, a file dropped beside, odd text. Each probe stands alone.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { boardKit, nap } from "./boardkit.mjs";
 import { check as report, slack, until } from "./check.mjs";
-import { ownTmp } from "./testrun.mjs";
 
-const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 const AGENT = new Set(["agent_stops_with_task_open", "agent_out_of_limits", "agent_process_dies", "pane_closes"]);
 
 export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, stop, start }) {
   let tag = "AC-133";
   const check = (name, ok, extra) => report(`${tag} ${name}`, ok, extra);
-  // `terminum` by its name: the same binary, which its name makes the command
-  const cli = path.join(ownTmp("tmb-"), "terminum");
-  fs.symlinkSync(bin, cli);
-  const j = (p, method = "GET", body) => page.evaluate(async ([p, method, body]) => { const r = await fetch(p, { method, headers: method === "GET" ? undefined : { "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) }); return { code: r.status, ...(await r.json().catch(() => ({}))) }; }, [p, method, body]);
+  const { j, newPane, keyOf, hook, endPanes, card, open } = boardKit(page, { base, tmux, work, bin, home, app });
   const make = async (title, more = {}) => (await j("/api/tasks", "POST", { title, ...more })).id;
   const st = async (id) => (await j(`/api/tasks/${id}`)).status;
-  const card = (id) => `.card[data-id="${id}"]`;
   const colOf = (id) => page.evaluate((s) => document.querySelector(s)?.closest(".col")?.dataset.status ?? null, card(id));
   const isOpen = (sel) => page.evaluate((s) => document.querySelector(s).open, sel);
-  const open = async () => { await page.goto(`${base}/kanban/`); await page.waitForSelector("#board .col"); await nap(250); };
   const drag = (id, column) => page.dragAndDrop(card(id), `.col[data-status="${column}"]`);
-  const panes = [];
-  const newPane = (name) => {
-    tmux("new-window", "-d", "-n", name);
-    const pane = tmux("list-panes", "-a", "-F", "#{window_name} #{pane_id}").split("\n").find((l) => l.startsWith(`${name} `)).split(" ")[1];
-    panes.push(pane);
-    return pane;
-  };
-  const keyOf = async (pane) => { let k; await until(async () => (k = (await j("/api/tasks/meta")).sessions.find((s) => s.key.endsWith(`:${pane}`))?.key)); return k; };
-  const hook = (pane, event, more = {}) => {
-    const sock = tmux("display", "-p", "#{socket_path}"), pid = tmux("display", "-p", "#{pid}");
-    return execFileSync(cli, ["hook", "claude"], { input: JSON.stringify({ session_id: `s-${pane}`, cwd: work, hook_event_name: event, ...more }), env: { ...process.env, TM_HOME: home, TM_APP_DIR: app, TMUX: `${sock},${pid},0`, TMUX_PANE: pane }, encoding: "utf8", timeout: 8000 });
-  };
   const probes = {
     async rapid_drag_and_back() {
       const id = await make("drag and back"); await open();
@@ -301,7 +283,7 @@ ${"z".repeat(400)}
       const pane = newPane("agentstop"), key = await keyOf(pane);
       hook(pane, "SessionStart", { source: "startup" }); hook(pane, "UserPromptSubmit", { prompt: "go" });
       const id = await make("agent stops mid task", { session: key }); await j(`/api/tasks/${id}`, "PATCH", { status: "IN PROGRESS" }); await open();
-      check("a working agent's task says working", await until(async () => /working/.test(await page.textContent(card(id)))), await page.textContent(card(id)));
+      check("a working agent's bar pulses on its card", await until(() => page.isVisible(`${card(id)} .pbar.busy`)), await page.textContent(card(id)));
       hook(pane, "Stop", { last_assistant_message: "I did half of it." });
       check("an agent that stopped with its task open is said on the card", await until(async () => /stopped|not finished/i.test(await page.textContent(card(id))), 5000), await page.textContent(card(id)));
       const h = (await j(`/api/tasks/${id}`)).history;
@@ -345,13 +327,13 @@ ${"z".repeat(400)}
     },
   };
   for (const [name, f] of Object.entries(probes)) {
-    tag = AGENT.has(name) ? "AC-132" : "AC-133";
+    tag = AGENT.has(name) ? "AC-136" : "AC-133";
     await nap(200);                                // a window closed just now goes Back in its own time
     try { await f(); } catch (e) { check(`${name} ran to its end`, false, e.message.split("\n").slice(0, 6).join(" | ")); await page.unroute("**/*").catch(() => {}); }
     await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); }).catch(() => {});
   }
   // this test's panes go, their agents' states with them: what follows measures a quiet page
-  for (const pane of panes) tmux("kill-pane", "-t", pane);
+  endPanes();
   // the checks after these stand on the session page
   await page.goto(`${base}/sessions/`);
   await page.waitForSelector("#term", { state: "attached" });

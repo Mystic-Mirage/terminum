@@ -26,3 +26,7 @@ export const PROJECT_HUES = [25, 145, 265, 85, 205, 325, 55, 175, 295, 115];
 export const hueColor = (h) => `oklch(var(--proj-l) var(--proj-c) ${h})`;
 export const projectHue = (p) => PROJECT_HUES[(p.color ?? 0) % PROJECT_HUES.length];
 export const projectColor = (p) => hueColor(projectHue(p));
+/** Default has no color of its own; its sessions keep their folders'. */
+export const colored = (p) => p?.color >= 0;
+/** A project's color for words and dots, Default's the muted. */
+export const projectInk = (p) => (colored(p) ? projectColor(p) : "var(--muted)");

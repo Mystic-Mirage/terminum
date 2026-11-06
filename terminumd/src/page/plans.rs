@@ -64,7 +64,7 @@ pub fn hooks(v: &mut Value, hooked: bool) {
 /// The `plan` message of pane `key`.
 pub fn reply(key: &str, plan: Option<Details>) -> Value {
     let plan = plan.map(|d| json!({
-        "title": d.title, "doing": d.doing, "items": d.items.iter().map(|i| json!({"text": i.text, "status": i.status})).collect::<Vec<_>>(),
+        "title": d.title, "doing": d.row.doing, "items": d.items.iter().map(|i| json!({"text": i.text, "status": i.status})).collect::<Vec<_>>(),
         "done": d.row.done, "total": d.row.total, "pct": d.row.pct, "eta": d.row.eta, "eta_given": d.eta_given,
         "updated": d.row.updated, "source": d.source, "partial": d.row.partial, "agent": d.agent,
     }));

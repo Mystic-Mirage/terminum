@@ -19,7 +19,7 @@ use crate::tmux::args;
 use crate::tmux::server::{plain, Link, Server, HOST_SESSION};
 
 pub const WINDOWS: &str = "#{session_name}\t#{window_id}\t#{@tm-quick}\t#{window_name}\t#{window_layout}\t#{automatic-rename}";
-pub const PANES: &str = "#{session_name}\t#{window_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_tty}\t#{pane_current_path}\t#{@tm-title}\t#{pane_title}";
+pub const PANES: &str = concat!("#{session_name}\t#{window_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_tty}\t#{pane_current_path}\t#{@tm-title}\t#{pane_title}\t", crate::tmux::titles::agent_name_format!());
 /// The server's identity (`@terminum-id`) for the checkpoint: whose files hold its panes' last lines (AC-96).
 pub const IDENTITY: &str = "show -sqv @terminum-id";
 
@@ -75,7 +75,7 @@ pub fn simple_kind(command: &str) -> Value {
 /// The sessions of `wins` and `panes` (the lists of WINDOWS and PANES) that `keep` takes, in
 /// the checkpoint's shape; `kind(command, tty)` describes a pane's program.
 pub fn sessions_of(wins: &[String], panes: &[String], keep: impl Fn(&str) -> bool, kind: impl Fn(&str, &str) -> Value) -> Vec<Value> {
-    let fields: Vec<Vec<&str>> = panes.iter().map(|l| l.splitn(8, '\t').collect::<Vec<_>>()).filter(|g| g.len() == 8).collect();
+    let fields: Vec<Vec<&str>> = panes.iter().map(|l| l.splitn(9, '\t').collect::<Vec<_>>()).filter(|g| g.len() >= 8).collect();
     let mut sessions: Vec<Value> = Vec::new();
     for w in wins {
         let f: Vec<&str> = w.splitn(6, '\t').collect();
@@ -86,7 +86,7 @@ pub fn sessions_of(wins: &[String], panes: &[String], keep: impl Fn(&str) -> boo
             let mut k = kind(p[3], p[4]);
             k["dir"] = json!(p[5]);
             k["id"] = json!(p[2]);                      // its pane's id, for what keeps pane keys (projects, AC-92)
-            if let Some(t) = agent_title(p[3], p[7], p[6]) {
+            if let Some(t) = agent_title(p[3], p[7], p[6], p.get(8).copied().unwrap_or_default()) {
                 k["title"] = json!(t);                  // its row's name (AC-15)
             }
             k
@@ -108,11 +108,11 @@ pub fn sessions_of(wins: &[String], panes: &[String], keep: impl Fn(&str) -> boo
 /// The title a coding agent gave its pane (Claude Code's conversation), which its row shows,
 /// or the one a restore gave it (`restored`, `@tm-title`) while a shell runs there: none for
 /// another program or a title that names nothing but the program.
-fn agent_title(command: &str, title: &str, restored: &str) -> Option<String> {
+fn agent_title(command: &str, title: &str, restored: &str, agent_name: &str) -> Option<String> {
     use crate::tmux::titles;
     let shell = titles::SHELLS.contains(&command.trim_start_matches('-'));
     let title = if titles::agent_of(command).is_some() || crate::tmux::agentstate::claude_marked(title) {
-        title
+        if crate::settings::is_name(agent_name) { agent_name } else { title }   // a subagent's own (AC-01)
     } else if shell && !restored.is_empty() {
         restored
     } else {
@@ -410,5 +410,13 @@ mod tests {
         assert_eq!(title(3), Some(json!("Old talk")), "a shell under a marked title (the agent just ended) too");
         assert_eq!(s[1]["windows"][2]["auto"], true, "and the window stays tmux's to name");
         assert_eq!(s[0]["windows"][0]["panes"][1].get("title"), None, "another program's title is not kept");
+    }
+
+    #[test]
+    fn ac01_a_subagents_checkpoint_keeps_its_own_name() {
+        assert_eq!(agent_title("2.1.319", "\u{2733} general-purpose", "", "simplify-reuse").as_deref(), Some("simplify-reuse"));
+        assert_eq!(agent_title("2.1.319", "\u{2733} general-purpose", "", "").as_deref(), Some("general-purpose"));
+        assert_eq!(agent_title("2.1.319", "\u{2733} general-purpose", "", "$(id)").as_deref(), Some("general-purpose"));
+        assert_eq!(agent_title("zsh", "shell", "", "simplify-reuse"), None, "not an agent");
     }
 }

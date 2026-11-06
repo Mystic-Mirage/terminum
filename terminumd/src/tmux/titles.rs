@@ -27,8 +27,6 @@ pub struct PaneFields {
     pub pane_id: String,
     pub pane_index: u32,
     pub pane_title: String,
-    /// `--agent-name` of the command that started the pane, when tmux can tell it (AC-01).
-    pub agent_name: String,
     pub command: String,
     pub path: String,
     pub alternate_on: bool,
@@ -43,6 +41,8 @@ pub struct PaneFields {
     /// the title a restore gave the pane (`@tm-title`: its coding agent's, before tmux
     /// restarted, AC-15), shown while a shell runs there
     pub restored_title: String,
+    /// `--agent-name` of the command that started the pane, when tmux can tell it (AC-01).
+    pub agent_name: String,
 }
 
 /// What the list shows for a pane.
@@ -58,11 +58,18 @@ pub struct Item {
     pub shell: bool,
 }
 
+/// tmux's format for `--agent-name` of the command that started a pane; only that value leaves tmux,
+/// and the reader takes it only if `settings::is_name` does: the command may hold the pane's environment.
+macro_rules! agent_name_format {
+    () => { "#{?#{m:*--agent-name *,#{pane_start_command}},#{s/^.*--agent-name ([^ \t\"]+).*/\\1/:pane_start_command},}" };
+}
+pub(crate) use agent_name_format;
+
 /// The `list-panes -F` format [`parse_list_panes`] reads, fields separated by tabs.
-pub const LIST_PANES_FORMAT: &str = "#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t\
+pub const LIST_PANES_FORMAT: &str = concat!("#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t\
 #{automatic-rename}\t#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}\t\
 #{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}\t#{@tm-quick}\t#{@tm-quick-side}\t#{session_id}\t#{@tm-title}\t\
-#{?#{m/r:--agent-name ,#{pane_start_command}},#{s/.*--agent-name ([^ \t\"]+).*/\\1/:pane_start_command},}";
+", agent_name_format!());
 
 /// Whether `s` is a name tmux could have given a window after its command (`claude`, `zsh`).
 fn auto_name(s: &str) -> bool {
@@ -87,7 +94,6 @@ pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
         pane_id: f[5].into(),
         pane_index: f[6].parse().ok()?,
         pane_title: f[7].into(),
-        agent_name: f.get(17).copied().filter(|n| agent_name_ok(n)).unwrap_or_default().into(),
         command: f[8].into(),
         path: f[9].into(),
         alternate_on: flag(f[10]),
@@ -97,12 +103,8 @@ pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
         quick_side: f[14].into(),
         session_id: f[15].into(),
         restored_title: f.get(16).copied().unwrap_or_default().into(),
+        agent_name: f.get(17).copied().filter(|n| crate::settings::is_name(n)).unwrap_or_default().into(),
     })
-}
-
-/// Whether `--agent-name`'s value is a name: the command it comes from also holds the pane's environment.
-fn agent_name_ok(name: &str) -> bool {
-    name.len() <= 64 && name.chars().all(|c| c.is_alphanumeric() || "_.@-".contains(c))
 }
 
 /// Whether a status mark (Claude Code's ✳ ✻ ✶ ◐ ⏺, braille spinners) or a blank in front.
@@ -191,28 +193,26 @@ pub fn item(p: &PaneFields, pane_no: usize, panes_in_window: usize, home: &str) 
     } else {
         p.pane_title.clone()
     };
+    let user_named = !window_name.is_empty() && !p.automatic_rename;
+    if job.is_empty() && !user_named {
+        job = window_name.to_string();            // tmux names a window after its program
+    }
     let agent = agent_of(&job)
         .or_else(|| AGENTS.iter().copied().find(|a| *a == window_name))
         .or_else(|| claude_marked(&p.pane_title).then_some("claude"));
     // a subagent in its own pane: Claude Code's title says only its type, the same for all of them
-    let own_name = if agent == Some("claude") { p.agent_name.as_str() } else { "" };
-    let user_named = !window_name.is_empty() && !p.automatic_rename;
+    let shown = if agent == Some("claude") && !p.agent_name.is_empty() { p.agent_name.as_str() } else { program_title.as_str() };
     let mut title = if user_named {
         window_name.to_string()
-    } else if !own_name.is_empty() {
-        own_name.to_string()
-    } else if !program_title.is_empty() {
-        program_title.clone()
+    } else if !shown.is_empty() {
+        shown.to_string()
     } else if !window_name.is_empty() {
         window_name.to_string()
     } else {
         "tmux window".to_string()
     };
-    if job.is_empty() && !user_named {
-        job = window_name.to_string();            // tmux names a window after its program
-    }
     if pane_no > 1 {
-        title = [own_name, program_title.as_str(), job.as_str(), path.as_str()].into_iter().find(|t| !t.is_empty()).map(str::to_string)
+        title = [shown, job.as_str(), path.as_str()].into_iter().find(|t| !t.is_empty()).map(str::to_string)
             .unwrap_or_else(|| "Shell".to_string());
     }
     let mut sub = Vec::new();

@@ -42,7 +42,7 @@ SCREENS = {
     # works again, then is done for good
     "turn": {"rows": [], "phases": [[WORK, 3000], [IDLE, 7000], [WORK, 7000], [IDLE, 0]]},
     "shell": {"title": "\u2733 Fix it", "rows": [], "phases": [[SHELL_CC, SHELL_FOR * 1000], [DONE_CC, 0]]},
-    "teammate": {"title": "\u2733 general-purpose", "rows": DONE_CC},
+    "teammate": {"title": "\u2733 general-purpose", "rows": DONE_CC, "args": ["--agent-name", "simplify-altitude"]},
     "switch": {"rows": ["• Created essay.md", "  Worked for 43s • 11:04", "", "› Ask Codex to do anything"],
                "later": ["  ready - started server on 0.0.0.0:3000", "? Would you like to run the app on another port instead? › (Y/n)"]},
 }
@@ -88,7 +88,7 @@ def main():
         index = {}
 
         def run(name):
-            out = tmux("new-window", "-d", "-P", "-F", "#{window_index}", "-t", "main", "node", program, json.dumps(SCREENS[name]), *(["--agent-name", "simplify-altitude"] if name == "teammate" else []))
+            out = tmux("new-window", "-d", "-P", "-F", "#{window_index}", "-t", "main", "node", program, json.dumps(SCREENS[name]), *SCREENS[name].get("args", []))
             index[name] = out.strip()
         for name in SCREENS:
             if name not in ("switch", "turn", "shell"):

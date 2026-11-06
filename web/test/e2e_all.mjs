@@ -34,6 +34,10 @@ import { webTrace } from "./e2e_trace.mjs";
 import { webWidgets } from "./e2e_widgets.mjs";
 import { webWidgetFolds } from "./e2e_widgetfolds.mjs";
 import { webWidgetTables } from "./e2e_widgettables.mjs";
+import { webWidgetPng } from "./e2e_widgetpng.mjs";
+import { webWidgetSteady } from "./e2e_widgetsteady.mjs";
+import { webTableForms } from "./e2e_tableforms.mjs";
+import { webDialogCenter } from "./e2e_dialogcenter.mjs";
 import { webIdeKeys } from "./e2e_idekeys.mjs";
 import { webScreenFolds } from "./e2e_screenfolds.mjs";
 import { webProjects } from "./e2e_projects.mjs";
@@ -46,6 +50,8 @@ import { webSwitch } from "./e2e_switch.mjs";
 import { webDock } from "./e2e_dock.mjs";
 import { webFoot } from "./e2e_foot.mjs";
 import { webMarksFull } from "./e2e_marksfull.mjs";
+import { webMarksScope } from "./e2e_marksscope.mjs";
+import { webListOrder } from "./e2e_listorder.mjs";
 import { webPlans } from "./e2e_plans.mjs";
 import { webLastLines } from "./e2e_lastlines.mjs";
 import { webPlansFind } from "./e2e_plansfind.mjs";
@@ -57,8 +63,8 @@ import { webTips } from "./e2e_tips.mjs";
 import { webHold } from "./e2e_hold.mjs";
 import { webListPlace } from "./e2e_listplace.mjs";
 
-const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
-  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksFull, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace };
+const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webWidgetPng, webWidgetSteady, webTableForms, webDialogCenter, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
+  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksFull, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace };
 const BROWSERS = ["chromium", "webkit"], KNOWN = [...BROWSERS, "firefox"];
 // Checks a user saw fail in Firefox and that need no touch screen (Firefox has no isMobile).
 const FIREFOX_TOO = ["webProgCopy"];

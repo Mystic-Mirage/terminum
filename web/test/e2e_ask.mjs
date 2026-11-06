@@ -20,8 +20,8 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   check(`${at} Ask: its field has no "Question" label (a comment or a task as often), a name for screen readers, and no gradient in focus`,
     !dialog.label && !!dialog.named && dialog.fill === "none" && dialog.focused === "askq", JSON.stringify(dialog));
   const placed = await page.evaluate(() => { const box = document.getElementById("askbox"), b = box.getBoundingClientRect(), t = document.getElementById("term").getBoundingClientRect();
-    return { width: box.offsetWidth, dx: Math.round(b.left + b.width / 2 - (t.left + t.width / 2)), dy: Math.round(b.top + b.height / 2 - (t.top + t.height / 2)), termLeft: Math.round(t.left) }; });
-  check(`${at} Ask: its dialog 600 px wide (a quarter larger), centered on the terminal, not on the window`,
+    return { width: box.offsetWidth, dx: Math.round(b.left + b.width / 2 - innerWidth / 2), dy: Math.round(b.top + b.height / 2 - innerHeight / 2), termLeft: Math.round(t.left) }; });
+  check(`${at} Ask: its dialog 600 px wide (a quarter larger), centered on the window, the list beside the terminal`,
     placed.width === 600 && Math.abs(placed.dx) <= 1 && Math.abs(placed.dy) <= 1 && placed.termLeft > 0, JSON.stringify(placed));
   // ⌘Enter while Add to Chat is off does nothing; a plain Enter is a new line in the field
   let k = sent.length;

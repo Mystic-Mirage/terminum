@@ -10,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 /** The Markdown of `items` (bookmarks' wire form); alive(sid): a session's title now, or null. */
 export function markdownOf(items, alive) {
   return items.map((b) => [`### ${(b.note || b.text.split("\n")[0]).replace(/\n/g, " ").slice(0, 200)}`, "", quote(b.text), "",
-    `*${[alive(b.sid) ?? `${b.title} (closed)`, b.host, when(b.at)].filter(Boolean).join(" · ")}*`].join("\n")).join("\n\n");
+    `*${[(b.orphaned ? null : alive(b.sid)) ?? `${b.title} (closed)`, b.host, when(b.at)].filter(Boolean).join(" · ")}*`].join("\n")).join("\n\n");
 }
 
 export function markDoc({ alive }) {

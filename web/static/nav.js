@@ -9,6 +9,7 @@ import { folderHues, folderKey } from "./dircolors.js";
 import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
 import { planPct, planTrack } from "./planrow.js";
+import { arranged } from "./reorder.js";
 import { textForm } from "./render.js";
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
@@ -89,10 +90,11 @@ const hueColor = (h) => `oklch(var(--proj-l) var(--proj-c) ${h})`;
 const projectHue = (p) => PROJECT_HUES[(p.color ?? 0) % PROJECT_HUES.length];
 export const projectColor = (p) => hueColor(projectHue(p));
 
-/** The hue of the `n`th group after the projects (AC-92): the palette's from its turn on, the first
- *  at least 60° from `above`'s (the group over it; null: none). */
-export function groupHue(n, above) {
-  const far = (h) => above === null || Math.abs(((h - above + 540) % 360) - 180) >= 60;
+/** The hue of the `n`th tmux group (AC-92): the palette's from its turn on, the first at least 60° from
+ *  the part's over it (`above`; null: none) and from a project's under it (`below`, fixed; null: none). */
+export function groupHue(n, above, below = null) {
+  const off = (h, o) => o === null || Math.abs(((h - o + 540) % 360) - 180) >= 60;
+  const far = (h) => off(h, above) && off(h, below);
   const turn = PROJECT_HUES.map((_, i) => PROJECT_HUES[(n + i) % PROJECT_HUES.length]);
   return turn.find(far) ?? turn[0];
 }
@@ -184,25 +186,25 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   if (mark && said) { mark.title = `${mark.title}: ${said}`; mark.setAttribute("aria-label", mark.title); }
   if (mark) st.append(mark);
   if (item.subagents) {
-    const n = el("span", "subs", String(item.subagents));
-    n.title = `${item.subagents} subagent${item.subagents > 1 ? "s" : ""} running`;
+    const n = el("span", "subs");
+    n.append(icon("bot", 11), String(item.subagents));
+    n.title = `${item.subagents} subagent${item.subagents > 1 ? "s" : ""}`;
     st.append(n);
   }
-  // the bar's column holds the orange strip beside it: the row's grid keeps its three columns
   const bar = folderBar(item, item.id === current, item.state === "working", opts.project);
-  // the bookmarks and reminders it shows (its project's, its own): a wavy orange and a wavy pink line beside the folder's bar
+  b.append(bar, txt, st);
+  // its bookmarks and open reminders: a wavy orange and a wavy pink line at the row's right edge
   const has = marked.get(item.id);
   if (has) {
-    const both = el("span", "bars");
-    both.append(bar);
+    const waves = el("span", "waves");
     for (const [on, cls, title] of [[has.mark, "wave mark", "It has bookmarks"], [has.remind, "wave remind", "It has open reminders"]]) {
       if (!on) continue;
       const w = el("span", cls);
       w.title = title;
-      both.append(w);
+      waves.append(w);
     }
-    b.append(both, txt, st);
-  } else b.append(bar, txt, st);
+    b.append(waves);
+  }
   b.addEventListener("click", () => onPick(item.id));
   li.append(b);
   // a new window beside it, in its folder (AC-07)
@@ -225,8 +227,8 @@ export function hostState(g) {
 // A group's header collapses and expands it; while a filter is typed every match is shown. A
 // host's group has a menu of its own (onHost(group, button)), also while it has no rows, and
 // while its tmux runs other sessions an icon that offers them (onImport(group), AC-89).
-// Projects (AC-92) come first, each its sessions with their panes and quick shells, which
-// their tmux groups then leave out; every row has its Clone button (onClone(item)).
+// Projects (AC-92) stand among them in one order, each its sessions with their panes and quick shells,
+// which their tmux groups then leave out; every row has its Clone button (onClone(item)).
 /** Which rows go where: a project's session takes its window's other panes and its quick shells
  *  with it, and they leave their group. {kids(top), topsOf(project), leftOf(group)}. */
 function membership(groups, projects) {
@@ -254,21 +256,22 @@ export function groupRows(groups, projects, wid) {
   return listParts(groups, projects).find((part) => part.place === `group\n${wid}`)?.tops.map((it) => it.id) ?? [];
 }
 
-/** The list's parts as drawn, projects first (`groups` in this browser's order), whether collapsed
+/** The list's parts as drawn (`order`: terminumd's, projects and groups together), whether collapsed
  *  or filtered: {place, tops, rows}: `tops` its sessions, `rows` with the panes under them. */
-export function listParts(groups, projects) {
+export function listParts(groups, projects, order = []) {
   const { kids, topsOf, leftOf } = membership(groups, projects);
-  return [...projects.map((p) => {
-    const tops = topsOf(p);
-    return { place: projectKey(p), tops, rows: tops.flatMap((t) => [t, ...kids(t)]) };
-  }), ...groups.map((g) => {
+  return arranged(groups, projects, order).map(({ project: p, group: g }) => {
+    if (p) {
+      const tops = topsOf(p);
+      return { place: projectKey(p), tops, rows: tops.flatMap((t) => [t, ...kids(t)]) };
+    }
     const rows = leftOf(g);
     return { place: `group\n${g.wid}`, tops: sessionsOf(rows), rows };
-  })].filter((part) => part.rows.length);
+  }).filter((part) => part.rows.length);
 }
 
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
-  { projects = [], onClone = null, onProjectNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null } = {}) {
+  { projects = [], order = [], onClone = null, onProjectNew = null, onGroupNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null } = {}) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
@@ -276,21 +279,25 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   const down = new Map(groups.filter((g) => g.host && !g.attached && g.state && g.state !== "attached").map((g) => [g.host, g.state]));
   let shown = 0;
   const { kids, topsOf, leftOf } = membership(groups, projects);
-  const box = el("div", "projects");
-  let above = null, tinted = 0;                    // the hue of the group drawn last; the other groups tinted so far
-  for (const p of projects) {
+  let above = null, tinted = 0;                    // the hue of the part drawn last; the groups tinted so far
+  // New Window, a header's first button: one [+] for a project and a tmux session's group
+  const newButton = (name, where, act) => iconButton("new", "plus", `New window in ${name}`, `A new window in ${where}`, act);
+  // what it is, left of its name: a dot in a project's color (a tag on what the user gathered), a thin >_ for a tmux session
+  const kindMark = (cls, title, inner = []) => { const k = el("span", `gkind ${cls}`); k.title = title; k.append(...inner); return k; };
+  const drawProject = (p, id) => {
     const tops = topsOf(p);
-    if (!tops.length) continue;                    // its sessions closed: terminumd forgets it at its next read
+    if (!tops.length) return;                      // its sessions closed: terminumd forgets it at its next read
     const rows = tops.filter((t) => [t, ...kids(t)].some((it) => matches(it, q)));
-    if (q && !rows.length) continue;
+    if (q && !rows.length) return;
     shown += rows.length;
     const key = projectKey(p), closed = !q && collapsed.has(key);
     const sec = el("section", "grp project");
     sec.dataset.pid = p.id;
+    sec.dataset.part = id;
     sec.style.setProperty("--proj", projectColor(p));
     above = projectHue(p);
     const h = el("h2");
-    if (!q) h.dataset.drag = "project";
+    if (!q) h.dataset.drag = "part";
     const t = el("button", "toggle");
     t.type = "button";
     t.setAttribute("aria-expanded", String(!closed));
@@ -302,10 +309,10 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       name.title = "Double-click to rename";
       name.addEventListener("dblclick", (e) => { e.stopPropagation(); onProjectRename(p); });
     }
-    t.append(icon("chevron-down", 14), name, count);
+    t.append(icon("chevron-down", 14), kindMark("isproject", "Project: sessions you gathered"), name, count);
     const acts = el("span", "acts");               // a fixed column: the counts line up whatever buttons follow
     h.append(t, acts);
-    if (onProjectNew) acts.append(iconButton("new", "plus", `New window in ${p.name}`, `A new window in ${p.dir || "its folder"}`, () => onProjectNew(p, tops.at(-1))));
+    if (onProjectNew) acts.append(newButton(p.name, p.dir || "its folder", () => onProjectNew(p, tops.at(-1))));
     if (onProjectMenu) {
       const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: new session, rename, move, ungroup, close`, (b) => onProjectMenu(p, b));
       m.setAttribute("aria-haspopup", "true");
@@ -327,28 +334,28 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       }
       sec.append(ul);
     }
-    box.append(sec);
-  }
-  if (box.children.length) frag.append(box);
-  for (const g of groups) {
+    frag.append(sec);
+  };
+  const drawGroup = (g, id, below) => {
     const left = leftOf(g), items = left.filter((it) => matches(it, q));
     const own = g.host || g.attached;            // a host's group, or a session of the user's tmux (AC-89)
-    if (!items.length && !(own && !q)) continue;
+    if (!items.length && !(own && !q)) return;
     shown += items.length;
     const key = groupKey(g);
     const closed = !q && collapsed.has(key);
     const gs = g.state === "absent" && g.host && down.has(g.host) ? down.get(g.host) : g.state;
     const sec = el("section", `grp tinted ${g.kind}` + (g.host ? " hostgrp" : "") + (gs && gs !== "attached" ? ` ${gs}` : ""));
-    above = groupHue(tinted++, above);
+    above = groupHue(tinted++, above, below);
     sec.style.setProperty("--proj", hueColor(above));
     if (g.wid) sec.dataset.wid = g.wid;
+    sec.dataset.part = id;
     const h = el("h2");
-    if (g.wid && !q) h.dataset.drag = "group";
+    if (g.wid && !q) h.dataset.drag = "part";
     const t = el("button", "toggle");
     t.type = "button";
     t.setAttribute("aria-expanded", String(!closed));
     t.addEventListener("click", () => onToggle(key));
-    t.append(icon("chevron-down", 14), el("span", "label", g.label));
+    t.append(icon("chevron-down", 14), kindMark("istmux", g.host ? `tmux session on ${g.host}` : "tmux session", [icon("terminal", 12)]), el("span", "label", g.label));
     if (g.session) t.append(el("span", "tsess", g.session));      // a tmux group: its session's name; the rows name the host
     else if (g.host && g.host !== g.label) t.append(el("span", "host", g.host));
     if (g.where) t.append(el("span", "where", g.where));
@@ -358,6 +365,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     t.append(count);
     const acts = el("span", "acts");
     h.append(t, acts);
+    if (g.new && g.wid && onGroupNew) acts.append(newButton(g.label, g.session ?? g.label, () => onGroupNew(g, sessionsOf(left).at(-1))));
     if (g.attach && onCopy) {                    // attach from another terminal (tmux -L … / ssh -t …)
       const c = el("button", "attach");
       c.type = "button";
@@ -416,7 +424,13 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       sec.append(ul);
     }
     frag.append(sec);
-  }
+  };
+  arranged(groups, projects, order).forEach(({ id, project, group }, i, parts) => {
+    if (project) drawProject(project, id);
+    else drawGroup(group, id, parts[i + 1]?.project ? projectHue(parts[i + 1].project) : null);
+  });
+  // the counts stand in one column: as wide as the header with the most buttons
+  list.style.setProperty("--acts-n", String(Math.max(2, ...[...frag.querySelectorAll(".acts")].map((a) => a.childElementCount))));
   if (!shown) {
     frag.append(el("p", "empty", q ? "No session matches. Clear the filter to see all." : "No tmux sessions."));
   }

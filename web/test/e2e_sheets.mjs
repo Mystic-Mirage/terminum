@@ -137,7 +137,8 @@ export async function webSheets(browser, name) {
   await page.keyboard.press("Escape");
   await page.click("#menubtn");
   await pause(page, 150);
-  const m = await page.evaluate(() => { const r = document.getElementById("menu").getBoundingClientRect(); return { sheet: "sheet" in document.getElementById("menu").dataset, right: Math.round(innerWidth - r.right) }; });
-  check("AC-18 computer: the ⋯ menu stays under its button at the right", !m.sheet && m.right === 8, JSON.stringify(m));
+  const m = await page.evaluate(() => { const r = document.getElementById("menu").getBoundingClientRect(), b = document.getElementById("menubtn").getBoundingClientRect();
+    return { sheet: "sheet" in document.getElementById("menu").dataset, right: Math.round(b.right - r.right), gap: Math.round(r.top - b.bottom) }; });
+  check("AC-18 computer: the settings menu stays under its button, no sheet", !m.sheet && m.right === 0 && m.gap === 6, JSON.stringify(m));
   await page.context().close();
 }

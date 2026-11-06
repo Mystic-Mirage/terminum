@@ -247,7 +247,7 @@ setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own
 | Segmented control | `.seg` | the track `--field-fill` with `--m-groove`; the chosen segment a key |
 | Field | `.field`, `.search`, `.filter`, `#findq`, the Panel's `.filter`; a quote (`#asktext`, `#marktext`) as its recess | `--field-fill`, `--field-px`, `--field-edge` at rest; `--field-focus-edge` in focus (an accent edge over the same fill: no gradient) |
 | Pane | menus, the sent and reminders panes, the bookmarks pane, the find box, the bookmark bar, footer forms, the note, waiting cards | `--pane-shadow` |
-| Dialog | `dialog.dlg`, the bookmarks window | `--dialog-shadow` (a halo that shades the text around it), `--scrim` behind it; the sent and reminders panes are modal over `#panescrim` |
+| Dialog | `dialog.dlg`, the bookmarks window | Centered on the window, across and down, by the browser's modal placement, never placed by a script: it stays there as the window or a field in it is resized (the bookmarks window keeps View's place). `--dialog-shadow` (a halo that shades the text around it), `--scrim` behind it; the sent and reminders panes are modal over `#panescrim` |
 
 | Component | Class / markup | CSS | Notes and "do not" |
 | --- | --- | --- | --- |

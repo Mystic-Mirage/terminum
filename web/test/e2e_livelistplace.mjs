@@ -33,6 +33,16 @@ export async function liveListPlace(page, { tmux, work, app }) {
   await toProject(a, "Place");
   await toProject(b, null);
   const file = path.join(app, "projects.json");
+  // one order for projects and tmux groups: a group goes above the project, kept by terminumd, on a reload too
+  const parts = () => page.evaluate(() => [...document.querySelectorAll("#sessions section.grp[data-part]")].map((s) => s.dataset.part));
+  const wid = (await parts()).find((p) => p.startsWith("g:"));
+  await page.click(`#sessions section[data-part="${wid}"] > h2`, { button: "right" });
+  await page.click('#rowmenu button[data-action="top"]');
+  check("AC-92 live: a tmux group's Move to the Top stands above the project", await until(async () => (await parts())[0] === wid), JSON.stringify(await parts()));
+  check("AC-92 live: terminumd keeps the one order", await until(() => JSON.parse(fs.readFileSync(file, "utf8")).order?.[0] === wid), fs.readFileSync(file, "utf8").slice(0, 200));
+  await page.reload();
+  await page.waitForSelector("#sessions section.grp[data-part]", { timeout: 8000 });
+  check("AC-92 live: after a reload too", await until(async () => (await parts())[0] === wid), JSON.stringify(await parts()));
   const kept = (name) => { try { return fs.readFileSync(file, "utf8").includes(`"${name}"`); } catch { return false; } };
 
   // a member just added and closed: the list without it is told at once, the projects when its 5 s

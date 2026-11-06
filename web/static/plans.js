@@ -2,7 +2,7 @@
 // Plans (AC-97): the pure texts of a plan's row, header and pane. Times are
 // terminumd's unix seconds; `now` is the page's (seconds). Nothing here touches the DOM.
 
-const ICONS = { completed: "✓", in_progress: "▶", pending: "○", blocked: "⚠" };
+const ICONS = { completed: "✓", in_progress: "▶", pending: "○", blocked: "!" };
 
 /** The mark of an item's status; an unknown status reads as pending. */
 export const statusIcon = (status) => ICONS[status] ?? ICONS.pending;

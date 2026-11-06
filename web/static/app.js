@@ -29,7 +29,7 @@ import { paneMenu } from "./menu.js";
 import { paneSizing } from "./sizing.js";
 import { pageSettings } from "./settings.js";
 import { listPlace } from "./listplace.js";
-import { bindReorder, ordered } from "./reorder.js";
+import { arranged, bindReorder, listOrderer, ordered } from "./reorder.js";
 import { linkMarks } from "./linkmarks.js";
 import { paneFiles } from "./panefiles.js";
 import { bindLinks } from "./termlinks.js";
@@ -66,7 +66,7 @@ if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
 const st = {
-  groups: [], sid: embedded ?? store.get("sid", null), projects: [],
+  groups: [], sid: embedded ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
   appCursor: false, bracketed: store.get("bracketed", true), insertClipboard: store.get("insertClipboard", true), atMac: false,
@@ -298,17 +298,18 @@ function onMessage(m) {
     case "trace": trace.onMessage(m); break;
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
-    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; place.note(); bookmarks.changed(); break;   // the list, and what each session shows
+    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; st.listOrder = Array.isArray(m.order) ? m.order : []; place.note(); bookmarks.changed(); break;   // the list, and the projects the list below it names
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }
 
 // ---------- navigation ----------
 
-// Rows reorder tmux's windows in their session; groups reorder this browser's list only.
+// Rows reorder tmux's windows in their session; projects and groups reorder the list, every page's.
 // Clone (AC-07): a new window right after the row's, in its folder; in its project when it has one (AC-92)
 function cloneRow(item) { send({ t: "clone", id: item.id }); }
-const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow, orderGroups: (ids) => { store.set("groupOrder", ids); drawNav(); },
+const orderList = listOrderer(st, () => arranged(drawnGroups(), st.projects, st.listOrder).map((p) => p.id), send, () => drawNav());
+const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow, orderList,
   lastLines: () => settings.page().lastLines ?? 0, copy: (text) => input.copySelection(text), say: (text) => toast(text, 5000),
   groups: () => st.groups, split: (it, side) => { pick(it.id); quick.open(side); }, keepFolded: (from, to) => { if (st.collapsed.has(from)) { st.collapsed.add(to); store.set("collapsed", [...st.collapsed]); } } });
 
@@ -317,8 +318,7 @@ const editMenu = undoTouch({ button: $("kbdbtn"), field: $("kbd"), menu: rowMenu
   cuttable: (range) => !gate.holding() && !!itemOf(st.sid)?.agent && boxMoves.cuttable(range), cut: (range) => boxMoves.cut(range, st.appCursor),
   copy: (text) => input.copySelection(text, true), send: sendCut, say: (text) => toast(text, 3000) }) });
 const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
-  if (kind === "group") store.set("groupOrder", ids);
-  else if (kind === "project") send({ t: "project", action: "order", ids });
+  if (kind === "part") orderList(ids);
   else saveOrder(send, parent, ids);
 }, () => drawNav(), rowMenu.held);                  // a layout may have come while dragging
 
@@ -339,19 +339,20 @@ const reminded = reminderBox({ marks: bookmarks });
 const full = marksFull({ box: $("marksfull"), send, open: (b) => {   // that pane gone: the list below the sessions
   if (!findItem(st.groups, b.sid)) return bookmarks.toggleList(true);
   if (st.sid !== b.sid) pick(b.sid);
-  requestAnimationFrame(() => (b.remind ? reminded.open() : bookmarks.togglePane(true)));
+  requestAnimationFrame(() => (b.remind ? reminded.open() : bookmarks.togglePane(true, "bookmark")));
 } });
 listFoot({ store });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
 bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };
-const drawnGroups = () => ordered(st.groups, store.get("groupOrder", [])), place = listPlace({ sid: () => st.sid, parts: () => listParts(drawnGroups(), st.projects) });
+const drawnGroups = () => ordered(st.groups, store.get("groupOrder", [])), place = listPlace({ sid: () => st.sid, parts: () => listParts(drawnGroups(), st.projects, st.listOrder) });
 function drawNav() {
   if (embedded) return showCurrent(findItem(st.groups, st.sid) || null);
   reminders.show(st.sid);
   if (reorder.dragging()) return;                  // the next layout redraws it
   renderNav($("sessions"), drawnGroups(), st.sid, $("filter").value, pick, st.collapsed, toggleGroup,
     bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true), tools.importTmux,
-    { projects: st.projects, onClone: cloneRow, onProjectNew: (p, last) => send({ t: "clone", id: last.id, project: p.id }), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu });
+    { projects: st.projects, onClone: cloneRow, order: st.listOrder, onProjectNew: (p, last) => send({ t: "clone", id: last.id, project: p.id }),
+      onGroupNew: (g, last) => (last ? cloneRow(last) : send({ t: "new", group: g.wid })), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu });
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {
     const next = place.next();                     // its project's or group's first, else the list's (AC-92)

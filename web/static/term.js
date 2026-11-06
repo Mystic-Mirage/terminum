@@ -7,6 +7,7 @@ import { glued, inputWraps, wrapsInto } from "./rejoin.js";
 import { queueHist } from "./histq.js";
 
 const LOAD_OLDER_AT = 300;   // px from the top that triggers loading older lines
+const SCREEN_DUE = 100;      // ms the history's message waits for the screen's, none if the screen did not change
 // blocks.js adds to TermView the rows' blocks and the agent's input box (addBlocks: blockCuts,
 // its block methods), kept apart for the 500-line cap
 
@@ -55,6 +56,9 @@ export class TermView {
 
   reset() {
     this.hist = [];          // line records, oldest first, each with .n
+    clearTimeout(this.dueTimer); this.dueTimer = null;
+    this.due = [];           // "hist" appends waiting for the screen's message
+    this.met = [];           // those it came after, going with it in its frame
     this.screen = [];        // line records
     this.oldest = 0; this.truncated = false; this.loading = false;
     this.top = 0;            // the screen's first line
@@ -84,8 +88,9 @@ export class TermView {
     this.paused.hidden = !show;
     if (frozen || this.term.hidden) return;
     const q = this.queued; this.queued = [];
-    for (const m of q) this.onHist(m);
+    for (const m of q) this.applyHist(m);
     if (this.pending) this.flush();
+    else if (q.some((m) => m.mode === "append")) this.keepBottom(() => this.onRows?.(false));
     const w = this.thawers; this.thawers = [];
     for (const fn of w) setTimeout(fn);      // each in a task of its own, after the page caught up
   }
@@ -197,7 +202,56 @@ export class TermView {
   onHist(m) {
     if (!this.theme) return;
     // frozen, or behind Files or View on a phone: drawn when the terminal shows again (resume)
-    if ((this.frozen() || this.term.hidden) && m.mode !== "reset") { this.queued = queueHist(this.queued, m); this.resume(); return; }
+    if ((this.frozen() || this.term.hidden) && m.mode !== "reset") { this.dueToQueue(); this.queued = queueHist(this.queued, m); this.resume(); return; }
+    // the rows that scrolled come before the screen without them: both go in one frame, as a scan of
+    // the rows in both would settle past its place, and a row just scrolled would show as it is
+    // for a frame over the widget it is part of (widgets.js, AC-31)
+    if (m.mode === "append") {
+      this.due.push(m);                              // each applied by itself: the cap cuts at each (trim)
+      this.dueTimer ??= setTimeout(() => this.screenLate(), SCREEN_DUE);
+      return;
+    }
+    if (m.mode === "reset") { clearTimeout(this.dueTimer); this.dueTimer = null; this.met = []; this.due = []; this.queued = []; }
+    this.applyHist(m);
+  }
+
+  /** A screen came: the rows that scrolled before it may go with it, those after it wait for theirs. */
+  dueMet() {
+    clearTimeout(this.dueTimer); this.dueTimer = null;
+    this.met.push(...this.due);
+    this.due = [];
+  }
+
+  /** The rows that scrolled and did not wait for a frozen view: with what is queued for it. */
+  dueToQueue() {
+    this.dueMet();
+    for (const m of this.met) this.queued = queueHist(this.queued, m);
+    this.met = [];
+  }
+
+  /** The rows that scrolled, put in place; their caller looks at the rows after. */
+  applyDue() {
+    this.dueMet();
+    this.applyMet();
+  }
+
+  applyMet() {
+    const met = this.met; this.met = [];
+    for (const m of met) this.applyHist(m);
+  }
+
+  /** No screen came after the rows that scrolled: it did not change (a line printed again). */
+  screenLate() {
+    this.dueTimer = null;
+    if (this.frozen() || this.term.hidden) { this.dueToQueue(); this.resume(); return; }
+    this.dueMet();
+    if (this.pending) { this.flush(); return; }      // a slow frame: its screen is here
+    this.applyMet();
+    this.rescan = true;                              // should a screen come after all, what this saw was not so
+    this.keepBottom(() => this.onRows?.(false));
+  }
+
+  applyHist(m) {
     const rows = m.lines.map((data, i) => this.make(data, m.first + i));
     this.oldest = m.oldest;
     this.truncated = m.truncated;
@@ -219,7 +273,6 @@ export class TermView {
         this.trim(follow);
         this.pack();
         this.groupScreen();
-        this.onRows?.(false);
       });
     } else {                                        // prepend older lines, keep the view still
       const first = this.hist.length ? this.hist[0].n : Infinity;
@@ -270,6 +323,7 @@ export class TermView {
   }
 
   onScreen(m) {
+    this.dueMet();
     // Coalesce bursts: apply the latest state once per animation frame.
     if (!this.pending || m.full) this.pending = { full: m.full, n: m.n, ch: new Map() };
     this.pending.n = m.n;
@@ -287,6 +341,7 @@ export class TermView {
     if (this.frozen()) { this.resume(); return; }
     const p = this.pending; this.pending = null;
     if (!p || !this.theme) return;
+    this.applyMet();
     this.keepBottom(() => {
       if (p.full) { this.screen = []; this.screenEl.replaceChildren(); }
       while (this.screen.length > p.n) this.screen.pop().el.remove();
@@ -300,7 +355,8 @@ export class TermView {
         for (const [i] of changed) { this.link(this.hist.length + i - 1); this.link(this.hist.length + i); }
         this.groupScreen();
       }
-      this.onRows?.(false);
+      this.onRows?.(this.rescan);
+      this.rescan = false;
     });
     this.end.drawn();
     if (performance.now() < (this.followUntil ?? 0)) this.showCursor();

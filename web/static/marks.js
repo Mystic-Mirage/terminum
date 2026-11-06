@@ -8,7 +8,6 @@ import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
 import { placeModal, placePane } from "./fabpane.js";
 import { sendOnModEnter } from "./modenter.js";
-import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";
 
@@ -133,39 +132,41 @@ export class Marks {
     }
   }
 
-  /** pane id -> {mark, remind}: the list's marks of a session that shows bookmarks or open reminders. */
+  /** pane id -> {mark, remind}: the list's marks of a session with bookmarks or open reminders. */
   sids() {
-    const of = projectsOf(this.projects()), kinds = new Map(), m = new Map();   // "p" + a project's id, "s" + a pane's -> its kinds
+    const m = new Map();
     for (const b of this.items.values()) {
-      if (b.orphaned) continue;
-      const k = b.project ? `p${b.project}` : `s${b.sid}`, v = kinds.get(k) ?? { mark: false, remind: false };
-      v.mark ||= !b.remind; v.remind ||= openReminder(b);
-      kinds.set(k, v);
-    }
-    for (const it of this.panes()) {
-      const a = of.has(it.id) ? kinds.get(`p${of.get(it.id)}`) : undefined, b = kinds.get(`s${it.id}`);
-      const mark = !!(a?.mark || b?.mark), remind = !!(a?.remind || b?.remind);
-      if (mark || remind) m.set(it.id, { mark, remind });
+      const mark = !b.remind, remind = openReminder(b);
+      if (b.orphaned || !(mark || remind)) continue;
+      const v = m.get(b.sid) ?? { mark: false, remind: false };
+      v.mark ||= mark; v.remind ||= remind;
+      m.set(b.sid, v);
     }
     return m;
   }
-  /** The bookmarks and reminders the shown pane shows: its project's and its own (asked on every
-   *  frame: kept until the bookmarks, the layout, the projects or the pane shown change). */
+  /** The shown pane's own bookmarks and reminders, never another's, of its project too (asked on
+   *  every frame: kept until the bookmarks, the layout or the pane shown change). */
   here() {
-    const panes = this.panes(), projects = this.projects(), sid = this.sid(), h = this.hereOf;
-    if (h?.panes === panes && h.projects === projects && h.sid === sid && h.rev === this.rev) return h.list;
-    const project = projectsOf(projects).get(sid);
-    const list = panes.some((p) => p.id === sid) ? [...this.items.values()].filter((b) => shownIn(b, sid, project)) : [];
-    this.hereOf = { panes, projects, sid, rev: this.rev, list, project };
+    const panes = this.panes(), sid = this.sid(), h = this.hereOf;
+    if (h?.panes === panes && h.sid === sid && h.rev === this.rev) return h.list;
+    const list = panes.some((p) => p.id === sid) ? [...this.items.values()].filter((b) => !b.orphaned && b.sid === sid) : [];
+    this.hereOf = { panes, sid, rev: this.rev, list };
     return list;
   }
   /** The shown pane's project, terminumd's (none outside projects). */
-  hereProject() { this.here(); return this.projects().find((p) => p.id === this.hereOf.project) ?? null; }
+  projectOf() { const sid = this.sid(); return this.projects().find((p) => p.members.includes(sid)) ?? null; }
+  /** The records a pane lists by its scope: the session's (`here`); a project's, those of its sessions closed
+   *  since too; every one (AC-33). */
+  listed(scope) {
+    const p = scope === "project" ? this.projectOf() : null;
+    if (scope === "all") return [...this.items.values()];
+    return p ? [...this.items.values()].filter((b) => b.project === p.id || (!b.orphaned && p.members.includes(b.sid))) : this.here();
+  }
   busy() { return $("markbox").open || $("askbox").open; }   // a dialog of theirs (Ask: ask.js) has the keys
   changed() { this.rev = (this.rev ?? 0) + 1; this.drawRail(); this.drawList(); this.drawPane(); this.onChange(); document.dispatchEvent(new Event("marks")); }
-  /** The shown session's own bookmarks it shows (not orphaned), top to bottom: its marks and the bar's steps
-   *  (an agent's record once its place was found, AC-98). */
-  mine() { return this.here().filter((i) => i.sid === this.sid() && i.n >= 0).sort((a, b) => a.n - b.n); }
+  /** The shown session's bookmarks, top to bottom: its marks and the bar's steps (an agent's record
+   *  once its place was found, AC-98). */
+  mine() { return this.here().filter((i) => i.n >= 0).sort((a, b) => a.n - b.n); }
 
   // ---------- the dialog ----------
 
@@ -208,8 +209,7 @@ export class Marks {
     if (reply.error) { $("markerr").textContent = reply.error; $("markerr").hidden = false; return; }
     $("markbox").close();
     if (!ed.id && ed.sid === this.sid()) this.jumper.markAt(ed.n, loose(ed.text), this.kind === "reminder");   // its wavy line at once, where it stands
-    const where = this.hereProject() ? "an agent of this project" : "this session's agent";
-    if (!ed.id) this.toast(this.kind === "reminder" ? `Reminder set: it comes up when ${where} ends a turn.` : "Bookmarked.", this.kind === "reminder" ? 3500 : undefined);
+    if (!ed.id) this.toast(this.kind === "reminder" ? "Reminder set: it comes up when this session's agent ends a turn." : "Bookmarked.", this.kind === "reminder" ? 3500 : undefined);
   }
 
   // ---------- the bar ----------
@@ -233,6 +233,8 @@ export class Marks {
     const fold = $("foldfab"), under = document.body.classList.contains("folding");
     $("markbar").style.top = `${under ? fold.offsetTop + fold.offsetHeight + 8 : this.term.offsetTop + 8}px`;
   }
+  /** The title of a record's pane now, null when it closed: an orphaned one's id may be another's now. */
+  nameNow(item) { return item.orphaned ? null : this.alive(item.sid); }
   hideBar() { this.shown = null; $("markbar").hidden = true; this.jumper.clear(); }
   step(d) {
     const mine = this.mine(), i = mine.findIndex((x) => x.id === this.shown?.id);
@@ -252,7 +254,7 @@ export class Marks {
    *  was printed, AC-98); the bar says how it went. */
   async jump(item) {
     const what = item.by ? "here it is" : "here is what was selected";
-    if (item.orphaned) return this.showBar(item, `Its project or its session is gone: ${what}.`);
+    if (item.orphaned) return this.showBar(item, `Its session is gone: ${what}.`);
     if (this.alive(item.sid) === null) return this.showBar(item, `Its session is not open now: ${what}.`);
     const other = item.sid !== this.sid();
     const opened = other ? this.jumper.wait((m) => m.t === "hist" && m.mode === "reset" && m.sid === item.sid) : null;
@@ -306,8 +308,8 @@ export class Marks {
     $("marksbtn").setAttribute("aria-expanded", String($("marksdlg").open));
   }
 
-  /** Every bookmark or open reminder (the list's segment), newest first, with where it is: its
-   *  project or session, closed, orphaned (its project or session gone) or out of reach (its host
+  /** Every bookmark or open reminder (the list's segment), of every session on purpose, newest first,
+   *  with where it is: its project or session, orphaned (its session gone) or out of reach (its host
    *  down); Delete here is final; "Open all" shows them in full. */
   drawList() {
     const listed = [...this.items.values()].filter((b) => !b.remind || openReminder(b));
@@ -337,9 +339,9 @@ export class Marks {
   }
 
   /** A list of bookmarks: note, the start of the text, and its project, its session's title,
-   *  host, when, and "closed", "orphaned" or "out of reach"); a press brings one into view, × (twice) deletes it. */
+   *  host, when, and "orphaned" or "out of reach"); a press brings one into view, × (twice) deletes it. */
   listOf(items) {
-    const ul = el("ul"), panes = this.panes(), projects = this.projects(), of = projectsOf(projects), names = new Map(projects.map((p) => [p.id, p.name]));
+    const ul = el("ul"), names = new Map(this.projects().map((p) => [p.id, p.name]));
     for (const item of items) {
       const li = el("li"), b = el("button", "mkitem");
       b.type = "button";
@@ -349,11 +351,10 @@ export class Marks {
       b.append(title);
       if (item.note) b.append(el("span", "snip", oneLine(item.text, !!item.by)));
       // an open session by its name now (it may have been renamed since), a closed one by its last
-      const now = this.alive(item.sid);
+      const now = this.nameNow(item);
       const meta = el("span", "meta", [names.get(item.project), now ?? item.title, item.host, when(item.at)].filter(Boolean).join(" · "));
-      // orphaned: its project or session is gone (until deleted here); else its session is not listed now: closed (a
-      // project's, shown while the project lives) or out of reach (no session shows it: its host down)
-      const away = item.orphaned ? "orphaned" : now !== null ? "" : nowhere(item, panes, of) ? "out of reach" : "closed";
+      // orphaned: its session is gone (until deleted here); else its session is not listed now: its host down
+      const away = item.orphaned ? "orphaned" : now !== null ? "" : "out of reach";
       if (away) meta.append(el("span", "closed", away));
       b.append(meta);
       b.onclick = () => { this.togglePane(false); this.toggleList(false); this.jump(item); };
@@ -375,7 +376,7 @@ export class Marks {
   fabInputs() {
     const t = this.term, here = this.sid() ? this.here() : [];
     return [this.sid(), t.hidden, t.offsetLeft, t.offsetTop, t.clientLeft, t.clientWidth, t.clientHeight, !!this.view.theme, floats(),
-      here.length, here.filter((b) => !b.remind || openReminder(b)).length, here.some(openReminder), this.hereProject() ? 1 : 0,
+      here.length, here.filter((b) => !b.remind || openReminder(b)).length, here.some(openReminder),
       $("planfab").dataset.pct ?? "-", document.body.classList.contains("unfolded")].join();
   }
   /** The floating buttons stand in one column at the terminal's top right, left of the marks:
@@ -389,11 +390,11 @@ export class Marks {
     const term = this.term, here = this.sid() ? this.here() : [], n = here.filter((b) => !b.remind || openReminder(b)).length;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;
     for (const id of PLAIN) $(id).hidden = !shown;
-    $("marksfab").hidden = !(shown && n > 0);
+    $("marksfab").hidden = !(shown && (n > 0 || (!$("markpane").hidden && this.nav.scopeNow() !== "session")));   // an open pane's wider list outlasts the session's own
     $("remindfab").hidden = !shown || !here.some(openReminder);
     $("planfab").hidden = !shown || !("pct" in $("planfab").dataset);
     $("marksfabn").textContent = String(n);
-    $("marksfab").setAttribute("aria-label", `Bookmarks and reminders of this ${this.hereProject() ? "project" : "session"}: ${n}`);
+    $("marksfab").setAttribute("aria-label", `Bookmarks and reminders of this session: ${n}`);
     if (!shown) this.search.toggle(false);
     if ($("marksfab").hidden) this.togglePane(false);
     if (!shown) return;
@@ -413,16 +414,20 @@ export class Marks {
   }
   placePane() { placePane($("markpane"), () => this.togglePane(false)); }
   /** Opens or closes the list of this session's bookmarks (a second press closes it). */
-  togglePane(open = $("markpane").hidden) {
-    const had = $("markpane").contains(document.activeElement);
+  /** `only`: this once the session's own of that kind ("all", a reminder's, a bookmark's), not the
+   *  list chosen: what "show them" and a banner's Open promise. */
+  togglePane(open = $("markpane").hidden, only = null) {
+    const had = $("markpane").contains(document.activeElement), was = !$("markpane").hidden;
+    if (open) this.nav.opening(only);
     $("markpane").hidden = !open;
     this.paneSid = open ? this.sid() : null;
     $("marksfab").setAttribute("aria-expanded", String(open));
     // a computer's keys go to the list while it is open (↑ ↓, ✓: marknav.js), back to the terminal after
     if (open) { this.search.toggle(false); this.drawPane(); this.placePane(); if (MOUSE?.matches) $("markpane").focus({ preventScroll: true }); }
     else if (had) $("kbd").focus({ preventScroll: true });
+    if (was && !open) this.placeFab();             // the session's own ran out meanwhile: no button
   }
   drawPane() { this.nav.draw(); }
   /** The shown session's open records from its coding agent (AC-98), and a way to them: the Plan pane says so. */
-  agentRecords() { return { n: this.here().filter((b) => b.by && (!b.remind || openReminder(b))).length, open: () => this.togglePane(true) }; }
+  agentRecords() { return { n: this.here().filter((b) => b.by && (!b.remind || openReminder(b))).length, open: () => this.togglePane(true, "all") }; }
 }

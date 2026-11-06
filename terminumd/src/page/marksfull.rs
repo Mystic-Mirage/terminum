@@ -31,39 +31,30 @@ pub struct Banner {
     pub sid: String,
 }
 
-/// A pane's scope: its project's id, else its own key.
-fn scope_of(app: &Shared, key: &str) -> String {
-    app.projects.lock().of(key).map_or_else(|| key.to_string(), |p| p.id.clone())
-}
-
 /// Agents' records of `key`'s scope of that kind went for room.
 pub fn went(app: &Shared, key: &str, remind: bool) {
-    let scope = scope_of(app, key);
-    app.marks_full.pending.lock().insert((scope, remind), key.to_string());
+    app.marks_full.pending.lock().insert((key.to_string(), remind), key.to_string());
 }
 
-/// The panes `ended` ended a turn: the banners of their scopes show, on every page; a scope is
-/// named as the page says it (its project's name now, else its session's row title).
+/// The panes `ended` ended a turn: their banners show, on every page, a pane named by its row's
+/// title now.
 pub fn turn_ended(app: &Shared, ended: &[String]) {
     if app.marks_full.pending.lock().is_empty() {
         return;
     }
-    let scopes: Vec<String> = ended.iter().map(|k| scope_of(app, k)).collect();
     let taken: Vec<((String, bool), String)> = {
         let mut p = app.marks_full.pending.lock();
-        let keys: Vec<(String, bool)> = p.keys().filter(|(scope, _)| scopes.contains(scope)).cloned().collect();
+        let keys: Vec<(String, bool)> = p.keys().filter(|(scope, _)| ended.contains(scope)).cloned().collect();
         keys.into_iter().filter_map(|k| p.remove(&k).map(|sid| (k, sid))).collect()
     };
     if taken.is_empty() {
         return;
     }
     let new = {
-        let (layout, projects) = (app.layout.read(), app.projects.lock());
+        let layout = app.layout.read();
         taken.into_iter().map(|((scope, remind), sid)| {
-            let label = projects.list().iter().find(|p| p.id == scope).map(|p| p.name.clone()).unwrap_or_else(|| {
-                let title = crate::page::marks::find_item(&layout, &sid).and_then(|it| it["title"].as_str().map(str::to_string));
-                format!("session {}", title.filter(|t| !t.is_empty()).unwrap_or_else(|| sid.clone()))
-            });
+            let title = crate::page::marks::find_item(&layout, &sid).and_then(|it| it["title"].as_str().map(str::to_string));
+            let label = format!("session {}", title.filter(|t| !t.is_empty()).unwrap_or_else(|| sid.clone()));
             Banner { scope, remind, most: most(remind), label, sid }
         }).collect()
     };

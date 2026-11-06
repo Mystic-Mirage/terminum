@@ -284,3 +284,47 @@ fn a_question_wrapped_in_a_narrow_pane_waits() {
                    "  6. Chat about this", "Enter to select · ↑/↓", "to navigate · Esc to", "cancel"]);
     assert_eq!(state_of("✳ A coding app", &r), Waiting);
 }
+
+#[test]
+fn a_programs_own_error_line_says_failed_or_a_safety_stop() {
+    for line in ["■ stream disconnected before completion: reset", "■ Selected model is at capacity. Try again.", "■ rate limit exceeded: wait",
+                 "■ Goal budget reached - the turn was stopped.", "⎿  API Error: 500 server error"] {
+        assert_eq!(read("t", &rows(&["› fix it", line, "› Ask Codex to do anything"])).0, State::Failed, "{line}");
+    }
+    for line in ["■ This request has been flagged for possible cybersecurity risk.", "⎿  API Error: Opus can't help with this. Start a new session to continue.",
+                 "Chat stopped as a precaution", "■ This content can't be shown"] {
+        assert_eq!(read("t", &rows(&["› fix it", line, "› Ask Codex to do anything"])).0, State::Waiting, "{line}");
+    }
+}
+
+#[test]
+fn the_same_words_in_the_transcript_or_before_a_later_turn_say_nothing() {
+    let quoted = "The docs quote: This request has been flagged for possible cybersecurity risk.";
+    assert_eq!(read("t", &rows(&[quoted, "Worked for 3m 2s", "› Ask Codex to do anything"])).0, State::Done);
+    assert_eq!(read("t", &rows(&[quoted, "› Ask Codex to do anything"])).0, State::Done, "not a program's error line");
+    assert_eq!(read("t", &rows(&["■ rate limit exceeded", "› again", "• done", "Worked for 12s • 2:32 PM", "› Ask Codex to do anything"])).0, State::Done, "a later turn went fine");
+    assert_eq!(read("t", &rows(&["■ Conversation interrupted - use /feedback", "› Ask Codex to do anything"])).0, State::Done, "the user's own cancel");
+}
+
+#[test]
+fn a_screen_says_when_agents_run() {
+    assert!(agents_run(&rows(&["✻ Waiting for 2 background agents to finish"])));
+    assert!(agents_run(&rows(&["• 2 agents still running", "› Ask Codex to do anything"])));
+    assert!(!agents_run(&rows(&["✻ Worked for 3m 2s", "─────", "❯ ", "─────", "  ⏵⏵ bypass permissions on"])), "a ghost");
+}
+
+#[test]
+fn claude_codes_list_of_agents_counts_all_but_main() {
+    let screen = rows(&["❯ ", "  ~/nodejs-rasp Opus 5.5 (high)", "  ⏵⏵ bypass permissions on · 3 shells · ← 1 agent", "",
+                        "  ● main", "  ○ rust-flakes      Fix flaky Rust viewer/tui tests", "  ○ node-flakes      Fix flaky Node timeout tests",
+                        "  ○ feedscale-flake  Fix feed-scale retained-bytes flake", "", ""]);
+    assert_eq!(listed_agents(&screen), 3);
+    assert_eq!(listed_agents(&rows(&["● Reading the file", "○ a list of an agent's answer", ""])), 0, "no main: the transcript's");
+    assert_eq!(listed_agents(&rows(&["● main", "text after it"])), 0, "not at the bottom");
+    assert_eq!(listed_agents(&[]), 0);
+}
+
+#[test]
+fn safeguards_retry_dialog_waits() {
+    assert_eq!(read("t", &rows(&["Session paused", "Opus's safeguards flagged this message."])).0, State::Waiting);
+}

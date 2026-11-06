@@ -35,8 +35,8 @@ const line = (n) => {
   const t = Array.from({ length: 13 }, (_, i) => words[(n + i) % words.length]).join(" ");
   return { r: [[t.slice(0, 78), null, null, 0]], e: true };
 };
-const hist = (mode, first, count) => view.onHist({ mode, first, oldest: 0, truncated: false,
-  lines: Array.from({ length: count }, (_, i) => line(first + i)) });
+const hist = (mode, first, count) => { view.onHist({ mode, first, oldest: 0, truncated: false,
+  lines: Array.from({ length: count }, (_, i) => line(first + i)) }); view.applyDue(); };   // as with the screen's message after it
 const screen = (cols, n = 3) => new Promise((done) => { view.onScreen({ full: true, n, cols, rows: n,
   ch: Array.from({ length: n }, (_, i) => [i, line(9000 + i)]) }); requestAnimationFrame(() => requestAnimationFrame(done)); });
 const part = (n, ch) => new Promise((done) => { view.onScreen({ full: false, n, cols: 80, rows: n, ch });
@@ -245,6 +245,64 @@ export async function webTerm(browser) {
   check("AC-52 web: a terminal hidden behind Files draws nothing, without the paused note, and shows the latest screen and lines when shown",
     behind.hidden.same && behind.hidden.histLast === behind.last && behind.hidden.queued === 1 && !behind.hidden.banner &&
     behind.after === "behind files" && behind.histLast === behind.last + 1 && !behind.queued && !behind.broken.length, JSON.stringify(behind));
+  // AC-31 the rows that scrolled go with the screen after them, or without one when none comes
+  const due = await run(async () => {
+    const wait = (ms) => new Promise((done) => setTimeout(done, ms)), frames = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const shot = (n) => ({ mode: "append", first: n, oldest: t.view.oldest, truncated: true, lines: [{ r: [["due " + n, null, null, 0]], e: true }] });
+    const row = (s) => ({ full: false, n: 3, cols: 80, rows: 3, ch: [[0, { r: [[s, null, null, 0]], e: true }]] });
+    const lastN = () => t.view.hist.at(-1).n, out = {};
+    let n = lastN() + 1;
+    t.view.onHist(shot(n));
+    out.waits = lastN() === n - 1;
+    t.view.onScreen(row("with it"));
+    await frames();
+    out.withScreen = lastN() === n;
+    // a screen on its way as the next rows come: those wait for theirs
+    n = lastN() + 1;
+    t.view.onHist(shot(n));
+    t.view.onScreen(row("first"));
+    t.view.onHist(shot(n + 1));
+    await frames();
+    out.onlyItsOwn = lastN() === n;
+    t.view.onScreen(row("second"));
+    await frames();
+    out.thenTheNext = lastN() === n + 1;
+    // no screen comes: the screen did not change
+    n = lastN() + 1;
+    t.view.onHist(shot(n));
+    await wait(40);
+    out.stillWaits = lastN() === n - 1;
+    await wait(120);
+    out.goesAlone = lastN() === n;
+    // the view frozen while they wait: queued in order, none lost
+    n = lastN() + 1;
+    t.view.onHist(shot(n));
+    getSelection().selectAllChildren(document.querySelector("#hist .ln:last-child") ?? document.querySelectorAll("#hist .ln")[0]);
+    t.view.onHist(shot(n + 1));
+    out.frozenQueued = t.view.queued.length && lastN() === n - 1;
+    getSelection().removeAllRanges();
+    t.view.resume();
+    await frames();
+    out.thawed = lastN() === n + 1;
+    // older lines while rows wait: they keep waiting
+    n = lastN() + 1;
+    const oldest = t.view.hist[0].n;
+    t.view.onHist(shot(n));
+    t.view.onHist({ mode: "prepend", first: oldest - 1, oldest: 0, truncated: false, lines: [{ r: [["older", null, null, 0]], e: true }] });
+    out.prepend = t.view.hist[0].n === oldest - 1 && lastN() === n - 1;
+    t.view.onScreen(row("third"));
+    await frames();
+    out.afterPrepend = lastN() === n;
+    // a new history: what waited is dropped
+    n = lastN() + 1;
+    t.view.onHist(shot(n));
+    t.view.onHist({ mode: "reset", first: 100, oldest: 0, truncated: false, lines: [{ r: [["anew", null, null, 0]], e: true }] });
+    await wait(150);
+    out.reset = lastN() === 100 && t.view.hist.length === 1 && !t.view.due.length && !t.view.met.length;
+    return out;
+  });
+  check("AC-31 web: the rows that scrolled wait for the screen after them, only theirs, or 100 ms; frozen they queue in order; older lines pass; a new history drops them",
+    Object.values(due).every(Boolean) && Object.keys(due).length === 11, JSON.stringify(due));
   check("AC-52 web: no page errors", !errors.length, errors.join("; "));
   await page.close();
 }

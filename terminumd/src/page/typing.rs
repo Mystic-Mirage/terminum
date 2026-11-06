@@ -27,6 +27,29 @@ const PART_WAIT: std::time::Duration = std::time::Duration::from_millis(250);
 const QUEUE_BYTES: usize = 4 << 20;
 const QUEUE_ITEMS: usize = 10_000;
 const PASTE_TOO_LARGE: &str = "Paste is larger than 1 MB";
+/// Claude Code's words under a paste it folded into "[Pasted text #1 +6 lines]"; the same paste again
+/// unfolds it (read in its program, 2.1.318): what it holds is the user's to see (AC-03).
+const FOLDED: &str = "paste again to expand";
+/// How long its words are waited for: keys typed next wait behind them.
+const FOLD_WAIT: std::time::Duration = std::time::Duration::from_millis(800);
+
+/// Whether Claude Code folds this paste: over 800 characters or two line breaks.
+fn folds(text: &str) -> bool {
+    text.chars().nth(800).is_some() || text.split("\r\n").flat_map(|l| l.split(['\n', '\r'])).nth(3).is_some()
+}
+
+/// A paste Claude Code folded, pasted once more; nothing if its words do not come: a paste it left
+/// as it is would be doubled, and another version may not say them. `wake`: from before the paste,
+/// so its words' output is not missed; the screen is read only when the pane printed.
+async fn unfold(app: &Shared, client: &crate::tmux::control::Control, server: &Server, pane: &str, text: &str, mut wake: crate::tmux::server::Wake) -> Result<(), String> {
+    let until = tokio::time::Instant::now() + FOLD_WAIT;
+    while tokio::time::timeout_at(until, wake.notified()).await.is_ok() {
+        if client.run(format!("capture-pane -p -t {pane}")).await.is_ok_and(|rows| rows.iter().any(|r| r.contains(FOLDED))) {
+            return paste_buffer(app, client, server, pane, text).await;
+        }
+    }
+    Ok(())
+}
 pub const OVERLOAD: &str = "tmux is not keeping up: more than 4 MB of typing waits for it — this input was not sent";
 
 /// Typed data not yet handed to tmux.
@@ -256,7 +279,12 @@ async fn send(app: &Shared, client: &crate::tmux::control::Control, server: &Ser
             }
         }
         if let Some(text) = pasted {
+            let wake = server.wake(pane);
             paste_buffer(app, client, server, pane, text).await?;
+            let agent = || super::marks::find_item(&app.layout.read(), &server.key(pane)).is_some_and(|it| it["agent"] == "claude");
+            if folds(text) && agent() {
+                unfold(app, client, server, pane, text, wake).await?;
+            }
         }
         rest = after;
     }
@@ -316,6 +344,16 @@ pub fn double_quoted(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn claude_codes_folding_rule() {
+        assert!(!folds("one\ntwo\nthree"), "two breaks stay");
+        assert!(folds("one\ntwo\nthree\nfour"));
+        assert!(folds("one\r\ntwo\r\nthree\r\nfour"));
+        assert!(!folds("one\r\ntwo\r\nthree"), "a CRLF is one break");
+        assert!(!folds(&"я".repeat(800)), "characters, not bytes");
+        assert!(folds(&"я".repeat(801)));
+    }
+
     use super::*;
 
     fn item(data: &str, mouse: &[u8]) -> Typed {

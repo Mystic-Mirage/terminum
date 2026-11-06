@@ -219,7 +219,10 @@ export async function webScreen(browser, name) {
     f.say({ t: "sized", sid: SID, cols: 40, rows: 20, mine: true });
     await pause(page);
     check("AC-13 sized: a refused resize is said with tmux's reason; this page's own size clears it",
-      refused === "Sized for another screen (180×50): size too small" && await page.isHidden("#sized"), JSON.stringify(refused));
+      refused === "tmux did not resize this pane: size too small" && await page.isHidden("#sized"), JSON.stringify(refused));
+    f.say({ t: "sized", sid: "tmux:devbox:default:%9", cols: 129, rows: 68, mine: false, error: "tmux exited" });
+    await pause(page);
+    check("AC-13 sized: an answer for a pane left meanwhile says nothing over this one", await page.isHidden("#sized"));
 
     // a sliver of a view (under 20×5: an animation, a drag) keeps the pane's last size (big
     // text first, its size settled; then a narrow view in one step); terminumd bounds the rest

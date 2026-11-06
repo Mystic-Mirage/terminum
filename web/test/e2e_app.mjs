@@ -116,6 +116,16 @@ export async function webApp(browser) {
   const stays = await cards();
   await settle();
   check("AC-52 web app: a reminder goes 2.5 s after its session stops waiting", stays.length === 1 && (await cards()).length === 0, JSON.stringify(stays));
+  // a failed session reminds too (AC-39): "failed" in its words and its mark, and it goes with its failure
+  const failing = layout("done", "failed");       // S2 is shown here: another session's
+  failing[0].items[2].why = "rate_limit";
+  tell({ t: "layout", groups: failing });
+  await settle();
+  const failedCard = await $eval(() => ({ what: document.querySelector("#asks .ask .what")?.textContent, mark: !!document.querySelector("#asks .ask .state.failed svg") }));
+  check("AC-39 a failed session gets a reminder that says so and why, with the failed mark",
+    failedCard.what === "Also asking failed: rate_limit" && failedCard.mark, JSON.stringify(failedCard));
+  tell({ t: "layout", groups: layout("done") });
+  await settle();
   await page.click("#sessions .item[data-id='S1']");
   await page.waitForFunction(() => document.querySelectorAll("#screen .ln").length === 4);
   // a waiting session's ? goes as soon as it is shown, and comes back only when it waits anew (AC-39)

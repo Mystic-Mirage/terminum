@@ -109,8 +109,13 @@ def main():
         check("AC-89 terminum tmux lists both sessions with their state", [x["session"] for x in listed["attached"]] == ["work", "later"]
               and listed["attached"][0]["state"].startswith("attached"), listed)
 
+        ws.send({"t": "mark", "ref": "r1", "sid": work_pane, "n": 0, "text": "of the attached session", "note": "", "remind": False})
+        ws.until(lambda m: m["t"] == "marked", 5)
         ws.send({"t": "detachtmux", "server": f"local:{OWN}", "session": "work"})
         groups = wait_layout(ws, lambda gs: not group(gs, "work"))
+        time.sleep(1.5)  # a list read after the detach
+        marks = json.load(open(os.path.join(t.app, "web-bookmarks.json")))["items"]
+        check("AC-33 a session detached keeps its bookmark, not orphaned (its pane still runs)", len(marks) == 1 and not marks[0].get("orphaned"), marks)
         check("AC-89 detaching forgets the session and leaves it running", not group(groups, "work") and "work" in own("ls"), own("ls"))
         check("AC-89 its windows get tmux's own size back (no window-size manual left)", "manual" not in size_of(own, "work:"), size_of(own, "work:"))
     finally:

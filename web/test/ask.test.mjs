@@ -3,7 +3,7 @@
 // typed into an agent's box when it fits, pasted otherwise.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { askSends, askText, boxRows, centerOn, fitsTyped, sentCopy } from "../static/ask.js";
+import { askSends, askText, boxRows, fitsTyped, sentCopy } from "../static/ask.js";
 import { squeeze } from "../static/asked.js";
 
 test("a Markdown quote numbered with four digits on its first line, a blank line, the question", () => {
@@ -33,13 +33,6 @@ test("Send to Agent: the text, then Enter typed a moment after (not a new line i
 
 test("the rows a text takes in an agent's box: its lines wrapped at the box's width", () => {
   assert.equal(boxRows("ab\n\n" + "x".repeat(20), 14), 1 + 1 + 2);
-});
-
-test("the dialog centered on the terminal, kept 8 px inside the window", () => {
-  const term = { left: 300, top: 40, width: 900, height: 700 };
-  assert.deepEqual(centerOn(term, 600, 300, 1400, 900), { x: 450, y: 240 });
-  assert.deepEqual(centerOn({ left: 0, top: 0, width: 400, height: 300 }, 600, 400, 420, 900), { x: 8, y: 8 }, "larger than the terminal: from the window's edge");
-  assert.deepEqual(centerOn({ left: 1000, top: 0, width: 400, height: 900 }, 600, 300, 1400, 900), { x: 792, y: 300 }, "never past the window's right edge");
 });
 
 test("the quote as sent is told from the text asked about (asked.js marks the original only)", () => {

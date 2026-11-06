@@ -191,13 +191,13 @@ export async function webSent(browser, name) {
       f.say({ t: "marked", ref: mark?.ref, id: "N1" });       // the Mac kept it: the dialog closes
       await page.waitForFunction(() => !document.getElementById("markbox").open, null, { timeout: 3000 }).catch(() => {});
 
-      // by project (AC-91, AC-92): a session shows its project's bookmarks, made in any session of
-      // it, and its own; not another project's, not another session's outside projects; an orphaned
-      // one (its project or session gone) and one of a host out of reach only below the list
+      // a session shows only its own (AC-33, AC-91): not another session's of its project, of another
+      // project or outside projects; an orphaned one (its session gone) and one of a host out of reach
+      // only below the list
       const b = (id, sid, project, note, extra = {}) => ({ id, sid, key: sid, n: 1, text: `${note} text`, note, title: "t", host: null, at: 1792000000, project, ...extra });
       f.say({ t: "projects", items: [{ id: "P", name: "Work", color: 0, host: null, dir: API, members: [SID, "tmux:local:terminum:%3"] },
         { id: "Q", name: "Docs", color: 1, host: null, dir: "/Users/alex/work/docs", members: ["tmux:local:terminum:%2"] }] });
-      f.say({ t: "marks", items: [b("P1", "tmux:local:terminum:%3", "P", "from the tests session"), b("P3", "tmux:local:terminum:%8", "P", "from a closed session"),
+      f.say({ t: "marks", items: [b("P0", SID, "P", "of this session"), b("P1", "tmux:local:terminum:%3", "P", "from the tests session"), b("P3", "tmux:local:terminum:%8", "P", "from a closed session"),
         b("P2", "tmux:local:terminum:%2", undefined, "docs only"),
         b("Q1", "tmux:local:terminum:%2", "Q", "of the docs project"), b("H1", "tmux:devbox:default:%1", undefined, "host one", { host: "devbox" }),
         b("O1", "tmux:local:terminum:%9", "P", "orphan one", { orphaned: 1792000100 }), b("R2", "tmux:local:terminum:%9", undefined, "orphan reminder", { remind: true, orphaned: 1792000100 })] });
@@ -219,10 +219,10 @@ export async function webSent(browser, name) {
         full: document.getElementById("markdoc").getBoundingClientRect().height > innerHeight * 0.8 }));
       await page.keyboard.press("Escape");                            // the document, then the list's window
       await page.keyboard.press("Escape");
-      check("projects: a session shows its project's bookmarks made in its other sessions, also one whose session closed (the project lives), none of another project or another session outside it",
-        pane.join() === "from the tests session,from a closed session:closed" && head === "Bookmarks and reminders of Work", JSON.stringify({ pane, head }));
-      check("projects: the list below the sessions holds them all, each with its project, closed, out of reach or orphaned said; Reminders lists the open reminders",
-        list.join() === "from the tests session,from a closed session:closed,docs only,of the docs project,host one:out of reach,orphan one:orphaned"
+      check("projects: a session shows only its own, none of another session of its project, of another project or outside it",
+        pane.join() === "of this session" && head === "Bookmarks and reminders of this session", JSON.stringify({ pane, head }));
+      check("projects: the list below the sessions holds them all, each with its project, out of reach or orphaned said; Reminders lists the open reminders",
+        list.join() === "of this session,from the tests session,from a closed session:out of reach,docs only,of the docs project,host one:out of reach,orphan one:orphaned"
           && where.startsWith("Work · ") && rem.join() === "orphan reminder", JSON.stringify({ list, where, rem }));
       check("projects: Open all shows them as one document, full screen", docOpen.open && docOpen.h.join() === "orphan reminder" && docOpen.full, JSON.stringify(docOpen));
       // the bell's pane is the shown session's: another session shown, it closes (it stayed, over the other session, at the window's corner)

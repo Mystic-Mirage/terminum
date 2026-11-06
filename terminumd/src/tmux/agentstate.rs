@@ -22,13 +22,16 @@ pub const BACKGROUND_LIMIT: Duration = Duration::from_secs(600);
 /// Panes remembered before the cache starts anew (panes long closed).
 const KEEP: usize = 500;
 
-const WAITING: [&str; 10] = ["do you want to", "would you like to", "esc to cancel", "(y/n)", "[y/n]",
+const WAITING: [&str; 12] = ["do you want to", "would you like to", "esc to cancel", "(y/n)", "[y/n]",
                              "allow command", "allow edit", "allow this", "press enter to",
-                             "enter to submit answer"];
-const FAILED: [&str; 10] = ["api error", "overloaded_error", "request timed out",
+                             "enter to submit answer", "session paused", "implement this plan?"];
+/// A program's own error line saying a safety stop: the user decides what next (AC-39).
+const SAFETY: [&str; 5] = ["flagged for possible", "safeguards flagged", "can't help with this", "stopped as a precaution", "content can't be shown"];
+const FAILED: [&str; 14] = ["api error", "overloaded_error", "request timed out",
                             "credit balance is too low", "usage limit reached", "claude code crashed",
                             "hit your usage limit", "out of credits", "exceeded retry limit",
-                            "experiencing high load"];
+                            "experiencing high load", "credit balance too low", "context limit reached",
+                            "please run /login", "ran out of room in the model's context window"];
 /// Codex's own words on its screen (its header, composer, approval and question): a pane whose
 /// program is `node` (Codex installed with npm) runs Codex while its screen shows one.
 const CODEX_WORDS: [&str; 5] = ["openai codex (v", "ask codex to do anything", "tell codex what to do differently",
@@ -258,6 +261,45 @@ pub fn state_of(title: &str, rows: &[String]) -> State {
     read(title, rows).0
 }
 
+/// What the newest of a program's own error lines says, read from the bottom up to its newest
+/// turn line: Codex's "■ …" (its errors fire no hook; a cancelled turn's is no error), Claude Code's
+/// "API Error: …"; words anywhere else are the transcript's.
+fn error_line(rows: &[String]) -> Option<State> {
+    for row in rows.iter().rev() {
+        let line = row.trim_start().trim_start_matches('⎿').trim_start().to_lowercase();
+        if turn_line(row) {
+            return None;
+        }
+        if line.starts_with('■') || line.starts_with("api error") || line.starts_with("chat stopped as a precaution") {
+            if line.contains("interrupted") {
+                return None;
+            }
+            return Some(if any_of(&line, &SAFETY) { State::Waiting } else { State::Failed });
+        }
+    }
+    None
+}
+
+/// How many agents Claude Code lists at the screen's bottom, under its footer ("● main" and then
+/// "○ rust-flakes  Fix flaky tests"): its team, the agents that do not all fire hooks at once.
+pub fn listed_agents(rows: &[String]) -> usize {
+    let names: Vec<&str> = rows.iter().rev().map(|r| r.trim()).skip_while(|r| r.is_empty())
+        .map_while(|r| r.strip_prefix(['○', '●', '◉', '◯']).and_then(|r| r.split_whitespace().next())).collect();
+    if names.contains(&"main") { names.len() - 1 } else { 0 }
+}
+
+/// Whether a screen shows agents running: Claude Code's footer or turn line, Codex's last rows.
+pub fn agents_run(rows: &[String]) -> bool {
+    let last = &rows[rows.len().saturating_sub(ROWS)..];
+    agents_shown(last, background_tasks(last)) || background_work(&last.join("\n"))
+}
+
+/// Agents in the background keep it working however long they run: Claude Code's footer; on a
+/// screen without its input box, the last rows' words.
+fn agents_shown(last: &[String], footer: Background) -> bool {
+    footer == Background::Agents || (claude_box(last).is_none() && agents_said(last))
+}
+
 /// The state, and whether only the footer's work in the background makes it Working.
 pub fn read(title: &str, rows: &[String]) -> (State, bool) {
     let rows: Vec<String> = rows.iter().map(|r| r.replace('\0', " ")).collect();   // skipped cells
@@ -272,13 +314,17 @@ pub fn read(title: &str, rows: &[String]) -> (State, bool) {
     let chars: Vec<char> = tail.chars().collect();
     let last = &rows[rows.len().saturating_sub(ROWS)..];
     let footer = background_tasks(last);
-    // agents in the background keep it working however long they run (Claude Code's footer; on
-    // a screen without its input box, the last rows' words); shells and monitors for a while
-    let agents = footer == Background::Agents || (claude_box(last).is_none() && agents_said(last));
+    // shells and monitors for a while
+    let agents = agents_shown(last, footer);
     let working = spinning(title) || any_of(&tail, &["esc to interrupt"]) || status_line(&chars) || background_work(&tail) || agents;
     let background = !working && footer == Background::Tasks;
-    if !working && !background && any_of(&tail, &FAILED) {
-        return (State::Failed, false);
+    if !working && !background {
+        if let Some(said) = error_line(last) {
+            return (said, false);
+        }
+        if any_of(&tail, &FAILED) {
+            return (State::Failed, false);
+        }
     }
     (if working || background { State::Working } else { State::Done }, background)
 }

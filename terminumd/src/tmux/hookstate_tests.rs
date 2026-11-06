@@ -249,3 +249,103 @@ fn any_event_of_a_live_session_makes_its_record_again() {
     assert!(!h.apply(K, &json!({"agent": "claude", "event": "PostToolUse"}), t), "no session named: no record");
     assert!(!h.has(K));
 }
+
+#[test]
+fn a_codex_stop_ends_its_turn_whatever_subagents_it_counts() {
+    // the owner's case: interrupt_agent fires no hook, so the child stays counted
+    let (h, t) = (Hooks::default(), Instant::now());
+    h.apply(K, &ev("codex", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("codex", "SubagentStart", json!({"turn": "p1", "sub": "scout"})), t);
+    h.apply(K, &ev("codex", "Stop", json!({"turn": "p1"})), t);
+    assert!(h.take_ended(K), "its turn ended");
+    assert!(h.end_counted(K));
+    assert!(h.view(K, "codex", t).is_none(), "its done is the screen's");
+}
+
+#[test]
+fn a_claude_stop_with_subagents_ends_when_the_screen_shows_none() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("claude", "SubagentStart", json!({"turn": "p1", "sub": "killed"})), t);
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
+    assert!(!h.take_ended(K) && !h.end_counted(K), "it may run on in the background");
+    assert!(!h.view(K, "2.1.318", t).unwrap().check_subs, "too soon to ask the screen");
+    assert_eq!(h.subs_due_in(t), Some(GHOST_AFTER), "the loop reads the list then, out of sight too");
+    assert_eq!(h.subs_due_in(t + GHOST_AFTER * 2), Some(GHOST_EVERY), "and again while they seem to run");
+    let later = t + GHOST_AFTER;
+    assert!(h.view(K, "2.1.318", later).unwrap().check_subs);
+    h.drop_ghosts(K);
+    assert_eq!(h.take_all_ended(), [K]);
+    assert!(h.end_counted(K));
+    assert_eq!(h.view(K, "2.1.318", later).unwrap().subagents, 0);
+    assert!(h.take_all_ended().is_empty(), "once");
+    assert_eq!(h.subs_due_in(later), None);
+}
+
+#[test]
+fn a_turn_with_no_stop_is_not_counted_so_its_screen_may_end_it() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    assert!(h.has(K) && !h.end_counted(K), "Esc fires no Stop: the screen's end stands");
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
+    assert!(h.end_counted(K), "no second end");
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p2"})), t);
+    assert!(!h.end_counted(K), "a new turn");
+}
+
+#[test]
+fn a_turn_that_ends_asking_waits_until_the_next_prompt() {
+    for (agent, stop, program) in [("claude", json!({"turn": "p1", "asks": true}), "2.1.318"), ("codex", json!({"turn": "p1", "asks": true}), "codex")] {
+        let (h, t) = (Hooks::default(), Instant::now());
+        h.apply(K, &ev(agent, "UserPromptSubmit", json!({"turn": "p1"})), t);
+        h.apply(K, &ev(agent, "Stop", stop), t);
+        assert!(h.take_ended(K), "{agent}: its turn ended all the same");
+        let later = t + WAIT_LEASE * 100;
+        let v = h.view(K, program, later).unwrap();
+        assert_eq!((v.state, v.turn_over), (State::Waiting, true), "{agent}: no lease on it");
+        h.apply(K, &ev(agent, "UserPromptSubmit", json!({"turn": "p2"})), later);
+        let v = h.view(K, program, later).unwrap();
+        assert_eq!((v.state, v.turn_over), (State::Working, false), "{agent}: answered");
+    }
+}
+
+#[test]
+fn codex_async_question_stands_past_the_turns_end_and_the_blocking_one_waits_at_once() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    h.apply(K, &ev("codex", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("codex", "SubagentStart", json!({"turn": "p1", "sub": "scout"})), t);
+    h.apply(K, &ev("codex", "PreToolUse", json!({"turn": "p1", "tool": "request_user_input_async", "message": "Mask the tokens?"})), t);
+    assert_eq!(h.view(K, "codex", t).unwrap().state, State::Working, "it answers at once: the turn goes on");
+    h.apply(K, &ev("codex", "PostToolUse", json!({"turn": "p1", "tool": "request_user_input_async"})), t);
+    h.apply(K, &ev("codex", "Stop", json!({"turn": "p1"})), t);
+    let v = h.view(K, "codex", t).unwrap();
+    assert_eq!((v.state, v.why.as_str(), v.turn_over, v.subagents), (State::Waiting, "Mask the tokens?", true, 0));
+    let (h, t) = (Hooks::default(), Instant::now());
+    h.apply(K, &ev("codex", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("codex", "PreToolUse", json!({"turn": "p1", "tool": "request_user_input", "message": "Which one?"})), t);
+    let v = h.view(K, "codex", t).unwrap();
+    assert_eq!((v.state, v.why.as_str(), v.turn_over), (State::Waiting, "Which one?", false));
+}
+
+#[test]
+fn a_subagents_prompt_and_failure_are_its_own() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("claude", "SubagentStart", json!({"turn": "p1", "sub": "a1"})), t);
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "child", "sub": "a1"})), t);
+    assert!(h.view(K, "2.1.318", t).unwrap().subagents == 1 && h.recs.lock()[K].stopped.is_some(), "no new turn");
+    h.apply(K, &ev("claude", "StopFailure", json!({"turn": "p1", "sub": "a1", "error": "rate_limit"})), t);
+    let v = h.view(K, "2.1.318", t).unwrap();
+    assert_ne!(v.state, State::Failed, "the pane has not failed");
+    assert_eq!(v.subagents, 0);
+}
+
+#[test]
+fn notices_of_a_url_and_a_teammates_permission_wait() {
+    for kind in ["elicitation_url_dialog", "worker_permission_prompt"] {
+        let (h, t) = (Hooks::default(), Instant::now());
+        h.apply(K, &ev("claude", "Notification", json!({"kind": kind, "message": "Open this"})), t);
+        assert_eq!(h.view(K, "2.1.318", t).unwrap().state, State::Waiting, "{kind}");
+    }
+}

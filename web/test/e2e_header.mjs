@@ -27,6 +27,24 @@ export async function webHeader(browser, name) {
     const apart = await page.evaluate(() => Math.round(document.getElementById("cursub").getBoundingClientRect().top - document.querySelector("#current .t").getBoundingClientRect().bottom));
     check(`AC-01 the folder line ${size.startsWith("390") ? "2" : "7"} px under the title's text`, apart === (size.startsWith("390") ? 2 : 7), String(apart));
     if (!size.startsWith("390")) {
+      const underButton = async () => {
+        await page.click("#menubtn");
+        await pause(page, 500);
+        const got = await page.evaluate(() => { const m = document.getElementById("menu").getBoundingClientRect(), b = document.getElementById("menubtn").getBoundingClientRect();
+          return { gap: Math.round(m.top - b.bottom), overlaps: m.left < b.right && m.right > b.left, inside: m.left >= 0 && m.right <= innerWidth && m.bottom <= innerHeight + 1,
+            cog: document.querySelectorAll("#menubtn svg path").length === 12 && document.querySelectorAll("#menubtn svg circle").length === 2 }; });
+        await page.keyboard.press("Escape");
+        await pause(page, 300);
+        return got;
+      };
+      const at = await underButton();
+      check("AC-07 the settings button is a cog, its menu opens right under it, inside the window", at.cog && at.gap === 6 && at.overlaps && at.inside, JSON.stringify(at));
+      await page.click('#views [data-view="files"]');
+      await pause(page, 400);
+      const docked = await underButton();
+      check("AC-07 with Files open too its menu stands under the button, wherever that is", docked.gap === 6 && docked.overlaps && docked.inside, JSON.stringify(docked));
+      await page.click('#views [data-view="files"]');
+      await pause(page, 300);
       const level = await page.evaluate(() => {        // the middles and heights of the title's line, ✎, the header's keys, the list's and docked Files' heads
         const box = (s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r && r.height ? { mid: (r.top + r.bottom) / 2, h: Math.round(r.height) } : null; };
         const keys = ["#current .tline", "#rename", '#views [data-view="files"]', "#menubtn", ".nav-head", "#sideclose"].map((s) => [s, box(s)]);

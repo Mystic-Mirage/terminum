@@ -51,7 +51,7 @@ export function saveOrder(send, ul, ids) {
  *  groups(): the layout's; split(item, side): its quick shell below, right or left;
  *  keepFolded(from, to): a renamed group's fold key `to` folded when `from` was;
  *  lastLines(): the lines terminumd keeps of a session (0: none); copy(text). */
-export function rowMenus({ list, send, item, projects, clone, orderGroups, groups, split, keepFolded, lastLines, copy, say }) {
+export function rowMenus({ list, send, item, projects, clone, orderList, groups, split, keepFolded, lastLines, copy, say }) {
   const kept = lastLinesView({ send, copy, title: (id) => item(id)?.title });
   const diag = diagnostics({ send, show: kept.showText, say, item });
   const box = $("rowmenu");
@@ -214,8 +214,7 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
   function headMenu(p, b, x, y) {
     if (b && box.open && box.dataset.for === p.id) return hide();
     const here = p.members.filter((k) => item(k));
-    const ids = [...list.querySelectorAll(".projects > section[data-pid]")].map((s) => s.dataset.pid), i = ids.indexOf(p.id), last = ids.length - 1;
-    const move = (to) => { hide(); const o = ids.filter((k) => k !== p.id); o.splice(to, 0, p.id); send({ t: "project", action: "order", ids: o }); };
+    const { i, last, move } = mover(`p:${p.id}`);
     const closeAll = async () => {
       hide();
       const n = here.length, them = n === 1 ? "its session" : `its ${n} sessions`;
@@ -237,9 +236,15 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     open(r ? r.right - 210 : x, r ? r.bottom + 4 : y);
   }
 
+  /** Where `id` stands among the list's projects and groups as drawn, and its move there. */
+  function mover(id) {
+    const ids = [...list.querySelectorAll("section.grp[data-part]")].map((s) => s.dataset.part), i = ids.indexOf(id), last = ids.length - 1;
+    return { ids, i, last, move: (to) => { hide(); const o = ids.filter((k) => k !== id); o.splice(to, 0, id); orderList(o); } };
+  }
+
   /** A tmux session's group's menu, under its ⋯ `b` or at x, y: a new window after its last row,
-   *  Rename (its tmux session; its place and fold kept), moves among the groups (kept in this
-   *  browser, as a drag), Close Group (its windows end, after asking). */
+   *  Rename (its tmux session; its place and fold kept), moves in the list (every page's, as a
+   *  drag), Close Group (its windows end, after asking). */
   function groupMenu(wid, b, x, y) {
     if (b && box.open && box.dataset.for === wid) return hide();
     const sec = [...list.querySelectorAll("section.grp[data-wid]")].find((s) => s.dataset.wid === wid);
@@ -248,15 +253,14 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     const label = sec.querySelector("h2 .label")?.textContent ?? wid;
     // from the list's model, not its rows: a collapsed group draws none (and a filter only some)
     const rows = groupRows(groups(), projects(), wid).filter((id) => item(id));
-    const ids = [...list.querySelectorAll("section.grp[data-wid]")].map((s) => s.dataset.wid), i = ids.indexOf(wid), last = ids.length - 1;
-    const move = (to) => { hide(); const o = ids.filter((k) => k !== wid); o.splice(to, 0, wid); orderGroups(o); };
+    const { ids, i, last, move } = mover(`g:${wid}`);
     const rename = async () => {
       hide();
       const name = (await askName(`Rename ${label}`, label))?.trim();
       if (!name || name === label) return;
       const to = `${wid.slice(0, wid.indexOf("/") + 1)}${name}`;
       keepFolded?.(groupKey(g), groupKey({ ...g, label: name }));
-      orderGroups(ids.map((k) => (k === wid ? to : k)));          // the renamed group keeps its place
+      orderList(ids.flatMap((k) => (k === `g:${wid}` ? [`g:${to}`, k] : [k])));   // the renamed group keeps its place, its old name beside it until it is one (a name refused: nothing moved)
       send({ t: "renamegroup", group: wid, name });
     };
     const closeAll = async () => {
@@ -282,7 +286,7 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
   // a right click, the keyboard's menu key or ⇧F10 on a row (at the row), or a finger resting
   // on it (below the finger; its click that follows is dropped)
   list.addEventListener("contextmenu", (e) => {
-    const head = e.target.closest(".projects > section[data-pid] > h2"), p = head && projects().find((x) => x.id === head.parentElement.dataset.pid);
+    const head = e.target.closest("section[data-pid] > h2"), p = head && projects().find((x) => x.id === head.parentElement.dataset.pid);
     if (p) {                                       // a project's header: its menu
       e.preventDefault();
       const r = head.getBoundingClientRect(), keys = !e.clientX && !e.clientY;

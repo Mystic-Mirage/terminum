@@ -2,14 +2,15 @@
 //! A coding agent's bookmarks and reminders (AC-98): what it hands the user through
 //! add_notes_for_user (a final report, a next step, a gap seen elsewhere, deferred work, a
 //! question) instead of printing it into the terminal's scroll. Each is a bookmark of its pane
-//! (page/bookmarks.rs) marked `by` the agent, scoped as the user's (its project, else its pane),
-//! its title the note and its body the text, found again by its title (the agent's transcript
-//! of the call shows it). Agents' records have limits of their own, never the user's 300. The
-//! notes of 0.23 (notes.json) become such records once.
+//! (page/bookmarks.rs) marked `by` the agent, shown in its pane alone as the user's, its title the
+//! note and its body the text, found again by its title (the agent's transcript of the call shows
+//! it). The agent of a pane reads, changes and deletes every record of that pane, the user's too,
+//! and no other pane's. Agents' records have limits of their own, a pane's, never the user's 300.
+//! The notes of 0.23 (notes.json) become such records once.
 
 use std::path::Path;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::page::bookmarks::{Item, MarkError, NewMark, Store};
 use crate::plans::rules;
@@ -34,6 +35,10 @@ pub const FILE: usize = 300;
 pub const KINDS: [&str; 5] = ["bug", "deferred", "followup", "question", "report"];
 pub const STATUSES: [&str; 2] = ["open", "done"];
 /// Said with each reminder made, so the agent knows what it costs the user.
+/// Agents' report bookmarks a session keeps: a later one tells what the earlier ones did.
+pub const REPORTS_MOST: usize = 3;
+/// The session's other open records an answer to add_notes_for_user lists.
+const LISTED: usize = 10;
 pub const COMES_UP: &str = "it comes up at each turn end until the user resolves it";
 
 /// Where records are made: the pane, its project, and its row's title, host and folder.
@@ -68,37 +73,39 @@ fn agent_of(by: &str) -> String {
     if crate::tmux::hookstate::agent(by).is_some() { by.to_string() } else { "agent".into() }
 }
 
-/// Whether `i` is an agent's record shown in `p`'s scope (orphaned ones are no scope's).
-/// The pane's own made before it joined its project count too, as the user sees them there.
-fn in_scope(i: &Item, p: &Place) -> bool {
-    let own = i.project.is_none() && i.key.as_deref() == Some(p.key.as_str());
-    i.by.is_some() && i.orphaned.is_none() && match &p.project {
-        Some(project) => i.project.as_ref() == Some(project) || own,
-        None => own,
-    }
+/// Whether `i` is a record of `p`'s pane, an agent's or the user's: the only pane that shows it
+/// (AC-33) and whose agent may read, change or delete it (AC-98); orphaned ones are no pane's.
+fn in_pane(i: &Item, p: &Place) -> bool {
+    i.orphaned.is_none() && i.key.as_deref() == Some(p.key.as_str())
+}
+
+/// The record `id` of `at`'s pane.
+fn of_pane<'a>(store: &'a Store, at: &Place, id: &str) -> Result<&'a Item, String> {
+    store.get(id).filter(|i| in_pane(i, at)).ok_or_else(|| format!("No record {id} in this session: get_notes_for_user lists its records."))
 }
 
 fn open(i: &Item) -> bool {
     i.resolved.is_none()
 }
 
-/// Whether `i` is an agent's record kept in `p`'s own scope (its project, else its session):
-/// what a limit counts and room is made from (`in_scope` also shows a pane its records from
-/// before it joined its project).
-fn own_scope(i: &Item, p: &Place) -> bool {
-    i.by.is_some() && i.orphaned.is_none() && match &p.project {
-        Some(project) => i.project.as_ref() == Some(project),
-        None => i.project.is_none() && i.key.as_deref() == Some(p.key.as_str()),
-    }
+/// Whether `i` is an agent's open record of `p`'s pane: what the limits count.
+fn agents_open(i: &Item, p: &Place) -> bool {
+    i.by.is_some() && in_pane(i, p) && open(i)
+}
+
+/// A record's title for an agent's reading: its note, else its text's first line, cleaned and cut.
+fn title_of(i: &Item, max: usize) -> String {
+    let title = if i.note.is_empty() { i.text.lines().next().unwrap_or("") } else { i.note.as_str() };
+    rules::clean(title).chars().take(max).collect()
 }
 
 /// The oldest (the file's order is the order they were made) open records of agents that go so
-/// that `adding` new ones of each kind fit in `at`'s scope, never `keep`; then orphaned ones past
-/// ALL_MOST. With whether each kind (bookmarks, reminders) went in the scope.
+/// that `adding` new ones of each kind fit in `at`'s pane, never `keep`, never another pane's; then
+/// orphaned ones past ALL_MOST. With whether each kind (bookmarks, reminders) went in the pane.
 fn room(store: &Store, at: &Place, adding: [usize; 2], keep: Option<&str>) -> (Vec<String>, [bool; 2]) {
     let (mut gone, mut full) = (Vec::new(), [false; 2]);
     for remind in [false, true] {
-        let here: Vec<&Item> = store.all().iter().filter(|i| own_scope(i, at) && open(i) && i.remind == remind).collect();
+        let here: Vec<&Item> = store.all().iter().filter(|i| agents_open(i, at) && i.remind == remind).collect();
         let over = (here.len() + adding[usize::from(remind)]).saturating_sub(most(remind));
         gone.extend(here.iter().filter(|i| Some(i.id.as_str()) != keep).take(over).map(|i| i.id.clone()));
         full[usize::from(remind)] = over > 0;
@@ -114,7 +121,7 @@ fn made_room(text: &mut String, told: &mut Vec<Told>, gone: Vec<String>, full: [
     if gone.is_empty() {
         return;
     }
-    text.push_str(&format!(" To make room ({BOOKMARKS_MOST} bookmarks and {REMINDERS_MOST} open reminders of agents a scope) these oldest records were deleted: {}; the user is told.", gone.join(", ")));
+    text.push_str(&format!(" To make room ({BOOKMARKS_MOST} bookmarks and {REMINDERS_MOST} open reminders of agents a session) these oldest records were deleted: {}; the user is told.", gone.join(", ")));
     told.extend(gone.into_iter().map(Told::Unmark));
     told.extend([false, true].into_iter().filter(|k| full[usize::from(*k)]).map(Told::Full));
 }
@@ -128,32 +135,50 @@ fn cleaned(s: &str, what: &str, max: usize) -> Result<String, String> {
     }
 }
 
-/// The records kept (an open one of the same title in the scope stands for its repeat), and the
-/// answer to the agent.
-pub fn add(store: &mut Store, at: &Place, by: &str, records: Vec<Record>) -> Result<(String, Vec<Told>), String> {
+/// The records kept (an open one of the same title in the pane stands for its repeat: another
+/// session's would not show here), and the answer to the agent.
+pub fn add(store: &mut Store, at: &Place, by: &str, records: Vec<Record>, replaces: &[String]) -> Result<(String, Vec<Told>), String> {
     let mut new = Vec::new();
     let mut repeats = Vec::new();
+    let mut not_reminders = Vec::new();
+    // what it replaces: its own records, a wrong id refused before anything changes
+    let (mut replaced, mut users) = (Vec::new(), Vec::new());
+    for id in replaces {
+        if of_pane(store, at, id)?.by.is_some() { replaced.push(id.clone()); } else { users.push(id.as_str()); }
+    }
     let same = |a: &str, b: &str| a.to_lowercase() == b.to_lowercase();
     for (i, r) in records.into_iter().enumerate() {
         let title = cleaned(&r.title, &format!("notes[{i}].title"), TITLE)?;
         let text = cleaned(&r.text, &format!("notes[{i}].text"), TEXT)?;
-        if let Some(old) = store.all().iter().find(|x| in_scope(x, at) && open(x) && same(&x.note, &title)) {
+        if let Some(old) = store.all().iter().find(|x| agents_open(x, at) && same(&x.note, &title)) {
             repeats.push(format!("{} \"{title}\" is already kept (not added again)", old.id));
             continue;
         }
         if new.iter().any(|n: &NewMark| same(&n.note, &title)) {
             continue;
         }
+        let remind = r.remind && reminds(r.kind.as_deref());
+        if r.remind && !remind {
+            not_reminders.push(title.clone());
+        }
         new.push(NewMark {
-            key: Some(at.key.clone()), n: -1, text, note: title, title: at.title.clone(), host: at.host.clone(), remind: r.remind,
+            key: Some(at.key.clone()), n: -1, text, note: title, title: at.title.clone(), host: at.host.clone(), remind,
             dir: at.dir.clone(), project: at.project.clone(), by: Some(agent_of(by)), kind: r.kind, file: r.file.map(|f| rules::clean(&f)),
             ..NewMark::default()
         });
     }
     let adding = [false, true].map(|r| new.iter().filter(|n| n.remind == r).count());
-    let (gone, full, made) = if new.is_empty() { (Vec::new(), [false; 2], Vec::new()) } else {
-        let (gone, full) = room(store, at, adding, None);
-        let made = store.replace_all(&gone, new).map_err(|e: MarkError| e.to_string())?;
+    // the oldest reports past REPORTS_MOST, counting the new: no banner, a later report tells them
+    let reports = new.iter().filter(|n| n.kind.as_deref() == Some("report")).count();
+    let old_reports: Vec<String> = if reports == 0 { Vec::new() } else {
+        let held: Vec<&Item> = store.all().iter().filter(|i| agents_open(i, at) && i.kind.as_deref() == Some("report") && !replaced.contains(&i.id)).collect();
+        held.iter().take((held.len() + reports).saturating_sub(REPORTS_MOST)).map(|i| i.id.clone()).collect()
+    };
+    let (gone, full, made) = if new.is_empty() && replaced.is_empty() { (Vec::new(), [false; 2], Vec::new()) } else {
+        let (mut gone, full) = room(store, at, adding, None);
+        gone.retain(|g| !replaced.contains(g) && !old_reports.contains(g));
+        let all: Vec<String> = gone.iter().chain(&replaced).chain(&old_reports).cloned().collect();
+        let made = store.replace_all(&all, new).map_err(|e: MarkError| e.to_string())?;
         (gone, full, made)
     };
     let mut said: Vec<String> = made.iter().map(|m| if m.remind {
@@ -165,23 +190,57 @@ pub fn add(store: &mut Store, at: &Place, by: &str, records: Vec<Record>) -> Res
     let mut text = format!("Kept for the user: {}.", said.join("; "));
     let mut told: Vec<Told> = Vec::new();
     made_room(&mut text, &mut told, gone, full);
+    if !not_reminders.is_empty() {
+        text.push_str(&format!(" Kept as bookmarks, only a question reminds: {}.", not_reminders.join("; ")));
+    }
+    if !replaced.is_empty() {
+        text.push_str(&format!(" Replaced: {}.", replaced.join(", ")));
+    }
+    if !users.is_empty() {
+        text.push_str(&format!(" The user's, left: {}.", users.join(", ")));
+    }
+    if !old_reports.is_empty() {
+        text.push_str(&format!(" Older reports went ({REPORTS_MOST} a session): {}.", old_reports.join(", ")));
+    }
+    told.extend(replaced.into_iter().chain(old_reports).map(Told::Unmark));
+    let shown: Vec<&str> = made.iter().map(|m| m.id.as_str()).collect();
+    text.push_str(&others(store, at, &shown));
     told.extend(made.into_iter().map(|m| Told::Mark(Box::new(m))));
     Ok((text, told))
 }
 
+/// Whether a record of `kind` may be a reminder: only what the user must answer.
+fn reminds(kind: Option<&str>) -> bool {
+    matches!(kind, None | Some("question"))
+}
+
+/// The pane's other open records, newest first, for the agent to close what it covered.
+fn others(store: &Store, at: &Place, but: &[&str]) -> String {
+    let open_here: Vec<&Item> = store.all().iter().rev().filter(|i| in_pane(i, at) && open(i) && !but.contains(&i.id.as_str())).collect();
+    if open_here.is_empty() {
+        return String::new();
+    }
+    let listed: Vec<String> = open_here.iter().take(LISTED)
+        .map(|i| format!("{} [{}] {}", i.id, i.kind.as_deref().unwrap_or(if i.by.is_some() { "note" } else { "user's" }), title_of(i, 60))).collect();
+    let more = open_here.len().saturating_sub(LISTED);
+    let tail = if more > 0 { format!("; and {more} more") } else { String::new() };
+    format!(" Other open records of this session: {}{tail}. What your work covered: replaces or status done, the user need not tidy it.", listed.join("; "))
+}
+
 /// The change `update_notes_for_user` asks for: status done (a reminder resolved, a bookmark
-/// deleted) or open (a resolved reminder open again), a new title, text or remind; only an
-/// agent's record of `at`'s scope.
+/// deleted) or open (a resolved reminder open again), a new title, text or remind; only a record
+/// of `at`'s pane.
 pub fn update(store: &mut Store, at: &Place, args: &Value) -> Result<(String, Vec<Told>), String> {
-    let id = args["id"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or("id is required: a record's id as add_notes_for_user answered it")?;
-    let Some(item) = store.get(id).filter(|i| in_scope(i, at)).cloned() else {
-        return Err(format!("No record {id} of an agent here: ids are as add_notes_for_user answered them."));
-    };
+    let id = args["id"].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or("id is required: a record's id as get_notes_for_user lists it")?;
+    let item = of_pane(store, at, id)?.clone();
     let title = args["title"].as_str().map(|t| cleaned(t, "title", TITLE)).transpose()?;
     let text = args["text"].as_str().map(|t| cleaned(t, "text", TEXT)).transpose()?;
     let (remind, status) = (args["remind"].as_bool(), args["status"].as_str());
     if let Some(s) = status.filter(|s| !STATUSES.contains(s)) {
         return Err(format!("status {s} is not one of {}", STATUSES.join(", ")));
+    }
+    if remind == Some(true) && item.by.is_some() && !reminds(item.kind.as_deref()) {
+        return Err(format!("only a question reminds: {id} is a {}", item.kind.as_deref().unwrap_or("record")));
     }
     if title.is_none() && text.is_none() && remind.is_none() && status.is_none() {
         return Err("nothing to change: give status (open, done), title, text or remind".into());
@@ -190,6 +249,12 @@ pub fn update(store: &mut Store, at: &Place, args: &Value) -> Result<(String, Ve
     if status == Some("done") && !remind.unwrap_or(item.remind) {
         store.remove(id).map_err(|e| e.to_string())?;
         return Ok((format!("Bookmark {id} deleted."), vec![Told::Unmark(id.to_string())]));
+    }
+    if item.by.is_none() {                     // the user's: what their limits count, and a trace (AC-98)
+        let turned = remind.filter(|on| *on != item.remind);
+        let reopened = status == Some("open") && item.resolved.is_some();
+        store.users_room(usize::from(turned == Some(false)), usize::from(turned == Some(true) || reopened)).map_err(|e| e.to_string())?;
+        tracing::info!(event = "bookmark.changed_by_agent", id, pane = %at.key);
     }
     let now = crate::auth::store::unix_now() as i64;
     let changed = store.change(id, |i| {
@@ -213,6 +278,45 @@ pub fn update(store: &mut Store, at: &Place, args: &Value) -> Result<(String, Ve
         made_room(&mut text, &mut told, gone, full);
     }
     Ok((text, told))
+}
+
+/// What `get_notes_for_user` says of a record: terminumd's fields, its words cleaned and redacted as
+/// a record is kept (the user's text is the terminal's as it was selected).
+fn summary(i: &Item) -> Value {
+    let status = if i.resolved.is_some() { "resolved" } else if i.due { "up" } else { "open" };
+    json!({"id": i.id, "type": if i.remind { "reminder" } else { "bookmark" }, "status": status, "by": i.by.as_deref().unwrap_or("user"),
+           "title": title_of(i, TITLE), "kind": i.kind, "file": i.file})
+}
+
+/// `get_notes_for_user`: the records of `at`'s pane, in the order they were made, or with `id` that
+/// one whole, as JSON.
+pub fn read(store: &Store, at: &Place, args: &Value) -> Result<String, String> {
+    if let Some(id) = args["id"].as_str() {
+        let item = of_pane(store, at, id)?;
+        let mut whole = summary(item);
+        whole["note"] = json!(rules::clean(&item.note));
+        whole["text"] = json!(rules::clean(&item.text));
+        return Ok(whole.to_string());
+    }
+    Ok(Value::Array(store.all().iter().filter(|i| in_pane(i, at)).map(summary).collect()).to_string())
+}
+
+/// `delete_notes_for_user`: records `ids` of `at`'s pane gone for good, a reminder too (status done
+/// only resolves one); none when one of them is no record of it.
+pub fn delete(store: &mut Store, at: &Place, args: &Value) -> Result<(String, Vec<Told>), String> {
+    let mut ids: Vec<String> = args["ids"].as_array().ok_or("ids is required: a list of 1–20 record ids")?.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+    ids.dedup();
+    if ids.is_empty() {
+        return Err("ids is required: a list of 1–20 record ids".into());
+    }
+    for id in &ids {
+        if of_pane(store, at, id)?.by.is_none() {
+            tracing::info!(event = "bookmark.deleted_by_agent", id, pane = %at.key);
+        }
+    }
+    store.replace_all(&ids, Vec::new()).map_err(|e: MarkError| e.to_string())?;
+    let text = format!("Deleted: {}.", ids.join(", "));
+    Ok((text, ids.into_iter().map(Told::Unmark).collect()))
 }
 
 /// The open notes of 0.23's notes.json in `dir` made agents' records once; the file is kept

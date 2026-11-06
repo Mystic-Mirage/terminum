@@ -24,7 +24,7 @@ export function renderMarkdown(el: HTMLElement, text: string, path: string) {
   for (const code of el.querySelectorAll<HTMLElement>("pre > code[class*='language-']")) {
     const lang = [...code.classList].find((c) => c.startsWith("language-"))!.slice(9);
     code.parentElement!.dataset.lang = lang;
-    if (lang.toLowerCase() === "mermaid") void drawFence(code.parentElement!, code.textContent ?? "");
+    if (/^(mermaid|mermaidjs|mmd)$/i.test(lang)) void drawFence(code.parentElement!, code.textContent ?? "");
     else void highlightInto(code, code.textContent ?? "", lang);
   }
 }

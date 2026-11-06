@@ -81,8 +81,10 @@ export async function webLook(browser, name) {
       const s = getComputedStyle(b);
       return [b.className, `${s.width} ${s.height} ${s.borderRadius} ${s.color}`];
     }));
-    check("look: a group header's buttons (copy, import, ⋯) share one size, radius and color; no [+] (each row has Clone)",
-      head.length === 3 && new Set(head.map(([, l]) => l)).size === 1, JSON.stringify(head));
+    check("look: a group header's buttons (copy, import, New Window, ⋯) share one size, radius and color",
+      head.length === 4 && head[0][0] === "new" && new Set(head.map(([, l]) => l)).size === 1, JSON.stringify(head));
+    const counts = await page.evaluate(() => [...document.querySelectorAll("#sessions .grp h2 .count")].filter((c) => c.offsetParent).map((c) => Math.round(c.getBoundingClientRect().right)));
+    check("look: the groups' counts end in one column, a header of four buttons among them", counts.length > 1 && Math.max(...counts) - Math.min(...counts) <= 1, JSON.stringify(counts));
     if (phone) {
       const list = await small(page, "#nav button:not(.item)", 40);
       await pressFoot(page, "#addhostbtn");

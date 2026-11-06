@@ -4,6 +4,8 @@
 // cursor's maths see only the terminal's own text. Content from the terminal is put in as text,
 // or as the panel's Markdown (raw HTML off); a diagram is an image, so nothing in it runs.
 import { icon } from "./icons.js";
+import { MERMAID_LANG } from "./outparse.js";
+import { copyTablePng } from "./tablepng.js";
 import { openZoom } from "./zoom.js";
 
 let lib = null, tries = 0;
@@ -82,7 +84,7 @@ function button(act, label, title, iconName) {
   return b;
 }
 
-/** A region's widget: its bar (name, Raw | rendered, Copy, Full screen) and its body, filled
+/** A region's widget: its bar (name, Raw | rendered, Copy, PNG or Full screen) and its body, filled
  *  when the renderer answers. wg.draw() draws the body (once); the page calls it when the widget
  *  is first shown rendered. ctx: {key, dark, change(fn), raw()}: change runs a change to the
  *  page so the reader's place is kept; raw: it could not be drawn, so the region shows as text,
@@ -106,6 +108,10 @@ export function regionWidget(region, ctx) {
   err.className = "err";
   err.hidden = true;
   bar.append(name, seg, button("copy", "Copy", "Copy the source", "copy"));
+  if (region.kind === "table") {
+    bar.append(button("png", "PNG", "Copy the table as a PNG picture", "image"));
+    wg.copyPng = (notify) => copyTablePng(wg, tableElement(region.table), notify);
+  }
   if (region.kind === "mermaid") bar.append(button("zoom", "", "Full screen", "maximize-2"));
   bar.append(err);
   const body = document.createElement("div");
@@ -134,7 +140,7 @@ export function regionWidget(region, ctx) {
         for (const code of body.querySelectorAll("pre > code[class*='language-']")) {
           const lang = [...code.classList].find((c) => c.startsWith("language-")).slice(9);
           // a diagram that does not draw keeps its source, and its bar says why
-          if (lang === "mermaid") void diagram(code.textContent, ctx.dark).then((img) => ctx.change(() => code.parentElement.replaceWith(img)), say);
+          if (MERMAID_LANG.test(lang)) void diagram(code.textContent, ctx.dark).then((img) => ctx.change(() => code.parentElement.replaceWith(img)), say);
           else await r.highlight(code, code.textContent, lang);
         }
       }).catch(fail);

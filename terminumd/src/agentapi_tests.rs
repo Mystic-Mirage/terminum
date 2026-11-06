@@ -66,7 +66,7 @@ fn records_add_and_update_in_scope() {
     assert_eq!(n.lock().all()[1].project.as_deref(), Some("p1"));
     let (t, err, _) = go(&p, &n, &c, "update_notes_for_user", json!({"id": ids[1], "status": "done"}));
     assert!(!err && t == format!("Reminder {} updated (resolved).", ids[1]), "{t}");
-    let other = caller(None);
+    let other = Caller { place: Place { key: "tmux:local:t:%2".into(), project: Some("p1".into()), ..Place::default() }, key: "tmux:local:t:%2".into(), ..caller(None) };
     let (t, err, _) = go(&p, &n, &other, "update_notes_for_user", json!({"id": ids[0], "status": "done"}));
     assert!(err && t.contains("No record"), "{t}");
     assert!(go(&p, &n, &c, "update_notes_for_user", json!({"id": ids[0]})).1);

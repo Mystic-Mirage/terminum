@@ -26,10 +26,13 @@ import { liveLinks } from "./e2e_livelinks.mjs";
 import { liveLimit } from "./e2e_livelimit.mjs";
 import { liveFocus } from "./e2e_livefocus.mjs";
 import { liveListPlace } from "./e2e_livelistplace.mjs";
+import { liveWidgetPng } from "./e2e_livewidgetpng.mjs";
+import { liveWidgetSteady } from "./e2e_livewidgetsteady.mjs";
 import { liveClip } from "./e2e_liveclip.mjs";
 import { livePrograms } from "./e2e_liveprogs.mjs";
 import { liveKeys } from "./e2e_livekeys.mjs";
 import { livePlans } from "./e2e_liveplans.mjs";
+import { liveNotes } from "./e2e_livenotes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -84,7 +87,7 @@ let ended = false;
 async function start() {
   if (ended) throw new Error("the run was ended");   // a signal ended it while a browser ran
   // as the build the Files panel was bundled for: another one makes the panel reload itself (AC-34)
-  const env = { ...process.env, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
+  const env = { ...process.env, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
   delete env.TMUX;
   proc = spawn(BIN, [], { env, stdio: ["ignore", "ignore", "inherit"] });
   for (let i = 0; i < 100; i++) {
@@ -130,7 +133,8 @@ async function wide(browser, name) {
   // checks", though the code caught it (the Panel's reads while terminumd restarts: AC-14, AC-34); said, not counted
   page.on("pageerror", (e) => {
     const said = String(e.stack ?? e);
-    if (/^(Error: )?Fetch API cannot load \S+ due to access control checks\.?$/.test(String(e.message ?? said))) console.log(`NOTE [${name}] WebKit's own report of a failed load: ${e.message}`);
+    // the stack's first line: Playwright cuts a message at its first colon, the one in "http:"
+    if (/^(Error: )?Fetch API cannot load \S+ due to access control checks\.?$/.test(said.split("\n")[0])) console.log(`NOTE [${name}] WebKit's own report of a failed load: ${said.split("\n")[0]}`);
     else errors.push(said);
   });
   await signIn(page);
@@ -187,10 +191,13 @@ async function wide(browser, name) {
   await liveLimit(page, { tmux, work: WORK });
   await liveFocus(page, { tmux, work: WORK });
   await liveListPlace(page, { tmux, work: WORK, app: APP });
+  await liveWidgetPng(page, { tmux, work: WORK });
+  await liveWidgetSteady(page, { tmux, work: WORK });
   await liveKeys(page, { tmux, work: WORK });
   await liveClip(page, { tmux, work: WORK });
   await livePrograms(page, { tmux, work: WORK });
   await livePlans(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, signIn, name });
+  await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");

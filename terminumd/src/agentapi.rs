@@ -109,7 +109,9 @@ pub fn run(plans: &Plans, marks: &Mutex<Store>, c: &Caller, tool: &str, args: &V
         "get_session_plan" => Ok((plan_text(plans, &c.key, working, now), Changed::Nothing)),
         "add_notes_for_user" => add_notes(marks, c, args).map(|(t, told)| (t, Changed::Marks(told))),
         "update_notes_for_user" => agentmarks::update(&mut marks.lock(), &c.place, args).map(|(t, told)| (t, Changed::Marks(told))),
-        other => Err(format!("unknown tool {other}: update_session_plan, get_session_plan, add_notes_for_user, update_notes_for_user")),
+        "get_notes_for_user" => agentmarks::read(&marks.lock(), &c.place, args).map(|t| (t, Changed::Nothing)),
+        "delete_notes_for_user" => agentmarks::delete(&mut marks.lock(), &c.place, args).map(|(t, told)| (t, Changed::Marks(told))),
+        other => Err(format!("unknown tool {other}: update_session_plan, get_session_plan, add_notes_for_user, get_notes_for_user, update_notes_for_user, delete_notes_for_user")),
     };
     let r = r.map(|(t, ch)| match tool {
         "update_session_plan" | "get_session_plan" if !c.hooks => (format!("{t}\n{HOOKS_OFF}"), ch),
@@ -198,7 +200,8 @@ fn add_notes(marks: &Mutex<Store>, c: &Caller, args: &Value) -> Result<(String, 
                               text: s("text").ok_or_else(|| format!("notes[{i}].text is required"))?,
                               remind: n["remind"] == true, kind: s("kind"), file: s("file") });
     }
-    agentmarks::add(&mut marks.lock(), &c.place, &c.agent, records)
+    let replaces: Vec<String> = args["replaces"].as_array().map_or_else(Vec::new, |ids| ids.iter().filter_map(|v| v.as_str().map(str::to_string)).collect());
+    agentmarks::add(&mut marks.lock(), &c.place, &c.agent, records, &replaces)
 }
 
 #[cfg(test)]

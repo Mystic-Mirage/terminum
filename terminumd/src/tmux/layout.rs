@@ -22,6 +22,8 @@ pub struct Read {
     pub panes: HashMap<String, String>,
     /// every pane key, for workspace expiry (AC-71)
     pub keys: Vec<String>,
+    /// every pane key of the server, of a session not shown too: a pane not here closed
+    pub every: Vec<String>,
     /// every session the server has, shown or not: name and `$id` (a host's offer, AC-89)
     pub sessions: Vec<(String, String)>,
 }
@@ -39,6 +41,7 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, e
     }
     // a host shows the session terminumd holds there and those the user attached, never the
     // host's others (OQ-81, AC-89)
+    let every: Vec<String> = all.iter().map(|p| server.key(&p.pane_id)).collect();
     let panes: Vec<PaneFields> = all.into_iter().filter(|p| server.shows(&p.session)).collect();
     let (agents, views, behind) = agent_states(server, states, hooks, ending, &panes).await;
     // a restored pane's title (AC-15) gives way once a coding agent runs there again: its own
@@ -97,6 +100,7 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, e
                         if !v.is_empty() { row[k] = json!(v); }
                     }
                     if h.subagents > 0 { row["subagents"] = json!(h.subagents); }
+                    if h.turn_over { row["turnOver"] = json!(true); }
                 }
                 items.push(row);
                 panes_of.push(*p);
@@ -116,7 +120,7 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, e
         }
         groups.push(g);
     }
-    Ok(Read { groups, panes: map, keys, sessions })
+    Ok(Read { groups, panes: map, keys, every, sessions })
 }
 
 /// Quick shells (AC-88): the rows of a window marked `@tm-quick %N`, whose pane %N is in the
@@ -229,9 +233,10 @@ fn maybe_codex(p: &PaneFields) -> bool {
 /// Also the hooks' views, by pane, for the rows, and the panes done with work in the background.
 async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, ending: &HashMap<String, bool>, panes: &[PaneFields])
     -> (HashMap<String, Option<agentstate::State>>, HashMap<String, super::hookstate::View>, HashSet<String>) {
-    use agentstate::State::{Done, Waiting, Working};
+    use agentstate::State::{Done, Failed, Waiting, Working};
     let now = Instant::now();
     let (mut held, mut read, mut ended, mut behind) = (HashMap::new(), Vec::new(), Vec::new(), HashSet::new());
+    let mut counted = Vec::new();
     {
         let mut g = states.lock();
         for p in panes {
@@ -240,7 +245,7 @@ async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, en
                 Some(h) => {
                     let done = h.state == Done && h.agent == "claude";
                     let lingers = if done { g.lingers(&key, now) } else { g.linger(&key, now, false); None };
-                    if h.state == Waiting {
+                    if h.state == Waiting || h.state == Failed {    // answered with no event; a refusal's words say more
                         read.push(p);
                     } else if let Some(&late) = ending.get(&key).filter(|_| done) {
                         ended.push((p, late));
@@ -249,6 +254,9 @@ async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, en
                     } else if lingers == Some(false) {
                         behind.insert(p.pane_id.clone());
                     }
+                    if h.subagents > 0 && h.agent == "claude" {   // Codex's Stop ends its turn, and it lists none
+                        counted.push((p, h.check_subs));
+                    }
                     held.insert(p.pane_id.clone(), h);
                 }
                 None => read.push(p),
@@ -256,8 +264,19 @@ async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, en
         }
     }
     // the screens and the stopped panes' footers asked at once: one round trip over ssh, not two
-    let ((mut out, seen), footers) = tokio::join!(screen_states(server, states, &read, now), background(server, &ended));
+    let counted_panes: Vec<&PaneFields> = counted.iter().map(|(p, _)| *p).collect();
+    let ((mut out, seen), footers, counted_rows) = tokio::join!(screen_states(server, states, &read, now), background(server, &ended), captured(server, &counted_panes));
     behind.extend(seen);
+    // panes with subagents counted: how many Claude Code lists; after a Stop, whether any runs:
+    // an interrupted, killed or failed one fires no SubagentStop (AC-39)
+    for ((p, check), rows) in counted.iter().zip(counted_rows) {
+        let Ok(rows) = rows else { continue };
+        if *check && !agentstate::agents_run(&rows) {
+            hooks.drop_ghosts(&server.key(&p.pane_id));
+        } else if let Some(h) = held.get_mut(&p.pane_id) {
+            h.subagents = h.subagents.max(agentstate::listed_agents(&rows));
+        }
+    }
     let mut busy = HashSet::new();
     {
         let mut g = states.lock();
@@ -276,7 +295,12 @@ async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, en
         }
     }
     for (id, h) in &held {
-        if !(h.state == Waiting && out.get(id) == Some(&Some(Working))) {
+        let screen_wins = match (h.state, out.get(id).copied().flatten()) {
+            (Waiting, Some(Working)) => !h.turn_over,      // answered with no event
+            (Failed, Some(Waiting)) => true,               // a refusal: the user decides
+            _ => false,
+        };
+        if !screen_wins {
             out.insert(id.clone(), Some(if h.state == Done && busy.contains(id) { Working } else { h.state }));
         }
     }
@@ -286,9 +310,14 @@ async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, en
 /// What the Claude Code footers of `panes` count in the background, read now (no cached read: one
 /// from before the turn would say nothing); None for a pane that could not be read.
 async fn background(server: &Server, panes: &[(&PaneFields, bool)]) -> Vec<Option<agentstate::Background>> {
-    let Some(client) = server.bulk().filter(|_| !panes.is_empty()) else { return vec![None; panes.len()] };
-    let answers = client.run_all(panes.iter().map(|(p, _)| format!("capture-pane -p -J -t {}", p.pane_id)).collect()).await;
-    answers.into_iter().map(|a| a.ok().map(|rows| agentstate::background_tasks(&rows))).collect()
+    let panes: Vec<&PaneFields> = panes.iter().map(|(p, _)| *p).collect();
+    captured(server, &panes).await.into_iter().map(|a| a.ok().map(|rows| agentstate::background_tasks(&rows))).collect()
+}
+
+/// The screens of `panes`, read now.
+async fn captured(server: &Server, panes: &[&PaneFields]) -> Vec<Result<Vec<String>, String>> {
+    let Some(client) = server.bulk().filter(|_| !panes.is_empty()) else { return panes.iter().map(|_| Err(String::new())).collect() };
+    client.run_all(panes.iter().map(|p| format!("capture-pane -p -J -t {}", p.pane_id)).collect()).await
 }
 
 /// Agent states of the panes that run a coding agent, read only when due; a `node` pane is one

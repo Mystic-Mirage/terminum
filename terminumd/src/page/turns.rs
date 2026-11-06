@@ -17,7 +17,7 @@ pub const SETTLE: Duration = Duration::from_secs(10);
 
 /// Whether a list row's agent is busy: working, waiting for the user, or with subagents running.
 pub fn busy(it: &Value) -> bool {
-    it["state"] == "working" || it["state"] == "waiting" || it["subagents"].as_u64().is_some_and(|n| n > 0)
+    it["state"] == "working" || (it["state"] == "waiting" && it["turnOver"] != true) || it["subagents"].as_u64().is_some_and(|n| n > 0)
 }
 
 /// The panes that looked done and wait out SETTLE, since when, and whether their hooks said so.
@@ -120,6 +120,7 @@ mod tests {
     fn busy_rows() {
         assert!(busy(&json!({"state": "working"})) && busy(&json!({"state": "waiting"})));
         assert!(busy(&json!({"state": "done", "subagents": 2})), "its subagents still run");
+        assert!(!busy(&json!({"state": "waiting", "turnOver": true})), "its turn ended leaving it to the user");
         assert!(!busy(&json!({"state": "done"})) && !busy(&json!({"state": null})) && !busy(&json!({"state": "failed"})));
     }
 }

@@ -98,8 +98,8 @@ export async function webPlans(browser, name) {
         expanded: document.getElementById("curplan").getAttribute("aria-expanded") };
     });
     check("AC-97 a press on the header's Plan button opens the Plan pane and asks {t:plan, key}", await paneOpen(page) && asked(f, from) === 1, JSON.stringify(f.sent.slice(from)));
-    check("AC-97 the pane shows the title, what the agent does, ✓ ▶ ○ ⚠ and the partial note",
-      drawnPane.title === "Session plans" && drawnPane.doing === "writing the browser check" && drawnPane.marks === "✓▶○⚠○○" && /partial/.test(drawnPane.partial ?? ""), JSON.stringify(drawnPane));
+    check("AC-97 the pane shows the title, what the agent does, ✓ ▶ ○ ! and the partial note",
+      drawnPane.title === "Session plans" && drawnPane.doing === "writing the browser check" && drawnPane.marks === "✓▶○!○○" && /partial/.test(drawnPane.partial ?? ""), JSON.stringify(drawnPane));
     check("AC-97 the pane's ETA is the agent's estimate with its time given, and the source",
       drawnPane.meta.some((m) => /^ETA ~\d\d:\d\d \(agent's estimate, given \d\d:\d\d\)$/.test(m)) && drawnPane.meta.some((m) => /MCP/.test(m)), JSON.stringify(drawnPane.meta));
     check("AC-98 the pane says how many open records the agent kept (a resolved reminder and the user's own not counted)", drawnPane.kept === "2 kept for you by the agent: show them", JSON.stringify(drawnPane));

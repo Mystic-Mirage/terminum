@@ -138,7 +138,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
             } else {
                 Vec::new()
             };
-            crate::page::projects::seen(app, &server, &read.keys).await;   // closed panes leave their projects (AC-92)
+            crate::page::projects::seen(app, &server, &read.keys, &read.every).await;   // closed panes leave their projects (AC-92)
             crate::page::unread::seen(app, &server).await;                 // a tmux started anew takes its marks (AC-93)
             crate::plans::seen(app, &server).await;                        // and its plans (AC-97)
             // a gone pane's plan, or one whose program changed, is archived (AC-97)
@@ -197,13 +197,16 @@ pub async fn refresh(app: &Shared) {
             app.pages.tell(&told);
             // a pane whose hooks speak ends its turns by their Stop (sock.rs): exact, also between two layouts
             let mut ended = ended_turns(&old, app.layout.read().as_array().map_or(&[][..], Vec::as_slice));
-            ended.retain(|k| !app.hooks.has(k));
+            ended.retain(|k| !app.hooks.end_counted(k));   // no Stop counted for it: its screen's end stands (AC-39)
             ended
         } else {
             vec![]
         }
     };
     crate::page::projects::tell_read(app);                           // after the list without the closed panes (AC-92)
+    for k in app.hooks.take_all_ended() {                            // subagents the screen no longer shows (AC-39)
+        hook_turn_ended(app, &k, "screen");
+    }
     // a turn ends when its pane stayed done a while, its subagents too (turns.rs)
     let ended = {
         let layout = app.layout.read();
@@ -220,6 +223,15 @@ pub async fn refresh(app: &Shared) {
     announce_offers(app);
 }
 
+/// A turn its hooks ended (`by` an event, or the screen that shows no subagent): the next list read
+/// settles it, and where its answer ended is kept: the screen is final (AC-39, AC-90).
+pub fn hook_turn_ended(app: &Shared, key: &str, by: &str) {
+    tracing::info!(event = "hook.turn_end", key, by);
+    app.dirty.notify_one();
+    app.turns.hook_ended(key, Instant::now());
+    tokio::spawn(crate::page::answers::keep(app.clone(), key.to_string()));
+}
+
 /// The panes whose coding agent ended a turn between layouts `old` and `new`: it worked,
 /// waited or had subagents running, and now is done, failed or shows no agent (AC-91).
 pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
@@ -230,8 +242,8 @@ pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
     items(new).filter(|it| !busy(it)).filter_map(|it| it["id"].as_str()).filter(|id| was.contains(id)).map(str::to_string).collect()
 }
 
-/// The reminders of the panes whose agent ended a turn (in panes `ended`), and of their
-/// projects, come up, on every page (AC-91).
+/// The reminders of the panes whose agent ended a turn (in panes `ended`) come up, on every
+/// page (AC-91).
 pub async fn remind(app: &Shared, ended: Vec<String>) {
     crate::page::unread::ended(app, &ended);           // a turn nobody saw end is unread (AC-93)
     crate::page::marksfull::turn_ended(app, &ended);   // agents' records that went for room meanwhile (AC-98)
@@ -239,12 +251,8 @@ pub async fn remind(app: &Shared, ended: Vec<String>) {
     for k in ended.iter().filter(|k| !app.hooks.has(k)) {
         tokio::spawn(crate::page::answers::keep(app.clone(), k.clone()));
     }
-    let projects: Vec<(String, Option<String>)> = {
-        let ps = app.projects.lock();
-        ended.into_iter().map(|k| { let p = ps.of(&k).map(|p| p.id.clone()); (k, p) }).collect()
-    };
     let a = app.clone();
-    match tokio::task::spawn_blocking(move || a.bookmarks.lock().due(&projects).map_err(|e| e.to_string())).await.map_err(|e| e.to_string()).and_then(|r| r) {
+    match tokio::task::spawn_blocking(move || a.bookmarks.lock().due(&ended).map_err(|e| e.to_string())).await.map_err(|e| e.to_string()).and_then(|r| r) {
         Ok(items) => {
             for item in items {
                 crate::page::marks::tell_mark(app, &item);
@@ -275,6 +283,7 @@ pub async fn run(app: Shared) {
     loop {
         refresh(&app).await;
         let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_in_sight() { EVERY } else { Duration::from_secs(30) };
+        let wait = app.hooks.subs_due_in(Instant::now()).map_or(wait, |d| wait.min(d));   // a Stop's subagents, also out of sight (AC-39)
         let wait = app.turns.due_in(Instant::now()).map_or(wait, |d| wait.min(d + Duration::from_millis(50)));   // a turn's end, settled
         tokio::select! {
             _ = app.dirty.notified() => tokio::time::sleep(Duration::from_millis(100)).await,

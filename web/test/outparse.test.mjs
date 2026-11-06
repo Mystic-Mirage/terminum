@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { logicalLines, pipeTable, regions, scan } from "../static/outparse.js";
+import { insideBox, tableRule } from "../static/drawntable.js";
 
 // One row per line, every one with a hard end.
 const rows = (text) => text.split("\n").map((t) => ({ text: t, eol: true }));
@@ -246,8 +247,9 @@ test("a drawn table without its top rule starts at its head row, when a middle r
   const t = r.find((x) => x.kind === "table").table;
   assert.deepEqual([t.head, t.rows, t.align], [["What", "Without", "With"],
     [["Typing while speaking (30 takes)", "2", "23"], ["Music under speech, 10 dB below (6)", "0", "6"]], ["", "right", "right"]]);
-  // a lone row of bars with no middle rule under it is text
-  assert.equal(regions(rows("  │ a │ b │\n  │ c │ d │\n  └───┴───┘")).filter((x) => x.kind === "table").length, 0);
+  // rows and a bottom rule: the rule shows the grid; rows with no rule at all are text
+  assert.deepEqual(regions(rows("  │ a │ b │\n  │ c │ d │\n  └───┴───┘"))[0]?.table.rows, [["a", "b"], ["c", "d"]]);
+  assert.equal(regions(rows("  │ a │ b │\n  │ c │ d │\n  done")).filter((x) => x.kind === "table").length, 0);
   // the rule under it must have as many columns
   assert.equal(regions(rows("  │ a │ b │ c │\n  ├───┼───┤\n  │ d │ e │\n  └───┴───┘")).filter((x) => x.kind === "table").length, 0);
 });
@@ -423,4 +425,44 @@ test("a git diff table through the whole parse: a cut context row never takes th
 
   const code = ["-| A", "+| B", " | C", "alex@devbox ~/app % "].join("\n");
   assert.equal(regions(rows(code)).filter((x) => x.kind === "table").length, 0, "a code diff of variants is no table");
+});
+
+test("AC-31 a table's rule is told from a tree's or a panel's lines", () => {
+  for (const t of ["┌───┬───┐", "  ├───┼───┤", "└───┴───┘", "+---+---+", "  ⎿  ┌───┬───┐"]) assert.ok(tableRule(t), t);
+  for (const t of ["├── src", "│   └── x.js", "└── y", "╭────────╮", "│ one │", "| a | b |", "+---+"]) assert.ok(!tableRule(t), t);
+});
+
+test("AC-31 a line goes on the table above it, not one under a bottom rule, nor a line of prose", () => {
+  assert.ok(insideBox("│ a │ b │", "┌───┬───┐") && insideBox("├───┼───┤", "│ a │ b │"));
+  assert.ok(insideBox("| 1 | a |", "+---+---+") && insideBox("| 2 | b |", "| 1 | a |"));
+  assert.ok(!insideBox("┌───┬───┐", "└───┴───┘"), "a table right under another");
+  assert.ok(!insideBox("│ a │ b │", "some prose") && !insideBox("some prose", "│ a │ b │") && !insideBox("│ a │ b │", undefined));
+});
+
+test("AC-31 a fence a tool's output left open stops nothing: what follows is read", () => {
+  const table = ["┌───┬───┐", "│ a │ b │", "├───┼───┤", "│ 1 │ 2 │", "└───┴───┘", "after"];
+  const kinds = (lines) => scan(lines.map((t) => L(t))).found.map((r) => [r.kind, r.lang]);
+  assert.deepEqual(kinds(["⏺ Bash(sed spec)", "  ⎿  text", "     ```gherkin", "     Scenario: cut", "     … +40 lines", "", "⏺ The answer", "", ...table]), [["table", ""]], "cut by the next message");
+  assert.deepEqual(kinds(["$ cat part", "```js", "let a", "$ ls", ...table]), [["table", ""]], "cut by a prompt");
+  assert.deepEqual(kinds(["⏺ Bash(sed spec)", "     ```gherkin", "⏺ Next", "  ```js", "  let a", "  ```"]), [["code", "js"]], "never closed by the next one's fence");
+  assert.deepEqual(kinds(["  ```gherkin", "  Scenario: whole", "  ```", "⏺ Next"]), [["code", "gherkin"]], "closed: its starter is its language");
+  assert.deepEqual(kinds(["  ```text", "  ⏺ quoted, indented as it", "  ```"]), [["code", "text"]], "a mark inside it, no less indented, is its text");
+  assert.deepEqual(kinds(["```gherkin", "x", "$ ls", ...table, "```js", "let a", "```"]), [["table", ""], ["code", "js"]], "at column 0: a prompt, then another fence opening");
+  assert.deepEqual(kinds(["• Ran sed spec", "  └ text", "     ```gherkin", "• The answer", ...table]), [["table", ""]], "Codex's marks");
+  const asked = scan(["text", "```sh", "$ ls", "a", "b", "c", "d", "e", "f", "g"].map((t) => L(t)));
+  assert.ok(asked.settled <= 1, `a fence open with a prompt-shaped line is not settled past its start: ${asked.settled}`);
+  const printing = scan(["text", "```js", "let a"].map((t) => L(t)));
+  assert.ok(printing.found.length === 0 && printing.settled <= 1, "with nothing after it, it is still printing");
+});
+
+test("AC-31 any starter is its language; Mermaid by its names is a diagram", () => {
+  const kind = (lang) => scan(["```" + lang, "a", "```", "b"].map((t) => L(t))).found[0];
+  for (const lang of ["mermaid", "Mermaid", "mermaidjs", "mmd"]) assert.equal(kind(lang).kind, "mermaid", lang);
+  for (const lang of ["gherkin", "json", "c++", "objective-c", "plantuml", "dot"]) assert.deepEqual([kind(lang).kind, kind(lang).lang], ["code", lang]);
+});
+
+test("AC-31 scan says where a table not whole yet starts", () => {
+  const open = ["text", "┌───┬───┐", "│ a │ b │"].map((t) => L(t));
+  assert.equal(scan(open, open.length).waiting, 1);
+  assert.equal(scan(["text", "more"].map((t) => L(t)), 2).waiting, null);
 });

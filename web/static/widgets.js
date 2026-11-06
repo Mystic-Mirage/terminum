@@ -5,11 +5,13 @@
 // show as before. Nothing is added to the
 // history's or the screen's children: term.js counts them as rows and blocks.
 import { Folds } from "./folds.js";
+import { insideBox, tableRule } from "./drawntable.js";
 import { nearRows } from "./linkmarks.js";
-import { scan } from "./outparse.js";
+import { MAX_LINES, scan, TABLE_SEP } from "./outparse.js";
 import { hostOf, loadStyles, regionWidget, zoomDiagram } from "./widgetui.js";
 
 const STEADY = 150;          // ms a region on the screen stays as it is before it is rendered
+const OPEN_TABLE = 500;      // the same, a table that may go on (a Markdown table at the end of the output)
 const CACHED = 150;          // rendered widgets kept, the least recently shown go first
 const THROTTLE = 100;        // ms between scans of streaming output
 const NEAR = 2;              // screens above and below the view whose history regions are drawn
@@ -42,9 +44,10 @@ function dark(bg = "") {
 export class Widgets {
   /** view: the TermView; boxes: #hist and #screen; copy(text); send(msg) to the bridge (folded lines); notify(text); onZoomClosed(): the viewer closed. */
   constructor({ view, term, boxes, copy, send, notify, onZoomClosed }) {
-    Object.assign(this, { view, term, boxes, copy, onZoomClosed });
+    Object.assign(this, { view, term, boxes, copy, notify, onZoomClosed });
     this.modes = new Map();      // region key -> "raw" or "on", as the user chose
     this.cache = new Map();      // region key + theme -> its widget element
+    this.twins = new Map();      // the same, for a second copy of a region
     this.sources = new WeakMap(); // widget -> its region's source text (for Copy)
     this.seen = new Map();       // key of a screen region -> when it was first seen as it is
     this.lastScan = 0;
@@ -75,6 +78,8 @@ export class Widgets {
     this.final = [];             // history regions that no longer change: {rows, key, region}
     this.settledN = null;        // the history line the next scan starts at (null: its first)
     this.hosts = new Map();      // a region's first row -> {key, raw, rows, live}: what is attached
+    this.held = new Set();       // rows of a table not whole yet (holdOpen)
+    this.heldSince = 0;
     this.folds?.reset();
     this.pin = null;             // a bookmark held in view (AC-57) was of the last pane
     clearTimeout(this.steady); clearTimeout(this.later);
@@ -97,21 +102,21 @@ export class Widgets {
   /** After the history or the screen changed (term.js, inside its keepBottom). full: the rows
    *  were made again or older ones came first: scan all of the history again. Streaming output
    *  is scanned at most every THROTTLE ms, unless a widget lost one of its rows (the screen drew
-   *  them again), which is put right at once, or `now` (the user's own change). */
+   *  them again), which is put right at once, a table's rule is among the rows looked at (a table
+   *  is a widget in the frame it is whole), or `now` (the user's own change). */
   update(full = false, now = false) {
     const v = this.view;
     if (!v.theme) return;
     this.folds.apply();                           // at once: a folded line not sent is an empty row
     if (!this.styled) return;
     clearTimeout(this.later);
-    const wait = this.lastScan + THROTTLE - performance.now();
-    const torn = [...this.hosts.values()].some((h) => h.live && h.rows.some((el) => !el.isConnected));
-    if (!full && !now && wait > 0 && !torn) { this.later = setTimeout(() => this.keepPlace(() => this.update()), wait); return; }
-    this.lastScan = performance.now();
-    if (full) { this.final = []; this.settledN = null; }
     const hist = v.hist, screen = v.screen;
+    if (full) { this.final = []; this.settledN = null; }
     const base = hist.length ? hist[0].n : 0;
-    const i0 = this.settledN === null ? 0 : Math.min(hist.length, Math.max(0, this.settledN - base));
+    let i0 = this.settledN === null ? 0 : Math.min(hist.length, Math.max(0, this.settledN - base));
+    // never inside a drawn box: a scan that met the screen behind the history settled further than it thought (AC-31)
+    const textAt = (i) => info(i < hist.length ? hist[i] : screen[i - hist.length]).text;
+    for (let k = 0; k < MAX_LINES && i0 > 0 && insideBox(textAt(i0), textAt(i0 - 1)); k++) i0--;
     const rows = hist.slice(i0).concat(screen);
     const histPart = hist.length - i0;
     // the output ends at the cursor's row; in a coding agent's pane at its input box's top rule
@@ -122,14 +127,23 @@ export class Widgets {
     if (boxAt >= 0 && (end < 0 || boxAt < end)) end = boxAt;
     // an input taller than the screen begins in the history: the output ends there
     const stop = v.agent && v.box?.top < 0 ? Math.max(0, histPart + v.box.top) : histPart + (end >= 0 ? end : screen.length);
+    const wait = this.lastScan + THROTTLE - performance.now();
+    const torn = [...this.hosts.values()].some((h) => h.live && h.rows.some((el) => !el.isConnected));
+    let rules = 0;                                 // a row's record is new when it changes: each is read once
+    for (let i = 0; i < stop; i++) if (rows[i] && (rows[i].wgRule ??= tableRule(info(rows[i]).text) || TABLE_SEP.test(info(rows[i]).text))) rules++;
+    const table = wait > 0 && (rules !== this.rules || this.tableWaits != null);
+    this.rules = rules;
+    if (!full && !now && wait > 0 && !torn && !table) { this.later = setTimeout(() => this.keepPlace(() => this.update()), wait); return; }
+    this.lastScan = performance.now();
     // regions wholly in the history before `settled` are final; the screen changes
-    const { found, settled } = scan(rows.map(info), stop, histPart);
+    const { found, settled, waiting } = scan(rows.map(info), stop, histPart);
+    this.tableWaits = waiting;
     let cut = settled;
     for (const r of [...found].reverse()) if (r.to >= cut && r.from < cut) cut = r.from;
     const at = performance.now(), live = [];
     for (const r of found) {
       const key = `${r.kind}:${r.lang}:${hash(r.text)}`, part = rows.slice(r.from, r.to + 1);
-      if (r.to < cut) this.final.push({ rows: part, key, region: r });
+      if (r.to < cut) { if (!(part[0].n <= this.final.at(-1)?.rows.at(-1).n)) this.final.push({ rows: part, key, region: r }); }
       else {
         live.push({ rows: part, key, region: r, live: true });
         if (!this.seen.has(key)) this.seen.set(key, at);
@@ -139,9 +153,27 @@ export class Widgets {
     for (const k of this.seen.keys()) if (!live.some((l) => l.key === k)) this.seen.delete(k);
     // a region whose first line was dropped (trim) is no longer one: its other rows show again
     this.final = this.final.filter((f) => f.rows[0].n >= base);
-    this.apply([...this.final, ...live.filter((l) => at - this.seen.get(l.key) >= STEADY || this.cache.has(this.cacheKey(l.key)))]);
+    // a table that cannot go on is whole: at once, no frame shows its lines; one out of sight meanwhile (`waiting`) no longer than that
+    const ready = (l) => (l.region.kind === "table" && !l.region.table.open) || this.cache.has(this.cacheKey(l.key));
+    const due = (r) => (r.table?.open && r.from !== waiting ? OPEN_TABLE : STEADY);
+    const holding = this.holdOpen(waiting === null ? [] : rows.slice(waiting, stop), at);
+    this.apply([...this.final, ...live.filter((l) => at - this.seen.get(l.key) >= due(l.region) || ready(l))]);
     clearTimeout(this.steady);
-    if (live.some((l) => !this.cache.has(this.cacheKey(l.key)))) this.steady = setTimeout(() => this.keepPlace(() => this.update(false, true)), STEADY);
+    if (holding || live.some((l) => !ready(l))) this.steady = setTimeout(() => this.keepPlace(() => this.update(false, true)), STEADY);
+  }
+
+  /** A table's rows while its last rule is on its way (a frame caught midway, a slow link) stay out
+   *  of sight, at most STEADY ms from the first; nothing is lost: after that they show as text.
+   *  True while it holds some. */
+  holdOpen(rows, at) {
+    if (!rows.length) this.heldSince = 0;
+    else this.heldSince ||= at;
+    const els = at - this.heldSince < STEADY ? rows.filter(Boolean).map((r) => r.el).filter((el) => !this.folds.has(el)) : [];
+    const hide = new Set(els);
+    for (const el of this.held) if (!hide.has(el)) el.classList.remove("wg-hid");
+    for (const el of hide) el.classList.add("wg-hid");
+    this.held = hide;
+    return hide.size > 0;
   }
 
   cacheKey(key) { return `${key}:${this.dark ? "d" : "l"}`; }
@@ -152,7 +184,7 @@ export class Widgets {
   // region attached as it should be is passed over (its rows stay as they are); a screen row
   // may have been drawn again, so a screen region's rows are all looked at. A history region
   // far from the view (NEAR screens) stays text until it comes near: a long history is not
-  // drawn all at once.
+  // drawn all at once; but for a table, little to draw, and drawn before the reader comes to it.
   apply(list) {
     const hosts = new Map();
     const t = this.term.getBoundingClientRect(), lo = t.top - NEAR * t.height, hi = t.bottom + NEAR * t.height;
@@ -162,8 +194,11 @@ export class Widgets {
       && els.at(-1).getBoundingClientRect().bottom - ahead > lo;
     this.far = false;
     const show = (els, keep = new Set()) => { for (const el of els) if (!keep.has(el)) el.classList.remove("wg-hid"); };
+    // a row in the next list stays hidden: a table moved by the lines of a repeated row has that row in both
+    let staying = null;                            // built when one goes: most scans detach nothing
     const detach = (anchor, was) => {
-      show(was.rows);
+      staying ??= new Set(list.filter((l) => !away.has(l) && !this.raw(l.key, l.region)).flatMap((l) => l.rows.slice(1).map((r) => r.el)));
+      show(was.rows, staying);
       anchor.classList.remove("wg-host", "wg-raw");
       anchor.shadowRoot?.replaceChildren(document.createElement("slot"));
     };
@@ -175,7 +210,7 @@ export class Widgets {
     if (gave) this.folds.apply();
     list = list.filter(({ rows }) => rows.length && !rows.some((r) => !r || this.folds.has(r.el)));
     // positions first, then changes: a read after a change would lay out the whole history again
-    const away = new Set(list.filter((l) => !l.live && !this.hosts.has(l.rows[0].el) && !near(l.rows.map((r) => r.el))));
+    const away = new Set(list.filter((l) => !l.live && l.region.kind !== "table" && !this.hosts.has(l.rows[0].el) && !near(l.rows.map((r) => r.el))));
     for (const item of list) {
       const { rows, key, region, live } = item;
       const anchor = rows[0].el, raw = this.raw(key, region), els = rows.map((r) => r.el);
@@ -191,10 +226,11 @@ export class Widgets {
       if (mine?.dataset.key !== key) {
         mine = this.widget(key, region);
         const used = mine.getRootNode().host;
-        if (used && used !== anchor && hosts.has(used)) mine = this.build(key, region);   // printed twice: one each
+        if (used && used !== anchor && hosts.has(used)) mine = this.twin(key, region, hosts);   // printed twice: one each
         root.replaceChildren(mine, document.createElement("slot"));
       }
       if (!raw) mine.draw();
+      anchor.classList.remove("wg-hid");            // it may have been a row of this table where it was
       anchor.classList.add("wg-host");
       anchor.classList.toggle("wg-raw", raw);
       for (const el of els.slice(1)) el.classList.toggle("wg-hid", !raw);
@@ -216,6 +252,16 @@ export class Widgets {
     if (wg) { this.cache.delete(ck); this.cache.set(ck, wg); return wg; }
     this.cache.set(ck, wg = this.build(key, region));
     for (const k of [...this.cache.keys()].slice(0, Math.max(0, this.cache.size - CACHED))) this.cache.delete(k);
+    return wg;
+  }
+
+  /** The second copy of a region printed twice: the same one while it is redrawn, not one each time. */
+  twin(key, region, hosts) {
+    const ck = this.cacheKey(key);
+    let wg = this.twins.get(ck);
+    if (wg && !hosts.has(wg.getRootNode().host)) return wg;
+    this.twins.set(ck, wg = this.build(key, region));
+    for (const k of [...this.twins.keys()].slice(0, Math.max(0, this.twins.size - CACHED))) this.twins.delete(k);
     return wg;
   }
 
@@ -268,6 +314,7 @@ export class Widgets {
       return this.keepPlace(() => this.update(false, true), root.host);
     }
     if (act === "copy") return this.copy(this.sources.get(wg) ?? "");
+    if (act === "png") return wg.copyPng(this.notify);
     if (act === "fold") return this.keepPlace(() => this.folds.toggle(root.host), root.host);
     if (act === "foldcopy") return this.folds.copyOf(root.host);
     if (act === "zoom") return zoomDiagram(b, this.onZoomClosed);

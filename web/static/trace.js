@@ -111,7 +111,7 @@ export const sent = buf.sent;
 export function watch(view, ctx) {
   buf.init({ view, ...ctx });
   if (!ON && !buf.ON) return;
-  for (const [name, what] of [["flush", "screen"], ["onHist", "hist"]]) {
+  for (const [name, what] of [["flush", "screen"], ["applyHist", "hist"]]) {
     const f = view[name];
     view[name] = function (...a) {
       const s = now(), r = f.apply(this, a), ms = now() - s, rows = this.screen.length + this.hist.length;

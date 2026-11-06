@@ -11,6 +11,7 @@
 const PREFIX = 2;                 // the prompt ("❯ ", "! ") or the indentation of the next rows
 const FAINT = 2;
 const ARRIVE = 1500;              // ms a move may take to show; meanwhile the next starts from its target
+const RULE_ONLY = /^[─━\s\ufe0e]*$/;   // the box's top rule, as a selection reads it (its lines take a text form)
 const seg = globalThis.Intl?.Segmenter ? new Intl.Segmenter() : null;
 /** A text's characters as the agent steps over them: graphemes ("❯" with its added text form is one). */
 export const graphemes = (s) => (seg ? [...seg.segment(s)].map((g) => g.segment) : [...s]);
@@ -192,19 +193,30 @@ export class BoxMoves {
     return s.lay[i].start + Math.min(s.lay[i].len, Math.max(0, col - PREFIX));
   }
 
-  /** The input offsets [a, b] of `range` when it lies wholly in the input's text, else null. */
+  /** The input offsets [a, b] of `range` over the input's text, else null. A hand rarely stops on the
+   *  text's edge: an end past its last row (the rule, the footer, a triple click's start of the next
+   *  row) is the text's end, a start on the rule above it the text's start. Output above it is not
+   *  the input's: none. */
   ends(s, range) {
     if (!range || range.collapsed) return null;
-    const a = this.offsetAt(s, range.startContainer, range.startOffset), b = this.offsetAt(s, range.endContainer, range.endOffset);
-    return a === null || b === null || b <= a || b > Math.max(s.end, s.at) ? null : [a, b];
+    const row = document.createRange(), past = Math.max(s.end, s.at);
+    row.selectNode(s.recs.at(-1).el);
+    const below = range.compareBoundaryPoints(Range.END_TO_END, row) > 0;
+    row.selectNode(s.recs[0].el);
+    const above = range.compareBoundaryPoints(Range.START_TO_START, row) < 0;
+    if (above) { row.setEnd(row.startContainer, row.startOffset); row.setStart(range.startContainer, range.startOffset); }
+    if (above && !RULE_ONLY.test(row.toString())) return null;
+    const a = above ? 0 : this.offsetAt(s, range.startContainer, range.startOffset);
+    const b = below ? past : this.offsetAt(s, range.endContainer, range.endOffset);
+    return a === null || b === null || b <= a || b > past ? null : [a, b];
   }
 
   /** Whether cut(range) has keys for it (nothing moves). */
   cuttable(range) { const s = this.state(); return !!s && !!this.ends(s, range); }
 
   /** Backspace or Delete over `range`, a selection: the keys that delete exactly its characters
-   *  (→ or ← to its end, then a backspace each, AC-40), or null when it is not wholly in the
-   *  input's text (output, the rules, the footer; past the text typed: a suggestion). */
+   *  (→ or ← to its end, then a backspace each, AC-40), or null when it reaches the output or
+   *  is not on the input's text (`ends`). */
   cut(range, appCursor) {
     const s = this.state(), ends = s && this.ends(s, range);
     if (!ends) return null;

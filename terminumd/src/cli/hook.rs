@@ -103,6 +103,12 @@ pub fn tool_summary(name: &str, input: &Value) -> String {
     cut(&crate::sent::redact(&if what.is_empty() { name.to_string() } else { format!("{name}: {what}") }), 80)
 }
 
+/// Whether a message ends in a question mark, of any script, past closing marks and Markdown.
+fn ends_asking(message: &str) -> bool {
+    message.trim_end_matches(|c: char| c.is_whitespace() || "*_`)]»”\"'」』）".contains(c))
+        .ends_with(['?', '？', '؟', '\u{37e}', '՞', '፧', '\u{a60f}', '\u{2cfa}'])
+}
+
 /// The fields terminumd gets of `input`, the agent's event, from pane `pane` of the tmux
 /// whose socket `tmux` names ("/private/tmp/tmux-501/terminum,123,0"); None when it is no event.
 pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value> {
@@ -132,9 +138,15 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
         out.insert("tool".into(), json!(tool_summary(t, input.get("tool_input").unwrap_or(&Value::Null))));
     }
     // a question it asks the user (Claude Code's AskUserQuestion), else a notification's words
-    let asked = input.pointer("/tool_input/questions/0/question").and_then(Value::as_str).filter(|_| tool == Some("AskUserQuestion"));
+    let asked = tool.filter(|t| matches!(*t, "AskUserQuestion" | "request_user_input" | "request_user_input_async"))
+        .and_then(|_| input.pointer("/tool_input/questions/0/question").or_else(|| input.pointer("/tool_input/questions/0/title")))
+        .and_then(Value::as_str);
     if let Some(m) = asked.map(|q| cut(q, 200)).or_else(|| text(input, "message", 200)) {
         out.insert("message".into(), json!(m));
+    }
+    // one bit of its last message: the message itself stays here (AC-39)
+    if name == "Stop" && input.get("last_assistant_message").and_then(Value::as_str).is_some_and(ends_asking) {
+        out.insert("asks".into(), json!(true));
     }
     if let Some(p) = super::hookplan::plan(input) {
         out.insert("plan".into(), p);
@@ -149,6 +161,27 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_stop_says_one_bit_of_its_last_message_and_keeps_the_text() {
+        const TMUX_ENV: &str = "/tmp/tmux-501/terminum,1,0";
+        let stop = |m: &str| json!({"hook_event_name": "Stop", "last_assistant_message": m});
+        for m in ["Merge it?", "Слить её в main?", "要合并到 main 吗？", "هل أدمجه؟", "Θέλεις να συνεχίσω\u{37e}", "**Should I push?**\n", "(Keep it?)"] {
+            let out = event("codex", &stop(m), TMUX_ENV, "%1").unwrap();
+            assert_eq!(out["asks"], true, "{m}");
+            assert!(!out.to_string().contains(m.trim()), "the text stays here: {m}");
+        }
+        for m in ["Done.", "Why did it fail? A null pointer; fixed.", "Готово", "let x = 1;"] {
+            assert!(event("claude", &stop(m), TMUX_ENV, "%1").unwrap().get("asks").is_none(), "{m}");
+        }
+    }
+
+    #[test]
+    fn codexs_question_tools_say_their_title() {
+        let e = json!({"hook_event_name": "PreToolUse", "tool_name": "request_user_input_async",
+                       "tool_input": {"questions": [{"title": "Mask the tokens?", "options": ["Yes", "No"]}]}});
+        assert_eq!(event("codex", &e, "/tmp/tmux-501/terminum,1,0", "%1").unwrap()["message"], "Mask the tokens?");
+    }
 
     const TMUX: &str = "/private/tmp/tmux-501/terminum,123,0";
 

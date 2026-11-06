@@ -12,13 +12,14 @@
 :host(.wg-raw) .wg { margin-bottom: 2px; }
 :host(.wg-raw) .body { display: none; }
 
-.bar { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; padding: var(--sp-1) var(--sp-1) 0 var(--sp-3);
+.bar { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; padding: var(--sp-1) var(--fab-room, var(--sp-1)) 0 var(--sp-3);   /* clear of the floating buttons */
   font: 11.5px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; -webkit-user-select: none; user-select: none; }
 .name { color: color-mix(in srgb, var(--t-fg) 65%, var(--t-bg)); margin-right: auto; text-transform: lowercase; }
 button { font: inherit; color: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg)); background: transparent; border: 0; border-radius: var(--r-sm);
   padding: 2px 8px; min-height: 24px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
   transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
 @media (hover: hover) { button:hover { background: var(--surface-3); color: var(--t-fg); } }
+@media (max-width: 860px), (pointer: coarse) { button { min-height: 40px; } }   /* a finger's (UI-GUIDELINES §6) */
 button:focus-visible { outline: 2px solid var(--ring, var(--accent)); outline-offset: 1px; }
 .seg { display: inline-flex; padding: var(--sp-0); gap: var(--sp-0); background: var(--surface-2); border-radius: var(--r-md); box-shadow: var(--m-well); }
 :host(.wg-raw) .seg [data-act="raw"], :host(:not(.wg-raw)) .seg [data-act="on"] { background: var(--surface-4); color: var(--t-fg); font-weight: 600; }

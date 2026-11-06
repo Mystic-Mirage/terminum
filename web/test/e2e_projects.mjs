@@ -31,7 +31,7 @@ export async function webProjects(browser, name) {
       right: Math.round(s.getBoundingClientRect().right - s.querySelector(".progs").getBoundingClientRect().right),
       unread: !!document.querySelector('#sessions .item.unread[data-id$="%4"]'), plain: !!document.querySelector('#sessions .item.unread[data-id$="%2"]') };
   });
-  check("AC-07 every row has Clone, no group header has [+]", look.news === 0 && look.clones === 4, JSON.stringify(look));
+  check("AC-07 every row has Clone, every tmux group's header New Window (AC-92)", look.news === 2 && look.clones === 4, JSON.stringify(look));
   check("AC-01 a row's second line: its folder first, its program at the right edge", look.first === "~/work/docs" && look.prog === "zsh" && look.right <= 1, JSON.stringify(look));
   check("AC-93 a row whose agent finished unseen is unread, others not", look.unread && !look.plain, JSON.stringify(look));
   // a tmux session's group: its menu on a right click on its header or its ⋯ (New Window, moves among
@@ -85,13 +85,13 @@ export async function webProjects(browser, name) {
   await page.fill("#namefield", "  work  ");
   await page.click("#nameok");
   await pause(page, 100);
-  const regrouped = { naming, sent: last(sent, "renamegroup"), order: await page.evaluate(() => JSON.parse(localStorage.getItem("groupOrder") ?? "null")),
+  const regrouped = { naming, sent: last(sent, "renamegroup"), order: last(sent, "project")?.ids,
     folded: await page.evaluate(() => JSON.parse(localStorage.getItem("collapsed") ?? "[]")) };
   await fold();
   await pause(page, 100);
   check("AC-07 a session group's Rename… asks with its name and names its tmux session; its place and fold are kept",
     naming.value === "main" && /Rename main/.test(naming.text) && JSON.stringify(regrouped.sent) === JSON.stringify({ t: "renamegroup", group: "local/main", name: "work" })
-      && regrouped.order?.[0] === "local/work" && regrouped.folded.some((k) => k.includes("\nwork\n")), JSON.stringify(regrouped));
+      && regrouped.order?.indexOf("g:local/work") === regrouped.order.indexOf("g:local/main") - 1 && regrouped.folded.some((k) => k.includes("\nwork\n")), JSON.stringify(regrouped));
   // the unread row's hatching: pale lines of whole pixels over its whole box (a layer under its text), the blob gone; `ink` the lines' color
   const mark = (pg = page) => pg.evaluate(() => {
     const b = document.querySelector('#sessions .item[data-id$="%4"]'), h = getComputedStyle(b, "::before"), r = b.getBoundingClientRect();
@@ -203,7 +203,9 @@ export async function webProjects(browser, name) {
     const bars = [...p.querySelectorAll(".pbar")].map((b) => b.style.getPropertyValue("--dot"));
     return { first: p.dataset.pid, name: p.querySelector("h2 .label").textContent, rows: ids(p), main: ids(secs.find((s) => s.dataset.wid === "local/main")),
       notes: !!secs.find((s) => s.dataset.wid === "local/notes"), same: new Set(bars).size === 1,
-      mark: [p.querySelector("h2 .toggle").querySelectorAll("svg").length === 1, !p.querySelector("h2 .pdot, h2 .picon")],
+      mark: [!!p.querySelector("h2 .toggle > .gkind.isproject"), !p.querySelector("h2 .toggle > .gkind svg"), !!secs.find((s) => s.dataset.wid).querySelector("h2 .toggle > .gkind.istmux svg"),
+        getComputedStyle(p.querySelector("h2 .gkind.isproject"), "::before").width === "4px",
+        (() => { const g = secs.find((s) => s.dataset.wid), c = (e) => getComputedStyle(e).color; return c(g.querySelector("h2 .gkind svg")) === c(g.querySelector("h2 .label")); })()],
       apart: bars[0] !== secs[1].querySelector(".pbar").style.getPropertyValue("--dot"),
       // the space under its last session and above its name, from its tinted box's edges
       pad: (() => { const r = (e) => e.getBoundingClientRect(), lis = p.querySelectorAll("li");
@@ -212,7 +214,7 @@ export async function webProjects(browser, name) {
   check("AC-92 projects come first, their sessions out of their tmux groups; a group left empty goes",
     grouped.first === "p1" && grouped.name === "Group 1" && grouped.rows.join() === "%1,%3" && grouped.main.join() === "%4" && !grouped.notes, JSON.stringify(grouped));
   check("AC-92 a project's rows share its color, another project's differs", grouped.same && grouped.apart, JSON.stringify(grouped));
-  check("AC-92 a project's name has nothing before it but the chevron", grouped.mark.every(Boolean), JSON.stringify(grouped.mark));
+  check("AC-92 left of the name a project has its dot, 4 px, a tmux group its >_ in the name's color", grouped.mark.every(Boolean), JSON.stringify(grouped.mark));
   check("AC-92 under a project's last session as much space as above its name", grouped.pad[0] > 0 && grouped.pad[0] === grouped.pad[1], JSON.stringify(grouped.pad));
   f.say({ t: "projects", items: [{ ...P1, members: [ID(1), ID(3), ID(4)] }, P2] });
   await pause(page, 200);
@@ -251,9 +253,9 @@ export async function webProjects(browser, name) {
   await headAt("p1");
   await page.click('#rowmenu button[data-action="new"]');
   const made = last(sent, "clone");
-  check("AC-92 a right click on a project's header opens its menu: New Window, Rename, moves among the projects, Ungroup, Close Project",
+  check("AC-92 a right click on a project's header opens its menu: New Window, Rename, moves in the list, Ungroup, Close Project",
     JSON.stringify(pmenu) === JSON.stringify(["New Window", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Ungroup", "Close Project…"])
-    && JSON.stringify(moved) === JSON.stringify({ t: "project", action: "order", ids: ["p2", "p1"] }) && second.includes("Move Up") && second.includes("Move Down-")
+    && JSON.stringify(moved?.ids?.slice(0, 2)) === JSON.stringify(["p:p2", "p:p1"]) && moved.action === "order" && second.includes("Move Up-") && second.includes("Move Down")
     && JSON.stringify(made) === JSON.stringify({ t: "clone", id: ID(3), project: "p1" }), JSON.stringify({ pmenu, moved, second, made }));
   const kills = sent.filter((m) => m.t === "kill").length;
   await headAt("p1");

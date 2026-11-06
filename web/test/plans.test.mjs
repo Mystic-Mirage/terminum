@@ -7,7 +7,7 @@ const now = 1_800_000_000;
 const plan = { done: 3, total: 7, pct: 42.857, eta: null, updated: now - 120, stale: false, partial: false };
 
 test("status icons, unknown as pending", () => {
-  assert.deepEqual(["completed", "in_progress", "pending", "blocked"].map(statusIcon), ["✓", "▶", "○", "⚠"]);
+  assert.deepEqual(["completed", "in_progress", "pending", "blocked"].map(statusIcon), ["✓", "▶", "○", "!"]);
   assert.equal(statusIcon("deleted"), "○");
   assert.equal(statusIcon(undefined), "○");
 });

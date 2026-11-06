@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.24.35 |
-| Date | 2026-11-04 |
+| Version | 0.24.41 |
+| Date | 2026-11-05 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -13,6 +13,12 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.41 | 2026-11-06 | Owner: what is pasted into Claude Code is seen, not folded: a paste it folds is pasted once more, as it asks (AC-03). |
+| 0.24.40 | 2026-11-05 | Owner: "Sized for another screen (129×68): tmux exited" stood over a local pane after a host's tmux stalled and went: a resize that failed named the pane shown by then, and the page took any answer for its pane; it names its own pane now, the page keeps only its pane's, and it reads "tmux did not resize this pane: <why>" (AC-13). The ⋯ button is a cog and its menu opens under it, not at the window's right edge (AC-07). (terminum-terminal.md 0.6.45: the subagents' count.) |
+| 0.24.39 | 2026-11-05 | Owner: a host's tmux session kept its >_ muted beside its blue name: the color stood on the label alone; the >_ takes it and a state's dimming too (AC-81, AC-92). |
+| 0.24.38 | 2026-11-05 | Owner: a project's dot is 4 px, a tmux session's >_ takes its name's color (AC-92). |
+| 0.24.37 | 2026-11-05 | Owner: a project's and a tmux group's New Window are one plain [+], the first of a header's buttons; what tells them apart stands left of the name: a dot in a project's color (a tag on what the user gathered), a thin >_ for a tmux session; the counts stay in one column whatever buttons a header has (AC-92). |
+| 0.24.36 | 2026-11-05 | Owner: Move to the Top of a tmux group stopped under the projects: projects and tmux groups stand in one order, every page's (projects.json), moved past each other by the menus and a drag; a tmux group's header has a New Window button as a project's, each with its icon (reverses 0.14.0's "the groups' [+] goes") (AC-92). A bookmark or a reminder shows only in its session (terminum-terminal.md 0.6.38). |
 | 0.24.35 | 2026-11-04 | Owner: terminumd told that a closed pane left its project during its server's read, before the list without it, so its row stood for a moment in its tmux group. It tells the list first, then the projects, once a read is over (as a page that connects gets them), and keeps what it has not told for the next read if one is cut short; the page no longer tells the two orders apart: every "projects" and every list take the shown session's place (AC-92). A project action or a page connecting while a slow host's read goes on still sends the projects first: left as it is, rare. Reviews: rejected, moving the leaving itself after the list instead of the tell (no flag, and the rare case gone): a member added during a slow host's read would be judged by its 5 s after that read, and the once-each restore of a server would have to read its identity by itself; a larger change to close a rare moment's look. |
 | 0.24.34 | 2026-11-04 | Owner: when the shown session closed the selection went to a session elsewhere: the page took the first row of terminumd's list, not of the list it draws (projects first, the browser's order of groups), and terminumd tells that a closed pane left its project before the list without it, so its project was already forgotten. The page keeps the shown session's place in the list: the first session of the same project, outside projects of the same tmux group, else the top of the list as drawn; a project left without sessions went already (AC-92). |
 | 0.24.33 | 2026-11-04 | Owner: the Paste dialog (the field Paste opens where the page may not read the clipboard) sends with ⌘Enter or Ctrl+Enter, as the Bookmark and Ask dialogs since 0.6.33 of terminum-terminal.md; Send's tooltip says the keys (AC-03). |
@@ -306,6 +312,12 @@ Scenario: AC-02 failure — the capture fails
 ### AC-03 — Typing [MUST / P0]
 
 ```gherkin
+Scenario: AC-03 happy path — a paste Claude Code folds is unfolded
+  Given Claude Code's pane and a paste of over 800 characters or two line breaks
+  When it folds it into "[Pasted text #1 +6 lines]" and says "paste again to expand" within 0.8 s
+  Then terminumd pastes the same text once more, so the input shows the text itself
+  And a paste that stays as it is, in any other program or with no such words, goes once: it is never doubled
+
 Scenario: AC-03 happy path — text and keys
   When the user types "ls -la", presses Enter, then ↑, Tab, ⌃C
   Then terminumd sends "send-keys -t %3 -l 'ls -la'" then "send-keys -t %3 Enter Up Tab C-c" (keys by tmux's names, text literal), in order, one command per run
@@ -471,7 +483,7 @@ Scenario: AC-06 failure — the report cannot be sent
 ```gherkin
 Scenario: AC-07 happy path — new window, new session, split
   Given the page shows pane %3 of window "api" in session "main", folder /Users/alex/work/api
-  When the user presses Clone on the row of "api" (the groups have no [+]: AC-07 Clone)
+  When the user presses Clone on the row of "api"
   Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" and the page shows the new pane within 2 s, placed right after "api" (the `new` message, a group's window after the shown pane's, stays for scripts)
   When the user picks "Split Below", "Split Right" or "Split Left" from its row's menu (a right click or a long press; a phone: Split Below only; the three side by side, each a drawing of the split, every other item with its icon and Close Session's a red ×)
   Then the pane's quick shell opens there (AC-88); the page offers no tmux split, and a window of several panes made elsewhere (the user's own tmux, an agent, the `split` message) shows its panes under the window's first one
@@ -479,8 +491,8 @@ Scenario: AC-07 happy path — new window, new session, split
   Then terminumd runs "new-session -d -s scratch -c ~" and the page shows its pane; a name tmux refuses (empty, with ":" or ".") is refused inline with tmux's message; the form opens where its button is: under the list's head for [+] (the foot stays folded), above the foot for the foot's
   And on a computer (a fine pointer, wider than 860 px) the foot is one slim row of its buttons' icons (the bookmarks' count beside theirs) with a ▸ at its right: one toggle button ("Session tools", its expanded state said to assistive tech; the icons are not buttons of their own); a click on it (Enter or Space) unfolds it upward within 0.2 s into New session, Bookmarks / Reminders, Add host and Attach tmux sessions and the version under them, the row staying on top with ▾; they stay until that row is clicked again (the pointer passing over or leaving it changes nothing), and the page remembers the state for the next load (a split's embedded page keeps none); while folded its buttons are out of the keyboard's way; a click on it while a form of theirs is open folds it and closes the form, as Esc does; [+] in the list's head opens its form with the foot left as it was (with reduced motion they appear and go without moving); a touch screen or a narrow window shows the four as a row of blobs, never folded
 Scenario: AC-07 happy path — Clone and the row's menu
-  Then every row has a Clone button at its right end, in a column of its own, shown while the pointer is over the row or the keyboard's focus is in it (a touch screen has no hover: there it is always shown); the groups have no [+]
-  And a tmux session's group has a menu as a row's, on a right click on its header and on its ⋯ (a host's or an attached session's ⋯ keeps its own menu): New Window (a window after its last row, as Clone), Rename… (asks with the group's name; renames its tmux session, the name taken literally, `:` and `.` refused in words; the group keeps its place and its fold), Move to the Top, Up, Down, to the Bottom (among the groups, kept in this browser as a drag), Close Group… (red: asks "Close the group <name> and its N sessions? …", then closes each); collapsed or filtered, the group keeps them: its sessions come from the list, not from its rows drawn
+  Then every row has a Clone button at its right end, in a column of its own, shown while the pointer is over the row or the keyboard's focus is in it (a touch screen has no hover: there it is always shown)
+  And a tmux session's group has a menu as a row's, on a right click on its header and on its ⋯ (a host's or an attached session's ⋯ keeps its own menu): New Window (a window after its last row, as Clone), Rename… (asks with the group's name; renames its tmux session, the name taken literally, `:` and `.` refused in words; the group keeps its place and its fold), Move to the Top, Up, Down, to the Bottom (among the list's projects and groups, every page's, as a drag; AC-92), Close Group… (red: asks "Close the group <name> and its N sessions? …", then closes each); collapsed or filtered, the group keeps them: its sessions come from the list, not from its rows drawn
   And a pane under its window (a coding agent's subagent, a quick shell) has none: the pointer over it shows no Clone, its window's stays on that window's own row, at its middle
   When the user presses Clone on window "api" (or picks Clone in its menu)
   Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" (right after it, in its folder, a shell: its program is not copied) and the page shows the new pane; a session of a project gives the project's window (AC-92); one a second per client, as New window; a host that is not attached offers no Clone
@@ -492,7 +504,7 @@ Scenario: AC-07 happy path — rename and reorder
   Then terminumd runs "rename-window -t @2 'deploy'" and "select-pane -t %3 -T 'deploy'", and the list, the header and tmux's own status line show it within 2 s; an empty name restores "automatic-rename on"
   When the user drags a window's row above another in its group (no grip: the row itself; with a mouse once it moved 6 px, a press that does not move still opens it; a finger rests 0.35 s on the row, which lifts, then moves, and the list scrolls by itself near its top and bottom edge; a finger that lifts without moving opens the row's menu; a finger that moves before then scrolls the list; while the list is filtered rows do not move, and a finger resting half a second opens the menu)
   Then the row follows the pointer, a dashed outline of its size stands where it will land, among its group's rows only; Esc or a cancelled touch puts it back
-  And on release terminumd runs "move-window -s main:3 -t main:1" (and renumbers) and the list shows the new order within 2 s; rows of another session are never moved by a drag; a group's header drags the group among the groups (this browser's order)
+  And on release terminumd runs "move-window -s main:3 -t main:1" (and renumbers) and the list shows the new order within 2 s; rows of another session are never moved by a drag; a project's or a group's header drags it among the list's projects and groups (every page's, AC-92)
 Scenario: AC-07 happy path — move a window to another session
   When the user picks "Move to Session…" in a window's row menu (shown when its tmux server has another session) and chooses "notes"
   Then terminumd runs "move-window -s main:3 -t notes:" and the window appears under "notes"; tmux keeps its panes running
@@ -699,6 +711,12 @@ Scenario: AC-13 happy path — the active page sizes the pane
 Scenario: AC-13 edge — the smallest and the largest grid
   When a page's view holds fewer than 45×14 cells (a phone's split, a narrow window, big text) or more than 240×70 (a large display)
   Then terminumd sizes the window to 45 to 240 columns and 14 to 70 rows: an iPhone in portrait at 13 px holds the smallest, about a 1920×1200 window the largest; a pane wider than the view is re-flowed to it (a full-screen program: scaled, 7 px at least), rows the view does not hold scroll, and a view larger than the grid leaves the rest blank; a view under 20×5 (an animation, a dragged edge, a hidden part) sends no size and the pane keeps its own
+Scenario: AC-13 edge — a resize that fails
+  Given a pane's resize waits on a tmux server that stalled, and the user shows another pane
+  When tmux refuses it or the server goes
+  Then the answer names the pane it was for, and only that pane, while shown, says "tmux did not resize this pane: <tmux's reason>": another pane shows nothing of it
+  And so with any error that names a pane: the page says it only while that pane is shown
+
 Scenario: AC-13 edge — the page that sized it is put away
   Given the iPhone sized %3 (the window is 103×21) and the Mac's browser shows %3 too
   When the iPhone's page is hidden (the phone locked, Safari in the background, another tab)
@@ -826,7 +844,8 @@ Scenario: AC-18 happy path — the panel
   And while terminal text is selected, Copy, [+] and Ask stand in that place instead (AC-37, AC-57)
   And while a finger scrolls the terminal, from its first move until it lifted and the terminal stopped scrolling, every floating button ("To the bottom" too) is out of sight (the text under them can be read) and takes no tap; back 1 s after
   And while the user scrolls the terminal by wheel, key or scroll bar (wide or phone), the floating buttons' column fades and takes no tap, back 1 s after the scroll stops or at once with the pointer near it or the focus on it; the page's own scroll (output followed) and a scroll while a pane it opened is open (find's field, the sent history, bookmarks, reminders) leave it
-  And every dialog, pane and menu (the ⋯ menu, a row's and a host's menu, the list's forms, the sent history, the reminders, the bookmarks, the input's menu, Ask, a bookmark's note, Paste, a confirmation) opens centered on the visible screen (above the on-screen keyboard), as wide as the screen less 16 px a side, as tall as its content and at most the visible height less 32 px (scrolling inside), modal: the page shaded behind it, a press outside or Esc closes it
+  And on a computer the header's settings button is a cog and its menu opens right under it, inside the window, scrolling when taller than the room under the button
+  And every dialog, pane and menu (the settings menu, a row's and a host's menu, the list's forms, the sent history, the reminders, the bookmarks, the input's menu, Ask, a bookmark's note, Paste, a confirmation) opens centered on the visible screen (above the on-screen keyboard), as wide as the screen less 16 px a side, as tall as its content and at most the visible height less 32 px (scrolling inside), modal: the page shaded behind it, a press outside or Esc closes it
   And a press on ⟨…⟩ or a button of its column first puts the on-screen keyboard and the hot keys panel away
   And a coding agent's input box is a tint of the terminal's colors with no frame
   And Files and View, shown in the terminal's place, fill the whole space under the tabs
@@ -923,8 +942,11 @@ Scenario: AC-88 edge — a host
 Scenario: AC-92 happy path — a project
   When the user picks Add to Project… → New project… in the menu of "api" (in ~/work/api)
   Then a dialog asks its name at once ("Group 1" suggested, Enter or Create takes it, Cancel makes none) and terminumd makes it (the lowest "Group N" free when no name comes), its color the first of ten pastel hues far apart no other project has, its folder ~/work/api; it keeps it in projects.json and tells every page
-  And the list shows the projects first, each a group tinted and named in its color (nothing before its name but the chevron; under its last session as much space as above its name), with its sessions (the shown one's row a deeper tint of it, not a box of its own), their bars in the project's color (not the folder's), their panes and quick shells under them; their tmux groups list them no more (a group left empty goes); a project's rows are counted there
-  And every other group under them (a tmux session's, a host's) is tinted too, its name kept in the list's color: in a hue at least 60° from the group's above it (the last project's for the first), so neighbors never run together
+  And the list shows the projects, first until the user moves one or a tmux group, each a group tinted and named in its color (under its last session as much space as above its name), with its sessions (the shown one's row a deeper tint of it, not a box of its own), their bars in the project's color (not the folder's), their panes and quick shells under them; their tmux groups list them no more (a group left empty goes); a project's rows are counted there
+  And every other group (a tmux session's, a host's) is tinted too, its name kept in the list's color: in a hue at least 60° from the part's above it and from a project's right under it, so neighbors never run together
+  And projects and tmux groups stand in one order, every page's, kept by terminumd in projects.json: Move to the Top, Up, Down, to the Bottom and a drag by the header go past either kind; a new project stands after the last project, a new group at the end; before the first move the projects stand first and the groups as this browser last kept them; a move under a filter leaves the parts it hides in their places; a rename keeps the group's place, also when tmux refuses the name
+  And a project's header and a tmux group's have the same New Window button, a plain [+], the first of their buttons, the same size, words and act (a window after its last session, in its folder, as the menu's New Window; a group with no session: a new window in that tmux session)
+  And left of the name, after the chevron, a 4 px dot in its color says a project (a tag on what the user gathered) and a thin >_ in the name's color a tmux session, with its words on hover; the counts of all stand in one column whatever buttons a header has
   When the user adds "docs" to Group 1, or a second project
   Then "docs" joins Group 1 (a session is in one project at most: added to another, it moves); Group 2 takes the next color
 Scenario: AC-92 happy path — new sessions, order, names
@@ -934,11 +956,11 @@ Scenario: AC-92 happy path — new sessions, order, names
   Then the projects (every page's order) or its sessions are in that order
   When the user picks Rename… in the project's menu (its ⋯, or a right click on its header, as a row's menu) (or double-clicks its name) and types "API" (Enter or Rename), or picks Ungroup
   Then it is named "API" (1–40 characters), or it goes and its sessions are back in their tmux groups
-  And the menu also has New Window (as its [+]: a window after its last session, in the project), Move to the Top, Up, Down, to the Bottom (among the projects as the list shows them, off at an end), and Close Project… (red): it asks "Close the project <name> and its N sessions? The programs running in them end." and, confirmed, closes each of its sessions; Cancel closes nothing
+  And the menu also has New Window (as its [+]: a window after its last session, in the project), Move to the Top, Up, Down, to the Bottom (among the list's projects and tmux groups as it shows them, off at an end), and Close Project… (red): it asks "Close the project <name> and its N sessions? The programs running in them end." and, confirmed, closes each of its sessions; Cancel closes nothing
 Scenario: AC-92 edge — the shown session closes
   When the session or pane a page shows closes (from any page, or its program ended)
   Then the page shows the first session the list has in the same project, top to bottom; outside projects the first of the same tmux group
-  And when none is left there (a project left without sessions goes, below), the first session at the top of the list as the page draws it: the projects first, then the groups in this browser's order, however it was filtered or folded
+  And when none is left there (a project left without sessions goes, below), the first session at the top of the list as the page draws it (AC-92's one order), however it was filtered or folded
   And a session taken out of its project stands in its tmux group at once, and one added to a project in that project
 Scenario: AC-92 edge — sessions that close
   When a project's pane closes
@@ -948,7 +970,7 @@ Scenario: AC-92 edge — sessions that close
   And a projects.json that cannot be read is set aside as projects.json.bak, never written over
   And valid JSON with an invalid projects or servers schema is set aside before starting empty, so a later save cannot destroy the recoverable original
   And a move in a tmux group reorders only the windows that group lists (a project's windows keep their places in tmux)
-  And a bookmark or a reminder made in a project's session is the project's (terminum-terminal.md AC-33): a project that goes orphans it
+  And a bookmark or a reminder shows only in the session it was made in, in a project or not (terminum-terminal.md AC-33): a project that goes leaves it there, its session closing orphans it
 ```
 
 ### AC-93 — Unread [SHOULD / P1]
@@ -1559,3 +1581,5 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] 0.24.33 (2026-11-04) — AC-03 `web/test/e2e_notes.mjs` webNotes in Chromium and WebKit at both sizes: with no clipboard read the hot keys' Paste opens the field; ⌘Enter (the phone size: Ctrl+Enter) sends its text as one input and closes it. `make check` passes on the delivered tree.
 - [x] 0.24.34 (2026-11-04) — AC-92 `web/test/e2e_listplace.mjs` webListPlace in Chromium and WebKit at both sizes 28/28: the shown session closes, told of the projects before or after the list: its project's first session; outside projects its tmux group's first; a project's or a group's only session: the top of the list as drawn; a session taken out of its project and still listed stays shown. With the old choice (terminumd's first row) 8 of 14 fail in Chromium, the selection on `%1`. `web/test/e2e_livelistplace.mjs` in `e2e_live.mjs` (a real private terminumd and tmux, panes killed in tmux): its project's first session in 113 ms, the only session closed: the top of the list in 94 ms, the project gone from the list and from projects.json. `make check` passes on the delivered tree.
 - [x] 0.24.35 (2026-11-04) — AC-92 `web/test/e2e_livelistplace.mjs` in `e2e_live.mjs` (a real private terminumd and tmux, a member older than the 5 s closed in tmux): a MutationObserver on the list sees the closed row in no tmux group, and the page shows its project's first session; with terminumd's old order (a build that tells during the read) both fail in Chromium and WebKit (4 of 251), the observer catches the hop. A member closed within its 5 s: its project leaves projects.json and the row menu with no list to go with it; a build that tells the projects only with a changed list fails this in both (2 of 251). `web/test/e2e_listplace.mjs` webListPlace: the list, then the projects; a session taken out of its project closes: its tmux group's first; added to a project: that project's first. `make check` passes on the delivered tree.
+- [x] 0.24.36 (2026-11-05) — AC-92 `web/test/listorder.test.mjs`, `web/test/e2e_listorder.mjs` (`webListOrder`, Chromium and WebKit, wide and phone: the menus' moves and a drag past either kind, terminumd told, another page's move followed, a filter's hidden parts in their places, a rename refused, neighbors' colors, the same New Window button with its icon, a group with no session), `web/test/e2e_livelistplace.mjs` (a real terminumd: kept in projects.json, after a reload), `cargo test page::projects`. Pragmatic review applied. Not verified: a host's placeholder group's button on a real host.
+- [x] 0.24.40 (2026-11-05) — AC-13 `scripts/e2e_sizestale.py` 3/3 (two private tmux servers, one stopped with a resize unanswered, the user on the other's pane, then killed: the answer names the pane it was for; red before the fix, it named the pane shown), `web/test/e2e_screen.mjs` (its words; an answer for a pane left says nothing); AC-07 `web/test/e2e_header.mjs` in Chromium and WebKit (a cog, its menu 6 px under it, inside the window, Files open too), `web/test/e2e_sheets.mjs` (no sheet on a computer, a sheet on a phone); a snapshot of the fake page looked at.

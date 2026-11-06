@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Reminders (AC-91): bookmarks of the Reminder kind, of a project or a session (projects.js).
-// terminumd puts one up each time an agent there ends a turn; then the pale fuchsia button under the
-// bookmarks' shows its count filled while a session of the project is shown, until it is pressed (one
-// seen there is marked again only once up anew). Its pane is the bookmarks' navigator (marknav.js) of
-// the project's open reminders, those up first: the same list, view, actions and keys. The session
+// Reminders (AC-91): bookmarks of the Reminder kind, of a session. terminumd puts one up each time
+// its session's agent ends a turn; then the pale fuchsia button under the bookmarks' shows its count
+// filled while that session is shown, until it is pressed (one seen there is marked again only once
+// up anew). Its pane is the bookmarks' navigator (marknav.js) of the session's open reminders, those
+// up first: the same list, view, actions and keys. The session
 // list marks a session with open reminders by a wavy pink line. The pane is the shown session's: it
 // closes when another is shown. Reminders up are said at the terminal's top for 4 s, once each in a
 // page: the shown session's when they come up, another's when it is shown next.
@@ -33,7 +33,7 @@ export function reminders({ marks }) {
   const stale = () => pane.open() && (fab.hidden || marks.sid() !== of);
 
   function draw() {
-    const all = openReminders(marks.here()), up = all.filter((i) => i.due).length;   // the shown pane's project's
+    const all = openReminders(marks.here()), up = all.filter((i) => i.due).length;   // the shown pane's
     for (const id of seen) if (!all.some((i) => i.id === id && i.due)) seen.delete(id);   // put down: marked when up again
     if (pane.open()) for (const i of all) if (i.due) seen.add(i.id);
     fab.classList.toggle("due", all.some((i) => i.due && !seen.has(i.id)));
@@ -45,14 +45,14 @@ export function reminders({ marks }) {
     say(all);
   }
 
-  /** "<project>: 16 reminders, 3 new" for reminders up the shown session's bell has not said yet. */
+  /** "<session>: 16 reminders, 3 new" for reminders up the shown session's bell has not said yet. */
   function say(all) {
     if (fab.hidden) return;
     all ??= openReminders(marks.here());
     const fresh = all.filter((i) => i.due && !seen.has(i.id));
     if (!fresh.some((i) => !told.has(i.id))) return;
     for (const i of fresh) told.add(i.id);
-    const where = marks.hereProject()?.name ?? marks.alive(marks.sid()) ?? "This session";
+    const where = marks.alive(marks.sid()) ?? "This session";
     marks.toast(`${where}: ${all.length} reminder${all.length === 1 ? "" : "s"}, ${fresh.length} new`, SAY_FOR);
   }
 

@@ -138,7 +138,7 @@ export function opening(sid) {
 }
 const openFields = (o) => ({ sid: o.sid, hist: o.hist && ms(o.hist), lines: o.lines, kb: o.kb, drawn: o.drawn && ms(o.drawn), scr: o.scr && ms(o.scr), paint: o.paint && ms(o.paint) });
 
-/** Drawing took this long (TermView.flush, onHist). */
+/** Drawing took this long (TermView.flush, applyHist). */
 export function drew(what, took, rows) {
   if (!ON) return;
   counts.draws++;

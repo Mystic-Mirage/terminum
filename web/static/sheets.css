@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* On a phone or a narrow window every dialog, pane and menu is a centered modal sheet (AC-18); after controls.css. */
 /* placeModal (fabpane.js) clears a placer's inline top/left and sets [data-sheet]; the ids' own rules
-   (#menu's top/right, a dialog's --x/--y) weigh more than an attribute, hence !important. The middle
+   (#menu's top/right, a dialog's width) weigh more than an attribute, hence !important. The middle
    is the visible screen's: --app-h follows the visual viewport (app.js fitViewport), so a sheet sits
    above the on-screen keyboard. Its shade, #sheetscrim (or a dialog's ::backdrop, or a fab pane's
    #panescrim), takes a press and closes it. */

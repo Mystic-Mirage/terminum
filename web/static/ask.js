@@ -10,7 +10,6 @@
 // measured as the dialog opens: on a phone its field's keyboard then makes the pane shorter. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
 // coding agent's pane only) puts the same and presses Enter.
 
-import { inside, placeModal } from "./fabpane.js";
 import { sendOnModEnter } from "./modenter.js";
 
 const $ = (id) => document.getElementById(id);
@@ -50,10 +49,6 @@ export function askSends(text, { agent, now = false, typed = false }) {
   return agent ? [["paste", text], ["keys", "\n\n"]] : [["paste", `${text}\n\n`]];
 }
 
-/** Where a box w×h stands centered on `area` (a rect), kept `gap` inside a vw×vh window. */
-export function centerOn(area, w, h, vw, vh, gap = 8) {
-  return { x: inside(area.left + (area.width - w) / 2, w, vw, gap), y: inside(area.top + (area.height - h) / 2, h, vh, gap) };
-}
 
 /** send(msg) to terminumd; toChat(text, stay): pasted into the shown pane's input; keys(data, stay): typed
  *  there (stay: Add to Chat's, the view left where it was); sid(): the shown pane; agent(): it runs a
@@ -70,16 +65,6 @@ export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast, clo
   const ready = (on) => { add.disabled = now.disabled = !on; };
   q.addEventListener("input", () => ready(q.value.trim()));
   sendOnModEnter(box);                                             // ⌘Enter: Add to Chat
-  // centered on the terminal, not on the window (the list and Files beside it); the window's middle without one
-  const place = () => {
-    const r = $("term").getBoundingClientRect();
-    if (!box.open || placeModal(box) || !r.width || !r.height) return box.classList.remove("placed");
-    const { x, y } = centerOn(r, box.offsetWidth, box.offsetHeight, innerWidth, innerHeight);
-    box.style.setProperty("--x", `${x}px`);
-    box.style.setProperty("--y", `${y}px`);
-    box.classList.add("placed");
-  };
-  addEventListener("resize", place);
   // Esc leaves the focus in the closed dialog's field a moment (the terminal would not take it from a field)
   box.addEventListener("close", () => { waiting?.(null); if (box.contains(document.activeElement)) document.activeElement.blur(); closed?.(); });
   box.querySelector("form").addEventListener("submit", async (e) => {
@@ -131,7 +116,6 @@ export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast, clo
       sync();
       size = pane();                                                // before its field brings a phone's keyboard up
       box.showModal();
-      place();
       q.focus();
     },
     /** Every message from terminumd (app.js dropped another pane's). */

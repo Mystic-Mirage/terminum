@@ -52,14 +52,19 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .grp h2 .toggle { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: var(--r-sm); text-align: left; font-weight: inherit; }
 .grp h2 .toggle:hover { background: var(--chrome-2); }
 .grp h2 .toggle .lu { color: var(--muted); flex: 0 0 auto; transition: transform .15s; }
-.grp h2 .toggle[aria-expanded="false"] .lu { transform: rotate(-90deg); }
-.grp h2 .label { min-width: 6ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* the session pill (.tsess) gives way first */
+.grp h2 .toggle[aria-expanded="false"] > .lu { transform: rotate(-90deg); }
+/* what it is, left of its name (nav.js): a project's dot in its color, a tmux session's thin >_ */
+.gkind { flex: none; display: grid; place-items: center; width: 12px; height: 12px; }
+.grp h2 .toggle .gkind .lu { color: inherit; }   /* the name's color */
+.gkind.isproject::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--name, var(--proj)); }
+.grp h2 .label { min-width: 4ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* the session pill (.tsess) gives way first */
 .grp h2 .tsess { flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 500;
   color: var(--host-label); background: color-mix(in srgb, var(--host-label) 15%, transparent); border-radius: var(--r-sm); padding: 1px 8px; }
 .grp h2 .where { color: var(--muted); font-weight: 400; }
+.grp h2 :is(.where, .host) { flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* they give way before the count moves */
 .grp h2 .count { flex: none; margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* the header's buttons in a column two wide at least: every group's count ends at one place */
-.grp h2 .acts { flex: none; min-width: calc(2 * var(--icon-key-list) + var(--icon-gap)); margin-left: var(--icon-gap); display: flex; justify-content: flex-end; }
+/* the header's buttons in a column as wide as the widest's (nav.js --acts-n): every group's count ends at one place */
+.grp h2 .acts { flex: none; min-width: calc(var(--acts-n, 2) * var(--icon-key-list) + (var(--acts-n, 2) - 1) * var(--icon-gap)); margin-left: var(--icon-gap); display: flex; justify-content: flex-end; }
 .grp h2 .count.on { color: var(--accent); font-weight: 600; }
 /* with a pointer a header's buttons show while it is over the header (or the keyboard's focus is
    there, or their menu is open), in the count's place; at rest the count ends where the rows'
@@ -114,7 +119,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .s .ag-codex { color: color-mix(in srgb, #c9b8ff 60%, var(--t-fg)); }      /* pale violet */
 .s .ag-opencode { color: color-mix(in srgb, #a9c4ff 60%, var(--t-fg)); }   /* pale blue */
 .item .st { display: grid; place-items: center; padding-top: 2px; }
-.item .st .subs { font-size: var(--fs-micro); line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }   /* subagents running (hooks) */
+.item .st .subs { display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-micro); line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }   /* its subagents (AC-39) */
 /* a tab's other panes (a coding agent's subagents) under its first, shifted in as children */
 #sessions .kids { margin: 0 0 2px 22px; padding: 0 0 0 6px; list-style: none; border-left: 1px solid var(--line); }
 .item.child { padding-top: 4px; padding-bottom: 4px; }
@@ -243,7 +248,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
   -webkit-user-select: text; user-select: text; -webkit-tap-highlight-color: transparent; }
 #hist, #screen { display: contents; }
 /* A full-screen program's grid as tmux has it (AC-04): one row a line, at its own width */
-#term { white-space: pre; }
+#term { white-space: pre; --fab-room: 44px; }   /* a widget's bar stays clear of the floating buttons (widgets.css) */
 #term.holding { overflow-x: hidden; }   /* the view's new width on its way to tmux: clipped, not scrolled (AC-04) */
 #term .ln { display: block; min-height: 1.25em; width: max-content; }
 /* The normal screen (AC-04): never scaled, never scrolled sideways; a row wider than the view
@@ -375,7 +380,7 @@ body.ctxtrace #fabs { display: flex; }
 .key[aria-pressed="true"] { background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); }
 
 /* ---------- settings menu ---------- */
-#menu { position: fixed; top: 52px; right: 8px; z-index: 30; width: min(320px, calc(100vw - 16px));
+#menu { position: fixed; top: 52px; right: 8px; z-index: 30; width: min(320px, calc(100vw - 16px)); overflow-y: auto;   /* placed under its button (menu.js) */
   --fill: var(--chrome); border-radius: var(--r-lg); padding: 6px; box-shadow: var(--shadow-far); }   /* a .box */
 #menu .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
   padding: 10px; border-radius: var(--r-sm); text-align: left; }

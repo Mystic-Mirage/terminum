@@ -113,7 +113,8 @@ export function paneSizing({ view, send, sid, refit, notify, copied }) {
   // said over a full-screen program, whose grid is drawn as it is, and for a refused resize
   // anywhere; the normal screen re-flows whatever the size (AC-04)
   function showSized() {
-    banner("sized", !elsewhere || (!full && !elsewhere.error) ? "" : `Sized for another screen (${elsewhere.cols}×${elsewhere.rows})` + (elsewhere.error ? `: ${elsewhere.error}` : ""));
+    banner("sized", !elsewhere || (!full && !elsewhere.error) ? ""
+      : elsewhere.error ? `tmux did not resize this pane: ${elsewhere.error}` : `Sized for another screen (${elsewhere.cols}×${elsewhere.rows})`);
   }
 
   // ---------- the mouse (AC-06) ----------

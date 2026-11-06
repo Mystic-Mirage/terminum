@@ -3,15 +3,15 @@
 // fenced code, a Markdown document, a Mermaid diagram and a drawn table. Pure: rows
 // are {text, eol, styled}, as term.js knows them; widgets.js draws what this finds. A wrong
 // widget hides real output and a missed one costs nothing, so the rules ask for clear signs.
-import { boxLine, drawnTable, tableMarkdown, tableTop } from "./drawntable.js";
+import { drawnTable, insideBox, tableMarkdown, tableTop } from "./drawntable.js";
 import { diffTable } from "./difftable.js";
 
-const MAX_LINES = 2000;      // a longer region stays plain text (rendering it would cost more than it gives)
+export const MAX_LINES = 2000;      // a longer region stays plain text (rendering it would cost more than it gives)
 const GAP = 6;               // the most lines of plain prose between two Markdown signs of one document
 
 const FENCE = /^(\s*)(`{3,}|~{3,})\s*([\w#+.-]*)[^`]*$/;
 const HEADING = /^#{1,6}\s+(?!-\*-)\S/;          // not "# -*- coding: utf-8 -*-"
-const TABLE_SEP = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/;
+export const TABLE_SEP = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/;
 const LIST = /^\s*(?:[-*+]|\d{1,3}[.)])\s+\S/;
 const QUOTE = /^\s*>\s?\S/;
 const INLINE = /\*\*[^*\s][^*]*\*\*|(?:^|\s)`[^`\s][^`]*`|\[[^\]]+\]\([^)\s]+\)/;
@@ -25,7 +25,7 @@ const CODEISH = new RegExp([
 const PROMPT = /^(?:\S+@[\w.-]+[:\s].*?[$#%>][\uFE0E\uFE0F]?(?:\s|$)|[$%❯➜λ»›][\uFE0E\uFE0F]?(?:\s|$)|\(\S+\)\s.*?[$%#❯][\uFE0E\uFE0F]?(?:\s|$)|[^❯➜›]{1,40}[❯➜›][\uFE0E\uFE0F]?(?:\s|$))/;   // a variation selector may follow a mark (Starship's ❯︎)
 // the end of the output: a prompt, a line a program colored (a prompt's other lines usually are),
 // a coding agent's next message or tool result (⏺ or ●, ⎿), or a drawn table (a widget of its own)
-const ends = (l, next) => l.styled || PROMPT.test(l.text) || /^\s*[⏺●⎿]/.test(l.text) || tableTop(l.text, next?.text);
+const ends = (lines, k) => lines[k].styled || PROMPT.test(lines[k].text) || /^\s*[⏺●⎿]/.test(lines[k].text) || tableTop(lines, k, MAX_LINES);
 // a coding agent's tool output begins after this mark on its first line ("  ⎿  # Title")
 const TOOL_OUT = /^\s*⎿/;
 // prompts compared without their numbers: a clock, a counter or an exit code changes
@@ -35,6 +35,8 @@ const PRINT = /(?:^|\s)(?:cat|bat|batcat|head|tail|less|more|nl)\s+(?:-\S+\s+)*(
 // a diagram without a fence starts with a line that is only its keyword ("pie", "timeline" are prose too)
 const DIAGRAM = /^(?:(?:graph|flowchart)\s+(?:TD|TB|BT|RL|LR)|sequenceDiagram|classDiagram(?:-v2)?|stateDiagram(?:-v2)?|erDiagram|gitGraph)\s*$/;
 const MARKDOWN_EXT = /^(md|markdown|mdown|mkd)$/i, MERMAID_EXT = /^(mmd|mermaid)$/i;
+/** A fence's word for a Mermaid diagram. */
+export const MERMAID_LANG = /^(mermaid|mermaidjs|mmd)$/i;
 
 /** Rows joined where iTerm wrapped them (no hard end): {text, from, to, styled} with row
  *  indexes; styled: a row of it has colors of its own. */
@@ -171,13 +173,15 @@ export const regions = (rows, end) => scan(rows, end).found;
 /** regions(), and `settled`: the first row whose regions may still change as rows are added
  *  after `end` (a fence or a file not finished, a document that may go on); scanning again from
  *  there finds the same regions after it. `changes`: the first row that may change (the
- *  screen's first): settled is never after it, nor inside a drawn box there (AC-31). */
+ *  screen's first): settled is never after it, nor inside a drawn box there (AC-31). `waiting`:
+ *  the first row of a drawn table whose last rule is not printed yet, or may not be, or null. A
+ *  table region's `table.open`: it may go on (nothing after it yet, or its bottom rule not there). */
 export function scan(rows, end = rows.length, changes = rows.length) {
   const lines = joinTableRows(logicalLines(rows.slice(0, end)));
   const next = rows[end]?.text ?? null;                           // the cursor's row
   const found = [];
   let open = lines.length;                                        // the first line still undecided
-  let noRun = -1;
+  let noRun = -1, waiting = null;
   const add = (kind, a, b, lang, text, guessed = false, table = undefined) => {
     if (b - a + 1 > MAX_LINES || !text.trim() || (!table && lines.slice(a, b + 1).some((l) => l.styled))) return;
     found.push({ kind, from: lines[a].from, to: lines[b].to, lang, text, guessed, table, line: a, lastLine: b });
@@ -193,20 +197,21 @@ export function scan(rows, end = rows.length, changes = rows.length) {
     // a Markdown table in a diff first: its head and separator may be context lines a plain table's would take alone
     const changed = diffTable(lines, i, MAX_LINES);
     if (changed) {
-      add("table", i, changed.to, "", tableMarkdown(changed), false, changed);
+      add("table", i, changed.to, "", tableMarkdown(changed), false, { ...changed, open: changed.to + 1 >= lines.length });
       i = changed.to;
       continue;
     }
     const piped = pipeTable(lines, i);                            // a Markdown table, colored text around it or not
     if (piped) {
-      add("table", i, piped.to, "", tableMarkdown(piped), false, piped);
+      add("table", i, piped.to, "", tableMarkdown(piped), false, { ...piped, open: piped.to + 1 >= lines.length });
       i = piped.to;
       continue;
     }
     const table = drawnTable(lines, i, MAX_LINES);
-    if (table === null) { open = Math.min(open, i); break; }      // its last rule is not printed yet
+    if (table === null) { open = Math.min(open, i); waiting = lines[i].from; break; }   // its last rule is not printed yet
     if (table) {
       add("table", i, table.to, "", tableMarkdown(table), false, table);
+      if (table.open && table.to + 1 >= lines.length) waiting = lines[i].from;   // an ASCII rule with nothing after it yet
       i = table.to;
       continue;
     }
@@ -227,14 +232,14 @@ export function scan(rows, end = rows.length, changes = rows.length) {
     const fence = fenced(lines, i);
     if (fence === null && lines.length - i <= MAX_LINES) { open = Math.min(open, i); break; }   // still printing: it may close
     if (fence) {
-      const kind = /^mermaid$/i.test(fence.lang) ? "mermaid" : "code";
+      const kind = MERMAID_LANG.test(fence.lang) ? "mermaid" : "code";
       add(kind, i, fence.to, fence.lang, fence.text);
       i = fence.to;
       continue;
     }
     if (DIAGRAM.test(lines[i].text) && !lines[i - 1]?.text.trim()) {
       let j = i;
-      while (j + 1 < lines.length && lines[j + 1].text.trim() && !ends(lines[j + 1], lines[j + 2])) j++;
+      while (j + 1 < lines.length && lines[j + 1].text.trim() && !ends(lines, j + 1)) j++;
       if (j > i) { add("mermaid", i, j, "mermaid", body(lines, i, j), true); i = j; }
     }
   }
@@ -244,10 +249,10 @@ export function scan(rows, end = rows.length, changes = rows.length) {
   open = Math.max(Math.min(open, Math.max(0, lines.length - GAP - 2), moving < 0 ? lines.length : moving), lines.length - MAX_LINES);
   // nor inside a drawn box (a table not whole yet, or off its grid): the next scan, from there,
   // would take a row of it for a head (AC-31)
-  while (open > Math.max(0, lines.length - MAX_LINES) && open < lines.length && boxLine(lines[open].text) && boxLine(lines[open - 1].text)) open--;
+  while (open > Math.max(0, lines.length - MAX_LINES) && open < lines.length && insideBox(lines[open].text, lines[open - 1].text)) open--;
   for (const r of found) if (r.lastLine >= open) open = Math.min(open, r.line);
   const settled = open < lines.length ? lines[open].from : Math.min(end, rows.length);
-  return { found: found.map(({ line, lastLine, ...r }) => r), settled };
+  return { found: found.map(({ line, lastLine, ...r }) => r), settled, waiting };
 }
 
 // A region's text without the indentation all its lines share: a coding agent indents its tools'
@@ -279,19 +284,26 @@ function printedFile(lines, i, next) {
   return next != null && shape(next).startsWith(same) ? found(lines.length - 1) : lines.length - i <= MAX_LINES ? null : undefined;
 }
 
-// A fence opened at line i: {lang, text, to} when closed, null when not closed yet.
+// A fence opened at line i: {lang, text, to} when closed, null when not closed yet, undefined when
+// none: the output went on with no closing fence (a tool's output cut short): a coding agent's next
+// message or result, less indented than the fence (Claude Code's marks, Codex's), or a prompt, then no
+// closer or another fence opening. It is text, and what follows is read.
 function fenced(lines, i) {
   const open = lines[i].text.match(FENCE);
   if (!open) return undefined;
   const [, indent, mark] = open;
   const close = new RegExp(`^\\s*${mark[0] === "`" ? "`" : "~"}{${mark.length},}\\s*$`);
+  const moved = (t) => { const m = t.match(/^(\s*)[⏺●⎿•└]/); return !!m && m[1].length < indent.length; };
+  let prompted = false;
   for (let j = i + 1; j < lines.length; j++) {
+    if (moved(lines[j].text) || (prompted && lines[j].text.match(FENCE)?.[3])) return undefined;
+    prompted ||= PROMPT.test(lines[j].text);
     if (close.test(lines[j].text)) {
       const text = lines.slice(i + 1, j).map((l) => (l.text.startsWith(indent) ? l.text.slice(indent.length) : l.text.trimStart())).join("\n");
       return { lang: open[3], text, to: j };
     }
   }
-  return null;
+  return prompted ? undefined : null;
 }
 
 // What a line says about Markdown: a strong sign, a weak one, or none.
@@ -336,7 +348,7 @@ function markdownRun(lines, i) {
   let last = i, signs = 0, codeish = 0, filled = 0, j = i, open = false;
   for (; j < lines.length && j - last <= GAP && j - i < MAX_LINES; j++) {
     const t = lines[j].text;
-    if (ends(lines[j], lines[j + 1])) break;
+    if (ends(lines, j)) break;
     const s = sign(lines, j);
     if (s === "fence") {
       const f = fenced(lines, j);
@@ -351,7 +363,7 @@ function markdownRun(lines, i) {
   const strong = kinds.has("heading") || kinds.has("table") || kinds.has("fence");
   if (!strong || kinds.size < 2 || signs < 3 || codeish > filled * 0.3) return { ok: false, to: last, open };
   let to = last;                                                  // the paragraph after the last sign
-  const prose = (k) => k < lines.length && lines[k].text.trim() && !ends(lines[k], lines[k + 1]);
+  const prose = (k) => k < lines.length && lines[k].text.trim() && !ends(lines, k);
   if (to + 1 < lines.length && !lines[to + 1].text.trim() && prose(to + 2)) to++;   // after a blank line
   while (prose(to + 1)) to++;
   return { ok: true, to, open };

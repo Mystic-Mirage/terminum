@@ -116,7 +116,7 @@ export async function webTmux(browser, name) {
     const seen = await page.evaluate(() => { const g = document.querySelector('#sessions .grp[data-wid="devbox/terminum"]'), c = (el) => getComputedStyle(el).color;
       return { label: g.querySelector("h2 .label").textContent, state: g.querySelector(".gstate").textContent,
         color: c(g.querySelector("h2 .label")), row: c(g.querySelector(".item .host")),
-        rowText: g.querySelector(".item .host").textContent }; });
+        icon: getComputedStyle(g.querySelector("h2 .gkind svg")).stroke, rowText: g.querySelector(".item .host").textContent }; });
     const ATTACH = "ssh -t -- devbox.example \"tmux attach -t '=terminum'\"";
     const WHY = "kex_exchange_identification: read: Connection reset by peer; Connection reset by 192.0.2.5 port 22";
     f.say({ t: "layout", groups: [...LAYOUT, host("failed", { why: WHY, session: "terminum", attach: ATTACH })] });
@@ -129,8 +129,8 @@ export async function webTmux(browser, name) {
       return { sess: h.querySelector(".tsess")?.textContent, copy: h.querySelector(".attach")?.title }; });
     check("AC-01 a group names its tmux session and has a copy button for the attach command",
       tsess.sess === "terminum" && tsess.copy === `Copy: ${ATTACH}`, JSON.stringify(tsess));
-    check("AC-81 host group: its name in cornflower blue, its state on a line under it (a long one wrapped in full), rows naming the host in violet",
-      seen.label === "devbox" && seen.state === "reconnecting (2 s)" && seen.color === "rgb(100, 149, 237)" && seen.row === "rgb(169, 139, 255)" && seen.rowText === "devbox"
+    check("AC-81 host group: its name and its >_ in cornflower blue, its state on a line under it (a long one wrapped in full), rows naming the host in violet",
+      seen.label === "devbox" && seen.state === "reconnecting (2 s)" && seen.color === "rgb(100, 149, 237)" && seen.icon === seen.color && seen.row === "rgb(169, 139, 255)" && seen.rowText === "devbox"
         && failed.label === "devbox" && failed.state === WHY && failed.lines >= 2 && failed.inside, JSON.stringify({ seen, failed }));
     await headClick(page, '#sessions .grp[data-wid="devbox/terminum"]', '.hostbtn');
     const offered = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
@@ -325,6 +325,9 @@ export async function webTmux(browser, name) {
     const err = await page.textContent("#status");
     f.say({ t: "error", msg: "", sid: "tmux:local:terminum:%1" });
     await pause(page);
+    f.say({ t: "error", msg: "This pane has closed. Pick another one.", sid: "tmux:devbox:default:%9" });
+    await pause(page);
+    check("AC-02 an error about a pane left meanwhile says nothing over the shown one", await page.isHidden("#status"));
     check("AC-81 error: the shown pane's error is on the status line, an empty one clears it", err === "Connection to devbox lost" && await page.isHidden("#status"));
 
     // the page's words: terminum and tmux

@@ -25,6 +25,10 @@ pub const COLORS: usize = 10;
 /// Projects at most; sessions at most in one.
 const MOST: usize = 50;
 const MOST_MEMBERS: usize = 200;
+/// The most parts an order names, and an id's most bytes: terminumd keeps what a page sends.
+const ORDER_MOST: usize = 1000;
+const ORDER_ID: usize = 400;
+
 /// A session added this recently is not taken for closed by a list read.
 const FRESH: Duration = Duration::from_secs(5);
 
@@ -59,6 +63,8 @@ pub struct Projects {
     recheck: Option<Instant>,
     /// a list read changed them and the pages are not told yet (`tell_read`)
     untold: bool,
+    /// the session list's order, projects and tmux groups together ("p:<id>", "g:<group>"): every page's
+    order: Vec<String>,
 }
 
 /// A project's name as typed (trimmed): a short name (settings::is_short_name).
@@ -70,15 +76,16 @@ fn name_ok(name: &str) -> Result<String, String> {
 impl Projects {
     pub fn load(path: PathBuf) -> Projects {
         // one that cannot be read is set aside (projects.json.bak), never written over
-        let (list, servers) = crate::auth::store::read_or_set_aside(&path, |v| {
+        let (list, servers, order) = crate::auth::store::read_or_set_aside(&path, |v| {
             if !v.is_object() {
                 return Err("expected a projects object".into());
             }
             let list = serde_json::from_value(v.get("projects").cloned().unwrap_or_else(|| json!([]))).map_err(|e| e.to_string())?;
             let servers = serde_json::from_value(v.get("servers").cloned().unwrap_or_else(|| json!({}))).map_err(|e| e.to_string())?;
-            Ok((list, servers))
+            let order = serde_json::from_value(v.get("order").cloned().unwrap_or_else(|| json!([]))).map_err(|e| e.to_string())?;
+            Ok((list, servers, order))
         }).unwrap_or_default();
-        Projects { path, list, servers, fresh: HashMap::new(), recheck: None, untold: false }
+        Projects { path, list, servers, fresh: HashMap::new(), recheck: None, untold: false, order }
     }
 
     pub fn list(&self) -> &[Project] {
@@ -90,7 +97,7 @@ impl Projects {
         if self.path.as_os_str().is_empty() {
             return Ok(());                                  // in tests: kept in memory
         }
-        crate::config::write_private(&self.path, json!({"projects": self.list, "servers": self.servers}).to_string().as_bytes()).map_err(|e| format!("projects.json: {e}"))
+        crate::config::write_private(&self.path, json!({"projects": self.list, "servers": self.servers, "order": self.order}).to_string().as_bytes()).map_err(|e| format!("projects.json: {e}"))
     }
 
     fn find(&mut self, id: &str) -> Result<&mut Project, String> {
@@ -152,11 +159,21 @@ impl Projects {
         self.save()
     }
 
-    /// The projects in the order of `ids` (those not named keep their order, after).
+    /// The session list's order `ids`, projects and tmux groups together; the projects follow it
+    /// (those not named keep their order, after).
     pub fn order(&mut self, ids: &[String]) -> Result<(), String> {
-        let at = |p: &Project| ids.iter().position(|i| *i == p.id).unwrap_or(usize::MAX);
+        if ids.len() > ORDER_MOST || ids.iter().any(|i| i.len() > ORDER_ID) {
+            return Err("That order is too long".into());
+        }
+        let at = |p: &Project| ids.iter().position(|i| i.strip_prefix("p:") == Some(p.id.as_str())).unwrap_or(usize::MAX);
         self.list.sort_by_key(|p| at(p));
+        self.order = ids.to_vec();
         self.save()
+    }
+
+    /// The session list's order as `order` got it.
+    pub fn list_order(&self) -> &[String] {
+        &self.order
     }
 
     /// Project `id`'s sessions in the order of `keys` (those not named keep their order, after).
@@ -229,7 +246,8 @@ impl Projects {
 }
 
 fn message(app: &Shared) -> String {
-    json!({"t": "projects", "items": app.projects.lock().list()}).to_string()
+    let projects = app.projects.lock();
+    json!({"t": "projects", "items": projects.list(), "order": projects.list_order()}).to_string()
 }
 
 /// A page that connects learns the projects.
@@ -252,9 +270,10 @@ pub fn tell_read(app: &Shared) {
     }
 }
 
-/// A server's list was read with these pane keys: its closed panes leave their projects; the
-/// pages are told by `tell_read`.
-pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
+/// A server's list was read with these pane keys, `every` its panes shown or not: those no longer
+/// shown leave their projects; the bookmarks of those that closed are orphaned (a session detached
+/// keeps its own, and shows them when attached again); the pages are told by `tell_read`.
+pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String], every: &[String]) {
     let identity = server.identity().await;
     let live: HashSet<&str> = keys.iter().map(String::as_str).collect();
     let prefix = server.key("");
@@ -274,7 +293,7 @@ pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
     if changed {
         save(app).await;
     }
-    let live: HashSet<String> = keys.iter().cloned().collect();
+    let live: HashSet<String> = every.iter().cloned().collect();
     orphan(app, move |k| k.starts_with(&prefix) && match closed {
         Closed::None => false,
         Closed::All => true,
@@ -293,18 +312,17 @@ pub async fn restarted(app: &Shared, prefix: &str, panes: &[(String, String)]) {
     told(app, tokio::task::spawn_blocking(move || a.bookmarks.lock().restarted(&prefix, &panes)).await);
 }
 
-/// The bookmarks whose project went, or whose session `closed` says closed, are orphaned
-/// (AC-33): saved off the async workers when one is (named again there, under the lock), every
+/// The bookmarks whose session `closed` says closed are orphaned (AC-33): saved off the async
+/// workers when one is (named again there, under the lock), every
 /// page told.
 async fn orphan(app: &Shared, closed: impl Fn(&str) -> bool + Send + 'static) {
-    let projects: Vec<String> = app.projects.lock().list().iter().map(|p| p.id.clone()).collect();
-    if super::bookmarks::lost(app.bookmarks.lock().all(), &projects, &closed).is_empty() {
+    if super::bookmarks::lost(app.bookmarks.lock().all(), &closed).is_empty() {
         return;
     }
     let a = app.clone();
     told(app, tokio::task::spawn_blocking(move || {
         let mut store = a.bookmarks.lock();
-        let ids = super::bookmarks::lost(store.all(), &projects, &closed);
+        let ids = super::bookmarks::lost(store.all(), &closed);
         store.orphan(&ids)
     }).await);
 }
@@ -350,7 +368,7 @@ pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
         }
     }).await.map_err(|e| e.to_string()).and_then(|r| r);
     match done {
-        Ok(()) => { tell(app); orphan(app, |_| false).await }   // a project gone orphans its bookmarks
+        Ok(()) => tell(app),
         Err(e) => super::client::error(page, e, None),
     }
 }

@@ -202,7 +202,7 @@ fn kept_across_a_restart_readable_by_the_user_only() {
     assert!(Store::load(d.file()).get(&c.id).is_some_and(|i| i.alt) && c.wire()["alt"] == true && a.wire().get("alt").is_none());
     assert!(s.remove(&c.id).unwrap());
     let data: Value = serde_json::from_str(&fs::read_to_string(d.file()).unwrap()).unwrap();
-    assert_eq!(data["version"], 3);
+    assert_eq!(data["version"], 4);
     assert_eq!(a.id.len(), 12);
     assert!(a.id.chars().all(|c| c.is_ascii_alphanumeric()));
     assert_eq!(a.wire()["sid"], "tmux:local:terminum:%1");
@@ -313,23 +313,22 @@ fn a_reminder_comes_up_at_each_turns_end_until_resolved() {
     assert!(wire.get("remind").is_none() && wire.get("due").is_none(), "a bookmark's file entry is as before");
 }
 
-/// Pane `k` ended a turn; it is in no project.
-fn ended(k: &str) -> Vec<(String, Option<String>)> {
-    vec![(k.to_string(), None)]
+/// Pane `k` ended a turn.
+fn ended(k: &str) -> Vec<String> {
+    vec![k.to_string()]
 }
 
 #[test]
-fn a_reminder_of_a_project_comes_up_when_any_of_its_sessions_ends_a_turn() {
+fn a_reminder_comes_up_only_when_its_own_session_ends_a_turn_whatever_its_project() {
     let d = Dir::new();
     let mut s = Store::load(d.file());
     let r = s.add(NewMark { remind: true, project: Some("p1".into()), ..mark("tmux:local:terminum:%1", 4, "retry", "") }).unwrap();
     let other = s.add(NewMark { remind: true, project: Some("p2".into()), ..mark("tmux:local:terminum:%1", 5, "css", "") }).unwrap();
     let own = s.add(NewMark { remind: true, ..mark("tmux:local:terminum:%2", 6, "own", "") }).unwrap();
-    let up = s.due(&[("tmux:local:terminum:%7".into(), Some("p1".into()))]).unwrap();
-    assert_eq!(up.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), [r.id.as_str()], "another session of the project, not of another project");
-    assert!(s.due(&ended("tmux:local:terminum:%1")).unwrap().is_empty(), "its session out of the project: the project's reminders are not its own");
-    assert!(!s.get(&other.id).unwrap().due);
-    assert!(s.due(&[("tmux:local:terminum:%7".into(), Some("p9".into()))]).unwrap().is_empty(), "a session outside projects: its own reminders only");
+    assert!(s.due(&ended("tmux:local:terminum:%7")).unwrap().is_empty(), "another session of the project: not shown there, not up");
+    let up = s.due(&ended("tmux:local:terminum:%1")).unwrap();
+    assert_eq!(up.len(), 2, "its own, of any project");
+    assert!(up.iter().any(|i| i.id == r.id) && up.iter().any(|i| i.id == other.id));
     assert_eq!(s.due(&ended("tmux:local:terminum:%2")).unwrap()[0].id, own.id);
     assert_eq!(Store::load(d.file()).get(&r.id).unwrap().project.as_deref(), Some("p1"), "kept");
 }
@@ -341,16 +340,35 @@ fn an_orphaned_reminder_never_comes_up_and_stays_orphaned() {
     let r = s.add(NewMark { remind: true, project: Some("p1".into()), ..mark("tmux:local:terminum:%1", 4, "retry", "") }).unwrap();
     let b = s.add(mark("tmux:local:terminum:%2", 5, "own", "")).unwrap();
     let keep = s.add(NewMark { project: Some("p2".into()), ..mark("tmux:local:terminum:%3", 6, "kept", "") }).unwrap();
-    let projects = ["p2".to_string()];
-    let lost = super::lost(s.all(), &projects, |k| k == "tmux:local:terminum:%2" || k == "tmux:local:terminum:%3");
-    assert_eq!(lost, [r.id.clone(), b.id.clone()], "its project went; outside projects its session closed; a live project's stays, its session closed or not");
+    let lost = super::lost(s.all(), |k| k == "tmux:local:terminum:%1" || k == "tmux:local:terminum:%2");
+    assert_eq!(lost, [r.id.clone(), b.id.clone()], "its session closed, in a project or not; an open session keeps its own, its project gone or not");
     assert_eq!(s.orphan(&lost).unwrap().len(), 2);
-    assert!(super::lost(s.all(), &projects, |k| k == "tmux:local:terminum:%2").is_empty(), "named once");
+    assert!(super::lost(s.all(), |k| k == "tmux:local:terminum:%2").is_empty(), "named once");
     assert!(s.orphan(&lost).unwrap().is_empty(), "orphaned already: unchanged");
-    assert!(s.due(&[("tmux:local:terminum:%1".into(), Some("p1".into()))]).unwrap().is_empty());
+    assert!(s.due(&ended("tmux:local:terminum:%1")).unwrap().is_empty());
     let again = Store::load(d.file());
     assert!(again.get(&r.id).unwrap().orphaned.is_some() && again.get(&keep.id).unwrap().orphaned.is_none(), "kept across a restart");
     assert!(again.get(&b.id).unwrap().wire()["orphaned"].is_i64());
+}
+
+#[test]
+fn a_file_before_version_4_orphans_a_projects_record_whose_pane_is_not_of_that_project_once() {
+    let d = Dir::new();
+    let item = |id: &str, key: &str, project: Option<&str>| json!({"id": id, "key": key, "n": 1, "text": "t", "note": "", "title": "t", "at": 1, "project": project});
+    std::fs::write(d.file(), json!({"version": 3, "items": [item("kept", "tmux:local:t:%1", Some("p1")), item("stale", "tmux:local:t:%5", Some("p1")),
+        item("other", "tmux:local:t:%2", Some("p1")), item("gone", "tmux:local:t:%7", Some("p9")), item("own", "tmux:local:t:%8", None)]}).to_string()).unwrap();
+    let projects: std::collections::HashMap<String, String> = [("tmux:local:t:%1", "p1"), ("tmux:local:t:%2", "p2"), ("tmux:local:t:%5", "p2")].map(|(k, p)| (k.to_string(), p.to_string())).into();
+    let mut s = Store::load(d.file());
+    s.take_sessions(&projects).unwrap();
+    let orphaned = |s: &Store, id: &str| s.get(id).unwrap().orphaned.is_some();
+    assert!(!orphaned(&s, "kept") && !orphaned(&s, "own"), "a member of its project; outside projects: its own rule");
+    assert!(orphaned(&s, "stale") && orphaned(&s, "other") && orphaned(&s, "gone"), "a pane of another project now, or a project gone: never shown there");
+    let again = Store::load(d.file());
+    assert!(orphaned(&again, "stale") && !again.unscoped, "kept, and the file is of version 4");
+    std::fs::write(d.file(), json!({"version": 4, "items": [item("late", "tmux:local:t:%5", Some("p1"))]}).to_string()).unwrap();
+    let mut late = Store::load(d.file());
+    late.take_sessions(&projects).unwrap();
+    assert!(!orphaned(&late, "late"), "version 4: a session moved to another project keeps its own");
 }
 
 #[test]
@@ -362,8 +380,8 @@ fn a_restored_server_keeps_its_bookmarks() {
     let host = s.add(mark("tmux:devbox:default:%55", 3, "c", "")).unwrap();
     let project = s.add(NewMark { project: Some("p1".into()), ..mark("tmux:local:terminum:%57", 4, "d", "") }).unwrap();
     let moved = s.restarted("tmux:local:terminum:", &[("%55".into(), "%3".into())]).unwrap();
-    assert_eq!(moved.len(), 2);
-    assert!(s.get(&project.id).unwrap().orphaned.is_none(), "a project's lives with its project, its pane made again or not");
+    assert_eq!(moved.len(), 3);
+    assert!(s.get(&project.id).unwrap().orphaned.is_some(), "a project's too: a restored pane may take its id, and shows only its own");
     assert_eq!(s.get(&a.id).unwrap().key.as_deref(), Some("tmux:local:terminum:%3"), "its pane's new key");
     assert!(s.get(&gone.id).unwrap().orphaned.is_some(), "its pane not made again");
     assert_eq!(s.get(&host.id).unwrap().key.as_deref(), Some("tmux:devbox:default:%55"), "another server's");

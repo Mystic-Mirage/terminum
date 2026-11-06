@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Dragging in the session list (AC-07, AC-52, AC-92): a row by its body within its group (tmux
-// reorders that session's windows; a project's sessions in the project), a group by its header
-// among the groups (this browser's list only), a project by its header among the projects
-// (every page's). What can move carries data-drag (nav.js). A mouse drags once it moves 6 px (a
+// reorders that session's windows; a project's sessions in the project), a project or a tmux group
+// by its header anywhere among them (every page's). What can move carries data-drag (nav.js). A mouse drags once it moves 6 px (a
 // press that does not still clicks); a finger rests 350 ms to lift it, then drags it, or lifts
 // without moving for the row's menu; moving sooner scrolls. The element itself is the landing
 // slot (dashed, listdrag.css); a copy of it follows the pointer. Esc puts it back.
@@ -97,7 +96,7 @@ export function bindReorder(list, done, ended = () => {}, held = () => {}) {
     const parent = el.parentElement;
     if (!commit) parent.insertBefore(el, others(el)[start] ?? null);   // back where it was
     else if ([...parent.children].indexOf(el) !== start) {
-      const ids = [...parent.children].map((c) => (kind === "group" ? c.dataset.wid : kind === "project" ? c.dataset.pid : c.querySelector(".item")?.dataset.id)).filter(Boolean);
+      const ids = [...parent.children].map((c) => (kind === "part" ? c.dataset.part : c.querySelector(".item")?.dataset.id)).filter(Boolean);
       done(kind, parent, ids);
     }
     ended();
@@ -122,7 +121,40 @@ export function bindReorder(list, done, ended = () => {}, held = () => {}) {
   return { dragging: () => drag !== null };
 }
 
-/** Groups in the order this browser keeps (by iTerm2 window id); windows it has not seen go last. */
+/** The session list's projects and tmux groups as one list, in terminumd's `order` ("p:<id>", "g:<group>"):
+ *  [{id, project} or {id, group}]. One it does not name: a project after the last project (else first), a
+ *  group at the end, as `groups` has them; none named: the projects first, as before they could mix. */
+export function arranged(groups, projects, order = []) {
+  const at = new Map(order.map((id, i) => [id, i]));
+  const parts = [...projects.map((project) => ({ id: `p:${project.id}`, project })), ...groups.map((group) => ({ id: `g:${group.wid}`, group }))];
+  const list = parts.filter((p) => at.has(p.id)).sort((a, b) => at.get(a.id) - at.get(b.id));
+  for (const part of parts.filter((p) => !at.has(p.id))) {
+    if (part.project) list.splice(list.findLastIndex((p) => p.project) + 1, 0, part);
+    else list.push(part);
+  }
+  return list;
+}
+
+/** `ids`, the parts drawn in their new order, in the places such parts held in `all` (the list's ids,
+ *  whatever a filter hides or a group left empty): a part not drawn stays where it is; one `all` does
+ *  not know yet (a group renamed) comes with them. */
+export function moved(all, ids) {
+  const drawn = new Set(ids);
+  let k = 0;
+  const list = all.map((id) => (drawn.has(id) ? ids[k++] : id));
+  return [...list, ...ids.slice(k)];
+}
+
+/** The list's projects and groups in the order `ids` (moved), drawn at once (`draw`); terminumd tells
+ *  every page. st: app.js's state; all(): the list's ids now. */
+export const listOrderer = (st, all, send, draw) => (ids) => {
+  st.listOrder = moved(all(), ids);
+  send({ t: "project", action: "order", ids: st.listOrder });
+  draw();
+};
+
+/** Groups in the order this browser kept before the list had one order (by their ids): a tie-break
+ *  among those terminumd's order does not name; those it has not seen go last. */
 export function ordered(groups, order) {
   const at = (g) => { const i = order.indexOf(g.wid); return i < 0 ? Infinity : i; };
   return groups.map((g, i) => [g, i]).sort((a, b) => at(a[0]) - at(b[0]) || a[1] - b[1]).map(([g]) => g);

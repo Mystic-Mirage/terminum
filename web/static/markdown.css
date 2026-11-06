@@ -18,7 +18,7 @@
 .body.markdown.wrap { padding: 10px 16px 16px; font: var(--win-md)/var(--win-md-lh) var(--win-font); }   /* a window's record, as the chat's text (tokens.css) */
 .markdown blockquote { margin-left: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: var(--surface-2);
   color: color-mix(in srgb, var(--t-fg) 80%, var(--t-bg)); }   /* a tint, not a bar */
-/* tables: no frame and no columns' lines; a muted head, rows apart by space and a hairline */
+/* tables: no frame and no columns' lines; a muted head, rows apart by space and a hairline (a table's picture paints these: tablepng.js) */
 .markdown table, .table table { border-collapse: collapse; display: block; overflow-x: auto; }
 .markdown th, .markdown td, .table th, .table td { padding: 6px 12px; border: 0; border-bottom: 1px solid var(--hair); text-align: left; vertical-align: top; }
 .markdown th, .table th { padding-top: 2px; font-size: .86em; font-weight: 600; letter-spacing: .01em; color: color-mix(in srgb, var(--t-fg) 62%, var(--t-bg));

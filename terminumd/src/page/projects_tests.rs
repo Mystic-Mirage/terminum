@@ -34,7 +34,7 @@ fn invalid_project_schemas_are_backed_up_before_a_later_save() {
     std::fs::write(&path, "{}").unwrap();
     assert!(Projects::load(path.clone()).list().is_empty(), "missing keys keep empty defaults");
     let valid = json!({"projects": [{"id": "p1", "name": "work", "color": 2, "host": null,
-        "dir": "/sandbox", "members": [A]}], "servers": {"tmux:local:terminum:": "server1"}});
+        "dir": "/sandbox", "members": [A]}], "servers": {"tmux:local:terminum:": "server1"}, "order": ["g:local/main", "p:p1"]});
     std::fs::write(&path, valid.to_string()).unwrap();
     Projects::load(path.clone()).save().unwrap();
     assert_eq!(serde_json::from_str::<Value>(&std::fs::read_to_string(path).unwrap()).unwrap(), valid);
@@ -84,7 +84,9 @@ fn order_members_rename_and_after() {
     assert_eq!(ps.of(A).unwrap().name, "API");
     assert!(ps.rename(&p1, " ").is_err() && ps.rename(&p1, "a\u{7}").is_err());
     let p2 = ps.add("tmux:local:terminum:%9", None, None, None, "/z".into(), None).unwrap();
-    ps.order(&[p2.clone(), p1.clone()]).unwrap();
+    ps.order(&[format!("p:{p2}"), "g:local/main".to_string(), format!("p:{p1}")]).unwrap();
+    assert_eq!(ps.list_order(), [format!("p:{p2}"), "g:local/main".to_string(), format!("p:{p1}")], "the projects and groups together");
+    assert!(ps.order(&vec!["g:x".to_string(); ORDER_MOST + 1]).is_err() && ps.order(&["g:".to_string() + &"x".repeat(ORDER_ID)]).is_err(), "what a page sends is bounded");
     assert_eq!(ps.list().iter().map(|p| p.id.clone()).collect::<Vec<_>>(), [p2, p1]);
 }
 

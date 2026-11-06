@@ -17,7 +17,7 @@ fn open_reminder(i: &Item) -> bool {
 
 impl Store {
     /// Room for the user's `bookmarks` new bookmarks and `reminders` new reminders.
-    pub(super) fn users_room(&self, bookmarks: usize, reminders: usize) -> Result<(), MarkError> {
+    pub fn users_room(&self, bookmarks: usize, reminders: usize) -> Result<(), MarkError> {
         let users = || self.items.iter().filter(|i| i.by.is_none());
         if bookmarks > 0 && users().filter(|i| !i.remind).count() + bookmarks > MAX_ITEMS {
             return err(format!("{MAX_ITEMS} bookmarks are kept at most: delete some first (a session's bookmarks' button, or Bookmarks / Reminders below the sessions)."));

@@ -2,7 +2,7 @@
 // The header's menu (AC-07, AC-15, AC-17): the settings (a pane's actions are its row's menu,
 // rowmenu.js), Restore again after a restore report, the report's banner over the terminal, and
 // the chip of a newer release with its own menu.
-import { placeModal } from "./fabpane.js";
+import { inside, placeModal } from "./fabpane.js";
 import { closeButton } from "./banners.js";
 
 const $ = (id) => document.getElementById(id);
@@ -11,7 +11,21 @@ const $ = (id) => document.getElementById(id);
 const RESTORED_FOR = 30000;     // ms the restore report stays when nobody closes it
 
 export function paneMenu({ send, pick, signOut, copy }) {
-  function open() { $("menu").hidden = false; placeModal($("menu"), close); $("menubtn").setAttribute("aria-expanded", "true"); }
+  /** Under its button, inside the window (a phone's is a sheet: placeModal). */
+  function placeUnder() {
+    const menu = $("menu"), at = $("menubtn").getBoundingClientRect();
+    const top = at.bottom + 6;
+    menu.style.top = `${top}px`;
+    menu.style.right = "auto";
+    menu.style.maxHeight = `${innerHeight - top - 8}px`;
+    menu.style.left = `${inside(at.right - menu.offsetWidth, menu.offsetWidth, innerWidth)}px`;
+  }
+  function open() {
+    $("menu").hidden = false;
+    if (!placeModal($("menu"), close)) placeUnder();
+    $("menubtn").setAttribute("aria-expanded", "true");
+  }
+  addEventListener("resize", () => { if (!$("menu").hidden && !("sheet" in $("menu").dataset)) placeUnder(); });
   function close() { $("menu").hidden = true; $("menubtn").setAttribute("aria-expanded", "false"); }
   $("menubtn").onclick = (e) => { e.stopPropagation(); $("menu").hidden ? open() : close(); };
   document.addEventListener("click", (e) => { if (!$("menu").hidden && !e.target.closest("#menu")) close(); });

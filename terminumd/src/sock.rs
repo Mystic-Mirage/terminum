@@ -127,13 +127,13 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     };
     if changed {
         app.dirty.notify_one();
-        // a turn ended (its last background subagent too): its reminders come up with the list
-        // read this notice brings, also when it was too quick for a layout to show it working,
-        // once its screen shows no work in the background (AC-91, page/turns.rs)
-        if app.hooks.take_ended(&key) {
-            app.turns.hook_ended(&key, std::time::Instant::now());
-            tokio::spawn(crate::page::answers::keep(app.clone(), key.clone()));   // at its Stop: the screen is final (AC-90)
-        }
+    }
+    // a turn ended (its last background subagent too): its reminders come up with the list
+    // read this notice brings, also when it was too quick for a layout to show it working,
+    // once its screen shows no work in the background (AC-91, page/turns.rs); also a Stop
+    // that changed nothing the list shows
+    if app.hooks.take_ended(&key) {
+        crate::manager::hook_turn_ended(&app, &key, ev["event"].as_str().unwrap_or(""));
     }
     if ev["event"] == "UserPromptSubmit" && let (Some(prompt), Some(cwd)) = (ev["prompt"].as_str(), ev["cwd"].as_str()) {
         let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook"}));

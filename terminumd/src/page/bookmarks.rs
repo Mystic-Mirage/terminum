@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Bookmarks of the page's terminal (AC-33): text a user selected, with a note, kept on the
-//! Mac for every signed-in client (`web-bookmarks.json`, 0600, version 3); where each shows,
-//! its project or its session, is bookmarks_scope.rs's. A bookmark is found
+//! Mac for every signed-in client (`web-bookmarks.json`, 0600, version 4); where each shows,
+//! its session alone, is bookmarks_scope.rs's. A bookmark is found
 //! again by its text, nearest the line it was on: tmux numbers lines anew when it drops them
 //! and when the scrollback is cleared. A port of iterm-enhancer's bookmarks.py: the store, the
 //! checks of the page's messages and the pure search; reading the rows from tmux is the
@@ -78,12 +78,12 @@ pub struct Item {
     /// the folder its pane was in when it was made (none before 0.8.0)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
-    /// the project (AC-92) its session was in when it was made: every session of it shows it
-    /// while the project lives; none: its own session alone
+    /// the project (AC-92) its session was in when it was made: the list below the sessions names
+    /// it; none: outside projects
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
-    /// when its project went or (outside projects) its session closed (Unix seconds): then it
-    /// shows only in the list below the sessions, and a reminder comes up no more
+    /// when its session closed (Unix seconds): then it shows only in the list below the sessions,
+    /// and a reminder comes up no more
     #[serde(skip_serializing_if = "Option::is_none")]
     pub orphaned: Option<i64>,
     /// the coding agent that made it (AC-98: claude, codex, or agent when not known); none: the user
@@ -230,12 +230,14 @@ pub struct Store {
     refs: VecDeque<(String, String)>, // the page's ref of a save -> the bookmark it made
     /// read from a file before version 3: its bookmarks have no project yet (`adopt`)
     pub(super) legacy: bool,
+    /// a file before version 4: a live project kept records of panes gone (`take_sessions`)
+    pub(super) unscoped: bool,
 }
 
 impl Store {
     /// A store kept in memory only.
     pub fn memory() -> Self {
-        Store { path: None, broken: None, items: Vec::new(), refs: VecDeque::new(), legacy: false }
+        Store { path: None, broken: None, items: Vec::new(), refs: VecDeque::new(), legacy: false, unscoped: false }
     }
 
     /// The bookmarks of `path`; none when it does not exist; broken when it cannot be read.
@@ -247,7 +249,7 @@ impl Store {
             Ok(text) => Self::parse(&text),
         };
         match read {
-            Ok((items, version)) => (s.items, s.legacy) = (items, version < 3),
+            Ok((items, version)) => (s.items, s.legacy, s.unscoped) = (items, version < 3, version < 4),
             Err(why) => {
                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 s.broken = Some(format!("{name} cannot be read ({why}); move it away to keep new bookmarks"));
@@ -289,7 +291,7 @@ impl Store {
             return err(format!("Not saved: {b}."));
         }
         let Some(path) = &self.path else { return Ok(()) };
-        let data = json!({"version": 3, "items": self.items});
+        let data = json!({"version": 4, "items": self.items});
         write_atomic(path, data.to_string().as_bytes()).or_else(|e| err(format!("Not saved: {}.", os_message(&e))))
     }
 
@@ -380,16 +382,12 @@ impl Store {
         self.change(id, |i| { i.due = false; if resolve { i.resolved = Some(now); } })
     }
 
-    /// The open reminders of the panes whose agents ended a turn, now up; those it changed.
-    /// `ended`: (pane key, its project) of each pane that ended one; a reminder of that project
-    /// comes up, or of that pane when it has none; an orphaned one never.
-    pub fn due(&mut self, ended: &[(String, Option<String>)]) -> Result<Vec<Item>, MarkError> {
-        let mine = |i: &Item| ended.iter().any(|(k, p)| match &i.project {
-            Some(project) => p.as_ref() == Some(project),
-            None => i.key.as_ref() == Some(k),
-        });
+    /// The open reminders of the panes `ended`, whose agents ended a turn, now up; those it
+    /// changed. Only a pane's own come up (another session of its project's are not shown there);
+    /// an orphaned one never.
+    pub fn due(&mut self, ended: &[String]) -> Result<Vec<Item>, MarkError> {
         self.edit_all(|i| {
-            let up = i.remind && !i.due && i.resolved.is_none() && i.orphaned.is_none() && mine(i);
+            let up = i.remind && !i.due && i.resolved.is_none() && i.orphaned.is_none() && i.key.as_ref().is_some_and(|k| ended.contains(k));
             i.due |= up;
             up
         })

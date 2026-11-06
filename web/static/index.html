@@ -97,7 +97,7 @@
       <button id="newsessbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="newsess" title="A new tmux session, with a shell in your home folder">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>New<span class="more"> session</span></span>
       </button>
-      <button id="marksbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="marksdlg" title="Bookmarks and reminders whose project or session is gone">
+      <button id="marksbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="marksdlg" title="Every session's bookmarks and open reminders">
         <svg class="lu two" viewBox="0 0 50 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/><g class="bell" transform="translate(26 0)"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></g></svg><svg class="lu one" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span>Bookmarks<span class="more"> / <svg class="lu bell" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>Reminders</span></span><span id="markcount" class="count"></span>
       </button>
       <button id="addhostbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="addhost" title="The tmux session of another computer, over ssh">
@@ -144,7 +144,7 @@
           <button data-view="files" role="tab" type="button" aria-selected="false" title="Files"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Files</span></button>
           <button data-view="file" role="tab" type="button" aria-selected="false" title="View (open a file from Files)" disabled><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></svg><span>View</span></button>
         </div>
-        <button id="menubtn" class="icon" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menu" title="Settings"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+        <button id="menubtn" class="icon" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menu" title="Settings"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="M11 10.27 7 3.34"/><path d="m11 13.73-4 6.93"/><path d="M12 22v-2"/><path d="M12 2v2"/><path d="M14 12h8"/><path d="m17 20.66-1-1.73"/><path d="m17 3.34-1 1.73"/><path d="M2 12h2"/><path d="m20.66 17-1.73-1"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m3.34 7 1.73 1"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="8"/></svg></button>
       </div>
     </header>
     <div id="status" class="banner" role="status" hidden></div>

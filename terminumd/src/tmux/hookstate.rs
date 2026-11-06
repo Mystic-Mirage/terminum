@@ -28,6 +28,10 @@ pub const WAIT_LEASE: Duration = Duration::from_secs(120);
 pub const BG_LEASE: Duration = Duration::from_secs(600);
 /// Panes kept at most (one per pane that ran an agent).
 const MOST: usize = 500;
+/// How long after a Stop a counted subagent may yet show on the screen.
+pub const GHOST_AFTER: Duration = Duration::from_secs(5);
+/// How often the screen is asked again while such a subagent seems to run, with no page in sight.
+const GHOST_EVERY: Duration = Duration::from_secs(10);
 /// Ended sessions remembered (their late events make no record).
 const ENDED_MOST: usize = 500;
 
@@ -48,6 +52,14 @@ struct Rec {
     /// the folder the agent itself works in, as its own (not a subagent's) last event said:
     /// the paths it prints are relative to it, not to the pane's (AC-35)
     cwd: String,
+    /// this turn's end was counted: a screen-read end of it is no second one (AC-39)
+    counted: bool,
+    /// it put a question to the user that outlives the turn (Codex's request_user_input_async)
+    asked: bool,
+    /// its turn ended leaving it to the user: it waits until the next prompt (AC-39)
+    waits: bool,
+    /// when its Stop came with subagents counted: the screen says from GHOST_AFTER on if they run
+    stopped_at: Option<Instant>,
 }
 
 /// What the list shows of a pane's hooks.
@@ -58,6 +70,10 @@ pub struct View {
     pub tool: String,
     pub why: String,
     pub subagents: usize,
+    /// its turn ended and it waits for the user: the turn is over, not busy
+    pub turn_over: bool,
+    /// a Stop with subagents counted, past GHOST_AFTER: the screen decides if they run
+    pub check_subs: bool,
 }
 
 #[derive(Default)]
@@ -130,7 +146,7 @@ impl Hooks {
             return Some(false);
         }
         let r = recs.entry(key.to_string()).or_insert_with(|| Rec { agent, session: session.clone(), state: None, tool: String::new(),
-            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false, cwd: String::new() });
+            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false, counted: false, asked: false, waits: false, stopped_at: None, cwd: String::new() });
         let cwd = s(ev, "cwd");
         let moved = cwd.starts_with('/') && s(ev, "sub").is_empty() && r.cwd != cwd;
         if moved {
@@ -139,12 +155,32 @@ impl Hooks {
         let before = (r.state, r.tool.clone(), r.why.clone(), r.subs.len());
         let stopped = !turn.is_empty() && r.stopped.as_deref() == Some(turn.as_str());
         let working = |r: &mut Rec| { r.state = Some(State::Working); r.why.clear(); };
+        let end = |r: &mut Rec, state| {
+            r.state = Some(state);
+            r.tool.clear();
+            r.subs.clear();
+            r.stopped = Some(turn.clone());
+            (r.ended, r.counted) = (true, true);
+        };
         match name.as_str() {
             "SessionStart" => r.state = Some(State::Done),
             // subagents in the background run on into the next turn: a prompt does not end them
-            "UserPromptSubmit" => { working(r); r.tool.clear(); r.stopped = None; r.turn = turn.clone(); }
+            // a subagent's own prompt starts no turn of the pane
+            "UserPromptSubmit" if !s(ev, "sub").is_empty() => {}
+            "UserPromptSubmit" => {
+                working(r);
+                r.tool.clear();
+                r.stopped = None;
+                r.stopped_at = None;
+                r.turn = turn.clone();
+                (r.counted, r.asked, r.waits) = (false, false, false);
+            }
             "PreToolUse" if !stopped => {
-                if s(ev, "tool").starts_with("AskUserQuestion") {
+                let tool = s(ev, "tool");
+                if tool.starts_with("request_user_input_async") {   // it answers at once, the question stands
+                    r.asked = true;
+                    r.why = s(ev, "message");
+                } else if tool.starts_with("AskUserQuestion") || tool.starts_with("request_user_input") {
                     r.state = Some(State::Waiting);
                     r.why = s(ev, "message");
                 } else {
@@ -152,24 +188,36 @@ impl Hooks {
                     r.tool = s(ev, "tool");
                 }
             }
-            "PostToolUse" | "PostToolUseFailure" | "PostToolBatch" if !stopped => { working(r); }
+            "PostToolUse" | "PostToolUseFailure" | "PostToolBatch" if !stopped => {
+                r.state = Some(State::Working);
+                if !r.asked { r.why.clear(); }
+            }
             "PermissionRequest" if !stopped => { r.state = Some(State::Waiting); r.why = format!("Approve {}", s(ev, "tool")).trim().to_string(); }
             "Notification" => match ev["kind"].as_str().unwrap_or("") {
-                "permission_prompt" | "agent_needs_input" | "elicitation_dialog" if !stopped => { r.state = Some(State::Waiting); r.why = s(ev, "message"); }
+                "permission_prompt" | "agent_needs_input" | "elicitation_dialog" | "elicitation_url_dialog" | "worker_permission_prompt" if !stopped => {
+                    r.state = Some(State::Waiting);
+                    r.why = s(ev, "message");
+                }
                 // the main thread idles while its subagents work: not done until the last stops
                 "idle_prompt" if r.subs.is_empty() => r.state = Some(State::Done),
                 _ => {}
             },
-            // its subagents still run (in the background): working until the last one stops
-            "Stop" if !r.subs.is_empty() => { r.tool.clear(); r.stopped = Some(turn.clone()); }
-            "Stop" | "Interrupt" => { r.state = Some(State::Done); r.tool.clear(); r.subs.clear(); r.stopped = Some(turn.clone()); r.ended = true; }
-            "StopFailure" => { r.state = Some(State::Failed); r.why = s(ev, "error"); r.tool.clear(); r.subs.clear(); r.stopped = Some(turn.clone()); r.ended = true; }
+            // it asks the user (a tool that outlives the turn, or its last message's end): whatever it counts
+            "Stop" if r.asked || ev["asks"] == true => { r.waits = true; end(r, State::Waiting); }
+            // Claude Code's subagents may still run (in the background): working until the last one stops,
+            // or the screen says none does (an interrupted, killed or failed one fires no SubagentStop).
+            // Codex's root stops for the user: a child's result does not wake it
+            "Stop" if !r.subs.is_empty() && agent == "claude" => { r.tool.clear(); r.stopped = Some(turn.clone()); r.stopped_at = Some(now); }
+            "Stop" | "Interrupt" => end(r, State::Done),
+            // a subagent's failure is its own: the agent goes on
+            "StopFailure" if !s(ev, "sub").is_empty() => { r.subs.remove(&s(ev, "sub")); }
+            "StopFailure" => { end(r, State::Failed); r.why = s(ev, "error"); }
             "SubagentStart" if !stopped => { r.subs.insert(s(ev, "sub")); working(r); }
             "SubagentStop" => {
                 r.subs.remove(&s(ev, "sub"));
                 if r.stopped.is_some() && r.subs.is_empty() && r.state == Some(State::Working) {
                     r.state = Some(State::Done);
-                    r.ended = true;
+                    (r.ended, r.counted) = (true, true);
                 }
             }
             // a background subagent's tools: it still works
@@ -195,16 +243,47 @@ impl Hooks {
         let lease = if r.stopped.is_some() && !r.subs.is_empty() { BG_LEASE } else { LEASE };
         let held = match state {
             State::Working => now.duration_since(r.at) < lease,
-            State::Waiting => now.duration_since(r.at) < WAIT_LEASE,
+            State::Waiting => r.waits || now.duration_since(r.at) < WAIT_LEASE,
             State::Done => r.agent == "claude",
             State::Failed => true,
         };
-        held.then(|| View { agent: r.agent, state, tool: r.tool.clone(), why: r.why.clone(), subagents: r.subs.len() })
+        let check_subs = !r.subs.is_empty() && r.stopped_at.is_some_and(|at| now.duration_since(at) >= GHOST_AFTER);
+        held.then(|| View { agent: r.agent, state, tool: r.tool.clone(), why: r.why.clone(), subagents: r.subs.len(), turn_over: r.waits, check_subs })
     }
 
     /// Whether pane `key`'s turn ended since this was last asked (its reminders, unread).
     pub fn take_ended(&self, key: &str) -> bool {
         self.recs.lock().get_mut(key).is_some_and(|r| std::mem::take(&mut r.ended))
+    }
+
+    /// Whether pane `key`'s hooks already counted this turn's end, so its screen's is no second one.
+    /// Not for a turn its hooks left without an end (no Stop, or one that waited on subagents).
+    pub fn end_counted(&self, key: &str) -> bool {
+        self.recs.lock().get(key).is_some_and(|r| r.counted)
+    }
+
+    /// The screen shows no subagent running after pane `key`'s Stop: those counted fired no
+    /// SubagentStop (interrupted, killed, failed). They go, its turn ends.
+    pub fn drop_ghosts(&self, key: &str) {
+        if let Some(r) = self.recs.lock().get_mut(key).filter(|r| !r.subs.is_empty() && r.stopped_at.is_some()) {
+            r.subs.clear();
+            r.stopped_at = None;
+            r.state = Some(State::Done);
+            r.ended = true;
+            r.counted = true;
+        }
+    }
+
+    /// How long until the screen must say if a Stop's counted subagents run, also with no page in
+    /// sight, when the list is read seldom: that is when an end must not go unseen.
+    pub fn subs_due_in(&self, now: Instant) -> Option<Duration> {
+        self.recs.lock().values().filter(|r| !r.subs.is_empty()).filter_map(|r| r.stopped_at)
+            .map(|at| (at + GHOST_AFTER).checked_duration_since(now).unwrap_or(GHOST_EVERY)).min()
+    }
+
+    /// The panes whose turn ended and was not told yet, taken.
+    pub fn take_all_ended(&self) -> Vec<String> {
+        self.recs.lock().iter_mut().filter_map(|(k, r)| std::mem::take(&mut r.ended).then(|| k.clone())).collect()
     }
 
     /// The folder pane `key`'s agent works in, as its hooks last said (None: no hooks spoke).

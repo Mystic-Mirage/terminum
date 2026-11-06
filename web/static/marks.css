@@ -2,7 +2,7 @@
 /* Bookmarks (AC-57): [+] beside a selection, the marks on the terminal's edge, the bar of the
    one shown, the dialog, the list below the sessions and the strip in the session list. Orange
    on every profile: it says "bookmark", as blue and violet say where a session runs. */
-:root { --mark: #ff9f1a; }
+:root { --mark: #ff9f1a; --mark-ink: #5a2f00; }
 #markadd, #markcopy, #askfab, #marksfab, #remindfab { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
   border-radius: var(--blob-a); animation: blob 7s ease-in-out infinite;
   background: var(--mark); color: #1b1200; box-shadow: var(--shadow-near); }
@@ -16,11 +16,11 @@
 @media (hover: hover) and (min-width: 861px) { #attachfab { display: none !important; } }   /* a computer: Upload on the hot keys, or a drop */
 body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; }   /* find's field under its magnifier stands there */
 #marksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--mark); }
-/* a count on a button's corner (bookmarks', reminders'): a ring round one digit, an ellipse round two,
-   clear of the icon */
+/* a count on a button's corner (bookmarks', reminders'): round for one digit, an ellipse for two, clear
+   of the icon; the bookmarks' filled dark orange, no outline, as the reminders' when up */
 :is(#marksfabn, #remindfabn) { position: absolute; right: -6px; top: -6px; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 50%;
   font: 700 9.5px/14px var(--ui); font-variant-numeric: tabular-nums; text-align: center; background: var(--t-bg); }
-#marksfabn { color: var(--mark); border: 1px solid var(--mark); }
+#marksfabn { background: var(--mark-ink); color: var(--mark); border: 1px solid var(--mark-ink); }
 /* agents' records that went for room (marksfull.js): a warning banner, a line a scope and kind */
 #marksfull { background: var(--warn-fill); color: #fff; padding: 2px 12px; }
 #marksfull .fullline { display: flex; align-items: center; gap: 8px; min-height: 32px; }
@@ -84,9 +84,8 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 /* a dialog's primary in the hue of the button that opened it (controls.css reads the tokens) */
 #markbox { --key-primary-fill: var(--mark); --key-primary-ink: #1b1200; width: min(max(480px, calc(var(--term-w, 0px) * .8)), calc(100vw - 32px)); }   /* 80% of the terminal's width (marks.js) */
 #askbox { --key-primary-fill: var(--ask); --key-primary-ink: var(--ask-ink); }
-/* Ask's dialog a quarter larger than a dialog, centered on the terminal where ask.js placed it (AC-37) */
+/* Ask's dialog a quarter larger than a dialog (AC-37) */
 #askbox { width: min(600px, calc(100vw - 32px)); }
-#askbox.placed { position: fixed; inset: auto; margin: 0; left: var(--x); top: var(--y); }
 #askbox #asktext { max-height: 37.5vh; }
 
 /* the list's foot button: the bookmark orange, the bell pink (reminders.css), before "Reminders" on a computer; a phone's blob holds both */
@@ -118,12 +117,13 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 :is(#marklist, #markpane, #remindpane) .mkdel { margin: var(--sp-1); font-size: 12px; }   /* an icon key (controls.css) */
 :is(#marklist, #markpane, #remindpane) .empty { margin: 0; padding: 8px; color: var(--muted); font-size: 12.5px; }
 
-/* the session list: an orange strip beside the profile's bar of a session with bookmarks */
-.bars { position: relative; display: flex; align-self: stretch; }   /* its bar where every row has it (.pbar's margins) */
-.bars .wave { position: absolute; top: 1px; bottom: 1px; left: 9px; }
-.bars .wave + .wave { left: 13px; }
-/* its project's bookmarks (orange) and reminders (pink, reminders.css) as wavy lines beside the
-   folder's straight bar, so the three never read as one */
+/* the session list: a session's bookmarks (orange) and reminders (pink, reminders.css) as wavy lines at
+   its row's right edge, past its program; the row's columns stay where every row has them, Clone clear of them */
+.item:has(.waves) { position: relative; }
+.waves { position: absolute; top: 5px; bottom: 5px; right: 1px; display: flex; gap: 1px; }
+.grp li:has(> .item .waves):not(:has(> .kids)) > .clone { right: calc(var(--row-inset) + 6px); }
+.mkfilter { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3) 0; }
+.mkfilter .seg button:disabled { opacity: .45; }
 :root { --wave-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='16'%3E%3Cpath d='M2 0Q3.6 4 2 8T2 16' fill='none' stroke='%23000' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
   --wave-size: 4px 16px; }   /* a gentle wavy line, 4px wide, repeated down: a mask */
 :root { --markline: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E"); }   /* the bolder one a bookmark's text has in the terminal */

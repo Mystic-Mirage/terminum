@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Where a bookmark shows (AC-33, AC-91): in every session of the project (AC-92) its session
-//! was in when it was made, while the project lives (its own session may have closed), else in
-//! that session alone. Once that project went (deleted, or its last session closed) or that
-//! session closed it is orphaned (projects.rs says when), shown only in the list below the
-//! sessions; a restored server's panes keep theirs. A file before version 3 scoped by folder: its bookmarks
-//! take the project their session is in now, once.
+//! Where a bookmark shows (AC-33, AC-91): in the session it was made in alone, in a project
+//! (AC-92) or not; the project it was made in names it in the list below the sessions and is the
+//! scope of agents' limits. Once that session closed it is orphaned (projects.rs says when), shown
+//! only in that list; a restored server's panes keep theirs. A file before version 3 scoped by
+//! folder: its bookmarks take the project their session is in now, once.
 
 use std::collections::HashMap;
 
@@ -26,6 +25,23 @@ impl Store {
         Ok(())
     }
 
+    /// A file before version 4: a project's record showed in every session of it, so it kept the
+    /// key of a pane gone, which a pane may have taken since. Each whose pane is not a member of
+    /// its project (`projects`: pane key -> project id) is orphaned, once: it stays in the list below
+    /// the sessions, never in a stranger's session; saved.
+    pub fn take_sessions(&mut self, projects: &HashMap<String, String>) -> Result<(), MarkError> {
+        if !self.unscoped {
+            return Ok(());
+        }
+        let ids: Vec<String> = self.items.iter()
+            .filter(|i| i.orphaned.is_none() && i.project.is_some() && i.key.as_ref().and_then(|k| projects.get(k)) != i.project.as_ref())
+            .map(|i| i.id.clone()).collect();
+        self.orphan(&ids)?;
+        self.save()?;
+        self.unscoped = false;
+        Ok(())
+    }
+
     /// Bookmarks `ids` orphaned now, saved; those it changed.
     pub fn orphan(&mut self, ids: &[String]) -> Result<Vec<Item>, MarkError> {
         let now = crate::auth::store::unix_now() as i64;
@@ -40,8 +56,7 @@ impl Store {
 
     /// The server of `prefix` was made again from its checkpoint (AC-15): its bookmarks take
     /// their panes' new keys (`panes`: old id, new id); those of a pane not made again are
-    /// orphaned, but a project's (it lives with its project). An orphaned one keeps its key (a
-    /// pane id is reused after a restart).
+    /// orphaned: a restored pane may take its id. An orphaned one keeps its key.
     pub fn restarted(&mut self, prefix: &str, panes: &[(String, String)]) -> Result<Vec<Item>, MarkError> {
         let now = crate::auth::store::unix_now() as i64;
         self.edit_all(|i| {
@@ -49,28 +64,25 @@ impl Store {
             match panes.iter().find(|(o, _)| o == old) {
                 Some((_, new)) if new != old => { i.key = Some(format!("{prefix}{new}")); true }
                 Some(_) => false,
-                None if i.project.is_none() => { i.orphaned = Some(now); true }
-                None => false,
+                None => { i.orphaned = Some(now); true }
             }
         })
     }
 }
 
-/// At start: the bookmarks of a file before version 3 take their sessions' projects.
+/// At start: the bookmarks of a file before version 3 take their sessions' projects; those of a
+/// file before version 4 whose pane is not of their project are orphaned.
 pub fn adopt(app: &Shared) {
     let members: HashMap<String, String> = app.projects.lock().list().iter()
         .flat_map(|p| p.members.iter().map(|m| (m.clone(), p.id.clone()))).collect();
-    if let Err(e) = app.bookmarks.lock().take_projects(&members) {
+    let mut store = app.bookmarks.lock();
+    if let Err(e) = store.take_projects(&members).and_then(|()| store.take_sessions(&members)) {
         tracing::warn!(event = "bookmarks.unsaved", error = %e);
     }
 }
 
-/// Which of `items` lost their project, or (outside projects) their session: a project not in
-/// `projects` (ids), a session `closed` says closed; those orphaned already are not named again.
-pub fn lost(items: &[Item], projects: &[String], closed: impl Fn(&str) -> bool) -> Vec<String> {
-    let gone = |i: &Item| match &i.project {
-        Some(p) => !projects.contains(p),
-        None => i.key.as_deref().is_some_and(&closed),
-    };
-    items.iter().filter(|i| i.orphaned.is_none() && gone(i)).map(|i| i.id.clone()).collect()
+/// Which of `items` lost their session, one `closed` says closed, whatever their project; those
+/// orphaned already are not named again.
+pub fn lost(items: &[Item], closed: impl Fn(&str) -> bool) -> Vec<String> {
+    items.iter().filter(|i| i.orphaned.is_none() && i.key.as_deref().is_some_and(&closed)).map(|i| i.id.clone()).collect()
 }

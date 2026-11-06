@@ -5,8 +5,8 @@
 /* a host's group: its name in cornflower blue, its state on a wrapped line under it, aligned with
    the name; rows name the host in violet (.host). Every state has one look: a dot in its
    severity's hue, then terminumd's words, muted; a failure's words in the error text color. */
-.grp.hostgrp h2 .label { color: var(--host-label); }
-.grp.reconnecting h2 .label, .grp.off h2 .label, .grp.absent h2 .label { opacity: .75; }
+.grp.hostgrp h2 :is(.label, .gkind) { color: var(--host-label); }
+.grp:is(.reconnecting, .off, .absent) h2 :is(.label, .gkind) { opacity: .75; }
 .grp .gstate { --sev: var(--faint); margin: -2px var(--sp-2) var(--sp-1) 28px; padding-left: 13px; text-indent: -13px;
   font-size: var(--fs-meta); line-height: var(--lh-ui); color: var(--muted); overflow-wrap: anywhere; }
 .grp .gstate::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px;

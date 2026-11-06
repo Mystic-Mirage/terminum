@@ -72,6 +72,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
     let mut agent_dir = app.hooks.cwd(&key);   // the folder its coding agent works in, as last told (AC-51)
     let mut generation = u64::MAX;
     let mut said_lost = false;
+    let mut said_not_closed = false;
     let mut server_pid: Option<u32> = None;
     let mut stale = false;              // control clients changed or screens were off: everything is sent anew
     loop {
@@ -113,6 +114,15 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
         let Ok(answers) = answers else {
             let e = answers.err().unwrap_or_default();
             if e.contains("can't find") || e.contains("no such") {
+                // tmux's word alone drops a live pane's view for good (seen under load, AC-02): the list decides,
+                // and a list that cannot be read decides nothing (those errors are what a load or a lost link gives)
+                if !really_closed(&server.run("list-panes -a -F '#{pane_id}'").await, &pane) {
+                    if !std::mem::replace(&mut said_not_closed, true) {
+                        tracing::warn!(event = "pane.not_closed", key, error = e);
+                    }
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    continue;
+                }
                 page.send_json(&json!({"t": "error", "msg": CLOSED, "sid": key}));
                 tracing::info!(event = "pane.closed", key, error = e);
                 return;
@@ -125,7 +135,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             tokio::time::sleep(Duration::from_millis(500)).await;
             continue;
         };
-        if *server_pid.get_or_insert(f.server_pid) != f.server_pid {
+        if f.server_pid != 0 && *server_pid.get_or_insert(f.server_pid) != f.server_pid {   // 0: not read: says nothing
             // the server was started anew: this pane id names another pane now (AC-14)
             page.send_json(&json!({"t": "error", "msg": CLOSED, "sid": key}));
             tracing::info!(event = "pane.closed", key, why = "tmux server restarted");
@@ -172,7 +182,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
                 Step::Same => {}
             }
         }
-        let cursor = (f.cursor_on && f.cy < screen.len()).then_some(f.cy);
+        let cursor = (cursor_shown(&f) && f.cy < screen.len()).then_some(f.cy);
         // a full-screen program's rows never fold (a coding agent's own alternate screen is an
         // agent's); worked out again only when the screen changed
         let hard: Vec<bool> = screen.iter().map(|r| r.hard).collect();
@@ -219,9 +229,31 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
     }
 }
 
+/// Whether tmux's list, read, leaves `pane` out; a list not read says nothing.
+fn really_closed(list: &Result<Vec<String>, String>, pane: &str) -> bool {
+    list.as_ref().is_ok_and(|ids| !ids.iter().any(|id| id == pane))
+}
+
+/// Whether the frame draws the cursor: as tmux says, and always for Claude Code on the normal screen,
+/// which hides the terminal's, drawing its own on the same cell: the cursor is how the page knows its
+/// input box (AC-52).
+fn cursor_shown(f: &Fields) -> bool {
+    f.cursor_on || (!f.alt && crate::tmux::titles::agent_of(&f.command) == Some("claude"))
+}
+
+/// Whether the pane started or left a coding agent, going from `old` to `now`.
+fn agent_changed(old: &str, now: &str) -> bool {
+    use crate::tmux::titles::agent_of;
+    agent_of(old).is_some() != agent_of(now).is_some()
+}
+
 /// Keeps the pane's last fields; when its folder changed (a cd, by Enter, a hot key or a script),
 /// or its agent's, Files follows it (AC-51).
 async fn follow(app: &Shared, page: &Page, server: &Arc<Server>, key: &str, ctl: &Ctl, f: Fields, agent_dir: &mut Option<String>) {
+    // a coding agent came or went: the list says so now, not at its next read (its box, its keys)
+    if ctl.fields.lock().as_ref().is_some_and(|old| agent_changed(&old.command, &f.command)) {
+        app.dirty.notify_one();
+    }
     let agent_now = app.hooks.cwd(key);
     let agent_moved = agent_now != *agent_dir;
     *agent_dir = agent_now;
@@ -244,6 +276,30 @@ async fn settle(wake: &mut Wake, until: tokio::time::Instant) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_pane_is_closed_only_when_a_list_read_leaves_it_out() {
+        let list = |ids: &[&str]| Ok(ids.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert!(super::really_closed(&list(&["%1", "%3"]), "%2"));
+        assert!(!super::really_closed(&list(&["%1", "%2"]), "%2"), "live: tmux's word alone is not enough");
+        assert!(!super::really_closed(&Err("tmux did not answer".to_string()), "%2"), "no list: no word");
+    }
+
+    #[test]
+    fn a_list_read_is_asked_for_only_when_a_coding_agent_came_or_went() {
+        assert!(super::agent_changed("bash", "2.1.318") && super::agent_changed("claude", "zsh"));
+        assert!(!super::agent_changed("bash", "sleep") && !super::agent_changed("2.1.317", "2.1.318"), "a shell's loop reads no list");
+    }
+
+    #[test]
+    fn a_coding_agents_cursor_shows_on_the_normal_screen_whatever_tmux_says() {
+        let f = |command: &str, on, alt| super::Fields { command: command.into(), cursor_on: on, alt, ..Default::default() };
+        assert!(super::cursor_shown(&f("2.1.318", false, false)) && super::cursor_shown(&f("claude", false, false)));
+        assert!(!super::cursor_shown(&f("codex", false, false)) && super::cursor_shown(&f("codex", true, false)), "Codex's: as tmux says");
+        assert!(!super::cursor_shown(&f("2.1.318", false, true)), "its own full screen draws its own");
+        assert!(!super::cursor_shown(&f("vim", false, false)) && !super::cursor_shown(&f("bash", false, false)), "another program hid it");
+        assert!(super::cursor_shown(&f("bash", true, false)));
+    }
+
     use super::*;
     use tokio::time::Instant;
 

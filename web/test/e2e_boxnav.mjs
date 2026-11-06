@@ -338,6 +338,31 @@ export async function webBoxNav(browser, name = "chromium") {
   await press("Backspace");
   check(`${at} a selection reaching out of the input deletes nothing`, outSelected && cc.text === TEXT && sent.slice(outFrom).every((m) => m.t !== "in" || !m.data),
     JSON.stringify({ text: cc.text.length, sent: sent.slice(outFrom).map((m) => [m.t, m.data]) }));
+  // a hand stops past the text's edge: on the rule under the input, on the rule above it (AC-40)
+  await page.waitForTimeout(1600);
+  await set(TEXT, TEXT.length);
+  const overRule = await page.evaluate(([from]) => {
+    const rows = [...document.querySelectorAll("#screen .ln")], rules = rows.filter((l) => l.classList.contains("rule")), walk = document.createTreeWalker(document.getElementById("screen"), NodeFilter.SHOW_TEXT);
+    let start = null;
+    for (let t = walk.nextNode(); t && !start; t = walk.nextNode()) { const i = t.data.indexOf(from); if (i >= 0) start = [t, i]; }
+    const r = document.createRange(); r.setStart(...start); r.setEnd(rules.at(-1), 0);
+    document.activeElement?.blur(); getSelection().removeAllRanges(); getSelection().addRange(r);
+    return String(getSelection()).length > 0;
+  }, ["differs"]);
+  await press("Backspace");
+  check(`${at} a selection ending on the rule under the input deletes to the text's end`, overRule && cc.text === TEXT.slice(0, TEXT.indexOf("differs")), JSON.stringify({ overRule, text: cc.text.slice(-30) }));
+  await page.waitForTimeout(1600);
+  await set(TEXT, TEXT.length);
+  const fromRule = await page.evaluate(([to]) => {
+    const rows = [...document.querySelectorAll("#screen .ln")], rule = rows.filter((l) => l.classList.contains("rule")).at(-2), walk = document.createTreeWalker(document.getElementById("screen"), NodeFilter.SHOW_TEXT);
+    let end = null;
+    for (let t = walk.nextNode(); t && !end; t = walk.nextNode()) { const i = t.data.indexOf(to); if (i >= 0) end = [t, i]; }
+    const r = document.createRange(); r.setStart(rule, 0); r.setEnd(...end);
+    document.activeElement?.blur(); getSelection().removeAllRanges(); getSelection().addRange(r);
+    return String(getSelection()).length > 0;
+  }, ["differs"]);
+  await press("Backspace");
+  check(`${at} a selection starting on the rule above the input deletes from the text's start`, fromRule && cc.text === TEXT.slice(TEXT.indexOf("differs")), JSON.stringify({ fromRule, text: cc.text.slice(0, 30) }));
   // ⌘X over a selection in the input: copied, then deleted as Backspace does (AC-40); elsewhere nothing
   await page.waitForTimeout(1600);
   await set(TEXT, TEXT.length);

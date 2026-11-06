@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Going through a session's bookmarks and reminders (AC-33): the bookmarks' button's pane is a
-// navigator, the list on top (the session's own top to bottom, its project's others' after, newest
-// first; each its title and its text's start on one line), the chosen one's content under it past
+// Going through bookmarks and reminders (AC-33): the bookmarks' button's pane is a navigator of the
+// list chosen under its head (Session, Project, All; Everything, Reminders, Bookmarks), on top (a
+// session's own top to bottom, else newest first; each its title and its text's start on one line),
+// the chosen one's content under it past
 // a line dragged to share the height (kept in this browser), rendered as the terminal renders Markdown
 // (an agent's record, AC-98, its own Markdown; the user's, the terminal's text as it was). A press
 // or ↑ ↓ chooses one; Show in terminal (Enter) brings it into view, Quote in chat pastes it, Resolve
@@ -18,6 +19,9 @@ const $ = (id) => document.getElementById(id);
 const UNDO = 5000;             // ms a ✓ waits before terminumd is told
 const SHARE = 0.5, LEAST = 0.15;   // the list's most share of the height at first, and the least it can be
 const MOUSE = globalThis.matchMedia?.("(hover: hover) and (pointer: fine)");   // none in node (unit tests)
+const SCOPES = [["session", "Session"], ["project", "Project"], ["all", "All"]];
+const KINDS = [["all", "Everything"], ["reminder", "Reminders"], ["bookmark", "Bookmarks"]];
+const WORDS = { all: "Bookmarks and reminders", reminder: "Reminders", bookmark: "Bookmarks" };
 
 /** A record's content as Markdown: an agent's as it wrote it, the user's selection in a fence (the
  *  terminal's text exactly), longer than any run of backticks in it. */
@@ -52,6 +56,10 @@ export class MarkNav {
     this.sends = peer?.sends ?? new Map();        // id -> what terminumd is told when its Undo runs out
     this.navs = peer?.navs ?? new Set();          // the navigators sharing them: drawn again with a change of it
     this.navs.add(this);
+    // what it lists, while this page is open: reloaded, a session's own again; the reminders' pane: its session's reminders
+    this.choice = { scope: "session", kind: "all" };
+    this.scope = "session";
+    this.kind = only ? null : "all";
     this.chosen = null;            // the entry the pane is on
     this.drawn = "";               // what the view shows: its entry's id and text
     this.view = this.makeView();
@@ -64,26 +72,39 @@ export class MarkNav {
     addEventListener("pagehide", () => { for (const [id, msg] of this.sends) { clearTimeout(this.pending.get(id)); this.m.send(msg); } this.sends.clear(); });
   }
 
-  /** The session's bookmarks and open reminders: its own by line (an agent's record not found yet
-   *  by its time after them), then its project's others' newest first. */
+  /** The scope in force: Project is the session's own for a session in no project. */
+  scopeNow() { return this.scope === "project" && !this.m.projectOf() ? "session" : this.scope; }
+  /** The user's choice. */
+  pick(change) { Object.assign(this.choice, change); Object.assign(this, change); this.listed = ""; this.draw(); }
+  /** About to open: the choice, or (`only`: a kind) this once the session's own of that kind. */
+  opening(only) { Object.assign(this, only ? { scope: "session", kind: only } : this.choice); this.listed = ""; }
+
+  /** The list chosen, its bookmarks and open reminders: a session's own by line (an agent's record
+   *  not found yet by its time after them), another list newest first. */
   entries() {
-    const m = this.m, own = (b) => b.sid === m.sid();
-    const here = m.here().filter((b) => (!b.remind || openReminder(b) || this.pending.has(b.id)) && (!this.only || this.only(b)));
+    const scope = this.scopeNow(), kindOk = (b) => this.kind === null || this.kind === "all" || !!b.remind === (this.kind === "reminder");
+    const here = this.m.listed(scope).filter((b) => (!b.remind || openReminder(b) || this.pending.has(b.id)) && kindOk(b) && (!this.only || this.only(b)));
     if (this.order) return here.sort(this.order);
-    const byLine = (a, b) => Number(a.n < 0) - Number(b.n < 0) || (a.n < 0 ? a.at - b.at : a.n - b.n);
-    return [...here.filter(own).sort(byLine), ...here.filter((b) => !own(b)).sort((a, b) => b.at - a.at)];
+    if (scope !== "session") return here.sort((a, b) => b.at - a.at);
+    return here.sort((a, b) => Number(a.n < 0) - Number(b.n < 0) || (a.n < 0 ? a.at - b.at : a.n - b.n));
   }
 
   draw() {
     const pane = this.pane;
     if (pane.hidden) return;
-    const all = this.entries(), project = this.m.hereProject();
+    const all = this.entries(), others = all.some((b) => b.sid !== this.m.sid()), scope = this.scopeNow(), project = this.m.projectOf();
     if (!all.some((b) => b.id === this.chosen)) this.chosen = all[0]?.id ?? null;   // something is shown at once
-    const others = all.some((b) => b.sid !== this.m.sid());
-    const { head, heading, empty, list, cols, hint } = this.frame;
-    heading.textContent = `${this.what} of ${project ? project.name : "this session"}`;
+    const { head, heading, filter, empty, list, cols, hint } = this.frame;
+    const what = this.kind === null ? this.what : WORDS[this.kind];
+    heading.textContent = scope === "all" ? `All ${what.toLowerCase()}` : `${what} of ${scope === "project" ? project.name : "this session"}`;
+    for (const b of filter.querySelectorAll("[data-scope]")) {
+      b.setAttribute("aria-pressed", String(b.dataset.scope === scope));
+      b.disabled = b.dataset.scope === "project" && !project;
+      b.title = b.disabled ? "This session is in no project" : "";
+    }
+    for (const b of filter.querySelectorAll("[data-kind]")) b.setAttribute("aria-pressed", String(b.dataset.kind === this.kind));
     // the parts never leave the pane: the list's scroll and a drag of the line outlive a redraw
-    if (!head.isConnected) pane.replaceChildren(head, empty, cols, hint);
+    if (!head.isConnected) pane.replaceChildren(head, filter, empty, cols, hint);
     empty.hidden = all.length > 0;
     cols.hidden = hint.hidden = !all.length;
     if (!all.length) return void (this.listed = "");
@@ -111,7 +132,26 @@ export class MarkNav {
     for (const [k, v] of [["role", "separator"], ["aria-orientation", "horizontal"], ["aria-label", "Share of the list"],
       ["aria-valuemin", String(LEAST * 100)], ["aria-valuemax", String((1 - LEAST) * 100)]]) grip.setAttribute(k, v);
     cols.append(list, grip, this.view.box);
-    this.frame = { head, heading, close, empty: el("p", "empty pwbody", "None here."), list, grip, cols,
+    // what it lists: the two switches stay when the list is empty
+    const filter = el("div", "mkfilter");
+    const seg = (name, data, items, pick) => {
+      const s = el("div", "seg");
+      s.setAttribute("role", "group");
+      s.setAttribute("aria-label", name);
+      for (const [v, label] of items) {
+        const b = el("button", "", label);
+        b.type = "button";
+        b.dataset[data] = v;
+        b.onclick = () => { pick(v); this.pane.focus({ preventScroll: true }); };
+        s.append(b);
+      }
+      return s;
+    };
+    if (this.kind !== null) {
+      filter.append(seg("Which sessions", "scope", SCOPES, (scope) => this.pick({ scope })));
+      filter.append(seg("Which kind", "kind", KINDS, (kind) => this.pick({ kind })));
+    }
+    this.frame = { head, heading, filter, close, empty: el("p", "empty pwbody", "None here."), list, grip, cols,
       hint: el("p", "mkhint", "↑ ↓ choose · Enter: show in terminal · Delete: resolve · Esc: close") };
     const kept = Number(this.m.store?.get("markShare", SHARE));
     this.setShare(Number.isFinite(kept) ? kept : SHARE, false);
@@ -163,9 +203,9 @@ export class MarkNav {
     const item = () => this.entries().find((b) => b.id === this.chosen);
     act("mkvgo", "Show in terminal", () => { const it = item(); if (it) { this.close(); void this.m.jump(it); } }, "Bring it into view in the terminal (Enter)");
     const done = act("mkvdone", "Resolve", () => { const it = item(); if (it) (this.pending.has(it.id) ? this.undo(it.id) : this.done(it)); }, "");
-    act("tochat", INSERT, () => { const it = item(); if (it) { this.close(); this.m.toChat(chatText(it)); } }, "Paste its note and its text quoted into the input, no Enter");
+    const quote = act("tochat", INSERT, () => { const it = item(); if (it) { this.close(); this.m.toChat(chatText(it)); } }, "Paste its note and its text quoted into the input, no Enter");
     box.append(head, body, acts);
-    return { box, head, body, done };
+    return { box, head, body, done, quote };
   }
 
   /** `item` in the view: its content drawn again only when it changed (a list redraw keeps it). */
@@ -182,8 +222,11 @@ export class MarkNav {
     if (mark) title.append(mark);
     const note = oneLine(item.note, true, 200);
     title.append(note || oneLine(item.text, !!item.by, 120));   // titleOf's rule; a note's Markdown marks gone (`**check**`)
-    const now = this.m.alive(item.sid), theirs = others && item.sid !== this.m.sid();
-    head.replaceChildren(title, el("span", "pwmeta", [theirs && (now ?? `${item.title} (closed)`), item.host, when(item.at)].filter(Boolean).join(" · ")));
+    const now = this.m.nameNow(item), theirs = others && (item.orphaned || item.sid !== this.m.sid());
+    // a record of another session: into an agent's input only, which takes a paste as a paste (a plain shell would run its lines)
+    this.view.quote.disabled = item.sid !== this.m.sid() && !this.m.panes().find((p) => p.id === this.m.sid())?.agent;
+    this.view.quote.title = this.view.quote.disabled ? "It goes into a coding agent's input: this session runs none" : "Paste its note and its text quoted into the input, no Enter";
+    head.replaceChildren(title, el("span", "pwmeta", [theirs && (now ?? item.title), item.host, when(item.at)].filter(Boolean).join(" · ")));
     body.scrollTop = 0;
     // a note the title cannot hold (its lines, its Markdown, its length) whole above the text
     const whole = item.note && note !== item.note.trim();
@@ -203,11 +246,11 @@ export class MarkNav {
     const mark = kindMark(item);
     if (mark) title.append(mark);
     title.append(titleOf(item, 240));
-    // another session's: by its name now, a closed one by its last and "closed" (as marks.js listOf)
-    const now = this.m.alive(item.sid), theirs = others && item.sid !== this.m.sid();
     const at = item.due && openReminder(item) ? "up now" : when(item.at);   // a reminder up (AC-91)
+    // another session's: by its name now, a closed one by its last and what became of it
+    const now = this.m.nameNow(item), theirs = others && (item.orphaned || item.sid !== this.m.sid());
     const meta = el("span", "meta" + (at === "up now" ? " up" : ""), (theirs ? [now ?? item.title, at] : [at]).join(" · "));
-    if (theirs && now === null) meta.append(el("span", "closed", "closed"));
+    if (theirs && now === null) meta.append(el("span", "closed", item.orphaned ? "orphaned" : "closed"));
     const line = el("span", "mkwhen");
     line.append(meta, el("span", "mkpos", place));
     b.append(line, title);
@@ -265,6 +308,7 @@ export class MarkNav {
   }
 
   key(e) {
+    if (e.target.closest?.(".mkfilter") && (e.key === "Enter" || e.key === " ")) return;   // a switch's own
     const all = this.entries(), i = all.findIndex((b) => b.id === this.chosen);
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();

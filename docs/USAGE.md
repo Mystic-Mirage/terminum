@@ -85,7 +85,9 @@ them from boot. The page is on the server's `127.0.0.1:48080`; reach it from you
 with `ssh -L 48080:127.0.0.1:48080 <server>` (then `http://127.0.0.1:48080/`) or publish it on
 your tailnet with `tailscale serve` on the server. Finder and default apps are a Mac's only.
 
-From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools needed);
+From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools needed; on `main` it
+first brings a clean tree up to `origin/main`, and refuses one with uncommitted changes when it is behind:
+`TM_INSTALL_STALE=1` installs it as it is);
 `make test` runs the unit tests.
 
 ## Use
@@ -158,18 +160,17 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   selection with its text, as for a selection of yours; they go at the next click or key. Hold
   **Shift** while dragging to select in the browser instead (Safari, Chrome, Firefox): nothing
   reaches the program.
-- **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when an agent
-  of its project ends a turn, its count filled, and the terminal's top says so for 4 seconds
-  ("iQuantize: 16 reminders, 3 new"; another session's when you open it next). It opens the same window as the bookmarks' button,
+- **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when its
+  session's agent ends a turn, its count filled, and the terminal's top says so for 4 seconds
+  ("api: 16 reminders, 3 new"; another session's when you open it next). It opens the same window as the bookmarks' button,
   with the open reminders only, those up first: Show in terminal, Resolve (it ends it, with Undo) and
   Quote in chat. Quote in chat, on a reminder or a bookmark, and Insert into chat on a sent message
   paste it (a bookmark's note and its text) into the session's input, without Enter.
-  Bookmarks and reminders made in a project's session show in every session of that project;
-  made outside projects, only in their own session. Bookmarks / Reminders below the sessions lists
-  them all, each with its project or session (Open all); once their project is gone (deleted, or
-  its last session closed), or a session outside projects closes, they are only there, "orphaned".
+  Bookmarks and reminders show only in the session they were made in, in a project or not.
+  Bookmarks / Reminders below the sessions lists them all, each with its project or session
+  (Open all); once their session closes they are only there, "orphaned".
 - **Limits**: you keep up to 300 bookmarks and 100 open reminders (a save past them says so). Coding
-  agents' records have their own: 50 bookmarks and 20 open reminders a project (or session); past
+  agents' records have their own: 50 bookmarks and 20 open reminders a session; past
   them their oldest go, and a banner over the terminal says so at the end of that agent's turn, with
   a link to review them. A resolved reminder is deleted 30 days after you resolve it.
 - **Going through them**: the bookmarks' button (its count: bookmarks and open reminders) opens a
@@ -203,7 +204,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   a moment first; moving at once scrolls). Projects are named groups
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
   on every browser; a right click on a project's header, or its ⋯, opens its menu (New Window,
-  Rename, moves among the projects, Ungroup, Close Project, which asks first); a tmux session's group
+  Rename, moves in the list, past tmux groups too, Ungroup, Close Project, which asks first); a tmux session's group
   has the same kind of menu (New Window, a window in that session; moves, Close Group).
   ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish);
   ⌘X cuts the text selected in a coding agent's input box.
@@ -245,11 +246,13 @@ where it is:
   Code makes tasks only for longer, multi-step work (or when asked: "make a plan with tasks");
   terminum's MCP tools report one too (update_session_plan). A session started before terminum's
   hooks were installed reports nothing until it is restarted.
-- **Marks**: ✓ completed, ▶ in progress, ○ pending, ⚠ blocked. "partial: some updates were
+- **Marks**: ✓ completed, ▶ in progress, ○ pending, ! blocked. "partial: some updates were
   missed" means an update named an item terminum never saw; the next whole list heals it.
 - **How agents feed it**: their own plan tool, read from their hooks (Claude Code's tasks and
   TodoWrite, Codex's update_plan where it has one), and terminum's MCP server `terminum mcp`
-  (update_session_plan, get_session_plan, add_notes_for_user, update_notes_for_user): the
+  (update_session_plan, get_session_plan, add_notes_for_user, get_notes_for_user,
+  update_notes_for_user, delete_notes_for_user; an agent reads, changes and deletes its own
+  session's records, also the bookmarks you made there, never another session's): the
   current step, an ETA in minutes, the plan itself for an agent without a plan tool (Codex
   0.164 has none), and the records it keeps for you (Kept by the agent, above). A new agent
   session in the pane starts with no plan.

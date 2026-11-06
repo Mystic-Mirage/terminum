@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Reminders of the other sessions whose coding agent waits for an answer (AC-39): a line each
+// Reminders of the other sessions whose coding agent waits for an answer or failed (AC-39): a line each
 // across the terminal's top (three at most on a computer, one on a phone), so a question asked in
 // another session is not missed. A card goes when the
 // user closes it, opens that session (from the card or the list), or the session stops waiting;
@@ -50,6 +50,8 @@ export function waitingCards(box, onOpen) {
     const now = performance.now(), titles = new Map();
     for (const [id, w] of asking) if (now - w.since >= STEADY) titles.set(id, w.title);
     const why = (id) => asking.get(id)?.why;      // what it asks, when its agent's hooks said (AC-39)
+    const words = (id, title) => asking.get(id)?.failed ? (why(id) ? `${title} failed: ${why(id)}` : `${title} failed`)
+      : why(id) ? `${title} asks: ${why(id)}` : `${title} waits for your answer`;
     for (const [id, w] of leaving) if (now - w.since < STEADY) titles.set(id, w.title); else leaving.delete(id);
     for (const id of seen) if (!asking.has(id) && !leaving.has(id)) seen.delete(id);   // asks again: remind again
     if (asking.has(shown) || leaving.has(shown)) seen.add(shown);
@@ -59,7 +61,12 @@ export function waitingCards(box, onOpen) {
     due.forEach((id, i) => {
       if (!cards.has(id)) { cards.set(id, card(id)); box.append(cards.get(id)); }
       const c = cards.get(id), title = textForm(titles.get(id) || "A session");
-      put(c.querySelector(".what"), "textContent", why(id) ? `${title} asks: ${why(id)}` : `${title} waits for your answer`);
+      put(c.querySelector(".what"), "textContent", words(id, title));
+      const failed = !!asking.get(id)?.failed, mark = c.querySelector(".state");
+      if (mark.classList.contains("failed") !== failed) {
+        mark.className = `state ${failed ? "failed" : "waiting"}`;
+        mark.replaceChildren(icon(failed ? "triangle-alert" : "circle-help", 14));
+      }
       put(c.querySelector(".go"), "title", `Open ${title}`);
       const more = i === room - 1 ? due.length - room : 0;       // the last card says how many more wait
       put(c.querySelector(".more"), "textContent", more > 0 ? `+${more} more` : "");
@@ -75,9 +82,9 @@ export function waitingCards(box, onOpen) {
       const now = performance.now(), items = groups.flatMap((g) => g.items), ids = new Set(items.map((it) => it.id));
       for (const it of items) {
         const w = asking.get(it.id);
-        if (it.state === "waiting") {
+        if (it.state === "waiting" || it.state === "failed") {
           leaving.delete(it.id);
-          asking.set(it.id, { since: w?.since ?? now, title: it.title, why: it.why });
+          asking.set(it.id, { since: w?.since ?? now, title: it.title, why: it.why, failed: it.state === "failed" });
         } else if (w) {
           asking.delete(it.id);
           if (now - w.since >= STEADY) leaving.set(it.id, { since: now, title: it.title });

@@ -133,10 +133,11 @@ async fn resize(app: &Shared, page: &Arc<Page>, opening: bool) -> bool {
     if cmds.is_empty() {
         return false;
     }
+    let resized = server.key(&pane);   // the user may show another pane by the time tmux answers
     for a in server.run_all_on(&pane, cmds).await {
         if let Err(e) = a {
             tracing::warn!(event = "tmux.error", cmd = "resize-window", msg = e);
-            page.send_json(&json!({"t": "sized", "sid": shown_key(page), "cols": f.width, "rows": f.height, "mine": false, "error": e}));
+            page.send_json(&json!({"t": "sized", "sid": resized, "cols": f.width, "rows": f.height, "mine": false, "error": e}));
             return false;
         }
     }

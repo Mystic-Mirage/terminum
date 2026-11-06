@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 import { check, within } from "./check.mjs";
+import { shortTmp } from "./testrun.mjs";
 
 /** A small PNG (w×h, one gray), written by hand: no image library here. */
 function png(w, h) {
@@ -27,7 +28,7 @@ export async function liveView(page, { work }) {
   fs.writeFileSync(path.join(work, "pic.png"), png(320, 200));
   // a picture that holds script: run in the page's origin (opened as a page) it would reach the sign-in
   fs.writeFileSync(path.join(work, "mark.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><script>localStorage.setItem("pwned","svg")</script><rect width="40" height="40"/></svg>');
-  const away = fs.realpathSync(fs.mkdtempSync("/tmp/tmlo-")), outside = path.join(away, "outside.txt");
+  const away = fs.realpathSync(fs.mkdtempSync(`${shortTmp()}/tmlo-`)), outside = path.join(away, "outside.txt");
   fs.writeFileSync(outside, "x\n");
   try {
     const files = await (await page.$("#files")).contentFrame();

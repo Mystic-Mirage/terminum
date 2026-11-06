@@ -106,7 +106,7 @@ mod tests {
     fn file(bytes: &[u8]) -> std::fs::File {
         use std::sync::atomic::{AtomicU32, Ordering};
         static N: AtomicU32 = AtomicU32::new(0);
-        let p = std::env::temp_dir().join(format!("tm-raw-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let p = crate::testutil::temp_root().join(format!("tm-raw-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
         std::fs::write(&p, bytes).unwrap();
         let f = std::fs::File::open(&p).unwrap();
         std::fs::remove_file(&p).unwrap();

@@ -296,7 +296,7 @@ mod tests {
     }
 
     fn store() -> (Sent, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("tm-sent-{}-{}", std::process::id(), rand::random::<u32>()));
+        let dir = crate::testutil::temp_root().join(format!("tm-sent-{}-{}", std::process::id(), rand::random::<u32>()));
         (Sent::new(dir.clone()), dir)
     }
 

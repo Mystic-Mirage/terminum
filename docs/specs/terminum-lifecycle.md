@@ -71,7 +71,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-16 | [SHOULD / P1] | The user upgrades, rolls back and uninstalls with one command each, a new build is checked before it goes live, open pages reload themselves keeping unsaved edits, and state written by either build stays readable by both. |
 | AC-17 | [SHOULD / P1] | The user learns from the page that a newer release exists and can copy the command that installs it, skip that release, or stop the check. |
 | AC-96 | [SHOULD / P1] | After tmux restarts (a reboot, a killed server) a session's terminal begins with its last 300 lines from before the restart, and its menu opens them, the number set in settings.json. |
-| AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test is ended, dead tmux sockets and test folders are removed, and what may be someone's work is only named. |
+| AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test is ended, dead tmux sockets and test folders are removed, and what may be someone's work is only named; a test run itself leaves nothing, and a step of `make check` that leaves something fails. |
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 
 ## 5. BDD scenarios
@@ -344,6 +344,21 @@ Scenario: AC-102 failure — a cleanup problem never stops a release
 Scenario: AC-102 failure — the helper cannot outlive its test by long
   Given a fake terminumd of a test whose socket's folder is removed (its test's home), or that has run for five minutes
   Then it exits by itself within a second
+
+Scenario: AC-102 happy path — a run leaves nothing
+  Given a step of make check, run by scripts/check_step.py with its own short folder as TMPDIR and TMUX_TMPDIR
+  When the step passes, fails or gets a signal
+  Then its folders, tmux servers, tmux socket files and processes have gone and that folder is removed
+
+Scenario: AC-102 failure — a step that leaves something fails
+  Given a step that passes but leaves a file in its folder, or a process in its process group or with that folder in its environment
+  When it ends
+  Then each is printed as "LEFT …", the process is ended by its pid, the folder is removed and the step fails
+
+Scenario: AC-102 edge — another session's run is no leftover of this one
+  Given another session's test run with folders in the temporary folder and sockets of its own
+  When a step of make check ends
+  Then none of them counts and none is touched, and tmux's own empty tmux-<uid> folder does not count either
 ```
 
 ### AC-103 — The docs keep their shape [SHOULD / P1]
@@ -520,5 +535,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-16 — `scripts/e2e_install.sh`; `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines`; `web/test/e2e_lastlines.mjs`
-- [x] AC-102 — `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`
+- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh`; `scripts/tests/test_check_step.py`; `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

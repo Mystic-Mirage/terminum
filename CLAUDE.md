@@ -119,7 +119,10 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
   browsers, containers, temporary folders) when they pass, fail or are ended by a signal
   (`finally`, with SIGTERM/SIGHUP turned into an exit so it runs: `scripts/e2e_ws.py`);
   before delivering, look for leftovers of your own runs (`ps`, `tmux -L`/`-S` sockets,
-  `docker ps`) and end them as above. A leftover is a test bug to fix, not only to end.
+  `docker ps`) and end them as above. A leftover is a test bug to fix, not only to end:
+  `make check` runs each step under `scripts/check_step.py`, which fails one that leaves something
+  (AC-102). Test folders go in `crate::testutil::temp_root()` (Rust) or `short_tmp()`/`shortTmp()`
+  of `scripts/testrun.py`, `web/test/testrun.mjs`, never a hard-coded `/tmp`.
 - Run the checks and show results; unverified work is unfinished.
 
 ## Workflow principles

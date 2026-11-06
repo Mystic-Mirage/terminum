@@ -106,7 +106,7 @@ async fn an_ssh_link_that_never_reached_tmux_says_so() {
     impl Drop for Gone {
         fn drop(&mut self) { std::fs::remove_dir_all(&self.0).ok(); }   // also when an assert fails
     }
-    let dir = std::env::temp_dir().join(format!("tm-ctl-ssh-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("tm-ctl-ssh-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let _gone = Gone(dir.clone());
     for (name, body, want) in [

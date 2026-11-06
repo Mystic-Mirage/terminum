@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn the_file_is_read_and_a_big_one_refused() {
-        let d = std::env::temp_dir().join(format!("tm-hotkeys-{}", std::process::id()));
+        let d = crate::testutil::temp_root().join(format!("tm-hotkeys-{}", std::process::id()));
         fs::create_dir_all(&d).unwrap();
         let p = d.join("hotkeys.json");
         fs::write(&p, r#"[["F5"]]"#).unwrap();

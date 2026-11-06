@@ -15,7 +15,7 @@ from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, summary, tmux_on, wait_layout  # noqa: E402
-from testrun import free_port, own  # noqa: E402
+from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET = free_port(), own("tm-test-agent")
 tmux = partial(tmux_on, SOCKET)
@@ -69,7 +69,7 @@ def row(groups, title):
 
 def main():
     t = Terminumd(PORT, SOCKET)
-    work = tempfile.mkdtemp(prefix="tma-", dir="/tmp")
+    work = tempfile.mkdtemp(prefix="tma-", dir=short_tmp())
     program = os.path.join(work, "standin.js")
     with open(program, "w") as f:
         f.write(PROGRAM)

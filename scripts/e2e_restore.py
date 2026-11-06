@@ -19,7 +19,7 @@ from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, results, summary, tmux_on  # noqa: E402
-from testrun import free_port, own  # noqa: E402
+from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET, OWN = free_port(), own("tm-test-restore"), own("tm-test-rown")
 tmux = partial(tmux_on, SOCKET)
@@ -27,7 +27,7 @@ own = partial(tmux_on, OWN)
 
 
 def main():
-    work = os.path.realpath(tempfile.mkdtemp(prefix="tmr-", dir="/tmp"))
+    work = os.path.realpath(tempfile.mkdtemp(prefix="tmr-", dir=short_tmp()))
     # a HOME of its own: the user's own tmux made again by terminumd reads no tmux.conf of the user's
     t = Terminumd(PORT, SOCKET, env={"TM_BOOT_ID": "boot-A", "HOME": work})
     for d in ("api", "docs", "notes"):

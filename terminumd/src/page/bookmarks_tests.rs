@@ -161,7 +161,7 @@ struct Dir(PathBuf);
 impl Dir {
     fn new() -> Self {
         let k = DIRS.fetch_add(1, Ordering::SeqCst);
-        let p = std::env::temp_dir().join(format!("tm-marks-{}-{k}", std::process::id()));
+        let p = crate::testutil::temp_root().join(format!("tm-marks-{}-{k}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         Dir(p)

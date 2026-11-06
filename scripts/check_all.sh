@@ -35,10 +35,10 @@ find .checks -name '*.log' ! -name "$id.*" -delete   # earlier trees' logs; thei
 [ -n "${TM_PRIVATE_PATTERNS:-}" ] || [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/terminum/private-patterns" ] \
   || echo "WARN no private patterns: ~/.config/terminum/private-patterns (other machines' names)"
 failed=()
-step() {   # step <name> <command…>: its output to the log, one line here
+step() {   # step <name> <command…>: its output to the log, one line here; what it leaves fails it (check_step.py)
   local name=$1; shift
   local log=".checks/$id.$name.log" t0=$SECONDS
-  if "$@" >"$log" 2>&1; then echo "ok   $name ($((SECONDS - t0)) s)"
+  if python3 -I scripts/check_step.py "$@" >"$log" 2>&1; then echo "ok   $name ($((SECONDS - t0)) s)"
   else echo "FAIL $name ($((SECONDS - t0)) s): $log"; tail -n 15 "$log" | sed 's/^/     /'; failed+=("$name"); fi
 }
 step test make test

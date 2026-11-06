@@ -133,7 +133,7 @@ mod tests {
             if Command::new("sh").args(["-c", &format!("command -v {sh}")]).output().map_or(true, |o| !o.status.success()) {
                 continue;
             }
-            let dir = std::env::temp_dir().join(format!("fbd-quote-{sh}-{}", std::process::id()));
+            let dir = crate::testutil::temp_root().join(format!("fbd-quote-{sh}-{}", std::process::id()));
             std::fs::create_dir_all(&dir).unwrap();
             for name in names {
                 let Some(q) = quote(sh, name) else { continue };

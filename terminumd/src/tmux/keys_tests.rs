@@ -123,7 +123,7 @@ fn typed_bytes_reach_the_pane_as_a_terminal_sends_them() {
     // keys whose tmux encoding (normal cursor keys, no extended keys) is xterm's own
     let data = "ls -la\r\x1b[A\t\x03-x;'#{q}$H~\n\x7f\x08\x00\x01\x1a\x1c\x1d\x1e\x1f\x1b\x1ba\x1b\r\x1b\x7f\
                 \x1b[Z\x1b[15~\x1b[1;2D\x1b[1;5C\x1bOP\x1b[3~\x1b[5~ ünï 字\x1b[99~";
-    let dir = std::env::temp_dir().join(format!("tm-test-keys-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("tm-test-keys-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let out = dir.join("got");
     let cmd = format!("stty raw -echo; exec head -c {} > {}", data.len(), out.display());
@@ -157,7 +157,7 @@ fn shift_enter_is_csi_u_only_for_programs_that_ask() {
     // (the program asks, the server's extended-keys); it reads Enter only from a server that
     // names the keys (extended-keys on, tmux 3.5+: 3.4 has no extended-keys-format) when it did not ask
     for (ask, on) in [(true, true), (false, true), (true, false)] {
-        let dir = std::env::temp_dir().join(format!("tm-test-xk-{}-{ask}-{on}", std::process::id()));
+        let dir = crate::testutil::temp_root().join(format!("tm-test-xk-{}-{ask}-{on}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let named = on && crate::testutil::tmux_at_least((3, 5));
         let want = if !ask && named { "\r\r" } else { "\x1b[13;2u\x1b[13;5u" };

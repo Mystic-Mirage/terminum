@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn saved_privately_and_old_ones_go() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("tm-paste-{}", std::process::id()));
+        let dir = crate::testutil::temp_root().join(format!("tm-paste-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let name = upload_name("a.txt", b"hello").unwrap();
         let p = save_in(&dir, &name, b"hello").unwrap();
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn a_sweep_takes_files_older_than_7_days_only_in_a_folder_of_ours() {
-        let dir = std::env::temp_dir().join(format!("tm-sweep-{}", std::process::id()));
+        let dir = crate::testutil::temp_root().join(format!("tm-sweep-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let (old, new) = (dir.join("old.png"), dir.join("new.png"));
@@ -293,7 +293,7 @@ mod tests {
         }
         let eight_days = std::time::SystemTime::now() - std::time::Duration::from_secs(8 * 86400);
         std::fs::File::options().write(true).open(&old).unwrap().set_modified(eight_days).unwrap();
-        let link = std::env::temp_dir().join(format!("tm-sweep-link-{}", std::process::id()));
+        let link = crate::testutil::temp_root().join(format!("tm-sweep-link-{}", std::process::id()));
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(&dir, &link).unwrap();
         assert_eq!(sweep(&link), 0, "a link to a folder is not followed");

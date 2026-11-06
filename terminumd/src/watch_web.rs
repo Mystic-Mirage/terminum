@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn web_panes_are_watched_beside_the_focused_one() {
         // local folders are watched only if they exist
-        let base = std::env::temp_dir().join(format!("fbd-watch-web-{}", std::process::id()));
+        let base = crate::testutil::temp_root().join(format!("fbd-watch-web-{}", std::process::id()));
         for d in ["a/src", "b", "c"] {
             std::fs::create_dir_all(base.join(d)).unwrap();
         }

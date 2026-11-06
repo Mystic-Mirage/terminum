@@ -178,7 +178,7 @@ mod tests {
     /// The script itself under /bin/sh, `ps` a stand-in that answers from `list`, `comm`, `ppid`
     /// and `tty` (or fails: `fails`); nothing is signalled (`kill` and `tmux` print). Its output.
     fn run(server: u32, listed: &[u32], list: &[String], comm: &str, ppid: &str, tty: &str, fails: bool) -> String {
-        let dir = std::env::temp_dir().join(format!("tm-orphans-{}-{}", std::process::id(), fails));
+        let dir = crate::testutil::temp_root().join(format!("tm-orphans-{}-{}", std::process::id(), fails));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("list"), list.join("\n") + "\n").unwrap();
         for (f, t) in [("comm", comm), ("ppid", ppid), ("tty", tty)] {

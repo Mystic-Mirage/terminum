@@ -17,7 +17,7 @@ from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, results, summary, tmux_on, wait_layout  # noqa: E402
-from testrun import free_port, own  # noqa: E402
+from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET = free_port(), own("tm-test-core")
 tmux = partial(tmux_on, SOCKET)
@@ -40,7 +40,7 @@ def screen_with(ws, needle, timeout=5):
 
 def main():
     t = Terminumd(PORT, SOCKET)
-    work = tempfile.mkdtemp(prefix="tmw-", dir="/tmp")
+    work = tempfile.mkdtemp(prefix="tmw-", dir=short_tmp())
     odd = os.path.join(work, "it's #(id) $HOME")
     os.makedirs(odd)
     try:

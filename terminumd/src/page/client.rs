@@ -246,7 +246,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_hidden_terminal_stops_screens_only_and_showing_it_wakes_the_stream() {
-        let dir = std::env::temp_dir().join(format!("tm-screens-{}", std::process::id()));
+        let dir = crate::testutil::temp_root().join(format!("tm-screens-{}", std::process::id()));
         let (page, _rx) = Pages::default().add(true, trace::Recorder::new(dir)).unwrap();
         screens(&page, true);                                // nothing shown yet: only the state
         assert!(!page.state.lock().screens_off);
@@ -263,7 +263,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_page_out_of_focus_keeps_its_stream_and_only_a_hidden_one_pauses_it() {
-        let dir = std::env::temp_dir().join(format!("tm-pause-{}", std::process::id()));
+        let dir = crate::testutil::temp_root().join(format!("tm-pause-{}", std::process::id()));
         let pages = Pages::default();
         let (page, _rx) = pages.add(true, trace::Recorder::new(dir)).unwrap();
         let ctl = shown(&page, "tm-test-pause");

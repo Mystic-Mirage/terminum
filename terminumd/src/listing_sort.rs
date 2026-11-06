@@ -102,7 +102,7 @@ mod tests {
 
     #[test]
     fn recent_first_folders_first_ties_and_unreadable_ones_by_name() {
-        let dir = std::env::temp_dir().join(format!("tm-sort-{}", std::process::id()));
+        let dir = crate::testutil::temp_root().join(format!("tm-sort-{}", std::process::id()));
         fs::create_dir_all(dir.join("old")).unwrap();
         fs::create_dir_all(dir.join("new")).unwrap();
         let now = SystemTime::now();

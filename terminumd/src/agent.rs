@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn private_dir_is_new_and_private() {
         use std::os::unix::fs::MetadataExt;
-        let base = std::env::temp_dir().join(format!("tm-agent-test-{}", std::process::id()));
+        let base = crate::testutil::temp_root().join(format!("tm-agent-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         assert!(private_dir(&base).is_ok(), "created");
         assert_eq!(std::fs::metadata(&base).unwrap().mode() & 0o777, 0o700);

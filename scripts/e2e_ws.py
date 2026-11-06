@@ -19,6 +19,9 @@ import tempfile
 import time
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from testrun import short_tmp  # noqa: E402
+
 
 def _ended(sig, _frame):
     """A run ended by a signal (a timeout, a closed terminal) still runs its `finally` blocks, so
@@ -161,7 +164,7 @@ class Terminumd:
 
     def __init__(self, port, tmux_socket, env=None):
         self.port, self.tmux_socket = port, tmux_socket
-        self.root = tempfile.mkdtemp(prefix="tme-", dir="/tmp")   # short: Unix socket paths end at 104 bytes
+        self.root = tempfile.mkdtemp(prefix="tme-", dir=short_tmp())   # short: Unix socket paths end at 104 bytes
         self.home, self.app = os.path.join(self.root, "h"), os.path.join(self.root, "a")
         self.env = {**os.environ, "TM_HOME": self.home, "TM_APP_DIR": self.app, "TM_PORT": str(port),
                     "TM_TMUX_SOCKET": tmux_socket, "TM_LOG": "info", **(env or {})}

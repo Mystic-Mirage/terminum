@@ -231,7 +231,7 @@ fn another_sessions_record_only_closes() {
 
 #[test]
 fn what_closes_from_another_session_is_copied_first() {
-    let dir = std::env::temp_dir().join(format!("tm-closed-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("tm-closed-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut s = Store::load(dir.join("web-bookmarks.json"));
     add(&mut s, &at(B, "web"), "claude", vec![rec("Theirs")], &[]).unwrap();

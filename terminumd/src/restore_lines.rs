@@ -97,7 +97,7 @@ mod tests {
 
     #[test]
     fn a_pane_prints_its_kept_lines_then_starts_its_shell() {
-        let dir = std::env::temp_dir().join(format!("tm-print-{}", std::process::id()));
+        let dir = crate::testutil::temp_root().join(format!("tm-print-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let put = |name: &str, text: &str| std::fs::write(dir.join(name), serde_json::json!({"text": text}).to_string()).unwrap();

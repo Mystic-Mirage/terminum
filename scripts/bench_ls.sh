@@ -11,10 +11,12 @@ dir=$(cd "${1:?dir}" && pwd -P); runs=${2:-20}
 [ "$runs" -ge 5 ] || { echo "RUNS must be at least 5 for a p95" >&2; exit 2; }
 port=${BENCH_PORT:-$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')}
 bin=${TERMINUMD_BIN:-$(dirname "$0")/../terminumd/target/release/terminumd}
-bench_home=$(mktemp -d /tmp/tmb-XXXXXX)   # short: the socket path holds at most 104 bytes
+tmp_base=${TMPDIR:-/tmp}; tmp_base=${tmp_base%/}; [ ${#tmp_base} -le 40 ] || tmp_base=/tmp   # short: a socket path holds at most 104 bytes (testrun.py)
+bench_home=$(mktemp -d "$tmp_base/tmb-XXXXXX")
 tsock=tm-bench-$$
 pid=""
-trap '[ -n "$pid" ] && kill $pid 2>/dev/null; tmux -L "$tsock" kill-server 2>/dev/null; rm -rf "$bench_home"' EXIT
+trap 'set +e; [ -n "$pid" ] && kill $pid 2>/dev/null; tmux -L "$tsock" kill-server 2>/dev/null; rm -f "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/$tsock"; rm -rf "$bench_home"' EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP   # a signal skips the EXIT trap otherwise
 export TM_PORT=$port TM_HOME=$bench_home TM_APP_DIR=$bench_home/state TM_TMUX_SOCKET=$tsock TM_LOG=warn
 url="http://127.0.0.1:$port/fb/api/ls?path=$dir${SORT:+&sort=$SORT}"
 signin() { # a password over the socket (as `terminum password`), then the sign-in /auth/login gives for it

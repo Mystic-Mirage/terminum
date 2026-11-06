@@ -153,14 +153,14 @@ mod tests {
     use super::*;
 
     fn tmp(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("fbd-files-{}", std::process::id()));
+        let d = crate::testutil::temp_root().join(format!("fbd-files-{}", std::process::id()));
         fs::create_dir_all(&d).unwrap();
         d.join(name)
     }
 
     #[test]
     fn text_binary_huge_missing() {
-        let roots = Roots::parse(&std::env::temp_dir().display().to_string());
+        let roots = Roots::parse(&crate::testutil::temp_root().display().to_string());
         let t = tmp("a.rs");
         fs::write(&t, "fn main() {}\n").unwrap();
         let v = read_view(&t, 1 << 20, &roots).unwrap();
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn roots_block_outside_and_symlink_escape() {
-        let roots = Roots::parse(&std::env::temp_dir().display().to_string());
+        let roots = Roots::parse(&crate::testutil::temp_root().display().to_string());
         assert!(!roots.allows(Path::new("/etc/hosts")));
         let link = tmp("escape");
         let _ = fs::remove_file(&link);

@@ -20,7 +20,7 @@ fn unicode_events_survive_every_http_frame_boundary() {
 }
 
 async fn peer(tag: &str, headers: Option<&'static [u8]>) -> (Agent, tokio::task::JoinHandle<()>) {
-    let socket = std::env::temp_dir().join(format!("fbd-peer-{tag}-{}.sock", std::process::id()));
+    let socket = crate::testutil::temp_root().join(format!("fbd-peer-{tag}-{}.sock", std::process::id()));
     let _ = std::fs::remove_file(&socket);
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();
     let task = tokio::spawn(async move {
@@ -60,7 +60,7 @@ async fn a_stalled_finite_body_times_out_and_closes_the_connection() {
 
 #[tokio::test]
 async fn a_trickling_finite_body_has_a_total_deadline() {
-    let socket = std::env::temp_dir().join(format!("fbd-peer-trickle-{}.sock", std::process::id()));
+    let socket = crate::testutil::temp_root().join(format!("fbd-peer-trickle-{}.sock", std::process::id()));
     let _ = std::fs::remove_file(&socket);
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();
     let peer = tokio::spawn(async move {
@@ -96,7 +96,7 @@ async fn long_lived_streams_outlive_the_header_deadline_and_close_on_drop() {
 /// An agent answering every request with `status`, HTML with a script and no policy, as a host
 /// not to be trusted would.
 fn hostile(tag: &str, status: &'static str) -> Agent {
-    let socket = std::env::temp_dir().join(format!("fbd-peer-{tag}-{}.sock", std::process::id()));
+    let socket = crate::testutil::temp_root().join(format!("fbd-peer-{tag}-{}.sock", std::process::id()));
     let _ = std::fs::remove_file(&socket);
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();
     tokio::spawn(async move {
@@ -133,7 +133,7 @@ async fn a_hosts_answer_carries_terminumds_type_and_policy() {
 
 #[tokio::test]
 async fn a_range_goes_to_the_host_and_its_partial_answer_comes_back() {
-    let socket = std::env::temp_dir().join(format!("fbd-peer-range-{}.sock", std::process::id()));
+    let socket = crate::testutil::temp_root().join(format!("fbd-peer-range-{}.sock", std::process::id()));
     let _ = std::fs::remove_file(&socket);
     let listener = tokio::net::UnixListener::bind(&socket).unwrap();
     let seen = tokio::spawn(async move {

@@ -9,7 +9,7 @@ use super::{spawn, WAITING};
 use crate::page::{trace, Page, Pages};
 
 fn page() -> (Arc<Page>, tokio::sync::mpsc::Receiver<String>, ()) {
-    let dir = std::env::temp_dir().join(format!("tm-reads-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("tm-reads-{}", std::process::id()));
     let (p, rx) = Pages::default().add(false, trace::Recorder::new(dir)).unwrap();
     (p, rx, ())
 }

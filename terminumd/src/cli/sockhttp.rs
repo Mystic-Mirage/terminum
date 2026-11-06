@@ -164,7 +164,7 @@ mod tests {
     /// A server on a fresh socket that accepts and then sends `trickle` one byte every 40 ms
     /// (empty: never answers), kept open 3 s.
     fn stalled(tag: &str, trickle: &'static [u8]) -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!("tms-{}-{tag}.sock", std::process::id()));
+        let p = crate::testutil::temp_root().join(format!("tms-{}-{tag}.sock", std::process::id()));
         let _ = std::fs::remove_file(&p);
         let l = std::os::unix::net::UnixListener::bind(&p).unwrap();
         std::thread::spawn(move || {
@@ -205,7 +205,7 @@ mod tests {
             b"HTTP/1.0 204 No Content\r\n\r\n",
         ];
         for (i, reply) in replies.iter().enumerate() {
-            let path = std::env::temp_dir().join(format!("tm-frame-{}-{i}.sock", std::process::id()));
+            let path = crate::testutil::temp_root().join(format!("tm-frame-{}-{i}.sock", std::process::id()));
             let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
             let reply = reply.to_vec();
             let server = std::thread::spawn(move || {

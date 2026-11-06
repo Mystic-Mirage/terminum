@@ -172,7 +172,8 @@ pub fn ensure_host(server: &Arc<Server>, seen: &[(String, String)]) -> (Vec<Valu
 
 /// A host's attached sessions while the host is not attached: they show with its state.
 pub fn host_waiting(server: &Server, why: &str) -> Vec<Value> {
-    server.only.lock().clone().unwrap_or_default().iter().map(|s| layout::absent_group(server, s, why)).collect()
+    let only = server.only.lock().clone().unwrap_or_default();   // released first: a group's fields read it again
+    only.iter().map(|s| layout::absent_group(server, s, why)).collect()
 }
 
 /// Attaches `sessions` at `place` ("Attach tmux sessions", `terminum tmux attach`): all of them or none.

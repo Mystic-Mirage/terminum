@@ -37,11 +37,6 @@ impl Server {
         self.bulk().is_some_and(|c| c.waiting() >= crate::tmux::control::STALL)
     }
 
-    /// What says a pane's screen may have changed: new control clients, or its output.
-    pub fn printed_mark(&self, pane: &str) -> (u64, u64) {
-        (self.generation.load(std::sync::atomic::Ordering::Relaxed), self.printed(pane))
-    }
-
     /// A page's mouse release went to the pane `%N`: what its program copies within
     /// `COPY_WAIT` goes to `to` (the latest page's release wins).
     pub fn arm_copy(&self, pane: &str, to: OnCopy) {
@@ -103,8 +98,6 @@ pub(super) async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::Unbou
             }
             Notice::Copy(pane, b64) => s.copied(&pane, &b64),
             Notice::Pause(pane) => {
-                // its last bytes may never come as `%output`: as good as printed (AC-132)
-                *s.printed.lock().entry(pane.clone()).or_insert(0) += 1;
                 // flow control on a slow link: shown panes are captured anyway, so go on
                 if let Some(c) = s.client(&pane) {
                     drop(c.send(format!("refresh-client -A '{pane}:continue'")));

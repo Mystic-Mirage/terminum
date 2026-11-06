@@ -15,7 +15,7 @@ pub const ROWS: usize = 25;
 pub const ASK_ROWS: usize = 12;
 /// How long a state stands while the title stays the same.
 pub const STATE_EVERY: Duration = Duration::from_secs(6);
-/// A pane that printed nothing is read this often all the same: its output may not have come as a notice (AC-132).
+/// A pane whose window printed nothing is read this often all the same (AC-132).
 const STATE_QUIET: Duration = Duration::from_secs(60);
 /// How long work in the background alone (a dev server, `tail -f`, a monitor: Claude Code's
 /// footer counts it) keeps a session working; past it the session is done all the same. Its
@@ -353,8 +353,10 @@ struct Pane {
 struct Read {
     title: String,
     at: Instant,
-    /// `Server::printed_mark` from before it was read
-    mark: (u64, u64),
+    /// its window's `window_activity` from before it was read
+    activity: u64,
+    /// that was new: read once more, what it printed later in the same second looks the same (AC-132)
+    again: bool,
     state: State,
     /// a `node` pane's screen was Codex's
     codex: bool,
@@ -372,10 +374,10 @@ impl States {
     }
 
     /// Whether pane `key` with `title` needs its screen read at `now`.
-    pub fn due(&self, key: &str, title: &str, now: Instant, mark: (u64, u64)) -> bool {
+    pub fn due(&self, key: &str, title: &str, now: Instant, activity: u64) -> bool {
         self.read(key).is_none_or(|r| {
             let age = now.saturating_duration_since(r.at);
-            r.title != title || (age >= STATE_EVERY && r.mark != mark) || age >= STATE_QUIET
+            r.title != title || (age >= STATE_EVERY && (r.again || r.activity != activity)) || age >= STATE_QUIET
         })
     }
 
@@ -410,11 +412,12 @@ impl States {
 
     /// Remembers `state`, read at `now` for `title`, whether the screen was Codex's, and whether
     /// work in the background ran behind a Done.
-    pub fn store(&mut self, key: &str, title: &str, now: Instant, mark: (u64, u64), (state, behind): (State, bool), codex: bool) {
+    pub fn store(&mut self, key: &str, title: &str, now: Instant, activity: u64, (state, behind): (State, bool), codex: bool) {
+        let again = self.read(key).is_none_or(|r| r.activity != activity);
         if self.panes.len() >= KEEP && !self.panes.contains_key(key) {
             self.panes.clear();
         }
-        self.panes.entry(key.to_string()).or_default().read = Some(Read { title: title.to_string(), at: now, mark, state, codex, behind });
+        self.panes.entry(key.to_string()).or_default().read = Some(Read { title: title.to_string(), at: now, activity, again, state, codex, behind });
     }
 
     /// A turn its hooks ended, done with work in the background still running: Some(whether its

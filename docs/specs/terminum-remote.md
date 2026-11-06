@@ -345,7 +345,7 @@ Scenario: AC-132 happy path — a slow link is not a dead one
   Given a host's oldest command has waited over 10 s and bytes still arrive from its control client
   Then the client lives on, up to a command 60 s old (AC-14)
   And while its oldest command has waited 3 s nothing more is asked of it for the list, agents' states or last lines: its rows stay as last read, and after 30 s without a read they dim
-  And the control ssh is compressed, and an agent's screen is read again only when its pane printed, or 60 s after its last read, or after a reconnect
+  And the control ssh is compressed, and an agent's screen is read again only when its window printed, and once more after that, or 60 s after its last read
 
 Scenario: AC-132 happy path — the banner stays with its server
   Given a server stalls

@@ -333,14 +333,15 @@ pub async fn run(app: Shared) {
     tokio::spawn(stalls(app.clone()));
     loop {
         lists::request_all(&app);
-        let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_in_sight() { EVERY } else { Duration::from_secs(30) };
-        let wait = app.hooks.subs_due_in(Instant::now()).map_or(wait, |d| wait.min(d));   // a Stop's subagents, also out of sight (AC-39)
-        let until = tokio::time::Instant::now() + wait;
+        let asked = tokio::time::Instant::now();
         loop {
-            // a turn's end, settled, also one that began since the list was asked (AC-132)
+            // worked out anew each time: a page just opened, a turn's end that began since (AC-132)
+            let now = tokio::time::Instant::now();
+            let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_in_sight() { EVERY } else { Duration::from_secs(30) };
+            let wait = app.hooks.subs_due_in(Instant::now()).map_or(wait, |d| wait.min(d));   // a Stop's subagents, also out of sight (AC-39)
             let reachable = |k: &str| app.tmux.resolve(k).is_some_and(|(s, _)| s.connected());
             let due = app.turns.due_in(Instant::now(), reachable).map(|d| (d + Duration::from_millis(50)).max(SETTLE_POLL));
-            let turn = due.map_or(until, |d| until.min(tokio::time::Instant::now() + d));
+            let turn = due.map_or(asked + wait, |d| (asked + wait).min(now + d));
             tokio::select! {
                 _ = app.dirty.notified() => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -350,7 +351,7 @@ pub async fn run(app: Shared) {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     lists::request_changed(&app);
                 }
-                _ = tokio::time::sleep_until(turn.min(tokio::time::Instant::now() + SETTLE_POLL)) => {
+                _ = tokio::time::sleep_until(turn.min(now + SETTLE_POLL)) => {
                     if tokio::time::Instant::now() >= turn {
                         break;
                     }

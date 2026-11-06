@@ -244,8 +244,7 @@ impl Server {
     /// Forgets wake-ups nobody holds any more.
     pub fn prune_wakes(&self) {
         self.wakes.lock().retain(|_, tx| tx.receiver_count() > 0);
-        let inner = self.inner.lock();
-        self.printed.lock().retain(|p, _| inner.panes.contains_key(p) || self.wakes.lock().contains_key(p));
+        self.printed.lock().retain(|p, _| self.wakes.lock().contains_key(p));
     }
 
     /// Whether any control client is alive.

@@ -19,6 +19,8 @@ const OTHER_PROGRAMS: [&str; 6] = ["ssh", "mosh", "tmux", "screen", "sudo", "log
 /// One pane's fields of `list-panes -a -F` (spec §9 Sessions, with `#{host}` last).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PaneFields {
+    /// when its window last printed, in tmux's seconds: compared only with itself
+    pub window_activity: u64,
     pub session: String,
     pub window_index: u32,
     pub window_id: String,
@@ -59,7 +61,7 @@ pub struct Item {
 /// The `list-panes -F` format [`parse_list_panes`] reads, fields separated by tabs.
 pub const LIST_PANES_FORMAT: &str = "#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t\
 #{automatic-rename}\t#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}\t\
-#{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}\t#{@tm-quick}\t#{@tm-quick-side}\t#{session_id}\t#{@tm-title}";
+#{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}\t#{@tm-quick}\t#{@tm-quick-side}\t#{session_id}\t#{@tm-title}\t#{window_activity}";
 
 /// Whether `s` is a name tmux could have given a window after its command (`claude`, `zsh`).
 fn auto_name(s: &str) -> bool {
@@ -71,7 +73,7 @@ fn auto_name(s: &str) -> bool {
 /// does not say) counts as on when the window's name looks like a command.
 pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
     let f: Vec<&str> = line.trim_end_matches(['\r', '\n']).split('\t').collect();
-    if f.len() != 16 && f.len() != 17 {
+    if !(16..=18).contains(&f.len()) {
         return None;
     }
     let flag = |s: &str| s == "1";
@@ -93,6 +95,7 @@ pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
         quick_side: f[14].into(),
         session_id: f[15].into(),
         restored_title: f.get(16).copied().unwrap_or_default().into(),
+        window_activity: f.get(17).and_then(|a| a.parse().ok()).unwrap_or(0),
     })
 }
 

@@ -56,6 +56,7 @@ class MessageCheckTest(unittest.TestCase):
         r = self.run_check(text)
         self.assertEqual(r.returncode, 0, r.stdout)
 
+    @unittest.skipUnless((Path(__file__).resolve().parents[2] / ".git").exists(), "no .git: the Mac test runner's tree has none")
     def test_hook_runs_the_message_check(self):
         r = self.run_check(f"Fix\n\nkey {KEY}\n", hook=True)
         self.assertEqual(r.returncode, 1)

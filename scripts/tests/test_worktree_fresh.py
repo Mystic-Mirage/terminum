@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_worktree import commit, Repo, SCRIPTS, sh, worktree  # noqa: E402
 import worktree_fresh  # noqa: E402
 
+SETTINGS = SCRIPTS.parent / ".claude/settings.json"
+needs_settings = unittest.skipUnless(SETTINGS.exists(), "no .claude here: the Mac test runner's tree has none")
 HOOK_SCRIPTS = ("worktree.py", "worktree_fresh.py", "shell_writes.py")
 
 
@@ -246,9 +248,10 @@ class Fresh(Repo):
 
     # .claude/settings.json: a hook never stops the agent, whatever is wrong
     def hook_commands(self):
-        hooks = json.loads((SCRIPTS.parent / ".claude/settings.json").read_text())["hooks"]
+        hooks = json.loads(SETTINGS.read_text())["hooks"]
         return {event: [hook["command"] for entry in entries for hook in entry["hooks"]] for event, entries in hooks.items()}
 
+    @needs_settings
     def test_the_session_hooks_run_the_primarys_copy_and_always_exit_zero(self):
         commands = self.hook_commands()
         self.assertEqual(sorted(commands), ["PreToolUse", "SessionStart", "Stop", "UserPromptSubmit"])
@@ -268,7 +271,7 @@ class Fresh(Repo):
         self.assertEqual(run(commands["Stop"][0], self.primary).returncode, 0)
         self.assertFalse(gone.exists(), "the Stop hook sweeps")
         # the guard fails open, so only this shows that the wired command and matcher still refuse
-        wired = json.loads((SCRIPTS.parent / ".claude/settings.json").read_text())["hooks"]["PreToolUse"][0]
+        wired = json.loads(SETTINGS.read_text())["hooks"]["PreToolUse"][0]
         self.assertEqual(set(wired["matcher"].split("|")), {"Edit", "MultiEdit", "Write", "NotebookEdit"})
         for session in (self.primary, tree):
             given = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(self.primary / "ui/package-lock.json")}})

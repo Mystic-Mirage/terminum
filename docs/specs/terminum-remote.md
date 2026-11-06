@@ -68,6 +68,7 @@ Open questions:
 | AC-86 | [SHOULD / P1] | The maintainer builds terminumd for macOS arm64 and x86_64 and Linux x86_64 and arm64 with one script and publishes signed releases from the Mac, while every push is tested on the owner's runner. |
 | AC-87 | [SHOULD / P1] | Hosts are their ssh destinations: two hosts reporting the same name are two hosts; a host's identity and options live in settings and the `terminum hosts` command manages them. |
 | AC-99 | [SHOULD / P1] | Once the user enables coding agents' progress on a host, Claude Code and Codex in that host's tmux report status and plans to the host's rows and the Plan pane as local panes do (AC-97), and use their project's tasks (terminum-kanban.md AC-120); a host that cannot forward says why and keeps its files. |
+| AC-132 | [MUST / P0] | One tmux server's hang or slow link never slows another server's list, screens, typing or actions; a slow link is not cut while bytes arrive, and it carries less. |
 
 ## 5. BDD scenarios
 
@@ -84,6 +85,7 @@ Scenario: AC-81 happy path — add a host
 Scenario: AC-81 happy path — the link drops and comes back
   When the network drops
   Then within about 30 s (ssh's ServerAliveInterval 15 s × ServerAliveCountMax 2 unanswered) the control client ends, the group "devbox" says "reconnecting (2 s)" on a line of its own under its name (a long state wraps there, never cut), a shown pane keeps its last screen with "Connection to devbox lost" over it, typing is refused with that message; terminumd reconnects after 1, 2, 4 … 30 s
+  And the group's rows stay in the list where they were, dimmed, with no agent state, until the host answers or is turned off or removed, its state "failed" too; a shown pane is never left for another
   When ssh succeeds again
   Then the group is back within 5 s, the shown pane's screen is captured anew (its history too), and the notice goes; the tmux session on the host never noticed
 
@@ -326,6 +328,43 @@ Scenario: AC-99 limits
   And when "<devbox's $HOME>/.terminum/run/m-<mac id>-<rand8>.sock" exceeds 100 bytes, agents are refused with "the host's link path <path> is longer than 100 bytes" and nothing is installed
 ```
 
+### AC-132 — One server's trouble stays its own [MUST / P0]
+
+```gherkin
+Scenario: AC-132 happy path — a host stops answering
+  Given a host whose tmux does not answer, or whose link carries 40 KB/s
+  When the user makes a window on the Mac, types in a local pane, or switches to one
+  Then the list shows the window within 1 s, keys echo within the Mac's own target (AC-03), the pane opens within its target (AC-02): nothing waits for that host
+
+Scenario: AC-132 happy path — actions and typing on a stalled host
+  Given the user typed into, or asked for a window on, a host that stalled, and moved to a local pane
+  Then what waits for that host waits alone, in order, each server's own queue; the local pane takes keys at once
+  And a window that arrives late from the host does not take the user away from the pane moved to
+
+Scenario: AC-132 happy path — a slow link is not a dead one
+  Given a host's oldest command has waited over 10 s and bytes still arrive from its control client
+  Then the client lives on, up to a command 60 s old (AC-14)
+  And while its oldest command has waited 3 s nothing more is asked of it for the list, agents' states or last lines: its rows stay as last read, and after 30 s without a read they dim
+  And the control ssh is compressed, and an agent's screen is read again only when its window printed, and once more after that, or 60 s after its last read
+
+Scenario: AC-132 happy path — the banner stays with its server
+  Given a server stalls
+  Then its line "tmux on devbox is not responding (N s)" shows over the terminal's top rows only while one of its panes is shown, and its group in the list says "not responding"
+  And the line takes no room: no pane changes size, no program redraws because of it
+
+Scenario: AC-132 edge — terminumd restarts with a host's pane shown
+  Given the page shows a host's pane and terminumd restarted, and the host is still connecting or not read yet
+  Then the page stays on that pane and says so (AC-14), and goes to another only once the host's list, read, lacks it
+
+Scenario: AC-132 edge — a turn while another server is down
+  Given a pane's turn waits to settle on one server (AC-91) and another server is down or slow
+  Then it settles by its own server's reads alone, as soon as they say so: another's list never ends it, nor holds it
+
+Scenario: AC-132 failure — a page closes during an action
+  Given the page closes while a window, a move or a restore waits on a server
+  Then the action finishes in order on that server; only reads (history, unfolds, the folder) end with their page
+```
+
 ## 6. Flow and sequence diagrams
 
 ### A host's two connections (AC-81, AC-82)
@@ -404,6 +443,8 @@ Control client: AC-81's command; `refresh-client -f pause-after=2` after attach.
 | Host attach to list | < 5 s | `scripts/e2e_remote.py` |
 | Key echo over a LAN host | p50 < 60 ms | not measured (§7) |
 | Remote file open | < 500 ms | not measured (§7) |
+| A local window reaches the list, a host frozen | < 1 s | `scripts/e2e_isolation.py` |
+| A local pane's key reaches tmux, a host frozen | < 1 s | `scripts/e2e_isolation.py` |
 
 ### Constraints and limits
 
@@ -453,3 +494,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-86 — `scripts/tests/test_release.py`, `scripts/tests/test_package.py`
 - [x] AC-87 — `scripts/e2e_remote.py`, `scripts/e2e_review.py host`, `cargo test hosts::`, `cargo test hosts_list`
 - [x] AC-99 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py`, `cargo test hosts::agents`, `cargo test hosts::link`, `cargo test hosts::bounded`, `cargo test links`, `cargo test runlink`, `cargo test hostmode`
+- [x] AC-132 — `scripts/e2e_isolation.py`, `web/test/e2e_isolation.mjs`, `cargo test tmux::control`, `cargo test lists`, `cargo test page::turns`, `cargo test page::typing`, `cargo test page::reads`, `cargo test tmux::agentstate`

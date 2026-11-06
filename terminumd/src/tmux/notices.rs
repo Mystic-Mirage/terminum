@@ -21,6 +21,34 @@ pub type OnCopy = Arc<dyn Fn(String) + Send + Sync>;
 pub(super) type Armed = Mutex<HashMap<String, (Instant, OnCopy)>>;
 
 impl Server {
+    /// Lines for the control client of `pane`'s session, in order after what it was sent before;
+    /// nothing waits for them (their answers do not matter): what was asked goes first even if
+    /// this server hangs (AC-132).
+    pub fn send_on(&self, pane: &str, lines: Vec<String>) {
+        if let Some(c) = self.client(pane) {
+            for line in lines {
+                drop(c.send(line));
+            }
+        }
+    }
+
+    /// What was asked of it is still on its way (AC-132): no more on top of it.
+    pub fn backed_up(&self) -> bool {
+        self.bulk().is_some_and(|c| c.waiting() >= crate::tmux::control::STALL)
+    }
+
+    /// The client to ask for what is read over and over (screens for the list, last lines), unless
+    /// it is backed up.
+    pub fn reader(&self) -> Option<Arc<crate::tmux::control::Control>> {
+        self.bulk().filter(|c| c.waiting() < crate::tmux::control::STALL)
+    }
+
+    /// Its list is to be read again, its own alone (lists.rs).
+    pub(super) fn list_changed(&self) {
+        self.list.mark_changed();
+        self.dirty.notify_one();
+    }
+
     /// A page's mouse release went to the pane `%N`: what its program copies within
     /// `COPY_WAIT` goes to `to` (the latest page's release wins).
     pub fn arm_copy(&self, pane: &str, to: OnCopy) {
@@ -75,7 +103,7 @@ pub(super) async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::Unbou
                 s.woke(Some(&pane));
             }
             Notice::Changed => {
-                s.dirty.notify_one();
+                s.list_changed();
                 // a resize or a zoom redraws shown panes: capture them now
                 s.woke(None);
             }

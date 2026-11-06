@@ -63,6 +63,7 @@ pub struct Server {
     inner: Mutex<Inner>,
     wakes: Mutex<HashMap<String, watch::Sender<()>>>,
     printed: Mutex<HashMap<String, u64>>,
+    pub list: crate::lists::ServerList,
     /// the list must be read again (a window, pane, session or layout changed)
     pub dirty: Arc<Notify>,
     /// a control client ended (the manager reconnects or reports)
@@ -93,7 +94,7 @@ pub struct Server {
 }
 
 impl Server {
-    /// `dirty` is shared by every server: one list refresh reads them all.
+    /// `dirty`: told when tmux says this server's list changed (lists.rs).
     pub fn new(name: &str, socket: &str, link: Link, dirty: Arc<Notify>) -> Arc<Server> {
         Arc::new(Server {
             name: name.to_string(),
@@ -102,6 +103,7 @@ impl Server {
             inner: Mutex::default(),
             wakes: Mutex::default(),
             printed: Mutex::default(),
+            list: Default::default(),
             dirty,
             ended: Arc::new(Notify::new()),
             status: Mutex::new(Status::Connecting),
@@ -447,8 +449,9 @@ impl Server {
             }
             Link::Ssh { ssh, args } => {
                 // ConnectTimeout also bounds the banner exchange: a hung sshd ends the link with ssh's own
-                // message instead of a wait without end (unless the user's ssh config sets its own)
-                let mut c = crate::hosts::ssh_command(ssh, args, &["-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2"]);
+                // message instead of a wait without end (unless the user's ssh config sets its own);
+                // screens are text: compressed, a slow link carries three times as many (AC-132)
+                let mut c = crate::hosts::ssh_command(ssh, args, &["-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2", "-o", "Compression=yes"]);
                 c.args(crate::hosts::recipe::argv(args)).arg(remote);
                 c
             }
@@ -469,7 +472,7 @@ impl Server {
                     s.closed_by_user.store(by_user, Ordering::Relaxed);
                 }
                 tracing::info!(event = "client.end", server = %s.name, session, why);
-                s.dirty.notify_one();
+                s.list_changed();
                 s.ended.notify_one();
             }
         });

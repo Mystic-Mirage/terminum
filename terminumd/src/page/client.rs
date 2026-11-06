@@ -81,7 +81,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
     match t {
         "sub" => {
             super::sizing::view_of(page, &msg);       // its grid with it: the first frame comes at it (AC-04)
-            subscribe(app, page, &s("id")).await
+            subscribe(app, page, &s("id"))
         }
         "in" => super::typing::typed(app, page, s("data"), msg["k"].as_u64()),
         "paste" => super::typing::paste(app, page, s("data"), msg["bracket"].as_bool().unwrap_or(true)),
@@ -97,34 +97,41 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "find" => super::find::start(app, page, &msg),
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => read(app, page, "files", |a, p| async move { files(&a, &p).await }),
-        "size" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
-        "new" | "newsession" | "split" | "clone" | "projectwindow" | "rename" | "renamegroup" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
+        "size" | "mouse" => super::sizing::handle(app, page, t, &msg),
+        "new" | "newsession" | "split" | "clone" | "projectwindow" | "rename" | "renamegroup" | "reorder" | "move" | "kill" =>
+            action(app, page, msg, |a, p, m, at| async move { super::sessions::handle(&a, &p, &m, at).await }),
         "plan" => super::plans::handle(app, page, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
-        "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,
+        "quick" | "quickside" => action(app, page, msg, |a, p, m, _| async move { super::quick::handle(&a, &p, m["t"].as_str().unwrap_or(""), &m).await }),
         // a host's ssh, helper copy and install take up to minutes: the page's loop goes on (it waits for the answer)
         "addhost" | "hostaction" | "hostagents" => {
             let (app, page) = (app.clone(), page.clone());
             tokio::spawn(async move { super::sessions::admin(&app, &page, msg["t"].as_str().unwrap_or(""), &msg).await });
         }
-        "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => super::sessions::admin(app, page, t, &msg).await,
+        "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => action(app, page, msg, |a, p, m, _| async move { super::sessions::admin(&a, &p, m["t"].as_str().unwrap_or(""), &m).await }),
         "updatechoice" if !page.web => {
             if let Err(e) = crate::release::choose(app, &s("action"), msg["tag"].as_str()) {
                 error(page, e, None);
             }
         }
-        "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => super::sent::handle(app, page, t, &msg).await,
+        "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => action(app, page, msg, |a, p, m, at| async move { super::sent::handle(&a, &p, m["t"].as_str().unwrap_or(""), &m, at).await }),
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),
         "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
-        "lastlines" => crate::lastlines::show(app, page, &s("id")).await,
-        "diag" => super::diag::show(app, page, &s("id")).await,
+        "lastlines" => {
+            let id = s("id");
+            read(app, page, "lastlines", move |a, p| async move { crate::lastlines::show(&a, &p, &id).await });
+        }
+        "diag" => {
+            let id = s("id");
+            read(app, page, "diag", move |a, p| async move { super::diag::show(&a, &p, &id).await });
+        }
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
             // a page before 0.24.32 sends no `hidden`: it was hidden
             look(page, if msg["hidden"] == false { Look::Away } else { Look::Hidden });
-            super::sizing::handover(app, page).await;
+            super::sizing::handover(app, page);
         }
         "resume" => resume(app, page),
         "screens" => screens(page, msg["on"] != false),
@@ -132,22 +139,63 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
     }
 }
 
-/// Runs a read in its lane (`reads`); a full lane is said on the page.
+/// The pane shown when a message came: an action may wait long in its lane, and is about that pane
+/// (AC-132).
+pub type At = Option<(String, Arc<Server>, String)>;
+
+fn shown_at(page: &Page) -> At {
+    page.state.lock().shown.as_ref().map(|s| (s.key.clone(), s.server.clone(), s.pane.clone()))
+}
+
+/// The shown pane's server, what its lanes go by (AC-132).
+fn shown_lane(page: &Page) -> String {
+    page.state.lock().shown.as_ref().map_or_else(|| "none".to_string(), |s| s.server.id())
+}
+
+/// The server a message is about: its pane's, its group's or its place, a new session's and a
+/// restore's on this Mac, else the shown pane's.
+fn lane_of(app: &Shared, page: &Page, msg: &Value) -> String {
+    if matches!(msg["t"].as_str(), Some("newsession" | "restore")) {
+        return app.tmux.local.id();
+    }
+    if let Some((server, _)) = msg["id"].as_str().and_then(|id| app.tmux.resolve(id)) {
+        return server.id();
+    }
+    if let Some((server, _)) = msg["group"].as_str().and_then(|g| super::sessions::group(app, g)) {
+        return server.id();
+    }
+    msg["server"].as_str().map_or_else(|| shown_lane(page), str::to_string)
+}
+
+/// Runs what may wait on a server's tmux in that server's lane (`reads`), in order, never cut
+/// part-way; a full lane is said on the page.
+fn action<F, Fut>(app: &Shared, page: &Arc<Page>, msg: Value, work: F)
+where
+    F: FnOnce(Shared, Arc<Page>, Value, At) -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let (lane, at) = (lane_of(app, page, &msg), shown_at(page));
+    if !super::reads::spawn_action(page, &lane, work(app.clone(), page.clone(), msg, at)) {
+        error(page, "Too many actions are waiting for that server; try again in a moment.", None);
+    }
+}
+
+/// Runs a read in its lane (`reads`), one per kind and server; a full lane is said on the page.
 fn read<F, Fut>(app: &Shared, page: &Arc<Page>, kind: &'static str, work: F)
 where
     F: FnOnce(Shared, Arc<Page>) -> Fut,
     Fut: std::future::Future<Output = ()> + Send + 'static,
 {
-    if !super::reads::spawn(page, kind, work(app.clone(), page.clone())) {
+    if !super::reads::spawn(page, &format!("{kind} {}", shown_lane(page)), work(app.clone(), page.clone())) {
         error(page, "Too many reads of the history or folder are waiting; try again in a moment.", None);
     }
 }
 
 /// Shows pane `key`: its theme, history and screen, then every change (AC-02).
-pub async fn subscribe(app: &Shared, page: &Arc<Page>, key: &str) {
+pub fn subscribe(app: &Shared, page: &Arc<Page>, key: &str) {
     let old = page.state.lock().shown.take();
     if let Some(old) = old {
-        super::sizing::left(app, page, &old).await;
+        super::sizing::left(app, page, &old);
         drop(old);
     }
     let Some((server, pane)) = app.tmux.resolve(key) else {
@@ -212,9 +260,17 @@ pub async fn shown_cwd(page: &Page) -> Result<(String, Arc<Server>, String), (Op
         let s = st.shown.as_ref().ok_or((None, "No pane is shown.".to_string()))?;
         (s.key.clone(), s.server.clone(), s.pane.clone())
     };
+    match cwd_of(&server, &pane).await {
+        Ok(cwd) => Ok((key, server, cwd)),
+        Err(e) => Err((Some(key), e)),
+    }
+}
+
+/// `pane`'s folder.
+pub async fn cwd_of(server: &Server, pane: &str) -> Result<String, String> {
     match server.run(format!("display -p -t {pane} '#{{pane_current_path}}'")).await {
-        Ok(lines) => Ok((key, server, lines.into_iter().next().unwrap_or_default())),
-        Err(e) => Err((Some(key), format!("The pane's folder is not known: {e}"))),
+        Ok(lines) => Ok(lines.into_iter().next().unwrap_or_default()),
+        Err(e) => Err(format!("The pane's folder is not known: {e}")),
     }
 }
 

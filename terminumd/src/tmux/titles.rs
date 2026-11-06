@@ -19,6 +19,8 @@ const OTHER_PROGRAMS: [&str; 6] = ["ssh", "mosh", "tmux", "screen", "sudo", "log
 /// One pane's fields of `list-panes -a -F` (spec §9 Sessions, with `#{host}` last).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PaneFields {
+    /// when its window last printed, in tmux's seconds: compared only with itself
+    pub window_activity: u64,
     pub session: String,
     pub window_index: u32,
     pub window_id: String,
@@ -69,19 +71,19 @@ pub(crate) use agent_name_format;
 pub const LIST_PANES_FORMAT: &str = concat!("#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t\
 #{automatic-rename}\t#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}\t\
 #{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}\t#{@tm-quick}\t#{@tm-quick-side}\t#{session_id}\t#{@tm-title}\t\
-", agent_name_format!());
+", agent_name_format!(), "\t#{window_activity}");
 
 /// Whether `s` is a name tmux could have given a window after its command (`claude`, `zsh`).
 fn auto_name(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_' || ".+@-".contains(c))
 }
 
-/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 18 fields (16 or 17 without
+/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 19 fields (16 to 18 without
 /// the last ones, as tests write them; more: a name holding a tab) or its numbers are not numbers. An empty `#{automatic-rename}` (a tmux that
 /// does not say) counts as on when the window's name looks like a command.
 pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
     let f: Vec<&str> = line.trim_end_matches(['\r', '\n']).split('\t').collect();
-    if !(16..=18).contains(&f.len()) {
+    if !(16..=19).contains(&f.len()) {
         return None;
     }
     let flag = |s: &str| s == "1";
@@ -104,6 +106,7 @@ pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
         session_id: f[15].into(),
         restored_title: f.get(16).copied().unwrap_or_default().into(),
         agent_name: f.get(17).copied().filter(|n| crate::settings::is_name(n)).unwrap_or_default().into(),
+        window_activity: f.get(18).and_then(|a| a.parse().ok()).unwrap_or(0),
     })
 }
 

@@ -212,6 +212,7 @@ export class Views {
   /** The server's answer to "files": the pane's key, folder and host, or why there are none. The
    *  root is the folder its coding agent works in when it has one and Files follows it (AC-51). */
   onFiles(m) {
+    if (m.sid && this.sid && m.sid !== this.sid) return;   // a slow server's answer about a pane left meanwhile (AC-132)
     this.answered(m);
     this.filesError = m.error ?? null;
     const cwd = following() && m.agent ? m.agent : m.cwd;

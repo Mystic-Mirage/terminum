@@ -17,6 +17,9 @@ export function closeButton(label, onClick) {
   return x;
 }
 
+/** The lowest edge of what is said over the terminal (#over), no higher than `top`. */
+export const underBanners = (top) => Math.max(top, ...[...document.querySelectorAll("#over > .banner")].filter((b) => !b.hidden).map((b) => b.getBoundingClientRect().bottom));
+
 /** Shows `text` in banner `id`, or hides it (empty text: what it said is over). */
 export function banner(id, text, key = text) {
   const el = $(id);

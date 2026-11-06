@@ -27,6 +27,7 @@ mod hosts;
 mod hotkeys;
 mod http;
 mod listing;
+mod lists;
 mod listing_sort;
 mod looks;
 mod manager;
@@ -81,8 +82,8 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
     let bus = Bus::new();
     let cache = Cache::new(env.list_cache_mb << 20);
     let watcher = Watcher::start(cache.clone(), bus.clone()).inspect_err(|e| tracing::warn!(event = "watch.unavailable", error = %e)).ok();
-    let dirty = Arc::new(tokio::sync::Notify::new());
-    let local = Server::new("local", socket, link, dirty.clone());
+    let changed = Arc::new(tokio::sync::Notify::new());
+    let local = Server::new("local", socket, link, changed.clone());
     let dir = cfg.dir.clone();
     // an Agent keeps no tasks: the Mac's terminumd holds the one store
     let tasks = Arc::new(if cfg.agent { tasks::store::Store::absent() } else { tasks::store::Store::open(dir.join("kanban.sqlite")) });
@@ -104,7 +105,8 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         layout: RwLock::new(serde_json::json!([])),
         offers: Default::default(),
         tmux_problem: Mutex::new(None),
-        dirty,
+        dirty: Default::default(),
+        changed,
         refreshing: tokio::sync::Mutex::new(()),
         inventory_at: Mutex::new(None),
         agent_states: Mutex::new(tmux::agentstate::States::new()),

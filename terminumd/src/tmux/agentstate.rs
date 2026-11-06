@@ -15,6 +15,8 @@ pub const ROWS: usize = 25;
 pub const ASK_ROWS: usize = 12;
 /// How long a state stands while the title stays the same.
 pub const STATE_EVERY: Duration = Duration::from_secs(6);
+/// A pane whose window printed nothing is read this often all the same (AC-132).
+const STATE_QUIET: Duration = Duration::from_secs(60);
 /// How long work in the background alone (a dev server, `tail -f`, a monitor: Claude Code's
 /// footer counts it) keeps a session working; past it the session is done all the same. Its
 /// agents (subagents, teams, workflows) keep it working while they run, however long.
@@ -351,6 +353,10 @@ struct Pane {
 struct Read {
     title: String,
     at: Instant,
+    /// its window's `window_activity` from before it was read
+    activity: u64,
+    /// that was new: read once more, what it printed later in the same second looks the same (AC-132)
+    again: bool,
     state: State,
     /// a `node` pane's screen was Codex's
     codex: bool,
@@ -368,8 +374,11 @@ impl States {
     }
 
     /// Whether pane `key` with `title` needs its screen read at `now`.
-    pub fn due(&self, key: &str, title: &str, now: Instant) -> bool {
-        self.read(key).is_none_or(|r| r.title != title || now.saturating_duration_since(r.at) >= STATE_EVERY)
+    pub fn due(&self, key: &str, title: &str, now: Instant, activity: u64) -> bool {
+        self.read(key).is_none_or(|r| {
+            let age = now.saturating_duration_since(r.at);
+            r.title != title || (age >= STATE_EVERY && (r.again || r.activity != activity)) || age >= STATE_QUIET
+        })
     }
 
     /// The state last stored for `key`.
@@ -403,11 +412,12 @@ impl States {
 
     /// Remembers `state`, read at `now` for `title`, whether the screen was Codex's, and whether
     /// work in the background ran behind a Done.
-    pub fn store(&mut self, key: &str, title: &str, now: Instant, (state, behind): (State, bool), codex: bool) {
+    pub fn store(&mut self, key: &str, title: &str, now: Instant, activity: u64, (state, behind): (State, bool), codex: bool) {
+        let again = self.read(key).is_none_or(|r| r.activity != activity);
         if self.panes.len() >= KEEP && !self.panes.contains_key(key) {
             self.panes.clear();
         }
-        self.panes.entry(key.to_string()).or_default().read = Some(Read { title: title.to_string(), at: now, state, codex, behind });
+        self.panes.entry(key.to_string()).or_default().read = Some(Read { title: title.to_string(), at: now, activity, again, state, codex, behind });
     }
 
     /// A turn its hooks ended, done with work in the background still running: Some(whether its

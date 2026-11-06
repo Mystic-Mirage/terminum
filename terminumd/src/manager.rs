@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Keeps the tmux side going (AC-01, AC-14): starts the private local server when none runs
 //! (or restores the layout after a reboot, AC-15), keeps a control client per session,
-//! reads the list on tmux's notices (coalesced 100 ms) and every 2 s while a page looks,
-//! tells the pages what changed, says when tmux stops answering, and expires workspaces of
-//! panes gone for good (AC-71).
+//! asks each server's list (lists.rs) on its notices (coalesced 100 ms) and every 2 s while a
+//! page looks, tells the pages what changed, says when tmux stops answering, and expires
+//! workspaces of panes gone for good (AC-71).
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -12,6 +12,8 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::app::Shared;
+use crate::lists::{self, Got, Told};
+use crate::tmux::control::STALL;
 use crate::tmux::layout;
 use crate::tmux::server::{Server, Status};
 
@@ -19,8 +21,6 @@ use crate::tmux::server::{Server, Status};
 const EVERY: Duration = Duration::from_secs(2);
 /// tmux missing: looked for again this often (AC-01 failure).
 const TMUX_AGAIN: Duration = Duration::from_secs(10);
-/// A server that has not answered for this long is said to stall (AC-03).
-const STALL: Duration = Duration::from_millis(3000);
 /// Workspaces of panes gone this long are removed at an inventory this often (AC-71).
 const INVENTORY: Duration = Duration::from_secs(300);
 
@@ -90,11 +90,29 @@ fn set_problem(app: &Shared, problem: Option<String>) {
     }
 }
 
-/// One server's groups and pane keys (when `keys` is asked for); false when it could not be read.
-async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) -> (Vec<Value>, Vec<String>, bool) {
+/// One read of a server, on its own task (lists.rs): nothing here waits for another server.
+pub async fn read_one(app: &Shared, server: &Arc<Server>) -> Got {
+    if server.backed_up() {
+        return Got::Unread;                      // what was asked is still on its way: no more on top (AC-132)
+    }
+    let mut absent = Vec::new();
+    let mut sure = true;
+    if server.is_users() {
+        (absent, sure) = crate::attach::ensure(app, server).await;
+    } else if server.is_local() {
+        ensure_local(app).await;
+    }
+    match read_server(app, server.clone()).await {
+        Got::Read(told) => Got::Read(Told { absent, ok: told.ok && sure, ..told }),
+        other => other,
+    }
+}
+
+/// One server's groups and pane keys.
+async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
     let local = server.is_local();
     if server.is_users() && !server.connected() {
-        return (Vec::new(), Vec::new(), true);
+        return Got::Read(Told { ok: true, ..Default::default() });
     }
     if !local && !server.attached() {
         // judged by its `terminum` client; the user's sessions there wait with the host's state
@@ -103,10 +121,10 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
         let why = format!("{}: {}", server.name, g["why"].as_str().unwrap_or_default());
         let mut gs = vec![g];
         gs.extend(crate::attach::host_waiting(&server, &why));
-        return (gs, Vec::new(), false);
+        return Got::Down(gs);
     }
     let host = (!local).then(|| server.name.clone());
-    let home = if local { home.to_string() } else { server.home().await.unwrap_or_default() };
+    let home = if local { crate::config::home().display().to_string() } else { server.home().await.unwrap_or_default() };
     let looks = &app.looks;
     let out = match layout::read(&server, &app.agent_states, &app.hooks, &app.turns.hooked(Instant::now()), &home, |s| looks.theme_name(host.as_deref(), s)).await {
         Ok(read) => {
@@ -133,11 +151,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
                 }
                 gs.extend(absent);
             }
-            let live = if keys {
-                read.keys.iter().map(|k| format!("web:{}", json!([host.clone().unwrap_or_default(), k]))).collect()
-            } else {
-                Vec::new()
-            };
+            let live = read.keys.iter().map(|k| format!("web:{}", json!([host.clone().unwrap_or_default(), k]))).collect();
             crate::page::projects::seen(app, &server, &read.keys, &read.every).await;   // closed panes leave their projects (AC-92)
             crate::page::unread::seen(app, &server).await;                 // a tmux started anew takes its marks (AC-93)
             crate::plans::seen(app, &server).await;                        // and its plans (AC-97)
@@ -148,43 +162,69 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
                 crate::page::plans::tell(&app.pages, &changed);
             }
             server.set_panes(read.panes);
-            (gs, live, true)
+            Got::Read(Told { groups: gs, keys: live, ok: true, ..Default::default() })
         }
         Err(e) => {
             tracing::warn!(event = "tmux.error", server = %server.name, cmd = "list-panes", msg = e);
-            (if local { Vec::new() } else { vec![layout::host_group(&server, None)] }, Vec::new(), false)
+            if server.connected() {
+                Got::Unread                          // a timeout on a link up: its rows stay as last read
+            } else {
+                Got::Gone(if local { Vec::new() } else { vec![layout::host_group(&server, None)] })
+            }
         }
     };
     server.prune_wakes();
     out
 }
 
-/// Reads every server's list now (all at once: a slow host never holds up the others) and
-/// tells the pages when it changed.
-pub async fn refresh(app: &Shared) {
+/// What a server not read yet shows: it says it is on its way, so a page showing its pane stays
+/// there (AC-14, AC-132).
+fn unread_groups(app: &Shared, server: &Arc<Server>) -> Vec<Value> {
+    let reading = |mut g: Value| {
+        if g["state"] == "attached" || g["state"] == "absent" {
+            g["state"] = json!("reconnecting");
+            g["why"] = json!("reading its list");
+        }
+        g
+    };
+    let mut gs = Vec::new();
+    if !server.is_users() {
+        gs.push(reading(layout::host_group(server, crate::hosts::files_state(app, &server.name).as_deref())));
+    }
+    gs.extend(crate::attach::host_waiting(server, "reading its list").into_iter().map(reading));
+    gs
+}
+
+/// Tells the pages the list when it changed, each server's part as last read. `server` was just
+/// read; `fresh`: its own list came, so its turns settle by it, and only by it (AC-132).
+pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool) {
     let _one = app.refreshing.lock().await;
-    ensure_local(app).await;
-    let ensured = futures_util::future::join_all(app.tmux.attached_all().iter().map(|s| crate::attach::ensure(app, s))).await;
-    let users_sure = ensured.iter().all(|(_, sure)| *sure);
-    let absent: Vec<Value> = ensured.into_iter().flat_map(|(gs, _)| gs).collect();
-    let home = crate::config::home().display().to_string();
-    let due = app.inventory_at.lock().is_none_or(|t| t.elapsed() > INVENTORY);
-    let reads = futures_util::future::join_all(app.tmux.all().into_iter().map(|s| read_server(app, s, &home, due))).await;
-    let complete = users_sure && reads.iter().all(|(_, _, ok)| *ok);
-    for server in app.tmux.all() {
-        crate::page::sizing::reclaim_once(app, &server);
-        crate::tmux::orphans::sweep_once(&server);
+    if !app.tmux.local.list.tried() {
+        return;                                  // a page reconnecting keeps its list until its own Mac's was asked
     }
-    let mut groups: Vec<Value> = Vec::new();
-    let mut live: HashSet<String> = HashSet::new();
-    for (gs, keys, _) in reads {
-        groups.extend(gs);
-        live.extend(keys);
+    let home_due = app.inventory_at.lock().is_none_or(|t| t.elapsed() > INVENTORY);
+    let (mut groups, mut absent, mut live, mut complete) = (Vec::new(), Vec::new(), HashSet::new(), true);
+    let all = app.tmux.all();
+    for s in &all {
+        match s.list.told() {
+            Some(t) => {
+                groups.extend(t.groups);
+                absent.extend(t.absent);
+                live.extend(t.keys);
+                complete &= t.ok;
+            }
+            None => {
+                groups.extend(unread_groups(app, s));
+                complete = false;
+            }
+        }
     }
+    crate::page::sizing::reclaim_once(app, server);
+    crate::tmux::orphans::sweep_once(server);
     groups.extend(absent);
     // a tmux reached twice lists each pane once (AC-89)
     // (each server's identity was read with its list: projects::seen)
-    let ids = app.tmux.all().into_iter().filter_map(|s| s.identity_known().map(|i| (s.id(), i))).collect();
+    let ids = all.iter().filter_map(|s| s.identity_known().map(|i| (s.id(), i))).collect();
     layout::once_each(&mut groups, &ids);
     crate::page::unread::mark(app, &mut groups, complete);
     crate::page::plans::mark(app, &mut groups);                      // plans on the rows (AC-97)
@@ -208,15 +248,27 @@ pub async fn refresh(app: &Shared) {
         hook_turn_ended(app, &k, "screen");
     }
     // a turn ends when its pane stayed done a while, its subagents too (turns.rs)
-    let ended = {
+    // whichever server's telling saw an end, its own list settles it, read once SETTLE has passed
+    for k in app.turns.ended(ended, Instant::now()) {
+        let app = app.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(crate::page::turns::SETTLE + Duration::from_millis(50)).await;
+            if let Some((server, _)) = app.tmux.resolve(&k) {
+                lists::request(&app, &server);
+            }
+        });
+    }
+    let ended = if fresh {
         let layout = app.layout.read();
         let busy = |k: &str| crate::page::marks::find_item(&layout, k).map(|it| crate::page::turns::busy(&it));
-        app.turns.settle(ended, busy, complete, Instant::now())
+        app.turns.settle(&server.key(""), busy, Instant::now())
+    } else {
+        Vec::new()
     };
     if !ended.is_empty() {
         remind(app, ended).await;
     }
-    if complete && due {
+    if complete && home_due {
         *app.inventory_at.lock() = Some(Instant::now());
         app.store.maintain(&live, false);
     }
@@ -227,8 +279,12 @@ pub async fn refresh(app: &Shared) {
 /// settles it, and where its answer ended is kept: the screen is final (AC-39, AC-90).
 pub fn hook_turn_ended(app: &Shared, key: &str, by: &str) {
     tracing::info!(event = "hook.turn_end", key, by);
-    app.dirty.notify_one();
     app.turns.hook_ended(key, Instant::now());
+    match app.tmux.resolve(key) {
+        Some((server, _)) => { lists::request(app, &server); }   // its server's list alone
+        None => app.dirty.notify_one(),
+    }
+    app.changed.notify_one();                    // its subagents' wait, worked out anew
     tokio::spawn(crate::page::answers::keep(app.clone(), key.to_string()));
 }
 
@@ -239,7 +295,8 @@ pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
     let old = old.as_array().map_or(&[][..], Vec::as_slice);
     use crate::page::marks::layout_items as items;
     let was: HashSet<&str> = items(old).filter(busy).filter_map(|it| it["id"].as_str()).collect();
-    items(new).filter(|it| !busy(it)).filter_map(|it| it["id"].as_str()).filter(|id| was.contains(id)).map(str::to_string).collect()
+    // a row that cannot be read says nothing of its turn (AC-81)
+    items(new).filter(|it| !busy(it) && it["offline"] != true).filter_map(|it| it["id"].as_str()).filter(|id| was.contains(id)).map(str::to_string).collect()
 }
 
 /// The reminders of the panes whose agent ended a turn (in panes `ended`) come up, on every
@@ -275,18 +332,28 @@ fn announce_offers(app: &Shared) {
     }
 }
 
-/// The loop: a refresh on every change notice (coalesced), every 2 s while a page looks, and
-/// when a turn's end has settled (turns.rs).
+/// The loop: every server's list every 2 s while a page looks, and on whatever may concern them
+/// all (`dirty`); a server's own notices (`changed`) ask its list alone (AC-132). The wait is worked
+/// out anew after each: a Stop's subagents may have come meanwhile.
 pub async fn run(app: Shared) {
     tokio::spawn(stalls(app.clone()));
     loop {
-        refresh(&app).await;
-        let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_in_sight() { EVERY } else { Duration::from_secs(30) };
-        let wait = app.hooks.subs_due_in(Instant::now()).map_or(wait, |d| wait.min(d));   // a Stop's subagents, also out of sight (AC-39)
-        let wait = app.turns.due_in(Instant::now()).map_or(wait, |d| wait.min(d + Duration::from_millis(50)));   // a turn's end, settled
-        tokio::select! {
-            _ = app.dirty.notified() => tokio::time::sleep(Duration::from_millis(100)).await,
-            _ = tokio::time::sleep(wait) => {}
+        lists::request_all(&app);
+        let asked = tokio::time::Instant::now();
+        loop {
+            let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_in_sight() { EVERY } else { Duration::from_secs(30) };
+            let wait = app.hooks.subs_due_in(Instant::now()).map_or(wait, |d| wait.min(d));   // a Stop's subagents, also out of sight (AC-39)
+            tokio::select! {
+                _ = app.dirty.notified() => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    break;
+                }
+                _ = app.changed.notified() => {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    lists::request_changed(&app);
+                }
+                _ = tokio::time::sleep_until(asked + wait) => break,
+            }
         }
     }
 }

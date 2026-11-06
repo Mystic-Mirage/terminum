@@ -8,6 +8,7 @@ import { addTmux } from "./addtmux.js";
 import { hostAgents } from "./hostagents.js";
 import { inside, placeModal } from "./fabpane.js";
 import { banner } from "./banners.js";
+import { stalls } from "./nav.js";
 import { askConfirm } from "./dialogs.js";
 
 export { askConfirm, askName } from "./dialogs.js";
@@ -183,18 +184,23 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
 
   // ---------- a tmux server not answering (AC-03, AC-14) ----------
   // Screens, keys and histories wait for it: say so, with the time it has not answered.
-  const stalls = new Map();                        // server id -> [what, since (performance.now())]
   let stallTimer = 0;
   function showStall(m) {
     const key = m.key ?? m.server ?? "local", what = m.what ?? `tmux on ${(m.server ?? "local") === "local" ? "this Mac" : m.server}`;
-    if (m.ok) stalls.delete(key);
+    if (m.clear) stalls.clear();
+    else if (m.ok) stalls.delete(key);
     else if (!stalls.has(key)) stalls.set(key, [what, performance.now() - (m.ms ?? 0)]);
     clearInterval(stallTimer);
-    if (!stalls.size) return banner("stall", "");
-    const say = () => banner("stall", [...stalls.values()].map(([what, since]) =>
-      `${what} is not responding (${Math.round((performance.now() - since) / 1000)} s)`).join(". "), [...stalls.keys()].join());   // the seconds are no news
-    say();
-    stallTimer = setInterval(say, 1000);
+    sayStalls();
+    if (stalls.size) stallTimer = setInterval(sayStalls, 1000);
+  }
+  // Only the shown pane's server: another's trouble is not this pane's (AC-132); its group in the
+  // list says when its link drops.
+  function sayStalls() {
+    const found = current(), shown = found?.group.server, mine = found ? [...stalls].filter(([key]) => !shown || key === shown) : [];
+    if (!mine.length) return banner("stall", "");
+    banner("stall", mine.map(([, [what, since]]) =>
+      `${what} is not responding (${Math.round((performance.now() - since) / 1000)} s)`).join(". "), mine.map(([key]) => key).join());   // the seconds are no news
   }
 
   // The pencil names the shown pane's window (and the pane's title).
@@ -226,5 +232,5 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
 
   /** terminumd's answer to the host form or the agents dialog. */
   const hostAnswer = (m) => (m.t === "hostagents" ? agents.answered(m) : hostAdded(m.name));
-  return { showStall, formError, layoutCame, hostAdded, hostAnswer, tmuxAdded, tmuxChoices: tmux.choices, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu, endRename, renaming: () => !$("renamebox").hidden };
+  return { showStall, sayStalls, formError, layoutCame, hostAdded, hostAnswer, tmuxAdded, tmuxChoices: tmux.choices, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu, endRename, renaming: () => !$("renamebox").hidden };
 }

@@ -148,7 +148,7 @@ export const tasksOfProject = (id) => projectTasks[id] ?? 0;
 function row(item, current, onPick, movable, child = false, marked = new Map(), opts = {}) {
   const li = document.createElement("li");
   if (movable) li.dataset.drag = "row";           // dragged by its body (reorder.js); not while a filter shows a subset
-  const b = el("button", "item" + (child ? " child" : "") + (item.id === current ? " on" : ""));
+  const b = el("button", "item" + (child ? " child" : "") + (item.id === current ? " on" : "") + (item.offline ? " offline" : ""));
   b.type = "button";
   b.dataset.id = item.id;
   if (item.id === current) b.setAttribute("aria-current", "true");
@@ -205,11 +205,20 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   return li;
 }
 
+/** The servers that stall now (navtools.js `showStall`): server id -> [what, since]; each said in its group (AC-132). */
+export const stalls = new Map();
+
+/** The shown pane's server is cut off or not read yet: its list says nothing of that pane (AC-81, AC-132). */
+export function serverDown(groups, id) {
+  const [, host, socket] = id.split(":");
+  return groups.some((g) => g.server === `${host}:${socket}` && (g.state === "reconnecting" || g.state === "failed"));
+}
+
 /** A host group's state, on a line under its name (AC-81): "" when attached, unless its record
  *  changed and is not used yet (AC-87); terminumd's `why` says "reconnecting (2 s)" or ssh's
  *  last line, which can be long. */
 export function hostState(g) {
-  if (g.state === "attached") return g.why || "";
+  if (g.state === "attached") return stalls.has(g.server) ? "not responding" : g.why || "";
   if (g.state === "reconnecting") return g.why || "reconnecting";
   if (g.state === "failed") return g.why || "failed";
   if (g.state === "off") return "off";

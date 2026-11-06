@@ -149,11 +149,13 @@
         <button id="menubtn" class="icon" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="menu" title="Settings"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="M11 10.27 7 3.34"/><path d="m11 13.73-4 6.93"/><path d="M12 22v-2"/><path d="M12 2v2"/><path d="M14 12h8"/><path d="m17 20.66-1-1.73"/><path d="m17 3.34-1 1.73"/><path d="M2 12h2"/><path d="m20.66 17-1.73-1"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m3.34 7 1.73 1"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="12" r="8"/></svg></button>
       </div>
     </header>
-    <div id="status" class="banner" role="status" hidden></div>
     <div id="restored" class="banner" role="status" hidden></div>
-    <div id="stall" class="banner" role="status" hidden></div>
     <div id="sized" class="banner" role="status" hidden></div>
     <div id="asks" aria-live="polite" hidden></div>
+    <div id="over">
+      <div id="status" class="banner" role="status" hidden></div>
+      <div id="stall" class="banner" role="status" hidden></div>
+    </div>
     <!-- No whitespace inside: the terminal uses white-space: pre. -->
     <div id="termrow">
     <main id="term" class="view"><p id="note" hidden>Older lines are not loaded. The browser keeps the most recent part of long histories to stay fast.</p><div id="hist"></div><div id="screen"></div></main>

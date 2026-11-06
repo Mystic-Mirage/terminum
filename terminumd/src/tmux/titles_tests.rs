@@ -7,6 +7,7 @@ const HOME: &str = "/Users/alex";
 
 fn pane(window_name: &str, auto: bool, title: &str, command: &str, path: &str) -> PaneFields {
     PaneFields {
+        window_activity: 0,
         session: "main".into(),
         window_index: 1,
         window_id: "@1".into(),

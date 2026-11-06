@@ -71,12 +71,11 @@ body:not([data-shown="term"]) #bottom, body:not([data-shown="term"]) #paused { d
 body.wide #main { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto auto auto auto auto minmax(0, 1fr) auto; }
 body.wide #main > * { grid-column: 1 / 2; }   /* both lines: an absolute child's auto end is the edge */
 body.wide #bar { grid-row: 1; }
-body.wide #status { grid-row: 2; }
 body.wide #restored { grid-row: 3; }
-body.wide #stall { grid-row: 4; }
 body.wide #sized { grid-row: 5; }
 body.wide #asks { grid-row: 7; }
 body.wide #term { grid-row: 8; }
+body.wide #over { grid-row: 8; align-self: start; }
 body.wide #hotkeys { grid-row: 9; }
 /* Positioned children are placed in the terminal's column, not over the docked Files. */
 body.wide #toast, body.wide #paused, body.wide #bottom, body.wide #fabs { grid-row: 1 / -1; }

@@ -39,9 +39,10 @@ fn title_of(app: &Shared, key: &str) -> String {
     super::marks::find_item(&app.layout.read(), key).and_then(|it| it["title"].as_str().map(str::to_string)).unwrap_or_default()
 }
 
-pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
+/// `at`: the pane shown when the page sent it: what was typed there stays that pane's (AC-132).
+pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value, at: super::client::At) {
     let agent = msg["agent"].as_str().filter(|a| !a.is_empty());
-    let shown_key = page.state.lock().shown.as_ref().map(|s| s.key.clone());
+    let shown_key = at.as_ref().map(|(k, ..)| k.clone());
     let hooked = shown_key.as_ref().is_some_and(|k| app.hooks.has(k));
     let line = msg["line"].as_i64();
     if t == "sent" && agent.is_some() && hooked {
@@ -57,12 +58,12 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         return;
     }
     // the project: the pane's host ("local" for every server of this Mac) and folder
-    let (key, host, path) = match super::client::shown_cwd(page).await {
-        Ok((key, server, path)) => (key, server.name.clone(), path),
-        Err((_, e)) => {
-            page.send_json(&json!({"t": "sentone", "error": e}));
-            return;
-        }
+    let (key, host, path) = match &at {
+        None => return { page.send_json(&json!({"t": "sentone", "error": "No pane is shown."})); },
+        Some((key, server, pane)) => match super::client::cwd_of(server, pane).await {
+            Ok(path) => (key.clone(), server.name.clone(), path),
+            Err(e) => return { page.send_json(&json!({"t": "sentone", "error": e})); },
+        },
     };
     if t == "askno" {
         let (a, h, p, k) = (app.clone(), host.clone(), path.clone(), key.clone());

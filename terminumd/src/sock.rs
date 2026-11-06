@@ -247,6 +247,11 @@ async fn folders(State(app): State<Shared>, axum::extract::Query(q): axum::extra
     Json(v).into_response()
 }
 
+/// A group's rows that are as last read from a server that answers: one cut off keeps its rows, dimmed (AC-81).
+fn answering(items: &Value) -> usize {
+    items.as_array().map_or(0, |a| a.iter().filter(|it| it["offline"] != true).count())
+}
+
 /// `terminum status`: what runs (AC-08).
 async fn health(State(app): State<Shared>) -> Json<Value> {
     let servers: Vec<Value> = app.tmux.all().iter().map(|s| {
@@ -255,7 +260,7 @@ async fn health(State(app): State<Shared>) -> Json<Value> {
         let name = if s.is_users() { s.label() } else { s.name.clone() };
         json!({"name": name, "socket": s.socket, "state": *s.status.lock(), "connected": s.connected(),
                "sessions": mine.iter().filter_map(|g| g["wid"].as_str()).collect::<Vec<_>>(),
-               "panes": mine.iter().map(|g| g["items"].as_array().map_or(0, Vec::len)).sum::<usize>()})
+               "panes": mine.iter().map(|g| answering(&g["items"])).sum::<usize>()})
     }).collect();
     let problem = app.tmux_problem.lock().clone();
     Json(json!({
@@ -321,7 +326,7 @@ async fn host_action(State(app): State<Shared>, UrlPath(action): UrlPath<String>
     };
     match result {
         Ok(name) => {
-            crate::manager::refresh(&app).await;
+            crate::lists::request_all(&app);
             Json(json!({"ok": true, "name": name, "message": message, "hosts": crate::hosts::list(&app)})).into_response()
         }
         Err(e) => err(StatusCode::CONFLICT, "host", e),
@@ -336,7 +341,7 @@ async fn tmux_list(State(app): State<Shared>) -> Json<Value> {
         let g = groups.iter().find(|g| !g["attached"].is_null() && g["server"] == place.id().as_str() && g["label"] == s.as_str());
         let state = match g {
             Some(g) if g["state"] == "absent" => g["why"].as_str().unwrap_or("not running").to_string(),
-            Some(g) => format!("attached, {} panes", g["items"].as_array().map_or(0, Vec::len)),
+            Some(g) => format!("attached, {} panes", answering(&g["items"])),
             None => "not read yet".into(),
         };
         let (socket, host) = match &place {
@@ -366,15 +371,18 @@ async fn tmux_action(State(app): State<Shared>, UrlPath(action): UrlPath<String>
         (host, _) => format!("{host}:default"),
     };
     let place = crate::attach::Place::parse(&app, &id);
-    let result = match (action.as_str(), place) {
-        (_, Err(e)) => Err(e),
-        ("attach", Ok(p)) => crate::attach::add(&app, &p, std::slice::from_ref(&b.session)),
-        ("detach", Ok(p)) => crate::attach::detach(&app, &p, &b.session).await,
+    let result = match (action.as_str(), &place) {
+        (_, Err(e)) => Err(e.clone()),
+        ("attach", Ok(p)) => crate::attach::add(&app, p, std::slice::from_ref(&b.session)),
+        ("detach", Ok(p)) => crate::attach::detach(&app, p, &b.session).await,
         _ => Err(format!("unknown tmux action: {action}")),
     };
     match result {
         Ok(()) => {
-            crate::manager::refresh(&app).await;
+            match place.ok().and_then(|p| p.server(&app)) {
+                Some(server) => crate::lists::refresh_server(&app, &server).await,
+                None => crate::lists::request_all(&app),
+            }
             Json(json!({"ok": true})).into_response()
         }
         Err(e) => err(StatusCode::CONFLICT, "tmux", e),

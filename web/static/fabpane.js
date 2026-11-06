@@ -6,6 +6,7 @@
 // button, centered on it, or under it where the view is too narrow (then `data-under` is set).
 
 import { floats } from "./fold.js";   // a phone or a narrow window
+import { underBanners } from "./banners.js";
 import { columnX } from "./markpick.js";
 
 const GAP = 14;                // px between a button and its pane
@@ -81,15 +82,16 @@ function shadeUnder(el, close, focus) {
 }
 
 /** On a computer `pane` is a window as View's (style.css #filewin, panewin.css): 12 px under the
- *  terminal's top (the banners stand above the terminal) and 16 px over its end, its right
+ *  terminal's top, or under what is said over it (#over), and 16 px over its end, its right
  *  edge 14 px left of the floating buttons' column (markpick.js), 820 px wide at most, 16 px in
  *  from the terminal's left. */
 function placeWindow(pane) {
   const area = pane.offsetParent?.getBoundingClientRect(), term = document.getElementById("term"), t = term.getBoundingClientRect();
   if (pane.hidden || !area) return;
   const right = columnX(term) - 14, left = Math.max(t.left + 16, right - 820);
-  Object.assign(pane.style, { left: `${Math.round(left - area.left)}px`, top: `${Math.round(t.top + 12 - area.top)}px`,
-    width: `${Math.round(right - left)}px`, height: `${Math.max(240, Math.round(t.height - 28))}px` });
+  const said = underBanners(t.top);
+  Object.assign(pane.style, { left: `${Math.round(left - area.left)}px`, top: `${Math.round(said + 12 - area.top)}px`,
+    width: `${Math.round(right - left)}px`, height: `${Math.max(240, Math.round(t.bottom - said - 28))}px` });
   delete pane.dataset.under;
 }
 
@@ -136,14 +138,14 @@ function scrim(onPress) {
 /** fab, pane, close: elements; onToggle(open) after it opened or closed; onPlace() after it was
  *  placed. {toggle(on?), open(), place()}. */
 // a banner shown or gone moves the terminal, and so the open panes (banners.js: they all stand
-// beside #status); one watcher for every pane, each placing itself only while open
+// in #main, some over the terminal, which moves nothing); one watcher for every pane, each placing itself only while open
 const placers = [];
 let banners = null;
 function onBanner(place) {
   placers.push(place);
   if (banners) return;
   banners = new MutationObserver(() => { for (const p of placers) p(); });
-  banners.observe(document.getElementById("status").parentElement, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+  banners.observe(document.getElementById("over").parentElement, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
 }
 
 export function fabPane({ fab, pane, close, onToggle, onPlace }) {

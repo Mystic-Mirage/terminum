@@ -80,6 +80,36 @@ async fn a_killed_server_ends_the_client_and_its_waiters() {
     assert!(c.run("display -p y").await.is_err(), "no answer from a dead client");
 }
 
+/// AC-132: a slow link is not a hung client: only silence, or a command a minute old, ends it.
+#[test]
+fn a_client_is_hung_when_silent_or_a_command_is_very_old() {
+    let s = Duration::from_secs;
+    assert!(!hung(s(9), s(30)), "the command has not waited long");
+    assert!(!hung(s(30), s(1)), "bytes still arrive: a slow link");
+    assert!(hung(s(11), s(11)), "AC-14: nothing arrives");
+    assert!(hung(s(61), s(0)), "bytes arrive, this answer never does");
+}
+
+/// AC-132: a client that keeps printing while a command waits past ANSWER_WAIT lives on; one that
+/// goes quiet is killed (AC-14).
+#[tokio::test]
+async fn output_arriving_keeps_a_slow_client_alive_past_the_answer_wait() {
+    let start = |script: &str| {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", script]);
+        let (ntx, nrx) = mpsc::unbounded_channel();
+        let (dtx, _drx) = oneshot::channel();
+        (Control::spawn(cmd, ntx, dtx).unwrap(), nrx)
+    };
+    let (slow, _n1) = start("while :; do echo '%output %1 x'; sleep 1; done");
+    let (quiet, _n2) = start("exec sleep 60");
+    let (slow_rx, quiet_rx) = (slow.send("display -p x".into()), quiet.send("display -p x".into()));
+    tokio::time::sleep(ANSWER_WAIT + Duration::from_secs(3)).await;
+    assert!(slow.alive(), "bytes still arrive: not hung");
+    assert!(!quiet.alive(), "nothing arrives: killed by the watchdog");
+    drop((slow_rx, quiet_rx));
+}
+
 #[test]
 fn notices_are_read_from_the_head_only() {
     assert_eq!(notice(b"%output %3 \\033[1mhi"), Some(Notice::Output("%3".into())));

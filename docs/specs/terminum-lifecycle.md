@@ -163,7 +163,7 @@ Scenario: AC-14 edge — a long gap
   Given terminumd stays down for 3 s or more
   Then the page shows "terminum's server is not running" and retries every 2 s; typing is refused with "Not connected" and nothing is queued
 Scenario: AC-14 failure — a hung control client
-  Given a control client has not answered a command for 10 s while the process lives
+  Given a control client has not answered a command for 10 s and nothing else came from it for 10 s, or has not answered one for 60 s (a slow link: `terminum-remote.md` AC-132), while the process lives
   Then terminumd logs `tmux.timeout` "control client timed out", kills and restarts it, and the page shows the stall line meanwhile (AC-03)
 ```
 

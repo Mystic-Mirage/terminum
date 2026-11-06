@@ -252,7 +252,7 @@ fn agent_changed(old: &str, now: &str) -> bool {
 async fn follow(app: &Shared, page: &Page, server: &Arc<Server>, key: &str, ctl: &Ctl, f: Fields, agent_dir: &mut Option<String>) {
     // a coding agent came or went: the list says so now, not at its next read (its box, its keys)
     if ctl.fields.lock().as_ref().is_some_and(|old| agent_changed(&old.command, &f.command)) {
-        app.dirty.notify_one();
+        crate::lists::request(app, server);
     }
     let agent_now = app.hooks.cwd(key);
     let agent_moved = agent_now != *agent_dir;

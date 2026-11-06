@@ -52,7 +52,7 @@ impl Place {
         }
     }
 
-    fn server(&self, app: &Shared) -> Option<Arc<Server>> {
+    pub(crate) fn server(&self, app: &Shared) -> Option<Arc<Server>> {
         match self {
             Place::Local(socket) => app.tmux.attached(socket),
             Place::Host(host) => app.tmux.host(host),
@@ -99,7 +99,7 @@ pub fn sync(app: &Shared) {
     for (socket, sessions) in wanted {
         // made with its sessions: never for a moment a server whose every session is listed
         let server = app.tmux.attached_or(&socket, || {
-            let s = Server::new("local", &socket, Link::Local { tmux: tmux.clone(), socket: socket.clone(), conf: "/dev/null".into() }, app.dirty.clone());
+            let s = Server::new("local", &socket, Link::Local { tmux: tmux.clone(), socket: socket.clone(), conf: "/dev/null".into() }, app.changed.clone());
             *s.only.lock() = Some(sessions.clone());
             s
         });
@@ -121,6 +121,9 @@ pub async fn ensure(app: &Shared, server: &Arc<Server>) -> (Vec<Value>, bool) {
         // the whole server is gone: its attached sessions are made again (once), then read
         crate::restore_srv::users_local(app, server).await;
         running = server.local_sessions().await;
+    }
+    if running.is_err() && server.connected() {
+        return (Vec::new(), false);              // a timeout on a client alive: nothing said of its sessions (AC-132)
     }
     let sure = running.is_ok();
     let (running, why) = match running {
@@ -169,7 +172,8 @@ pub fn ensure_host(server: &Arc<Server>, seen: &[(String, String)]) -> (Vec<Valu
 
 /// A host's attached sessions while the host is not attached: they show with its state.
 pub fn host_waiting(server: &Server, why: &str) -> Vec<Value> {
-    server.only.lock().clone().unwrap_or_default().iter().map(|s| layout::absent_group(server, s, why)).collect()
+    let only = server.only.lock().clone().unwrap_or_default();   // released first: a group's fields read it again
+    only.iter().map(|s| layout::absent_group(server, s, why)).collect()
 }
 
 /// Attaches `sessions` at `place` ("Attach tmux sessions", `terminum tmux attach`): all of them or none.

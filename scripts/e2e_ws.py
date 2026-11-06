@@ -101,8 +101,13 @@ class WS:
         return out
 
     def recv(self, timeout=10):
-        self.s.settimeout(timeout)
+        end = time.time() + timeout
         while True:
+            # anew for each frame: terminumd's pings, every 15 s, must not keep a wait going for good
+            left = end - time.time()
+            if left <= 0:
+                raise TimeoutError("no message in time")
+            self.s.settimeout(left)
             b1, b2 = self._read(2)
             n = b2 & 0x7F
             if n == 126:

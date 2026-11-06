@@ -162,7 +162,8 @@ def tmux_shim(socket_name):
     """A folder with a `tmux` that reaches only the private server `socket_name`."""
     real = next((os.path.join(d, "tmux") for d in os.environ.get("PATH", "").split(":") + ["/opt/homebrew/bin", "/usr/local/bin"]
                  if os.path.isfile(os.path.join(d, "tmux"))), "tmux")
-    d = tempfile.mkdtemp(prefix="fssh-")
+    # in the test's home, which its run removes: terminumd ends this stand-in by SIGKILL, which runs no cleanup
+    d = tempfile.mkdtemp(prefix=".fssh-", dir=os.environ.get("FAKE_SSH_HOME"))
     shim = os.path.join(d, "tmux")
     with open(shim, "w") as f:
         f.write(f'#!/bin/sh\nexec "{real}" -L "{socket_name}" -f /dev/null "$@"\n')
@@ -202,6 +203,7 @@ def main():
             os.killpg(p.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        shutil.rmtree(shim, ignore_errors=True)
         os._exit(255)
     signal.signal(signal.SIGTERM, drop)
     signal.signal(signal.SIGHUP, drop)

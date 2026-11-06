@@ -338,6 +338,11 @@ Scenario: AC-102 failure — the helper cannot outlive its test by long
   Given a fake terminumd of a test whose socket's folder is removed (its test's home), or that has run for five minutes
   Then it exits by itself within a second
 
+Scenario: AC-102 edge — a run ended by a signal leaves nothing either
+  Given node web/test/e2e_live.mjs or python3 scripts/e2e_remote.py is running with its own TMPDIR
+  When it gets SIGTERM or SIGINT
+  Then it exits 143 or 130, and its terminumd, tmux server, browser and folders go; terminumd's stand-in for ssh, ended by SIGKILL, keeps its files in the test's home, which the run removes
+
 Scenario: AC-102 happy path — a run leaves nothing
   Given a step of make check, run by scripts/check_step.py with its own short folder as TMPDIR and TMUX_TMPDIR
   When the step passes, fails or gets a signal

@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { check, shownPane, until } from "./check.mjs";
-import { shortTmp } from "./testrun.mjs";
+import { ownTmp } from "./testrun.mjs";
 
 const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -19,7 +19,7 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
   const made = [];
   /** A pane whose long-lived shell runs what it is given, as an agent's tools run in its pane. */
   const agentPane = async (name) => {
-    const dir = fs.realpathSync(fs.mkdtempSync(`${shortTmp()}/tmln-`));
+    const dir = ownTmp("tmln-");
     fs.mkdirSync(path.join(dir, "bin"));
     fs.symlinkSync(bin, path.join(dir, "bin/terminum"));
     fs.writeFileSync(path.join(dir, "loop.sh"), [

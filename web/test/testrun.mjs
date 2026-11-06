@@ -40,6 +40,13 @@ const removeDeadSockets = () => {
 };
 
 /** `name` for this run only: `<name>-<pid>` (short: a tmux socket path ends at 104 bytes). */
+/** A short temporary folder removed when this run exits, a signal's exit (endOnSignal) included. */
+export const ownTmp = (prefix) => {
+  const dir = fs.realpathSync(fs.mkdtempSync(`${shortTmp()}/${prefix}`));
+  process.once("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+};
+
 export const own = (name) => {
   if (!sockets.size) process.on("exit", removeDeadSockets);
   sockets.add(`${name}-${process.pid}`);

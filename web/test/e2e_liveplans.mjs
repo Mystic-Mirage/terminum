@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { check, within } from "./check.mjs";
-import { shortTmp } from "./testrun.mjs";
+import { ownTmp } from "./testrun.mjs";
 
 const SESSION = "s-live";
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -31,7 +31,7 @@ const call = (id, name, args) => rpc(id, "tools/call", { name, arguments: args }
 const hhmm = (at) => { const d = new Date(at * 1000); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
 
 export async function livePlans(page, { tmux, work, bin, home, app, stop, start, signIn, name }) {
-  const dir = fs.realpathSync(fs.mkdtempSync(`${shortTmp()}/tmlp-`));
+  const dir = ownTmp("tmlp-");
   fs.mkdirSync(path.join(dir, "bin"));
   fs.symlinkSync(bin, path.join(dir, "bin/terminum"));        // run by the name `terminum`, as installed
   events(work).forEach((e, i) => fs.writeFileSync(path.join(dir, `ev${i}.json`), JSON.stringify(e)));

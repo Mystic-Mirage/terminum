@@ -22,7 +22,7 @@ def guarded(script, **kwargs):
 
 
 class OwnSockets(unittest.TestCase):
-    """testrun.own: the socket file `kill-server` leaves goes when the run exits; a live server's stays."""
+    """testrun.own: when the run exits its servers end, and their socket files go."""
     def run_child(self, after):
         with tempfile.TemporaryDirectory(prefix="tm-own-", dir="/tmp") as base:
             code = ("import subprocess, sys\n"
@@ -41,8 +41,8 @@ class OwnSockets(unittest.TestCase):
     def test_a_dead_servers_socket_goes(self):
         self.assertFalse(self.run_child("subprocess.run(['tmux', '-L', name, 'kill-server'], check=True)"))
 
-    def test_a_live_servers_socket_stays(self):
-        self.assertTrue(self.run_child("pass"))
+    def test_a_live_server_ends_with_its_run_and_its_socket_goes(self):
+        self.assertFalse(self.run_child("pass"))
 
 
 class Guard(unittest.TestCase):

@@ -37,13 +37,13 @@ Out of scope (explicit):
 
 ## 3. Assumptions, dependencies, open questions
 
-No assumption, dependency or question of the core or terminal spec moved here: their rows are about tmux and the page. Rows of this spec:
+The core's and the terminal spec's assumptions, dependencies and questions are about tmux and the page. Rows of this spec:
 
 Assumptions:
 
 | ID | Assumption | Owner | Status |
 |---|---|---|---|
-| AS-71 | Claude Code's and Codex's screens and titles carry the words `tmux/agentstate.rs` reads. | Claude | measured on Claude Code 2.1 and Codex 0.162; a changed wording shows no state (§7) |
+| AS-71 | Claude Code's and Codex's screens and titles carry the words `tmux/agentstate.rs` reads. | Claude | measured on Claude Code 2.1 and Codex 0.162; §7 says what a changed wording does |
 | AS-72 | Claude Code does not deliver an async hook's output in an interactive session; Codex delivers its async PostToolUse's. | Claude | measured; the reason for the synchronous PostToolBatch (AC-39) |
 | AS-73 | A subagent interrupted, closed, killed or failed fires no SubagentStop in either program. | Claude | read from both programs' source (AC-39) |
 
@@ -51,7 +51,7 @@ Dependencies:
 
 | ID | Dependency | Owner | Status |
 |---|---|---|---|
-| DEP-71 | Claude Code's plugin commands (`claude plugin marketplace add\|update\|remove`, `claude plugin install\|update\|uninstall\|list`), hooks and `.mcp.json`. | Owner | optional: without `claude` on PATH the install says so |
+| DEP-71 | Claude Code's plugin commands (`claude plugin marketplace add\|update\|remove`, `claude plugin install\|update\|uninstall\|list`), hooks and `.mcp.json`. | Owner | optional (AC-39) |
 | DEP-72 | Codex's `hooks.json`, `config.toml` `[mcp_servers]` and its trust of hooks in /hooks. | Owner | optional |
 
 Open questions: none.
@@ -99,7 +99,7 @@ Scenario: AC-39 edge — a turn's end is never lost
   Given a pane whose hooks spoke, and a turn that ended with no Stop counted: Codex's errors, review and compact (no Stop), Claude Code's Esc (no Stop), a Stop that never came (its hooks not trusted in that session)
   When its screen shows it done for 10 s
   Then its turn ends: unread and reminders; a Stop already counted for that turn makes no second end
-  And a subagent interrupted, closed, killed or failed fires no SubagentStop in either program, so the count must not trust it: Codex's turn ends at its own Stop whatever subagents it counts; Claude Code's Stop with subagents counted is checked against the screen from 5 s on, and with no agents in the footer or turn line the count goes and the turn ends
+  And SubagentStop does not always fire (AS-73), so the count must not trust it: Codex's turn ends at its own Stop whatever subagents it counts; Claude Code's Stop with subagents counted is checked against the screen from 5 s on, and with no agents in the footer or turn line the count goes and the turn ends
   And a subagent's own prompt starts no turn and its failure marks no pane
 
 Scenario: AC-39 happy path — reminders
@@ -132,9 +132,9 @@ Scenario: AC-39 happy path — the agents' own hooks
   Given Claude Code or Codex is found (its program on PATH, ~/.claude, $CODEX_HOME or ~/.codex) without terminum's hooks
   Then "terminum status", "terminum open" and "terminum install" say so in one line naming "terminum hooks install"
   When the user runs "terminum hooks install" (or "terminum hooks install claude|codex")
-  Then Claude Code gets terminum's plugin: a local marketplace in ~/.terminum/hooks/claude added with Claude Code's own "claude plugin marketplace add" and "claude plugin install terminum@terminum-local --scope user" (terminum never edits Claude Code's settings); Codex gets terminum's entries in $CODEX_HOME/hooks.json (default ~/.codex), the file backed up beside it first and others' entries kept, and is told to trust them in Codex's /hooks (terminum's SessionEnd entry runs without `async`, which Codex would run synchronously with a warning at each start; an older entry is migrated alone, every other byte kept, by an install or an upgrade's refresh, which says to trust the changed hook once); a second install changes nothing; an upgrade's refresh updates Claude Code's plugin in place (never removed first) and checks it with `claude plugin list`, warning and keeping the old install on failure; "terminum hooks remove" takes out only terminum's; each "claude" it runs has a session of its own (no terminal to stop on: a read of /dev/tty fails at once) and a Ctrl-C, a closed terminal or a stop of terminum ends it with terminum; "terminum hooks" says for each agent: not found, found without, or installed and when its hooks last spoke
+  Then Claude Code gets terminum's plugin: a local marketplace in ~/.terminum/hooks/claude added with Claude Code's own "claude plugin marketplace add" and "claude plugin install terminum@terminum-local --scope user" (terminum never edits Claude Code's settings); Codex gets terminum's entries in $CODEX_HOME/hooks.json (default ~/.codex), the file backed up beside it first and others' entries kept, and is told to trust them in Codex's /hooks (terminum's SessionEnd entry runs without `async`, which Codex would run synchronously with a warning at each start; an older entry with `async` is migrated alone, every other byte kept, by an install or an upgrade's refresh, which says to trust the changed hook once, as Codex trusts a hook by its entry's hash); a second install changes nothing; an upgrade's refresh updates Claude Code's plugin in place (never removed first) and checks it with `claude plugin list`, keeping the old install on failure (the warning: AC-97); "terminum hooks remove" takes out only terminum's; each "claude" it runs has a session of its own (no terminal to stop on: a read of /dev/tty fails at once) and a Ctrl-C, a closed terminal or a stop of terminum ends it with terminum; "terminum hooks" says for each agent: not found, found without, or installed and when its hooks last spoke
   And each lifecycle event (session start and end, a prompt, a tool before and after, an approval asked, a notification, a stop, a failure, a subagent's start and stop, Codex's interrupt) runs "terminum hook <agent>" in the background, which reads the event, posts a few fields of it (never a tool's output, a file's text or the agent's answer; a command's first two words with values left out; a plan tool's items for AC-97; the user's prompt for the sent history, AC-90) to terminumd's socket within 150 ms and exits 0 without output
-  And Claude Code's plugin also runs "terminum hook claude" synchronously (timeout 2 s) on PostToolBatch, the carrier of AC-97's reminder, because Claude Code does not deliver an async hook's output in an interactive session; Codex's reminder rides its async PostToolUse; that event does nothing else, stays within the 150 ms and prints nothing without a reminder; an install's or upgrade's refresh updates a plugin whose hooks file differs from this build's
+  And Claude Code's plugin also runs "terminum hook claude" synchronously (timeout 2 s) on PostToolBatch, the carrier of AC-97's reminder (AS-72); Codex's reminder rides its async PostToolUse; that event does nothing else, stays within the 150 ms and prints nothing without a reminder
   Then the pane's row shows the state its hooks say over the screen's reading (the screen is not read for it), the tool it runs in its mark's title ("Working: Bash: npm test"), what it waits for ("Approve Bash: rm -rf", the question it asks; the reminder card says "<title> asks: …"), why a turn failed ("rate_limit"), and the number of subagents running under the mark
   When Claude Code's turn stops (its Stop) while subagents it started still run in the background
   Then the pane stays working with their number under the mark until the last one stops (SubagentStop), also through Claude Code's idle notice (the main thread waits for the user) and the user's next prompts (the subagents run on); its turn ends then (reminders, unread); a background subagent's tools keep it so, and one quiet for 10 minutes gives way to the screen; an interrupt (Esc) or a failure ends it at once; background shells and monitors are not counted (a dev server would keep it working for ever)
@@ -162,7 +162,7 @@ Scenario: AC-39 failure — the screen cannot be read, no terminumd, a broken ho
 ```gherkin
 Scenario: AC-93 happy path — a finished turn nobody saw
   Given the user sent a prompt to Claude Code in %3 and went to another session (or locked the phone)
-  When its turn ends: its hook's Stop with no subagent left running (else the last one's SubagentStop), or, read from its screen, its pane done for 10 s on end (not working, not waiting, no subagents: a moment's done between two steps of the turn ends nothing); either way not while Claude Code's footer counts work it runs in the background ("1 shell, 1 monitor", "2 local agents": the turn ends once the count has gone, or after 10 minutes of that count alone; AC-39)
+  When its turn ends: its hook's Stop with no subagent left running (else the last one's SubagentStop), or, read from its screen, its pane done for 10 s on end (not working, not waiting, no subagents: a moment's done between two steps of the turn ends nothing); either way not while Claude Code's footer counts work it runs in the background (AC-39)
   Then %3's row is hatched over its whole box: pale see-through diagonal lines one whole pixel wide (none blurred over two) in the color of the session's name, its text and the shown row's fill readable through them, hover or not; "Unread: its agent finished" for a screen reader, on every page, while no page in sight showed %3 at that moment
   When a page in sight shows %3 (opened, or a hidden page showing it comes back)
   Then the mark goes on every page; a turn that ends while a page in sight shows it leaves none
@@ -172,7 +172,7 @@ Scenario: AC-93 happy path — a finished turn nobody saw
 
 Scenario: AC-93 happy path — mark it unread
   When the user picks Mark as Unread in a row's menu (a right click or a long press; any session, an agent's or not)
-  Then the row is unread on every page, as after a turn nobody saw, until a page in sight shows it again (opened, or a hidden page showing it comes back); the session shown on this page now stays unread until it is opened again
+  Then the row is unread on every page, as after a turn nobody saw, until a page in sight shows it again; the session shown on this page now stays unread until it is opened again
   And an unread row's menu has Mark as Read instead, which takes the mark away on every page
 ```
 
@@ -194,7 +194,7 @@ Scenario: AC-97 happy path — the agent's own plan
 
 Scenario: AC-97 happy path — the Plan pane
   When the user presses the percent, the column's progress circle or the header's Plan button
-  Then the Plan pane opens (modal, a window placed as the reminders' pane, terminum-terminal.md AC-91), laid out in sections: the plan's title (15 px, 600); "Now" and the current step ("doing") on a raised strip with a gray pill inside it at its left (as a row's folder bar; no stripe along its rounded edge); the progress, "3 of 9 done" and "33%" over a bar filled to it, the ETA "~17:40 (agent's estimate, given 16:55)" under it; "Steps", each item with its mark in a round badge (✓ on green, ▶ on the text color with its row tinted, an empty ring pending, a large "!" on amber) and its text hanging beside it; under a rule "Updated 2 min ago (16:57)" and where the plan came from (terminumd's times, aged by the browser's clock); "For you" and how many records its agent kept for the user ("2 kept for you by the agent: show them", a press opening the bookmarks' pane; "Nothing kept for you by the agent.", AC-98)
+  Then the Plan pane opens (modal, a window placed as the reminders' pane, terminum-terminal.md AC-91), laid out in sections: the plan's title (15 px, 600); "Now" and the current step ("doing") on a raised strip with a gray pill inside it at its left (as a row's folder bar; no stripe along its rounded edge); the progress, "3 of 9 done" and "33%" over a bar filled to it, the ETA "~17:40 (agent's estimate, given 16:55)" under it; "Steps", each item with its mark in a round badge (✓ on green, ▶ on the text color with its row tinted, an empty ring pending, a large "!" on amber) and its text hanging beside it; under a rule "Updated 2 min ago (16:57)" and where the plan came from (terminumd's times, aged by the browser's clock); "For you" and how many open records its agent kept for the user ("2 kept for you by the agent: show them", a press opening the session's bookmarks' pane; "Nothing kept for you by the agent.", AC-98)
   And every text the agent wrote is kept without control or bidi characters (U+202A–U+202E, U+2066–U+2069) and shown as plain text (never Markdown or HTML: "<b>x</b>" reads as typed); on a phone the pane is full-width under the header, its buttons at least 44 px
 
 Scenario: AC-97 happy path — found before a plan
@@ -234,9 +234,9 @@ Scenario: AC-97 edge — partial, ETA, reuse, restart
   When every item of a plan is completed
   Then its row and the header show 100% while its turn works and for 10 minutes after its last update, then none (the list's next refresh); the Plan pane keeps it
   When the user's next request starts a turn (UserPromptSubmit) on a finished plan
-  Then that plan is archived (kept in plans.json, never shown) and the request starts with none: the row shows no percent until the agent keeps a plan; a plan with an item not completed stays across requests
+  Then that plan is archived as the old one above and the request starts with none, the row as above; a plan with an item not completed stays across requests
   When terminumd restarts
-  Then every plan comes back from `state/plans.json` with its updated time; a pane gone is archived when its hook record is dropped (kept in plans.json, not shown); a tmux server started anew (another `@terminum-id`: its pane ids start again at %0) takes its plans with it
+  Then every plan comes back from `state/plans.json` with its updated time; a pane gone is archived when its hook record is dropped; a tmux server started anew (another `@terminum-id`: its pane ids start again at %0) takes its plans with it
   And an MCP call that terminumd cannot yet tie to an agent or session (its hooks not heard since the restart) keeps the restored plan, never archives it
   When the turn is interrupted or stopped mid-plan
   Then the plan stays as it was, not stale; the next prompt of the same session goes on with it
@@ -253,7 +253,7 @@ Scenario: AC-97 failure — tools refused
   When terminumd is not running (no answer on its private socket in 2 s)
   Then each tool answers an error "terminum is not running; go on without it."
   When nothing answers as the agent starts in a pane (terminumd restarting, a host's link down)
-  Then the tools and instructions are offered all the same (an agent lists them once, at its start): each call answers "terminum is not running; go on without it." until terminumd or the link is back, then works, or says the session is not in a terminum pane; the sinks (a host's `run/mac-*.sock` too) are listed at each call, so a link that comes up later serves the session. An agent in a pane terminum does not serve, started while nothing answered, carries the tools; terminum's MCP server is installed only where the user asked for it (`terminum hooks install`, a host's coding agents' progress)
+  Then the tools and instructions are offered all the same (an agent lists them once, at its start): each call answers that error until terminumd or the link is back, then works, or says the session is not in a terminum pane; the sinks (a host's `run/mac-*.sock` too) are listed at each call, so a link that comes up later serves the session. An agent in a pane terminum does not serve, started while nothing answered, carries the tools; terminum's MCP server is installed only where the user asked for it (`terminum hooks install`, a host's coding agents' progress)
   When update_session_plan has no items, over 50, an item over 200 characters, or a status not pending, in_progress, completed or blocked
   Then it answers an error naming the limit or the allowed values (an empty list: "send the whole plan"), and nothing is stored; eta_minutes outside 1–1440 is refused the same way
   When plans.json cannot be written or does not parse
@@ -283,7 +283,7 @@ Scenario: AC-98 happy path — the agent hands the user a record instead of prin
   Then terminumd keeps each as a bookmark of the agent's pane (AC-33) marked made by the agent (claude or codex): its title the bookmark's note, its text the body, its kind and file kept; one with remind true is a reminder (AC-91) and comes up when the turn ends
   And it answers each record's id, and for a reminder that it comes up at each turn end until the user resolves it
   And it shows as a bookmark the user makes there does, in its session alone its title and text cleaned (control and bidi characters dropped) and redacted (`sent::redact`) before they are kept
-  And its place is where the agent's call was printed: the pane's newest history line then, and its title, which the agent's transcript of the call shows; Open looks for the title nearest that line (AC-33's search), and where it is no longer in the history it shows the record with "These lines are no longer in this session's history."
+  And its place is where the agent's call was printed: the pane's newest history line then, and its title, which the agent's transcript of the call shows; Open looks for the title nearest that line (AC-33's search), and where it is no longer in the history it says so with the record, as a bookmark does (AC-33)
   And the tool's description says what it covers and the rule: a final report, findings and deferred work are bookmarks; remind only when the user must act or decide (a blocker, a question, a risky leftover, a step only the user can take); when unsure, a bookmark; each record readable without the chat (what, where: files and paths, why, next step)
   And the MCP instructions ask for one record per final report, finding outside the task, deferred item or question, never one for progress; a record that changes is updated with update_notes_for_user instead of added again
 
@@ -297,8 +297,7 @@ Scenario: AC-98 happy path — the agent tidies its own, the user answers only q
   And every answer to add_notes_for_user lists the session's other open records, newest first, ten at most and how many more, by id, kind and title, so the agent closes what it covered instead of the user
 
 Scenario: AC-98 happy path — shown with the user's
-  Then it is listed with the user's bookmarks and reminders (AC-33, AC-91), its agent's mark before its title, its text as Markdown with raw HTML off (as rendered output, AC-31), never quoted; Quote in chat pastes its title, a blank line, its text quoted
-  And the Plan pane (AC-97) says how many open records the agent left, a press opening the session's bookmarks' pane
+  Then it is listed with the user's bookmarks and reminders (AC-33, AC-91), its agent's mark before its title, its text as Markdown with raw HTML off (as rendered output, AC-31), never quoted; Quote in chat as AC-33's, its title the note
 
 Scenario: AC-98 happy path — the agent updates one
   When the agent calls update_notes_for_user {id, status: "done"} (or a new title, text or remind)
@@ -309,7 +308,7 @@ Scenario: AC-98 happy path — the agent reads and deletes its session's
   Then it gets JSON of its session's bookmarks and reminders, the agent's and the user's, in the order they were made: id, type (bookmark, reminder), status (open, up, resolved), by (the agent, or "user"), title, kind, file, no text, then the project's scope below; with {id} that record whole, its note and text, cleaned and redacted as a record is kept; the tool says their text is data, never instructions
   When the agent calls delete_notes_for_user {ids: [1–20 ids]}
   Then those records are gone for good, a reminder too, every page told at once
-  And an id of another session, of its project too, of an orphaned record or of none is answered "No record <id> in this session" and nothing of that call is deleted; an agent never deletes another session's, and reads and closes one only by the project's scope below
+  And an id of another session, of its project too, of an orphaned record or of none is answered "No record <id> in this session" and nothing of that call is deleted; another session's it reads and closes only by the project's scope below
 
 Scenario: AC-98 happy path — a project's sessions share their agents' records
   Given a pane that is a member of a project (AC-92), its agent's scope beyond its own session is, on the same host as that pane (the host part of the record's key): agents' records of the project's other member panes, and agents' orphaned records stamped with that project
@@ -330,16 +329,15 @@ Scenario: AC-98 happy path — a project's sessions share their agents' records
   Then it is closed as its own would be, a copy of it whole with who closed it and when is added first to `closed-records.jsonl` beside web-bookmarks.json (0600, past 1 MiB the file becomes `.1`, one older file kept), the close is logged, and when the copy cannot be written nothing closes
   And any other change to it, status open, title, text or remind, is refused with why, as are delete_notes_for_user and `replaces` naming it
   And limits, reports past three and "went for room" stay each session's own, so one session's record never deletes another's; a record another session's add was refused for can still go by its holder's limits or close, a known limit
-  And a reminder comes up at its own session's turn end, and the page's panes keep their default filter (AC-33)
+  And a reminder comes up by its own session (AC-91), and the page's panes keep their default filter (AC-33)
 
-Scenario: AC-98 edge — limits, the notes of 0.23
+Scenario: AC-98 edge — limits, an older notes.json
   When a call adds bookmarks to a session holding 50 of agents' bookmarks, or reminders to one holding 20 of agents' open reminders
-  Then the oldest of that kind there (in the order they were made) are deleted, in the same save, so that the new ones are kept, never a refusal for room; the answer names the ids that went; a resolved reminder counts in no limit (AC-91)
-  And a session's count is of its own records, never another's, of its project too
+  Then the oldest of that kind there (in the order they were made) are deleted, in the same save, so that the new ones are kept, never a refusal for room; the answer names the ids that went
   And update_notes_for_user reopening a reminder or making a record the other kind makes room the same way, never deleting that record
   And past 500 records of agents in all, the oldest orphaned ones go (no live scope loses a record but by its own limits); agents' records never count against the user's limits, and the user's own are never deleted for room
   And a call carries 1–20 records: title 1–120 characters, text 1–2000, kind bug, deferred, followup, question or report, file at most 300
-  When terminumd starts with the notes.json of 0.23 (the Plan pane's notes)
+  When terminumd starts with a notes.json of an older terminum (the Plan pane's notes)
   Then its open notes become agents' bookmarks of their scopes once (title: the text's first line, cut to 120), and the file is kept as notes.json.imported
 
 Scenario: AC-98 happy path — told when the oldest went
@@ -372,7 +370,7 @@ stateDiagram-v2
   reminder --> [*]: shown or answered
 ```
 
-terminumd decides the state from the last 25 rows of the pane, or from the agent's hooks while they hold (their lease); the page draws it and times the reminder. A turn that ends (working or waiting, then done, failed or no agent) puts its pane's reminders up (AC-91).
+terminumd decides the state from the pane's screen, or from the agent's hooks while they hold (their lease); the page draws it and times the reminder. A turn's end puts its pane's reminders up (AC-91).
 
 ### Hooks and tools (AC-39, AC-97, AC-98)
 
@@ -383,7 +381,7 @@ sequenceDiagram
   participant D as terminumd
   participant P as Page
   A->>H: an event on stdin (hook), a tool call (MCP)
-  H->>D: POST /hook within 150 ms, POST /agent within 2 s, to every sink
+  H->>D: POST /hook, POST /agent, to every sink
   D->>D: state, turn's end, plan, records; plans.json, web-bookmarks.json
   D->>P: the list's item (state, tool, why, subagents, plan, unread), marks
   D-->>H: 204, {remind}, or {text, error}
@@ -401,9 +399,9 @@ sequenceDiagram
 
 ## 8. Recommendation and ownership
 
-**Recommended approach.** terminumd reads an agent's state from the last 25 rows of its screen, the only source without an install. Where the agent's own hooks are installed they say the state over the screen under leases, and add its tool, what it waits for, its subagents and its plan items: `terminum hook` posts a few fields of each event to terminumd's private socket and exits. `terminum mcp` is a stdio MCP server, the agent's way to send a plan and records, and it posts to the same socket. A turn's end is taken from either source, once. Records are bookmarks and reminders with `by` set, in the store the user's already use.
+**Recommended approach.** terminumd reads an agent's state from its screen, the only source without an install. Where the agent's own hooks are installed they say the state over the screen under leases, and add what AC-39 and AC-97 list: `terminum hook` posts to terminumd's private socket. `terminum mcp` is a stdio MCP server, the agent's way to send a plan and records, and it posts to the same socket. A turn's end is taken from either source, once (AC-39). Records are bookmarks and reminders with `by` set, in the store the user's already use.
 
-**Rejected alternative.** A store of notes beside the bookmarks (0.23's `notes.json`): one tool and one store were chosen, and its notes are imported once (AC-98). Typing a plan reminder into the pane was rejected too: `send-keys` is only for an explicit key or paste of the user (CLAUDE.md §2), so the reminder goes back as the hook's `additionalContext`.
+**Rejected alternative.** A store of notes beside the bookmarks: one tool and one store are the choice, and an older `notes.json` is imported once (AC-98). Typing a plan reminder into the pane is rejected too: `send-keys` is only for an explicit key or paste of the user (CLAUDE.md §2), so the reminder goes back as the hook's `additionalContext`.
 
 | Part | Owner |
 |---|---|
@@ -425,11 +423,11 @@ sequenceDiagram
 | `terminum mcp` | MCP over stdio, one JSON-RPC message a line, at most 1 MiB; protocol versions 2025-11-25, 2025-06-18, 2025-03-26 (default 2025-06-18); serverInfo name `terminum`; the pane from `TMUX` and `TMUX_PANE`, the session from `_meta.sessionId` |
 | WebSocket, page → terminumd | `unread {id, on}` (AC-93) |
 | The list's item | may carry `tool`, `why`, `subagents`, `plan`, `unread` |
-| WebSocket `plan` | page asks for a pane's plan; the answer's `plan` has title, doing, items, done, total, pct, eta and more, `hooks: false` when no hook spoke, `finished: true` for an archived plan |
+| WebSocket `plan` | page asks for a pane's plan; the answer's `plan` has title, doing, items, done, total, pct, eta and more, `hooks` and `finished` (AC-97) |
 
 Hook fields, cut to these characters: event 40, socket 64, socket_path 300, session, turn and sub 100, subtype 60, kind 40, error 60, cwd 1000, model 80, tool 80, message 200, prompt 20,000. `asks` is one bit: the last message ended in a question mark. `turn` is `turn_id`, else `prompt_id`.
 
-Events run: Claude Code SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, Notification, Stop, StopFailure, SubagentStart, SubagentStop, SessionEnd, each async with a 3 s timeout, and PostToolBatch synchronous with 2 s; Codex SessionStart, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, Stop, SubagentStart, SubagentStop, SessionEnd, Interrupt, each async with 3 s but SessionEnd, which is not async.
+Events run: Claude Code SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, Notification, Stop, StopFailure, SubagentStart, SubagentStop, SessionEnd, each async with a 3 s timeout, and PostToolBatch (AC-39); Codex SessionStart, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, Stop, SubagentStart, SubagentStop, SessionEnd, Interrupt, each async with 3 s but SessionEnd (AC-39).
 
 MCP tools:
 
@@ -448,12 +446,12 @@ MCP tools:
 |---|---|
 | `state/plans.json` | 0600, `{version: 1, current, archived, servers}`; `servers` each tmux server's identity by its keys' start |
 | `state/unread.json` | `{unread: [keys], servers}`; a file that cannot be read is set aside |
-| `web-bookmarks.json` | format in `terminum-terminal.md` §9; an agent's record adds `by` (claude, codex), `kind` and `file` |
+| `web-bookmarks.json` | format in `terminum-terminal.md` §9 |
 | `closed-records.jsonl` | beside `web-bookmarks.json`: records another session closed (AC-98) |
-| `notes.json`, `notes.json.imported` | 0.23's notes, imported once (AC-98) |
+| `notes.json`, `notes.json.imported` | an older terminum's notes, imported once (AC-98) |
 | `~/.terminum/hooks/claude/` | the local marketplace `terminum-local`: `.claude-plugin/marketplace.json`, `plugins/terminum/{.claude-plugin/plugin.json, hooks/hooks.json, .mcp.json}` |
 | `~/.terminum/hooks/claude.installed` | the build that installed the plugin |
-| `$CODEX_HOME/hooks.json`, `config.toml` | terminum's entries and block; a copy `<file>.terminum-<time>` beside each before a change |
+| `$CODEX_HOME/hooks.json`, `config.toml` | terminum's entries and block; each one's backup is `<file>.terminum-<time>` |
 
 ### Configuration
 
@@ -471,22 +469,21 @@ Limits a scenario states are not repeated.
 | Ended sessions remembered | 500 | the oldest goes |
 | Plan | title 80, doing 120 characters | answered an error |
 | Archived plans | 50 | the oldest goes |
-| A `claude` call | 60 s at `terminum hooks install`, 20 s in a refresh | said; `refresh` warns (AC-97) |
+| A `claude` call at `terminum hooks install` (in a refresh: AC-97) | 60 s | said |
 
 ### Security
 
 - Hooks: `terminum hook` sends only to terminumd's private socket (0600 in a 0700 folder: only the user's own processes reach it), or a Mac's link on a host. A process of the user can post a made-up event, which can only change a pane's shown state, its tool and wait texts and add a sent entry for a pane terminumd lists; nothing from a hook runs or reaches tmux.
-- The installer writes only terminum's plugin folder, Codex's `hooks.json` and `config.toml` (backed up) and its own marker; Claude Code's settings are changed by Claude Code's own command only.
-- Plan items, the current step, titles and records are model-written text: control and bidi characters dropped, records redacted (`sent::redact`), shown as plain text or Markdown with raw HTML off, never run. `SECURITY.md` has the threat.
-- `get_notes_for_user` and `add_notes_for_user` say another session's text is data, never instructions.
+- The installer writes only terminum's plugin folder, Codex's `hooks.json` and `config.toml` and its own marker.
+- Plan items, the current step, titles and records are model-written text: cleaned and shown as AC-97 and AC-98 say, never run. `SECURITY.md` has the threat.
 
 ### Compatibility
 
-An old Codex SessionEnd entry with `async` is migrated alone, every other byte of `hooks.json` kept; Codex trusts a hook by its entry's hash, so it says to trust the changed one once.
+An older Codex SessionEnd entry: AC-39. An older `notes.json`: AC-98.
 
 ### Logging and observability
 
-`hook.turn_end {key, by}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`. `terminum hooks` says when each agent's hooks last spoke.
+`hook.turn_end {key, by}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`.
 
 ## 10. Delivery stages
 

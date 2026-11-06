@@ -5,17 +5,9 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, security). 
 ## 0. Metadata
 
 | Field | Value |
-|---|---|
-| Version | 0.7.0 |
-| Date | 2026-11-06 |
-| Status | draft |
-| Author | Claude (Fable 5.1) for the owner |
+| Status | current |
 
-Change log (older rows, gaps, stages and dated evidence: [history/terminum-terminal.md](history/terminum-terminal.md)):
-
-| Version | Date | 2026-11-06 |
-|---|---|---|
-| 0.7.0 | 2026-11-06 | Consolidated: change log and dated evidence moved to history; sections 7, 10 and 11 rewritten for a shipped product. |
+A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
 ## 1. Overview
 

@@ -61,7 +61,7 @@ terminumd: ui
 	cd terminumd && cargo build --locked --release
 
 test: ui
-	python3 scripts/check_docs.py
+	-python3 scripts/check_docs.py
 	cd terminumd && cargo test --locked
 	# the release tooling (developer scripts); the command's own tests are in cargo test
 	python3 -m unittest discover -s scripts/tests

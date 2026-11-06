@@ -169,8 +169,9 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
 - Commit only when asked; never push, publish or force-push without the user's request
   in this session; small single-concern commits that say why. Several sessions may share a
   checkout: commit only the paths you changed (`git add <paths>`, never `-A` or `.`).
-- Each writing agent, and any change made while another session's or agent's changes are in
-  the checkout, gets its own worktree: `python3 scripts/worktree.py add <slug> --kind <kind>`
+- Every change to the repository's files, however small and with the checkout clean or not, is made
+  in its own worktree (a hook refuses Claude Code's edits in the primary checkout; `TM_EDIT_PRIMARY=1`
+  is the maintainer's own, CONTRIBUTING.md "Hooks"): `python3 scripts/worktree.py add <slug> --kind <kind>`
   (from a fresh `origin/main`), never a raw `git worktree add`; a test run takes a free port and
   its own tmux sockets, so trees run checks at once, except Docker's `e2e_remote_sshd*.py`
   (`tm-test-sshd` on a fixed port): one tree at a time; after the merge, `worktree.py remove <slug>` from

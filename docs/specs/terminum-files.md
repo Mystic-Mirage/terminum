@@ -15,11 +15,11 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Who it affects.** Developers working in terminum's terminals, locally and on remote hosts, from a Mac, a tablet or a phone.
 
-**Expected outcome.** A Files panel beside (or in place of) the terminal always shows the folder of the pane the page shows. It works like an IDE tree: browse, open, read with highlighting, render Markdown and HTML, edit and save, create, rename, Trash; it stays responsive in a folder of 500,000 entries; it remembers per pane which folders were open, what was selected and which files were open; it wears the pane's theme.
+**Expected outcome.** A Files panel beside (or in place of) the terminal always shows the folder of the pane the page shows. It works like an IDE tree: browse, open, read with highlighting, render Markdown and HTML, edit and save, create, rename, Trash; it stays responsive in a huge folder; it remembers per pane which folders were open, what was selected and which files were open; it wears the pane's theme.
 
 **Scenario, before and after.**
 - Before: Alex runs `cd ~/work/api/docs`, `ls`, `less ci-design.md`, reads raw Markdown, `cd ../src`, opens vim to fix a typo, and forgets which files they looked at.
-- After: Alex runs `cd ~/work/api/docs`. Within a second the panel shows `docs/`. Alex clicks `ci-design.md` and reads it rendered. Alex fixes the typo in Source and presses ⌘S. Switching panes switches trees; coming back, everything is where it was.
+- After: Alex runs `cd ~/work/api/docs`. The panel shows `docs/`. Alex clicks `ci-design.md` and reads it rendered. Alex fixes the typo in Source and presses ⌘S. Switching panes switches trees; coming back, everything is where it was.
 
 ## 2. Scope and non-goals
 
@@ -52,8 +52,8 @@ Open questions:
 
 | ID | Question | Owner | Status | Decision |
 |---|---|---|---|---|
-| OQ-51 | Should the Files panel follow the pane's folder on every `cd` (tree state cleared) also when the user is editing in the viewer? | Owner | resolved | Yes: tree state clears on `cd`, tabs stay (they hold absolute paths and unsaved edits), 2026-09-30. |
-| OQ-52 | Where may the panel write? | Owner | resolved | Under `$HOME` and `/tmp` by default (`TM_WRITABLE_ROOTS`), 2026-09-30. |
+| OQ-51 | Should the Files panel follow the pane's folder on every `cd` (tree state cleared) also when the user is editing in the viewer? | Owner | resolved | Yes: tree state clears on `cd`, tabs stay (they hold absolute paths and unsaved edits). |
+| OQ-52 | Where may the panel write? | Owner | resolved | Under `$HOME` and `/tmp` by default (`TM_WRITABLE_ROOTS`). |
 
 ## 4. Acceptance cases
 
@@ -116,7 +116,7 @@ Scenario: AC-51 failure — no folder to show
   Given tmux does not answer for the pane
   Then Files shows "The pane's folder is not known: <tmux's error>" in the frame's place
   Given the pane is on a host whose files are not enabled
-  Then the badge shows "REMOTE" and the panel offers Enable and Not now (`terminum-remote.md` AC-83)
+  Then the badge shows "REMOTE", and Files says so and how to fix it (enable the host in Files on the Mac), offering Enable and Not now (`terminum-remote.md` AC-83)
 ```
 
 ### AC-52 — Very large folders [MUST / P0]
@@ -391,7 +391,7 @@ Scenario: AC-64 happy path — a picture and a closer look
 Scenario: AC-64 happy path — a PDF, a video, a sound
   When the user opens "docs/spec.pdf", "demo.mp4" or "note.mp3"
   Then its tab shows the PDF in the browser's own viewer, filling the tab (its pages, zoom, find, print, its own download), or the video or the sound in the browser's player with its controls, not started, Download (Open with default app on this Mac's own page) under it
-  And the file is fetched with the sign-in's header and shown from a blob: address of its own type, revoked once its tab closed (a picture's too: it opens by its address while shown); at most 64 MB, as an image
+  And the file is fetched with the sign-in's header and shown from a blob: address of its own type, revoked once its tab closed (a picture's too: it opens by its address while shown); within `/api/raw`'s limit (§9), as an image
   And a video or a sound no longer shown (another file, its tab closed) is stopped and let go at once
 
 Scenario: AC-64 happy path — every sound
@@ -400,7 +400,7 @@ Scenario: AC-64 happy path — every sound
   And an AU (.au, .snd: μ-law, A-law, 8-, 16-, 24-, 32-bit and float PCM) or an AIFF (.aif, .aiff: 8-, 16-, 24- and 32-bit PCM) the browser does not play is decoded in the panel into a WAV and plays in the same player; one it cannot decode says why
   And a MIDI file (.mid, .midi, .kar; formats 0 and 1) is sent to terminumd (POST /api/midi, at most 4 MB, also from a remote host's file: the page has its bytes), which renders it with the SoundFont named in settings.json's midi.soundfont (else ~/.terminum/soundfont.sf2, else the package's GeneralUser GS 2.0.3; read once and kept while its file is unchanged; at most 10 minutes, 44.1 kHz stereo, rendered a block at a time, two at once, the others waiting; one whose tab closed or file changed is called off) into a WAV the same player plays: it seeks, pauses and sets its volume as any sound; the bank's name shows under it
   But with none of them readable the tab says "No SoundFont for MIDI: put a General MIDI .sf2 at ~/.terminum/soundfont.sf2 or name one in settings.json (midi.soundfont)"; a file it cannot read says why
-  And a sound nothing here plays says "This browser cannot play <type>" with Download (Open with default app on this Mac's own page)
+  And a sound nothing here plays says "This browser cannot play <type>" with the same Download
 
 Scenario: AC-64 edge — svg is inert
   Given "icon.svg" holds a <script>
@@ -547,7 +547,7 @@ Scenario: AC-70 happy path — a wide page
   When the user presses Esc in View (its file, its tabs or its head; at any width)
   Then View hides as its × hides it (its tabs stay) and the terminal is shown with the keys; an Esc the editor takes first (its search panel, a completion list, a dialog, a rename) does only that
   When the user opened a file from the tree (Enter or a click: the tree keeps the keys) and presses Esc in the tree
-  Then View hides and the keys stay in the tree, so the next file is a ↓ and Enter away; an Esc in the filter clears it, in a rename cancels it, as before
+  Then View hides and the keys stay in the tree, so the next file is a ↓ and Enter away; an Esc in the filter or a rename does what AC-63 and AC-58 say
   And at WIDE it has no Terminal key (its × closes it); its head, the path bar and the tab row stand on one grid: their text 12 px from the left, their keys (×, copy, Reveal beside the tabs) 24 px with 6 px above, below and to the right
 
 Scenario: AC-70 happy path — a narrow page
@@ -570,10 +570,6 @@ Scenario: AC-70 edge — View belongs to its session
 
 Scenario: AC-70 edge — the viewer and hosts
   Then pending viewer files keep their host: a local and a remote file with the same path never share a tab or unsaved edits
-
-Scenario: AC-70 failure — nothing to show
-  When the pane's folder is unknown or its host has no helper
-  Then Files says so and how to fix it (enable the host in Files on the Mac)
 ```
 
 ### AC-71 — State survives and expires [SHOULD / P1]
@@ -637,7 +633,7 @@ sequenceDiagram
   D-->>F: workspace {rev, expanded, tabs…} ; rows
 ```
 
-The page tells the panel which pane it shows; the panel keeps its workspace under that key. The shown pane is the one: there is no focus tracking.
+The shown pane is the one: there is no focus tracking.
 
 ### Save with conflict check (AC-56, AC-61)
 
@@ -655,7 +651,7 @@ sequenceDiagram
   end
 ```
 
-"Overwrite" repeats the PUT with `If-Match: *`. A crash never leaves a half-written file.
+A crash never leaves a half-written file.
 
 ## 7. Current behavior and gaps
 
@@ -673,7 +669,7 @@ sequenceDiagram
 
 ## 8. Recommendation and ownership
 
-**Approach.** The panel is its own bundle (`ui/`), served by terminumd under `/fb/` in its proxied mode and embedded by the page as an iframe. The page names the shown pane's key, folder and host in the frame's URL and sends the theme by message. A page shows one pane, and the panel's `web:` key for it is its workspace. terminumd owns listings, the watcher, file operations and workspaces, and proxies a host's requests to its Agent.
+**Approach.** The panel is its own bundle, embedded by the page as an iframe (AS-51). A page shows one pane, and the panel's `web:` key for it is its workspace. terminumd owns listings, the watcher, file operations and workspaces, and proxies a host's requests to its Agent.
 
 **Rejected alternative.** A tree inside the terminal view (one DOM): an iframe keeps the panel's own tests, and its CSP and sandbox for rendered HTML, apart from the terminal.
 
@@ -683,20 +679,20 @@ sequenceDiagram
 
 ### Interfaces
 
-All `/fb/api/*` need the sign-in header (`terminum.md` AC-09); a remote host's request carries `X-TM-Host: devbox`. JSON in and out; errors `{"error","message"}`.
+All `/fb/api/*` need the sign-in header (`terminum.md` AC-09), a remote host's its `X-TM-Host` too (`terminum-remote.md` AC-82). JSON in and out; errors `{"error","message"}`.
 
 | Method and path | Purpose | Case |
 |---|---|---|
 | `GET /fb/api/ls?path&offset&limit&filter&hidden&sort&locate` (every path below under `/fb/api/`) | a page of a folder, `writable`, `located`; `sort` is `name`, `recent` or `ext` | AC-52, AC-63, AC-65 |
 | `GET /api/file?path` (`If-None-Match`) | text and meta; 304 when unchanged | AC-53, AC-54, AC-61 |
-| `GET /api/raw?path` | bytes with MIME, streamed, never read whole; one `Range: bytes=` answers 206 with `Content-Range` (416 when past the end; several ranges get the whole file), also through a host's Agent (the sign-in in the header only: shown from `blob:`) | AC-64, AC-67 |
+| `GET /api/raw?path` | bytes with MIME, streamed, never read whole; one `Range: bytes=` answers 206 with `Content-Range` (416 when past the end; several ranges get the whole file), also through a host's Agent | AC-64, AC-67 |
 | `PUT /api/file?path` (`If-Match`) | save | AC-56 |
 | `POST /api/fs/{mkdir,touch,rename,trash}` | operations | AC-57–AC-59, AC-66 |
 | `POST /api/fs/upload?dir&name&both` | a dropped file's bytes as the body; with `both=1` a taken name is saved as "name 2.ext" | AC-95 |
 | `POST /api/midi` | a MIDI file's bytes in, its WAV out, the bank's name in `x-tm-soundfont` | AC-64 |
-| `POST /api/os/{reveal,open}` | Finder, default app (loopback page only) | AC-60 |
-| `POST /api/terminal/{insert,cd}` | `{key, paths}` / `{key, path}`; quoted by terminumd, idle shell for cd (loopback page only) | AC-60 |
-| `GET/PUT /api/workspace?key&cwd` | per-pane state with `rev` (409 if stale), `X-TM-Client`; a GET's `cwd` re-roots it when the folder moved | AC-55, AC-71 |
+| `POST /api/os/{reveal,open}` | Finder, default app | AC-60 |
+| `POST /api/terminal/{insert,cd}` | `{key, paths}` / `{key, path}` | AC-60 |
+| `GET/PUT /api/workspace?key&cwd` | per-pane state with `rev`, `X-TM-Client`; a GET's `cwd` re-roots it when the folder moved | AC-55, AC-71 |
 | `PUT /api/watch` | `{root, expanded}`: the folders this panel watches | AC-61 |
 | `GET/PUT /api/prefs` | `{hidden, split, sort}` | AC-52, AC-65, AC-70 |
 | `GET /api/state?host` | the build and a host's files offer | `terminum-remote.md` AC-83 |
@@ -712,7 +708,7 @@ curl -s -H "X-TM-Session: …" "http://127.0.0.1:48080/fb/api/ls?path=/tmp/fb-bi
 
 ### Data formats
 
-`workspaces.json` (terminumd, debounced 500 ms, atomic):
+`workspaces.json`:
 
 ```json
 {"version": 1, "prefs": {"hidden": true, "split": 0.5, "sort": "name"},
@@ -729,7 +725,7 @@ A tab's `view` is `auto`, `rendered` or `source`. `prefs.hidden` true shows dot 
 |---|---|---|---|
 | `TM_WRITABLE_ROOTS` | `$HOME:/tmp` | `$HOME:/tmp:/opt/work` | Roots (OQ-52) |
 | `TM_LIST_CACHE_MB` | `128` | `64` | listing cache, its sort and filter indexes counted |
-| `TM_TEXT_MAX_BYTES` | `10485760` | `5242880` | above: read-only, first 1 MB |
+| `TM_TEXT_MAX_BYTES` | `10485760` | `5242880` | the text limit: above it, AC-53's banner |
 | `TM_WORKSPACE_TTL_DAYS` | `14` | `30` | idle pane state removed after |
 
 ### Performance
@@ -748,7 +744,6 @@ A tab's `view` is `auto`, `rendered` or `source`. `prefs.hidden` true shows dot 
 | Limit | Value | When exceeded |
 |---|---|---|
 | Page size | 500 entries | clamped |
-| Text over `TM_TEXT_MAX_BYTES` | first 1 MB shown | read-only, banner |
 | Binary detection | NUL in the first 8 KB | binary tab |
 | Name length | 255 bytes | "Name is too long (max 255 bytes)" |
 | `/api/raw` | 64 MB, judged from the size first | 400 "Larger than 64 MB" |
@@ -756,7 +751,7 @@ A tab's `view` is `auto`, `rendered` or `source`. `prefs.hidden` true shows dot 
 
 ### Security
 
-Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; delete moves to the Trash; only regular files read; HTML in a sandboxed frame without scripts; Markdown raw HTML off; SVG only through an image element; `Referrer-Policy: no-referrer`; CSP `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' ws://{host} wss://{host}; frame-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`; `/api/raw` answers with `default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox`; files are fetched with the sign-in's header, never an address with it, and shown from `blob:` only as a picture, a video, a sound or a PDF (an SVG from `data:`, anything else as bytes: a blob: has the page's origin); terminal actions need an idle shell and never Enter; Finder actions only on the loopback listener.
+Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; `Referrer-Policy: no-referrer`; CSP `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; connect-src 'self' ws://{host} wss://{host}; frame-src 'self' blob:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'`; `/api/raw` answers with `default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox`; no address ever carries the sign-in; a `blob:` has the page's origin, hence what may be shown from one (AC-64, AC-67).
 
 Denied request:
 
@@ -767,7 +762,7 @@ curl -s -X POST -H "X-TM-Session: …" -H "Content-Type: application/json" -d '{
 
 ### Compatibility
 
-`terminum import` takes the `workspaces.json` of iterm-enhancer: `web:` entries whose pane key is `tmux:…` are kept, entries of iTerm2 sessions dropped. Every field optional with a default.
+`terminum import` takes the `workspaces.json` of iterm-enhancer: `web:` entries whose pane key is `tmux:…` are kept, entries of iTerm2 sessions dropped.
 
 ### Logging and observability
 

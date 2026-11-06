@@ -140,6 +140,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         let (app, key, host) = (app.clone(), key.clone(), server.name.clone());
         tokio::spawn(async move { crate::page::sent::keep(&app, &host, &cwd, &key, &prompt, info).await });
     }
+    crate::tasks::tell::agent_event(&app, &key, &ev);
     let remind = crate::plans::hook_event(&app, &key, &ev);
     // a human's move rides the same event (AC-114)
     let context = if crate::plans::carries_context(&ev) { crate::tasks::tell::with_lines(&app, &key, remind) } else { remind };

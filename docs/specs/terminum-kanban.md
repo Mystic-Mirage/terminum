@@ -69,6 +69,8 @@ Open questions: none.
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
+| AC-132 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
+| AC-133 | [MUST / P0] | The board's flow survives what people and machines do: the last drop stands, a move shows at once and a refused one goes back; a late answer never stands over a newer; what is typed is never lost by a slip, a refusal or a change by another. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
 
 ## 5. BDD scenarios
@@ -98,8 +100,9 @@ Scenario: AC-105 happy path — a card
   And every drag has a menu item too, Move to…; a press on a card opens its window
 
 Scenario: AC-105 edge — a phone
-  Given a width under 700 px
-  Then one column shows, a switch over it names the five with their counts, and a card moves by Move to…
+  Given a width under 860 px
+  Then one column shows, a swipe goes to the next, a switch over it names the five with their counts and follows, and a card moves by Move to…, a sheet
+  And its head leaves the cards the room: pages and New task on one row, Find and Filters on the next; the filters open under Filters
 
 Scenario: AC-105 edge — many cards
   Given 1,000 DONE tasks
@@ -481,6 +484,84 @@ Scenario: AC-119 edge — backups
   Then the store and its files stay inside what Time Machine backs up (terminum-lifecycle.md AC-96 excludes only the last lines' folder)
 ```
 
+### AC-132 — What became of the agent [MUST / P0]
+
+```gherkin
+Scenario: AC-132 failure — out of limits
+  Given T-12 IN PROGRESS, linked to a session its human started
+  When StopFailure comes with "rate_limit" (a subscription's limit, billing, an API error)
+  Then its card says "failed: rate limit" at once
+  And its history says "The agent stopped: rate_limit", by Dispatcher
+  And T-12 stays IN PROGRESS: only what Dispatcher started moves by itself (terminum-dispatcher.md AC-123)
+
+Scenario: AC-132 failure — it stopped with the task open
+  When a Stop comes and the last message asks nothing, T-12 still IN PROGRESS
+  Then its card says "stopped, task open" and its history "The agent stopped with this task open", once in a row
+  When the agent works again
+  Then its card says "working"
+
+Scenario: AC-132 failure — it died or left
+  When its session ends (not /clear), or its process is gone and only the shell remains
+  Then its card says "no agent", its history "The agent's session ended with this task open"
+  When the pane itself closes
+  Then its card says "session closed" (AC-113)
+
+Scenario: AC-132 edge — no more than a move
+  Given T-12 in TODO, or a subagent's Stop, or a question at a turn's end
+  Then nothing is said on T-12
+```
+
+### AC-133 — A flow that holds [MUST / P0]
+
+```gherkin
+Scenario: AC-133 edge — dragged and straight back
+  When a card goes to DONE and back to TODO before terminumd answered the first
+  Then its changes reach terminumd one after another, TODO stands, and its history has both
+
+Scenario: AC-133 happy path — a move shows at once
+  When a card is dropped
+  Then it stands in its column before terminumd answers, on top of its severity's cards
+
+Scenario: AC-133 failure — a move refused or lost
+  When terminumd refuses it, or the network or terminumd is gone
+  Then the card goes back, the toast says why, over an open window too; the board's banner says when it is out of date, and goes by itself once terminumd is back
+
+Scenario: AC-133 edge — answers out of order, a drag under a change
+  When an older read answers after a newer, or two windows are opened with the first slower
+  Then the newest stands
+  When another's change arrives during a drag
+  Then the drag goes on, the card held; the columns' scroll stays through any change
+
+Scenario: AC-133 edge — nothing typed is lost by a slip
+  When Discard is pressed on a window with text, or Esc, × or Back on an edit not saved
+  Then it asks; Cancel keeps it
+  When Enter is pressed in the title
+  Then it is Create; ⌘Enter in a text is Create or CLOSE
+  When Create is pressed while a file is on its way
+  Then it waits for the file
+
+Scenario: AC-133 failure — another changed the text meanwhile
+  Given Alex editing T-12's text
+  When its text changes elsewhere and Alex presses Save
+  Then it asks "The text changed meanwhile. Put yours over it?"; Cancel keeps Alex's writing, nothing is overwritten unasked
+
+Scenario: AC-133 failure — what was picked is gone
+  When a session or project chosen in an open window goes
+  Then the picker no longer offers it and the window says so; terminumd refuses a link to a session that is gone with "That session is gone."
+
+Scenario: AC-133 edge — odd paths and odd text
+  When a file is dropped outside a text
+  Then the page stays: on the board it starts a new task
+  When /kanban/T-999 does not exist, or Back is pressed with a window open
+  Then "No task T-999" is said and the address returns to the board; Back closes the window and stays on the board
+  When a filter hides the task just made
+  Then the toast says so
+  When a title, text or comment holds HTML, hidden or reordering characters, or a long word
+  Then it is text, stripped of what hides in a title, and stays inside the window, sideways nothing, on a phone too
+  When a page wakes on a phone, or terminumd is upgraded
+  Then it reads what it missed; it reloads for the new build once no window is open, with drafts kept
+```
+
 ### AC-120 — Agents on a host [SHOULD / P1]
 
 ```gherkin
@@ -593,13 +674,15 @@ Sample event: `{"task":"T-12","at":1792003600,"author":"Dispatcher","kind":"comm
 | `POST /api/tasks`, `PATCH /api/tasks/T-12`, `POST /api/tasks/T-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}` |
 | `GET /api/task-files/<id>` | header sign-in only, never an address (terminum.md AC-09): the page fetches and shows a blob, as `web/static/shown.js` does; `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; inline only for PNG, JPEG, GIF, WebP |
 
+`PATCH` takes `text_was`, the text the human began from: another now, it answers 412 and changes nothing (AC-133). A `session` that is not in the list is refused.
+
 Pages hear over the page's WebSocket: `taskchange {id}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it; `taskmarks {marks, counts}` when the open tasks by session or the tasks by project change, for the session list; the `layout` it hears anyway gives a board its cards' session states.
 
 **MCP tools** added to `terminum mcp`: `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `add_comment`, `attach_file`, `get_file`, `finish_task`. `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
 **Limits.** Title 1–200 characters; text 1 MiB; comment 256 KiB; a file 100 MB, no limit per project; 200 cards a page; 200 open tasks by agents a project; 50 projects (`terminum.md` AC-92), Default not counted. Over a host's link, a request of 64 KB (`terminum-remote.md` §9).
 
-**Performance.** With AS-112's tasks, on the owner's Mac: first page of the board p95 < 300 ms, a move shown on another page p95 < 200 ms, Find p95 < 300 ms; measured by a new `scripts/bench_board.py`. No board work blocks a screen's frames (`terminum.md` budgets).
+**Performance.** With AS-112's tasks, on the owner's Mac: first page of the board p95 < 300 ms, a move shown on another page p95 < 200 ms, Find p95 < 300 ms; measured by `liveBoardScale` (`node web/test/e2e_live.mjs board`). No board work blocks a screen's frames (`terminum.md` budgets).
 
 **Security** (`SECURITY.md` carries these with the code).
 - A task's text, comments and files are data for agents: every tool answer says so, and only RUN by a human sends a task's text as a prompt.
@@ -636,4 +719,6 @@ AC-117 and AC-114's typing ship with `terminum-dispatcher.md`'s Stage 1. Depends
 - [ ] AC-117 — to come
 - [ ] AC-118 — to come
 - [x] AC-119 — `cargo test tasks::store`
+- [x] AC-132 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`
+- [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [ ] AC-120 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py` for what is built

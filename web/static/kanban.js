@@ -20,7 +20,10 @@ let cards = new Map(COLUMNS.map((c) => [c, []]));
 let counts = {};
 let shownColumn = "TODO";
 const phone = () => matchMedia("(max-width: 860px)").matches;
-let dragging = null;
+let dragging = null, drawLater = false;
+let loading = 0, changing = 0;
+const queues = new Map();
+const BUILD = document.querySelector('meta[name="build"]').content;
 
 const filters = () => {
   const q = new URLSearchParams(location.search);
@@ -62,10 +65,18 @@ function banner(text) {
   }
 }
 
-/** Each column's first page; a failure keeps what is shown and says so (AC-105). */
+/** Each column's pages as shown; a failure keeps what is shown and says so (AC-105). The newest read
+ *  stands, whichever answers last, and none over a change on its way: its end reads again (AC-133). */
 async function load() {
+  if (changing) return;
+  const mine = ++loading;
   try {
-    const parts = await Promise.all(COLUMNS.map((c, i) => api(`/api/tasks?${query({ status: c, limit: PAGE, counts: i === 0 ? 1 : undefined })}`)));
+    const parts = await Promise.all(COLUMNS.map(async (c, i) => {
+      const pages = Math.max(1, Math.ceil(cards.get(c).length / PAGE));
+      const got = await Promise.all(Array.from({ length: pages }, (_, n) => api(`/api/tasks?${query({ status: c, limit: PAGE, after: n ? n * PAGE : undefined, counts: i === 0 && !n ? 1 : undefined })}`)));
+      return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts };
+    }));
+    if (mine !== loading || changing) return;
     cards = new Map(COLUMNS.map((c, i) => [c, parts[i].tasks]));
     counts = parts[0].counts;
     banner(meta.problem ?? "");
@@ -88,11 +99,18 @@ const projectOf = (id) => meta.projects.find((p) => p.id === id);
 /** A project's color, the session list's; Default has none. */
 const projectHue = (p) => (p?.color >= 0 ? projectColor(p) : "var(--muted)");
 
+/** What a task's session does now (AC-132): an agent gone quiet with its task open is said. */
 function sessionLine(t) {
-  if (!t.session) return null;
-  if (t.session.closed) return el("span", "cstate closed", "session closed");
-  const s = t.session.state;
-  return el("span", `cstate ${s ?? "idle"}`, s ?? "idle");
+  const s = t.session;
+  if (!s) return null;
+  const open = t.status === "IN PROGRESS";
+  const line = (cls, words, why) => { const e = el("span", `cstate ${cls}`, words); if (why) e.title = why; return e; };
+  if (s.closed) return line("closed", "session closed");
+  if (s.state === "failed") return line("failed", `failed: ${(s.why || "an error").replaceAll("_", " ")}`);
+  if (s.state === "waiting") return line("waiting", "waits for you", s.why);
+  if (s.state === "working") return line("working", "working");
+  if (!s.agent) return open ? line("stopped", "no agent") : null;
+  return open ? line("stopped", "stopped, task open") : line("", "idle");
 }
 
 function card(t) {
@@ -119,9 +137,14 @@ function card(t) {
   if (state) foot.append(state);
   c.append(head, el("div", "ctitle", t.title), foot);
   c.addEventListener("click", () => openTask(t.id));
-  c.addEventListener("keydown", (e) => { if (e.key === "Enter") openTask(t.id); });
+  c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) openTask(t.id); });
   c.addEventListener("dragstart", (e) => { dragging = t; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", t.id); c.classList.add("lifted"); });
-  c.addEventListener("dragend", () => { dragging = null; c.classList.remove("lifted"); });
+  c.addEventListener("dragend", () => {
+    dragging = null;
+    c.classList.remove("lifted");
+    for (const { col } of columns.values()) col.classList.remove("over");
+    if (drawLater) draw();
+  });
   return c;
 }
 
@@ -143,20 +166,54 @@ function moveMenu(t, anchor) {
 }
 $("movebox").addEventListener("click", (e) => { if (e.target === $("movebox")) $("movebox").close(); });
 
-/** A change stands once terminumd said so, and every page hears of it; refused, the toast says why. */
-const change = (t, body) => api(`/api/tasks/${t.id}`, { method: "PATCH", body }).catch((e) => say(e.message));
+/** A card's changes go one after another, as made, so the last drop stands; when none is left the
+ *  columns are read again: a refused one's card goes back, and the toast says why (AC-133). */
+function change(t, body) {
+  changing++;
+  const done = (queues.get(t.id) ?? Promise.resolve())
+    .then(() => api(`/api/tasks/${t.id}`, { method: "PATCH", body }))
+    .catch((e) => say(e.message))
+    .finally(() => {
+      changing--;
+      if (queues.get(t.id) === done) queues.delete(t.id);
+      if (!changing) load();
+    });
+  queues.set(t.id, done);
+  return done;
+}
+
+/** Shown at once where it goes: on top of its severity's cards, or above `before`. */
+function placeCard(t, column, before) {
+  const from = cards.get(t.status), to = cards.get(column);
+  from.splice(from.indexOf(t), 1);
+  counts[t.status] = Math.max(0, (counts[t.status] ?? 1) - 1);
+  counts[column] = (counts[column] ?? 0) + 1;
+  t.status = column;
+  const at = before ? to.findIndex((c) => c.id === before && c.severity === t.severity) : -1;
+  const top = to.findIndex((c) => c.severity >= t.severity);
+  to.splice(at >= 0 ? at : top >= 0 ? top : to.length, 0, t);
+  draw();
+}
 
 async function moveTo(t, status) {
   if (status === "IN PROGRESS" && !t.session
     && !await askConfirm(`${t.id} has no session. Move it to IN PROGRESS? Link a session in its window to have an agent work on it.`, "Move")) return;
-  await change(t, { status });
+  placeCard(t, status);
+  change(t, { status });
 }
 
 function dropOn(column, before) {
   const t = dragging;
   if (!t) return;
-  if (t.status !== column) moveTo(t, column);
-  else change(t, before ? { before } : { order_end: true });
+  if (t.status !== column) return moveTo(t, column);
+  const list = cards.get(column);
+  if (before || list.at(-1) !== t) {
+    list.splice(list.indexOf(t), 1);
+    const at = before ? list.findIndex((c) => c.id === before) : -1;
+    list.splice(at >= 0 ? at : list.length, 0, t);
+    draw();
+  }
+  change(t, before ? { before } : { order_end: true });
 }
 
 /** The columns stand once; a draw fills them, each keeping its scroll. */
@@ -178,6 +235,8 @@ const columns = new Map(COLUMNS.map((column) => {
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
 
 function draw() {
+  drawLater = !!dragging;                          // a drag's card stays until it ends: redrawn, the drag would be lost
+  if (drawLater) return;
   const focused = document.activeElement?.closest?.(".card")?.dataset.id;
   for (const [column, { count, list }] of columns) {
     const have = cards.get(column), scroll = list.scrollTop, n = counts[column] ?? 0;
@@ -231,7 +290,7 @@ function sessionsCame(groups) {
     const t = shownCards.get(c.dataset.id);
     if (!t?.session) continue;
     const it = live.get(t.session.key);
-    t.session = it ? { key: it.id, state: it.state, closed: false } : { key: t.session.key, closed: true };
+    t.session = it ? { key: it.id, state: it.state, agent: it.agent, why: it.why, closed: false } : { key: t.session.key, closed: true };
     c.querySelector(".cstate")?.replaceWith(sessionLine(t));
   }
 }
@@ -303,15 +362,73 @@ async function loadMeta() {
   }
 }
 
-const windowed = taskWindow({ getMeta: () => meta });
-const form = taskForm({ getMeta: () => meta, getFilter: filters });
-
-function openTask(id) {
-  history.replaceState(null, "", `/kanban/${id}${location.search}`);
-  windowed.open(id).catch((e) => say(e.message));
+/** A task a filter hides is said when made: it does not just vanish. */
+function madeHidden(t) {
+  const f = filters();
+  const hidden = (f.project.length && !f.project.includes(t.project)) || (f.severity.length && !f.severity.includes(t.severity))
+    || (f.owner === "agents" && t.owner_kind !== "agent") || (f.owner === "humans" && t.owner_kind !== "human")
+    || (f.q && !t.title.toLowerCase().includes(f.q.toLowerCase()));
+  if (hidden) say(`${t.id} is kept; a filter hides it.`);
 }
 
-$("taskbox").addEventListener("close", () => history.replaceState(null, "", `/kanban/${location.search}`));
+const windowed = taskWindow({ getMeta: () => meta });
+const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden });
+
+/** Its window has its own address: Back closes it, a task that is not there is said (AC-133). */
+function openTask(id, push = true) {
+  // one step of Back for the window, whichever tasks it showed
+  const onlyOne = /\/T-\d+$/.test(location.pathname);
+  if (push) history[onlyOne ? "replaceState" : "pushState"]({ win: true }, "", `/kanban/${id}${location.search}`);
+  windowed.open(id).catch((e) => {
+    say(e.message);
+    history.replaceState(null, "", `/kanban/${location.search}`);
+  });
+}
+
+async function route() {
+  const id = /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
+  if (id) { if (!windowed.shows(id)) openTask(id, false); return; }
+  // Back with an edit not saved: asked; kept, the window keeps its address
+  if ($("taskbox").open && !await windowed.tryClose()) history.pushState({ win: true }, "", `/kanban/${windowed.shownId()}${location.search}`);
+}
+addEventListener("popstate", route);
+
+$("taskbox").addEventListener("close", () => {
+  if (!/\/T-\d+$/.test(location.pathname)) return;
+  if (history.state?.win) history.back();
+  else history.replaceState(null, "", `/kanban/${location.search}`);
+});
+
+// A file dropped anywhere never takes the page away: on the board it starts a new task (AC-133)
+const hasFiles = (e) => e.dataTransfer?.types.includes("Files");
+document.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+document.addEventListener("drop", (e) => {
+  if (!hasFiles(e) || e.defaultPrevented) return;
+  e.preventDefault();
+  const list = [...e.dataTransfer.files];
+  if (!list.length || document.querySelector("dialog[open]")) return;
+  form.open();
+  form.add(list);
+});
+
+// What the on-screen keyboard leaves: windows stand in it, their keys never under it (sheets.css)
+const seen = window.visualViewport;
+const fit = () => document.documentElement.style.setProperty("--app-h", `${Math.round(seen.height)}px`);
+if (seen) { fit(); seen.addEventListener("resize", fit); }
+
+// A phone's page wakes: what it missed is read; its WebSocket says for itself when it is gone
+document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+
+/** terminumd was upgraded: this page reloads when no window is open (a draft is kept anyway), once. */
+function buildCame(id) {
+  if (id === BUILD || sessionStorage.getItem("web.reloaded-for") === id) return;
+  const go = () => {
+    if (document.querySelector("dialog[open]")) { setTimeout(go, 1000); return; }
+    try { sessionStorage.setItem("web.reloaded-for", id); } catch { /* private mode: at worst asks again */ }
+    location.reload();
+  };
+  go();
+}
 $("newtask").addEventListener("click", () => form.open());
 $("find").addEventListener("input", () => { clearTimeout($("find").wait); $("find").wait = setTimeout(() => setFilters({ q: $("find").value }), 200); });
 $("clearfilters").addEventListener("click", () => setFilters({ project: [], severity: [], owner: "", q: "" }));
@@ -322,15 +439,16 @@ function listen() {
   const again = (id) => {
     windowToo ||= !id || windowed.shows(id);
     clearTimeout(wait);
-    wait = setTimeout(() => { load(); if (windowToo) windowed.refresh(); windowToo = false; }, 100);
+    wait = setTimeout(() => { load(); if (windowToo) windowed.refresh(); windowToo = false; }, 40);
   };
   signin.prove().then(() => {
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`, signin.protocols());
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
       if (m.t === "taskchange") again(m.id);
-      else if (m.t === "layout") sessionsCame(m.groups);
-      else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(() => { loadMeta(); again(); }, 500); }
+      else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
+      else if (m.t === "build") buildCame(m.id);
+      else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);
   });
@@ -340,8 +458,7 @@ fetch("/custom.css", { cache: "no-store" }).then((r) => (r.ok ? r.text() : "")).
 await loadMeta();
 await load();
 listen();
-const wanted = /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
-if (wanted) openTask(wanted);
+route();
 const asked = new URLSearchParams(location.search);
 if (asked.get("new") === "1") {
   form.open({ session: asked.get("session"), project: asked.get("for"), text: takeSelection() });

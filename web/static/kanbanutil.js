@@ -18,7 +18,9 @@ signin.onRefused(toSignIn);
  *  message, with its status. */
 export async function api(path, { method = "GET", body } = {}) {
   const sent = method === "GET" ? undefined : JSON.stringify(body ?? {});
-  const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent });
+  const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent }).catch((e) => {
+    throw new Error(/terminum|Signed/.test(e.message) ? e.message : "terminum's server does not answer.");   // the browser's own words say nothing
+  });
   const m = await r.json().catch(() => ({}));
   if (r.status === 401) toSignIn();
   if (!r.ok) {
@@ -29,8 +31,12 @@ export async function api(path, { method = "GET", body } = {}) {
   return m;
 }
 
-/** One short message, where the action was taken cannot hold it. */
-export const say = (text) => toast(text, 4000);
+/** One short message, where the action was taken cannot hold it; over an open window too (the top layer). */
+export function say(text) {
+  toast(text, 4000);
+  const t = $("toast");
+  if (t.popover) { try { t.hidePopover(); } catch { /* not shown yet */ } t.showPopover(); }
+}
 
 export function button(cls, text, onClick) {
   const b = el("button", cls, text ?? undefined);

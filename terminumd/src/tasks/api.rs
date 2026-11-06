@@ -76,10 +76,15 @@ pub fn told(app: &Shared, task: &str) {
     });
 }
 
-/// A session's live state as the list shows it, or closed.
+/// A link only to a session that is there: a page's picker can be older than the list (AC-133).
+fn session_is_there(app: &Shared, key: &str) -> Result<(), String> {
+    crate::page::marks::find_item(&app.layout.read(), key).map(|_| ()).ok_or_else(|| "That session is gone.".to_string())
+}
+
+/// A session's live state as the list shows it, its agent and why it failed or waits, or closed.
 fn session_of(app: &Shared, key: &str) -> Value {
     match crate::page::marks::find_item(&app.layout.read(), key) {
-        Some(it) => json!({"key": key, "state": it["state"], "closed": false}),
+        Some(it) => json!({"key": key, "state": it["state"], "agent": it["agent"], "why": it["why"], "closed": false}),
         None => json!({"key": key, "closed": true}),
     }
 }
@@ -166,6 +171,9 @@ fn ids(v: &Value, key: &str) -> Vec<String> {
 }
 
 async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
+    if let Some(Err(e)) = body["session"].as_str().map(|s| session_is_there(&app, s)) {
+        return refuse(StatusCode::BAD_REQUEST, e);
+    }
     let new = NewTask {
         title: text(&body, "title").unwrap_or_default(),
         text: text(&body, "text").unwrap_or_default(),
@@ -202,8 +210,20 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     }))
 }
 
-/// What a human changes on a card; `session_choice` answers the dialog of a move across projects.
+/// Why a change of a card stopped before it changed anything.
+enum Held {
+    /// it has a session: the page's dialog asks what becomes of it, and sends `session_choice`
+    SessionChoice,
+    /// the text is no longer the one the human began from (`text_was`): the page asks (AC-133)
+    TextChanged,
+}
+
+/// What a human changes on a card.
 async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
+    if let Some(Err(e)) = body["session"].as_str().map(|s| session_is_there(&app, s)) {
+        return refuse(StatusCode::BAD_REQUEST, e);
+    }
+    let text_was = text(&body, "text_was");
     let wanted = id.clone();
     let moved_to = text(&body, "status");
     let to_status = moved_to.clone();
@@ -217,10 +237,13 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     let done = store(&app, move |tx| {
         let at = ops::now();
         let was = ops::get(tx, &wanted)?;
+        if text_was.is_some_and(|t| t != ops::text_of(tx, &wanted).unwrap_or_default()) {
+            return Ok(Err(Held::TextChanged));
+        }
         let mut follow = None;
         if let Some(project) = &to_project {
             match ops::change_project(tx, HUMAN, &wanted, project, choice.as_deref(), at)? {
-                ProjectMove::Ask => return Ok(None),
+                ProjectMove::Ask => return Ok(Err(Held::SessionChoice)),
                 ProjectMove::SessionFollows(s) => follow = Some((s, project.clone())),
                 ProjectMove::Done => {}
             }
@@ -235,12 +258,12 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         if reorder {
             ops::reorder(tx, &wanted, before.as_deref(), at)?;
         }
-        Ok(Some((ops::get(tx, &wanted)?, was, follow)))
+        Ok(Ok((ops::get(tx, &wanted)?, was, follow)))
     }).await;
     let (task, was, follow) = match done {
-        Ok(Some(d)) => d,
-        // the page's dialog asks what becomes of the session, and sends `session_choice`
-        Ok(None) => return refuse(StatusCode::CONFLICT, "session_choice"),
+        Ok(Ok(d)) => d,
+        Ok(Err(Held::SessionChoice)) => return refuse(StatusCode::CONFLICT, "session_choice"),
+        Ok(Err(Held::TextChanged)) => return refuse(StatusCode::PRECONDITION_FAILED, "The text changed meanwhile."),
         Err(e) => return refuse(StatusCode::BAD_REQUEST, e),
     };
     let note = match follow {

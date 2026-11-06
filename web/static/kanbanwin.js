@@ -11,14 +11,14 @@ const row = (...kids) => { const r = el("div", "actions"); r.append(...kids.filt
 /** A field for Markdown. */
 function editor(text, label) {
   const area = el("textarea", "field");
-  area.value = text;
+  area.value = area.defaultValue = text;
   if (label) area.setAttribute("aria-label", label);
   return area;
 }
 
 export function taskWindow({ getMeta }) {
   const box = $("taskbox"), body = $("taskbody");
-  let shown = null;
+  let shown = null, opening = 0;
 
   /** A change of a field: whether terminumd took it. The window shows what stands; a text being
    *  typed stays (refresh). The board hears of it from terminumd. */
@@ -30,6 +30,7 @@ export function taskWindow({ getMeta }) {
       took = true;
     } catch (e) {
       if (e.status === 409) return moveAcross(id, change);
+      if (e.status === 412) return textChanged(id, change);
       say(e.message);
     }
     await refresh();
@@ -41,6 +42,12 @@ export function taskWindow({ getMeta }) {
     const how = await choose(`${id} has a session. What becomes of it?`, "A session stands in one project.", [["move", "Move the session too"], ["unlink", "Unlink the session"]]);
     if (how) return patch(id, { ...change, session_choice: how });
     refresh(true);
+    return false;
+  }
+
+  /** Another changed the text while this one was written: nothing goes unasked; Cancel keeps writing (AC-133). */
+  async function textChanged(id, { text_was: _, ...change }) {
+    if (await askConfirm("The text changed meanwhile. Put yours over it? The other text goes.", "Overwrite")) return patch(id, change);
     return false;
   }
 
@@ -84,7 +91,7 @@ export function taskWindow({ getMeta }) {
     const edit = button(null, "Edit", () => {
       const area = editor(t.text, "Text, Markdown");
       area.rows = 10;
-      const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value })) refresh(true); });
+      const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_was: t.text })) refresh(true); });
       wrap.replaceChildren(area, row(button(null, "Cancel", () => refresh(true)), save));
       area.focus();
     });
@@ -155,20 +162,22 @@ export function taskWindow({ getMeta }) {
 
   function commentForm(t) {
     const wrap = el("section", "newcomment");
-    const area = editor(sessionStorage.getItem(`tm.comment.${t.id}`) ?? "", "Comment");
+    const draft = `tm.comment.${t.id}`, filesKey = `tm.commentfiles.${t.id}`;
+    const stored = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+    const store = (key, v) => { try { if (v === null) localStorage.removeItem(key); else localStorage.setItem(key, v); } catch { /* private mode: this page's only */ } };
+    const area = editor(stored(draft) ?? "", "Comment");
     area.rows = 4;
     area.placeholder = "Comment, Markdown. Drop or paste files here.";
-    area.addEventListener("input", () => sessionStorage.setItem(`tm.comment.${t.id}`, area.value));
+    area.addEventListener("input", () => store(draft, area.value));
     // the files of a comment being written: kept with its text, or the sweep would take them
-    const filesKey = `tm.commentfiles.${t.id}`;
-    const dropped = () => { try { return JSON.parse(sessionStorage.getItem(filesKey) ?? "[]"); } catch { return []; } };
+    const dropped = () => { try { return JSON.parse(stored(filesKey) ?? "[]"); } catch { return []; } };
     onFiles(area, area, async (list) => {
       for (const f of list) {
         try {
           const kept = await upload(f, getMeta().most_bytes);
-          sessionStorage.setItem(filesKey, JSON.stringify([...dropped(), kept.id]));
+          store(filesKey, JSON.stringify([...dropped(), kept.id]));
           area.value += `${area.value && !area.value.endsWith("\n") ? "\n" : ""}${fileMarkdown(kept)}\n`;
-          sessionStorage.setItem(`tm.comment.${t.id}`, area.value);
+          store(draft, area.value);
         } catch (e) { say(e.message); }
       }
     });
@@ -177,11 +186,12 @@ export function taskWindow({ getMeta }) {
         try {
           await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: area.value, files: dropped() } });
         } catch (e) { say(e.message); return; }
-        sessionStorage.removeItem(`tm.comment.${t.id}`);
-        sessionStorage.removeItem(filesKey);
+        store(draft, null);
+        store(filesKey, null);
       }
-      box.close();
+      tryClose();
     });
+    area.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); close.click(); } });
     close.title = "Keep the comment and close: nothing moves, the session hears nothing";
     wrap.append(area, row(close));
     return wrap;
@@ -198,9 +208,23 @@ export function taskWindow({ getMeta }) {
     body.scrollTop = scroll;
   }
 
+  /** The newest asked is the one that shows, whichever answers last. */
   async function open(id) {
-    draw(await api(`/api/tasks/${id}`));
+    const mine = ++opening;
+    const t = await api(`/api/tasks/${id}`);
+    if (mine !== opening) return;
+    draw(t);
     if (!box.open) box.showModal();
+  }
+
+  /** A text being edited, changed from what shows. */
+  const edited = () => [...body.querySelectorAll(".tasktext textarea, .markdown textarea")].some((a) => a.value !== a.defaultValue);
+
+  /** Closes it; an edit not saved is asked about first. Whether it closed. */
+  async function tryClose() {
+    if (edited() && !await askConfirm("Discard your edit? It is not saved.", "Discard")) return false;
+    box.close();
+    return true;
   }
 
   /** Reads it again; a text being edited holds until it is saved (`saved`). */
@@ -210,6 +234,7 @@ export function taskWindow({ getMeta }) {
     try { draw(await api(`/api/tasks/${shown.id}`)); } catch (e) { say(e.message); }
   }
 
-  $("taskclose").addEventListener("click", () => box.close());
-  return { open, refresh, shows: (id) => box.open && shown?.id === id };
+  $("taskclose").addEventListener("click", tryClose);
+  box.addEventListener("cancel", (e) => { if (edited()) { e.preventDefault(); tryClose(); } });
+  return { open, refresh, tryClose, shows: (id) => box.open && shown?.id === id, shownId: () => shown?.id };
 }

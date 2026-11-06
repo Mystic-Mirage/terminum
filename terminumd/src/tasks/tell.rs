@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 
 use parking_lot::Mutex;
+use rusqlite::OptionalExtension;
 use serde_json::Value;
 
 use super::ops::{self, Task};
@@ -76,6 +77,45 @@ pub async fn human_moved(app: &Shared, task: &Task) {
     say(app, &task.id, "Waits for the session's next tool call".to_string());
 }
 
+/// What an agent's event says of the task its session works on (AC-132): only the main agent's;
+/// a question at a turn's end is no stop; /clear goes on.
+pub fn stopped_words(ev: &Value) -> Option<String> {
+    if ev["sub"].as_str().is_some_and(|s| !s.is_empty()) {
+        return None;
+    }
+    match ev["event"].as_str()? {
+        "StopFailure" => Some(format!("The agent stopped: {}", ev["error"].as_str().filter(|e| !e.is_empty()).unwrap_or("an error"))),
+        "Stop" if ev["asks"] != true => Some("The agent stopped with this task open".to_string()),
+        "SessionEnd" if ev["reason"] != "clear" => Some("The agent's session ended with this task open".to_string()),
+        _ => None,
+    }
+}
+
+/// An agent's event is said on the task in IN PROGRESS of its pane, once in a row: nothing moves
+/// by it (terminum-dispatcher.md AC-123 moves only what Dispatcher started); `Ok(None)`: nothing to say.
+fn say_stopped(tx: &rusqlite::Transaction, key: &str, words: &str, at: i64) -> Result<Option<String>, String> {
+    let task: Option<(String, String)> = tx.query_row("SELECT id, 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND archived_at IS NULL", [key], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional().map_err(ops::sql)?;
+    let Some((row, id)) = task else { return Ok(None) };
+    let last: Option<String> = tx.query_row("SELECT text FROM events WHERE task = ?1 ORDER BY rowid DESC LIMIT 1", [&row], |r| r.get(0)).optional().map_err(ops::sql)?.flatten();
+    if last.as_deref() == Some(words) {
+        return Ok(None);
+    }
+    ops::log(tx, &row, DISPATCHER, "told", words, None, at)?;
+    Ok(Some(id))
+}
+
+/// After a hook's event: what it says of the pane's task, off the async workers.
+pub fn agent_event(app: &Shared, key: &str, ev: &Value) {
+    let Some(words) = stopped_words(ev) else { return };
+    let (a, key) = (app.clone(), key.to_string());
+    tokio::task::spawn_blocking(move || match a.tasks.with(|tx| say_stopped(tx, &key, &words, ops::now())) {
+        Ok(Some(id)) => super::api::change_heard(&a, &id),
+        Ok(None) => {}
+        Err(e) => tracing::warn!(event = "tasks.told", error = %e),
+    });
+}
+
 /// The pane's next context, joined to what else is due; each line then is said on its task.
 pub fn with_lines(app: &Shared, key: &str, remind: Option<String>) -> Option<String> {
     let lines = app.task_lines.take(key);
@@ -106,6 +146,34 @@ mod tests {
         assert_eq!(delivery(Some(&json!({"agent": null})), true, false), Err("Not delivered: no agent in the session"));
         assert_eq!(delivery(Some(&json!({"agent": "claude"})), true, false), Ok(()));
         assert_eq!(delivery(Some(&json!({"agent": null})), true, true), Ok(()), "a hook's event says an agent runs there");
+    }
+
+    #[test]
+    fn ac132_what_an_agent_s_event_says() {
+        assert_eq!(stopped_words(&json!({"event": "StopFailure", "error": "rate_limit"})).as_deref(), Some("The agent stopped: rate_limit"));
+        assert_eq!(stopped_words(&json!({"event": "StopFailure"})).as_deref(), Some("The agent stopped: an error"));
+        assert_eq!(stopped_words(&json!({"event": "Stop"})).as_deref(), Some("The agent stopped with this task open"));
+        assert_eq!(stopped_words(&json!({"event": "Stop", "asks": true})), None, "a question is no stop");
+        assert_eq!(stopped_words(&json!({"event": "SessionEnd", "reason": "logout"})).as_deref(), Some("The agent's session ended with this task open"));
+        assert_eq!(stopped_words(&json!({"event": "SessionEnd", "reason": "clear"})), None, "/clear goes on");
+        assert_eq!(stopped_words(&json!({"event": "Stop", "sub": "a1"})), None, "a subagent's is its own");
+        assert_eq!(stopped_words(&json!({"event": "PostToolUse"})), None);
+    }
+
+    #[test]
+    fn ac132_it_is_said_on_the_task_in_progress_once_and_moves_nothing() {
+        use crate::tasks::ops::{create, move_to, NewTask};
+        use crate::tasks::store::{Store, HUMAN};
+        let s = Store::open(crate::testutil::fresh_dir("tell-stopped").join("kanban.sqlite"));
+        let key = "tmux:local:t:%7";
+        let t = s.with(|tx| create(tx, HUMAN, NewTask { title: "a".into(), session: Some(key.into()), ..Default::default() }, 1)).unwrap();
+        let said = |w: &str| s.with(|tx| say_stopped(tx, key, w, 2)).unwrap();
+        assert_eq!(said("The agent stopped with this task open"), None, "in TODO: nothing to say");
+        s.with(|tx| move_to(tx, HUMAN, &t.id, "IN PROGRESS", 2)).unwrap();
+        assert_eq!(said("The agent stopped with this task open").as_deref(), Some(t.id.as_str()));
+        assert_eq!(said("The agent stopped with this task open"), None, "once in a row");
+        assert_eq!(said("The agent stopped: rate_limit").as_deref(), Some(t.id.as_str()), "another word is said");
+        assert_eq!(s.with(|tx| ops::get(tx, &t.id)).unwrap().status, "IN PROGRESS", "nothing moved");
     }
 
     #[test]

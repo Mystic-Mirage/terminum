@@ -138,8 +138,10 @@ fn top_rank(tx: &Transaction, status: &str, severity: &str) -> Result<f64, Strin
     Ok(min.map_or(0.0, |m| m - 1.0))
 }
 
+/// A title as kept: nothing that hides or reorders it, whoever writes it.
 fn check_title(title: &str) -> Result<String, String> {
-    let t = title.trim();
+    let cleaned = crate::termtext::clean(title, false);
+    let t = cleaned.trim();
     if t.is_empty() || t.chars().count() > TITLE_MOST {
         return Err(format!("Title: 1–{TITLE_MOST} characters"));
     }

@@ -4,7 +4,7 @@
 body.board-page { display: flex; flex-direction: column; height: var(--app-h, 100dvh); margin: 0; overflow: hidden; background: var(--surface-0); color: var(--t-fg); }
 
 /* its head: the session list's line, its keys centred 28 px from the top */
-#boardhead { display: flex; align-items: center; gap: var(--sp-2); min-height: 56px; box-sizing: border-box; padding: var(--sp-1) var(--gutter); padding-top: max(var(--sp-1), env(safe-area-inset-top)); }
+#boardhead { flex: none; display: flex; align-items: center; gap: var(--sp-2); min-height: 56px; box-sizing: border-box; padding: var(--sp-1) var(--gutter); padding-top: max(var(--sp-1), env(safe-area-inset-top)); }
 #filters { display: flex; align-items: center; gap: var(--sp-2); flex: 1 1 auto; min-width: 0; }
 #filters .search { flex: 0 1 220px; height: var(--key-h); }
 #find { flex: 1; min-width: 0; font: inherit; color: var(--t-fg); background: none; border: 0; outline: none; }
@@ -54,12 +54,14 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 .cstate { --sev: var(--faint); }
 .cstate::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px; background: var(--sev); border-radius: var(--blob-a); }
 .cstate.working { --sev: var(--accent); }
-.cstate.waiting { --sev: var(--waiting); }
+.cstate:is(.waiting, .stopped) { --sev: var(--waiting); }
 .cstate:is(.failed, .closed) { --sev: var(--danger); color: var(--danger-text); }
 
 /* its windows */
 #taskbox, #newbox { width: min(760px, calc(100vw - var(--sp-6) * 2)); max-height: calc(100dvh - var(--sp-6) * 2); }
 #taskbody { display: flex; flex-direction: column; gap: var(--sp-3); max-height: calc(100dvh - 130px); overflow-y: auto; }
+#taskbody > * { min-width: 0; }
+dialog .markdown pre { max-width: 100%; overflow-x: auto; }
 #newbox.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
 #movebox { width: 240px; margin: 0; padding: var(--sp-1); --fill: var(--chrome-2); border-radius: var(--r-lg); }
 #movebox form { gap: 0; }
@@ -71,6 +73,7 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 #newadd { margin-right: auto; }
 #taskbody textarea.field { width: 100%; box-sizing: border-box; }
 #newtext { width: 100%; box-sizing: border-box; }
+#toast[popover] { inset: auto; left: 50%; top: var(--sp-6); margin: 0; border: 0; color: var(--t-fg); }   /* in the top layer: over an open window */
 dialog .markdown { font-family: var(--ui); font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; min-width: 0; }
 dialog .markdown img { max-width: 100%; }
 .filelist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-label); }
@@ -116,6 +119,7 @@ dialog .markdown img { max-width: 100%; }
   .cfoot { font-size: var(--fs-label); }
   .fieldgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fieldgrid > :first-child:nth-last-child(odd) { grid-column: 1 / -1; }
+  #taskbody { max-height: none; overflow: visible; }   /* the sheet scrolls, once */
   .ev { font-size: var(--fs-small); }
   .evacts .icon, .filelist .icon { --ik: var(--icon-key-list); }
 }

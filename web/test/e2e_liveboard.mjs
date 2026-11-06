@@ -284,6 +284,7 @@ export async function liveBoardPhone(page, { base, shots }) {
   check("AC-105 every key of the head and a card takes a finger", !small.length, small.join());
   const head = await page.evaluate(() => Math.round(document.querySelector("#boardhead").getBoundingClientRect().height));
   check("AC-105 the head leaves the cards the room", head <= 112, String(head));
+  check("AC-105 many cards never squeeze the head over the switch", await page.evaluate(() => document.querySelector("#colswitch").getBoundingClientRect().top >= document.querySelector("#boardhead").getBoundingClientRect().bottom));
   await page.evaluate(() => { const b = document.querySelector("#board"); b.scrollLeft = b.clientWidth * 2; });
   check("AC-105 a swipe shows the next column and its tab follows", await until(() => page.evaluate(() => document.querySelector('#colswitch [aria-selected="true"]').dataset.status === "WAIT FOR HUMAN")));
   if (shots) await page.screenshot({ path: path.join(shots, "board-phone.png") });

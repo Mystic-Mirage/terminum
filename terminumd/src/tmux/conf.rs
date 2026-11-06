@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn written_once_and_kept() {
-        let dir = std::env::temp_dir().join(format!("tm-conf-{}", std::process::id()));
+        let dir = crate::testutil::temp_root().join(format!("tm-conf-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("tmux.conf");
         ensure(&p, 12000).unwrap();

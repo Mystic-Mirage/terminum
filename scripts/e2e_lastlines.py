@@ -20,7 +20,7 @@ from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, results, summary, tmux_on, wait_layout  # noqa: E402
-from testrun import free_port, own  # noqa: E402
+from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET = free_port(), own("tm-test-last")
 tmux = partial(tmux_on, SOCKET)
@@ -42,7 +42,7 @@ def ask(ws, key):
 
 
 def main():
-    work = os.path.realpath(tempfile.mkdtemp(prefix="tml-", dir="/tmp"))
+    work = os.path.realpath(tempfile.mkdtemp(prefix="tml-", dir=short_tmp()))
     t = Terminumd(PORT, SOCKET, env={"HOME": work})
     os.makedirs(os.path.join(work, "api"))
     key = lambda pane: f"tmux:local:{SOCKET}:{pane}"   # noqa: E731

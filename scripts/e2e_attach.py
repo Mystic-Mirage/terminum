@@ -17,7 +17,7 @@ from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout  # noqa: E402
-from testrun import free_port, own  # noqa: E402
+from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET, OWN = free_port(), own("tm-test-att"), own("tm-test-own")
 tmux = partial(tmux_on, SOCKET)
@@ -33,7 +33,7 @@ def size_of(run, pane):
 
 
 def main():
-    work = tempfile.mkdtemp(prefix="tma-", dir="/tmp")
+    work = tempfile.mkdtemp(prefix="tma-", dir=short_tmp())
     own("-f", "/dev/null", "new-session", "-d", "-s", "work", "-c", work, "-x", "90", "-y", "30")
     t = Terminumd(PORT, SOCKET, env={"DISPLAY": ":tm-test"})
     try:

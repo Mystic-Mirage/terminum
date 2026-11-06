@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-# The checks of CLAUDE.md §8 on this tree, once: each step's output in .checks/<id>.<step>.log,
+# The full run of CLAUDE.md §8 on this tree, once, the release's gate: each step's output in .checks/<id>.<step>.log,
 # and on a full pass .checks/<id>.ok, where <id> names the content of every tracked and new
 # file (not the commit: committing a checked tree keeps its pass). Started again on the same
 # tree it says when it passed and runs nothing (--force runs again), so a follow-up never pays
@@ -35,16 +35,19 @@ find .checks -name '*.log' ! -name "$id.*" -delete   # earlier trees' logs; thei
 [ -n "${TM_PRIVATE_PATTERNS:-}" ] || [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/terminum/private-patterns" ] \
   || echo "WARN no private patterns: ~/.config/terminum/private-patterns (other machines' names)"
 failed=()
-step() {   # step <name> <command…>: its output to the log, one line here
+step() {   # step <name> <command…>: its output to the log, one line here; what it leaves fails it (check_step.py)
   local name=$1; shift
   local log=".checks/$id.$name.log" t0=$SECONDS
-  if "$@" >"$log" 2>&1; then echo "ok   $name ($((SECONDS - t0)) s)"
+  if python3 -I scripts/check_step.py "$@" >"$log" 2>&1; then echo "ok   $name ($((SECONDS - t0)) s)"
   else echo "FAIL $name ($((SECONDS - t0)) s): $log"; tail -n 15 "$log" | sed 's/^/     /'; failed+=("$name"); fi
 }
 step test make test
 step clippy bash -c 'cd terminumd && cargo clippy --locked --all-targets -- -D warnings'
 step panel bash -c 'cd ui && node test/e2e_panel.mjs'
 step live bash -c 'cd terminumd && cargo build --locked && cd .. && node web/test/e2e_live.mjs'
+# every e2e script but Docker's, which take built binaries as arguments and are run by hand
+step e2e bash -c 'for f in scripts/e2e_*.py; do case $f in *remote_sshd*) ;; *) python3 "$f" || exit 1 ;; esac; done'
+step install env TERMINUMD_BIN=terminumd/target/debug/terminumd bash scripts/e2e_install.sh
 if [ "$(uname -s)" = Darwin ]; then step page node web/test/e2e_all.mjs
 else echo "SKIP page (web/test/e2e_all.mjs measures a Mac's browsers: make test-mac)"; fi
 step security env -u TM_PORT -u TM_APP_DIR bash scripts/security_check.sh

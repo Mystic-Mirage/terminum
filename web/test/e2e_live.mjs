@@ -14,7 +14,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { check, playwright, results, runningIn, within } from "./check.mjs";
-import { freePort, own } from "./testrun.mjs";
+import { freePort, own, shortTmp } from "./testrun.mjs";
 import { endOnSignal, NO_SIGNALS, stopChild } from "../../ui/test/process-stop.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
@@ -39,8 +39,8 @@ const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug
 // this run's: checks in several worktrees at once never meet, and purge() ends only this run's server
 const PORT = await freePort(), SOCKET = own("tm-test-live");
 const BASE = `http://127.0.0.1:${PORT}`;
-const tmp = fs.mkdtempSync("/tmp/tml-");
-const HOME = path.join(tmp, "h"), APP = path.join(tmp, "a"), WORK = fs.realpathSync(fs.mkdtempSync("/tmp/tmlw-"));
+const tmp = fs.mkdtempSync(`${shortTmp()}/tml-`);
+const HOME = path.join(tmp, "h"), APP = path.join(tmp, "a"), WORK = fs.realpathSync(fs.mkdtempSync(`${shortTmp()}/tmlw-`));
 fs.mkdirSync(HOME);
 for (const f of ["alpha.txt", "beta.md"]) fs.writeFileSync(path.join(WORK, f), `${f}\n`);
 // macOS's drag pasteboard played by a stub (dragged.rs runs TM_OSASCRIPT): it answers drag.json, else no paths; the user's own drag is never read

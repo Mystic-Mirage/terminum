@@ -232,7 +232,7 @@ fn update_resolves_deletes_and_edits_only_an_agents_record_of_the_scope() {
 
 #[test]
 fn the_notes_of_0_23_become_agents_bookmarks_once() {
-    let dir = std::env::temp_dir().join(format!("tm-notes-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("tm-notes-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("notes.json"), json!({"version": 1, "next": 3, "notes": [
         {"id": 1, "kind": "bug", "text": "The parser drops a BOM\nin src/parse.rs", "file": "src/parse.rs", "status": "open", "at": 1, "key": K, "session": "s", "project": null},

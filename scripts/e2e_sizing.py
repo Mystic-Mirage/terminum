@@ -18,7 +18,7 @@ from functools import partial
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_core import items, text_of  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, tmux_on, wait_layout  # noqa: E402
-from testrun import free_port, own  # noqa: E402
+from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET = free_port(), own("tm-test-sizing")
 tmux = partial(tmux_on, SOCKET)
@@ -185,7 +185,7 @@ def mc(t, pid, pane, work):
 
 def main():
     t = Terminumd(PORT, SOCKET)
-    work = tempfile.mkdtemp(prefix="tmz-", dir="/tmp")
+    work = tempfile.mkdtemp(prefix="tmz-", dir=short_tmp())
     try:
         t.start()
         ws = t.page()

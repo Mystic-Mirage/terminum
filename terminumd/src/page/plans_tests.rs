@@ -52,7 +52,7 @@ fn reply_with_plan_has_the_contract_fields() {
 #[test]
 fn plannew_reaches_every_page_once_per_key() {
     let pages = super::super::Pages::default();
-    let dir = std::env::temp_dir().join(format!("tm-plans-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("tm-plans-{}", std::process::id()));
     let (_a, mut ra) = pages.add(false, crate::page::trace::Recorder::new(dir.clone())).unwrap();
     let (_b, mut rb) = pages.add(true, crate::page::trace::Recorder::new(dir)).unwrap();
     tell(&pages, &[K.into(), "tmux:local:terminum:%2".into()]);

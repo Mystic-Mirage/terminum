@@ -103,7 +103,7 @@ mod tests {
     use super::*;
 
     fn home(tag: &str) -> PathBuf {
-        let h = std::env::temp_dir().join(format!("tm-folders-{tag}-{}", std::process::id()));
+        let h = crate::testutil::temp_root().join(format!("tm-folders-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&h);
         std::fs::create_dir_all(&h).unwrap();
         h

@@ -15,7 +15,8 @@ repo=$(cd "$(dirname "$0")/.." && pwd -P)
 real=${TERMINUMD_BIN:-$repo/terminumd/target/release/terminumd}
 [ -x "$real" ] || { echo "no terminumd at $real: run make terminumd (or set TERMINUMD_BIN)" >&2; exit 1; }
 real=$(cd "$(dirname "$real")" && pwd -P)/$(basename "$real")
-tmp=$(mktemp -d /tmp/tme-XXXXXX)          # short: the socket path holds at most 104 bytes
+tmp_base=${TMPDIR:-/tmp}; tmp_base=${tmp_base%/}; [ ${#tmp_base} -le 40 ] || tmp_base=/tmp   # short: a socket path holds at most 104 bytes (testrun.py)
+tmp=$(mktemp -d "$tmp_base/tme-XXXXXX")
 tsock=tm-e2e-install-$$
 port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
 export HOME=$tmp/home TM_NO_LAUNCHD=1 TM_NO_OPEN=1 TM_PORT=$port TM_TMUX_SOCKET=$tsock NO_COLOR=1
@@ -31,9 +32,11 @@ cleanup() {
   [ -x "$root/bin/terminum" ] && "$root/bin/terminum" uninstall >/dev/null 2>&1
   { read -r pid _ < "$root/state/terminumd.pid"; } 2>/dev/null && kill "$pid" 2>/dev/null
   tmux -L "$tsock" kill-server 2>/dev/null
+  rm -f "${TMUX_TMPDIR:-/tmp}/tmux-$(id -u)/$tsock"
   rm -rf "$tmp"
 }
 trap cleanup EXIT
+trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP   # a signal skips the EXIT trap otherwise
 
 check() { # name, then a command that succeeds when the check passes
   local name=$1; shift

@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_remote import api, host_group  # noqa: E402
 from e2e_remote_sshd import stage  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
-from testrun import free_port, own  # noqa: E402
+from testrun import free_port, own, short_tmp  # noqa: E402
 
 VARIANT = sys.argv[3] if len(sys.argv) > 3 else "alpine"
 PORT, SOCKET = (free_port(), own("tm-rr9-a")) if VARIANT == "alpine" else (free_port(), own("tm-rr9-d"))
@@ -171,7 +171,7 @@ def run_links():
 def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__.split("\n\n")[1])
-    work = tempfile.mkdtemp(prefix="tmr9-", dir="/tmp")
+    work = tempfile.mkdtemp(prefix="tmr9-", dir=short_tmp())
     t = None
     try:
         wrapper = start_host(work)

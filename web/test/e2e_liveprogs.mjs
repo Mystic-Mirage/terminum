@@ -9,8 +9,9 @@
 // visible SKIP. Claude Code is the user's own install and login: it runs with --safe-mode (no
 // CLAUDE.md, hooks, plugins or MCP servers), --tools '' and an unreachable ANTHROPIC_BASE_URL (no
 // model call), in terminum-claude-check under the user's own temporary folder (os.tmpdir(): 0700
-// on macOS), checked to be this user's and 0700 and emptied each run, which it is asked once to
-// trust: what it leaves is that folder's trust entry in ~/.claude.json and its own state files.
+// on macOS; TM_USER_TMPDIR under check_step.py, whose TMPDIR changes per run: one folder, one entry),
+// checked to be this user's and 0700, emptied each run and removed when the run exits, which it is
+// asked once to trust: what it leaves is that folder's trust entry in ~/.claude.json and its state files.
 // TM_TEST_NO_CLAUDE=1 leaves it out.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -86,11 +87,12 @@ async function mc(page, { tmux, work }) {
   close(tmux, pane);
 }
 
-const DIR = path.join(os.tmpdir(), "terminum-claude-check");
+const DIR = path.join(process.env.TM_USER_TMPDIR ?? os.tmpdir(), "terminum-claude-check");
 /** The folder Claude Code is asked to trust: this user's, 0700, empty (never one another user made). */
 function ownDir() {
   fs.rmSync(DIR, { recursive: true, force: true });
   fs.mkdirSync(DIR, { mode: 0o700 });
+  process.once("exit", () => fs.rmSync(DIR, { recursive: true, force: true }));
   const st = fs.lstatSync(DIR);
   if (!st.isDirectory() || st.uid !== process.getuid() || (st.mode & 0o777) !== 0o700) throw new Error(`${DIR} is not this user's 0700 folder`);
 }

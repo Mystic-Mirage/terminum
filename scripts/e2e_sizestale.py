@@ -16,7 +16,7 @@ from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, summary, tmux_on, wait_layout  # noqa: E402
-from testrun import free_port, own  # noqa: E402
+from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET, OWN = free_port(), own("tm-test-szs"), own("tm-test-szo")
 tmux = partial(tmux_on, SOCKET)
@@ -24,7 +24,7 @@ other = partial(tmux_on, OWN)
 
 
 def main():
-    work = tempfile.mkdtemp(prefix="tmz-", dir="/tmp")
+    work = tempfile.mkdtemp(prefix="tmz-", dir=short_tmp())
     other("-f", "/dev/null", "new-session", "-d", "-s", "work", "-c", work, "-x", "90", "-y", "30")
     pid = int(other("display", "-p", "#{pid}").strip())
     t = Terminumd(PORT, SOCKET)

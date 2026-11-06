@@ -39,7 +39,7 @@ fn errors_and_empty_folders_are_evicted_with_their_slot_overhead() {
 
 #[tokio::test]
 async fn sort_and_filter_indexes_count_and_evict() {
-    let dir = std::env::temp_dir().join(format!("tm-lsidx-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("tm-lsidx-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     for i in 0..2000 {
@@ -72,7 +72,7 @@ fn natural_order() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn pages_and_filter() {
-    let dir = std::env::temp_dir().join(format!("fbd-test-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("fbd-test-{}", std::process::id()));
     fs::create_dir_all(dir.join("sub")).unwrap();
     for i in 0..1200 {
         fs::write(dir.join(format!("f{i}.txt")), b"x").unwrap();
@@ -98,7 +98,7 @@ async fn pages_and_filter() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn pages_filter_and_locate_follow_the_order() {
-    let dir = std::env::temp_dir().join(format!("tm-ls-sort-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("tm-ls-sort-{}", std::process::id()));
     fs::create_dir_all(dir.join("sub")).unwrap();
     for n in ["b.txt", "a.md", "c.rs", "d.txt", ".env"] { fs::write(dir.join(n), b"x").unwrap(); }
     let c = Cache::new(64 << 20);

@@ -133,7 +133,7 @@ fn a_link_socket_is_short_stable_and_per_host() {
 
 /// A fresh socket path for `serve` (short: macOS caps socket paths at 104 bytes).
 fn sock(tag: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!("tml-{}-{tag}.sock", std::process::id()));
+    let p = crate::testutil::temp_root().join(format!("tml-{}-{tag}.sock", std::process::id()));
     let _ = std::fs::remove_file(&p);
     p
 }

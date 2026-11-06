@@ -347,7 +347,7 @@ mod tests {
 
     fn setup(tag: &str) -> (Roots, PathBuf) {
         let d = crate::testutil::fresh_dir(&format!("ops-{tag}"));
-        (Roots::parse(&std::env::temp_dir().display().to_string()), fs::canonicalize(&d).unwrap())
+        (Roots::parse(&crate::testutil::temp_root().display().to_string()), fs::canonicalize(&d).unwrap())
     }
 
     #[test]

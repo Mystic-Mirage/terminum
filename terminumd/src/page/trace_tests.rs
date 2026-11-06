@@ -6,7 +6,7 @@ use super::*;
 use std::os::unix::fs::PermissionsExt;
 
 fn logs(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("tm-trace-{}-{name}", std::process::id()));
+    let d = crate::testutil::temp_root().join(format!("tm-trace-{}-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&d);
     d
 }

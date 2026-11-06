@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn a_waiting_flush_captures_the_latest_snapshot_after_the_writer_lock() {
-        let path = std::env::temp_dir().join(format!("fbd-ws-flush-{}.json", std::process::id()));
+        let path = crate::testutil::temp_root().join(format!("fbd-ws-flush-{}.json", std::process::id()));
         let s = Arc::new(Store { data: Mutex::new(File { version: 1, ..Default::default() }),
             writing: Mutex::new(()), path: path.clone(), dirty: Notify::new(), bus: Bus::new(), ttl: 14 * 86400 });
         let write = s.writing.lock();
@@ -229,7 +229,7 @@ mod tests {
 
     #[tokio::test]
     async fn ongoing_ttl_preserves_live_idle_panes_and_uncertain_tmux_without_revisions() {
-        let path = std::env::temp_dir().join(format!("fbd-ws-ttl-{}.json", std::process::id()));
+        let path = crate::testutil::temp_root().join(format!("fbd-ws-ttl-{}.json", std::process::id()));
         fs::write(&path, r#"{"version":1,"panes":{
             "live":{"root":"/a","updated":1,"rev":7},
             "closed":{"root":"/b","updated":1},
@@ -256,7 +256,7 @@ mod tests {
     /// (fields missing), so a rollback or upgrade never loses the workspaces.
     #[tokio::test]
     async fn state_of_other_builds_is_readable() {
-        let path = std::env::temp_dir().join(format!("fbd-ws-compat-{}.json", std::process::id()));
+        let path = crate::testutil::temp_root().join(format!("fbd-ws-compat-{}.json", std::process::id()));
         fs::write(&path, r#"{"version": 1, "from_a_newer_build": true, "prefs": {"hidden": false},
             "panes": {"p1": {"root": "/a", "updated": 4102444800, "tabs": [{"path": "/a/x.rs", "pinned": true}], "zoom": 2}},
             "older": {}}"#).unwrap();
@@ -271,7 +271,7 @@ mod tests {
 
     #[tokio::test]
     async fn cd_clears_tree_keeps_tabs_and_rev_guards() {
-        let path = std::env::temp_dir().join(format!("fbd-ws-{}.json", std::process::id()));
+        let path = crate::testutil::temp_root().join(format!("fbd-ws-{}.json", std::process::id()));
         let s = Store::load(path.clone(), 14, Bus::new());
         s.set_root("p1", "/a");
         let mut p = s.get("p1", None);

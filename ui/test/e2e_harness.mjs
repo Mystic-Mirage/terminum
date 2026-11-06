@@ -8,7 +8,7 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { freePort, own } from "../../web/test/testrun.mjs";
+import { freePort, own, shortTmp } from "../../web/test/testrun.mjs";
 import { endOnSignal, stopChild } from "./process-stop.mjs";
 
 // this run's: checks in several worktrees at once never meet (testrun.mjs)
@@ -16,10 +16,10 @@ export const PORT = await freePort();
 export const TMUX_SOCKET = own("tm-test-panel");
 const HERE = path.dirname(new URL(import.meta.url).pathname);
 export const BIN = process.env.TM_BIN ?? path.resolve(HERE, "../../terminumd/target/debug/terminumd");
-export const SB = fs.realpathSync(fs.mkdtempSync("/tmp/tm-e2e-")); // the sandbox: the only writable root
+export const SB = fs.realpathSync(fs.mkdtempSync(`${shortTmp()}/tm-e2e-`)); // the sandbox: the only writable root
 // short folders: the CLI socket's path must stay under 104 bytes
-const HOME = fs.mkdtempSync("/tmp/tmh-");
-const APP = fs.mkdtempSync("/tmp/tma-");
+const HOME = fs.mkdtempSync(`${shortTmp()}/tmh-`);
+const APP = fs.mkdtempSync(`${shortTmp()}/tma-`);
 export const base = `http://127.0.0.1:${PORT}`;
 
 /** terminumd's CLI socket: the password and health (`fetch` cannot use a Unix socket). */
@@ -69,7 +69,7 @@ fs.writeFileSync(`${SB}/docs/logo.png`, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAE
 
 // ── the private tmux server: plain sh panes, so typed text is easy to read back ─
 const TMUX = execFileSync("/bin/sh", ["-c", "command -v tmux"], { encoding: "utf8" }).trim();
-const shellEnv = { PATH: "/usr/bin:/bin", HOME, TERM: "xterm-256color", LANG: "en_US.UTF-8", PS1: "$ ", ENV: "" };
+const shellEnv = { PATH: "/usr/bin:/bin", HOME, TERM: "xterm-256color", LANG: "en_US.UTF-8", PS1: "$ ", ENV: "", ...(process.env.TMUX_TMPDIR ? { TMUX_TMPDIR: process.env.TMUX_TMPDIR } : {}) };
 export const tmux = (...args) => execFileSync(TMUX, ["-f", "/dev/null", "-L", TMUX_SOCKET, ...args], { env: shellEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const removeDirs = () => { for (const d of [SB, HOME, APP]) fs.rmSync(d, { recursive: true, force: true }); };
 let panes;

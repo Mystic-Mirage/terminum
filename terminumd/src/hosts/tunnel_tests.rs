@@ -27,7 +27,7 @@ fn the_helper_answer_is_the_last_non_empty_line() {
 
 #[tokio::test]
 async fn a_forward_counts_only_when_the_helper_answers() {
-    let dir = std::env::temp_dir().join(format!("tm-fw-{}", crate::auth::crypto::random_hex::<4>()));
+    let dir = crate::testutil::temp_root().join(format!("tm-fw-{}", crate::auth::crypto::random_hex::<4>()));
     std::fs::create_dir_all(&dir).unwrap();
     let (up, refused) = (dir.join("up.sock"), dir.join("no.sock"));
     let (l1, l2) = (tokio::net::UnixListener::bind(&up).unwrap(), tokio::net::UnixListener::bind(&refused).unwrap());

@@ -23,7 +23,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_remote import api, host_group  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
-from testrun import free_port, own  # noqa: E402
+from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET, NAME, SSH_PORT = free_port(), own("tm-test-rsshd"), "tm-test-sshd", 2222
 HOME = "/home/alex"
@@ -96,7 +96,7 @@ def files_up(t, secret, timeout=40):
 def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__.split("\n\n")[1])
-    work = tempfile.mkdtemp(prefix="tmr-", dir="/tmp")
+    work = tempfile.mkdtemp(prefix="tmr-", dir=short_tmp())
     t = None
     try:
         wrapper = start_host(work)

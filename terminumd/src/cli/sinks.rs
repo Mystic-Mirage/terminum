@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn local_first_then_links_by_name_each_once() {
-        let base = std::env::temp_dir().join(format!("tmsk-{}", std::process::id()));
+        let base = crate::testutil::temp_root().join(format!("tmsk-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
         let run = base.join("run");

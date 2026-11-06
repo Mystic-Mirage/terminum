@@ -91,8 +91,12 @@ def host():
         st, _ = unix_request(t.sock, "POST", "/hosts/add",
                              {"name": "reviewbox", "recipe": "alex@refused.example"})
         assert st == 200
-        replaced = api(t, secret, endpoint, "reviewbox")[0]
-        check("AC-87 replacing a host recipe cannot read through its retired Files helper", replaced == 404, replaced)
+        # AC-87: the old link and its helper stay until a new recipe answers, and the group says so
+        host = lambda: next(h for h in unix_request(t.sock, "GET", "/hosts")[1]["hosts"] if h["name"] == "reviewbox")
+        wait_for(host, lambda h: "still connected with the previous one" in h.get("why", ""))
+        check("AC-87 a recipe that does not answer keeps the old link and says so",
+              "still connected with the previous one" in host().get("why", ""), host().get("why"))
+        check("AC-87 ... and its Files stay", api(t, secret, endpoint, "reviewbox")[0] == 200)
         # A malformed settings record must also retire its existing server and helper.
         stage = "return to the original host"
         unix_request(t.sock, "POST", "/hosts/add", {"name": "reviewbox", "recipe": "alex@devbox.example"})
@@ -104,8 +108,9 @@ def host():
         settings.write_text(json.dumps(value))
         wait_for(lambda: unix_request(t.sock, "GET", "/hosts")[1]["hosts"],
                  lambda hs: any(h["name"] == "reviewbox" and "option not allowed" in h.get("why", "") for h in hs))
-        invalid = api(t, secret, endpoint, "reviewbox")[0]
-        check("AC-87 an invalid replacement record removes the old Files helper", invalid == 404, invalid)
+        check("AC-87 an invalid record keeps the old link and says so",
+              "still connected with the previous recipe" in host().get("why", ""), host().get("why"))
+        check("AC-87 ... and its Files stay", api(t, secret, endpoint, "reviewbox")[0] == 200)
     except AssertionError as e:
         check("AC-87 private host lifecycle", False, f"{stage}: {e}")
         print("Private host state:", unix_request(t.sock, "GET", "/hosts")[1])

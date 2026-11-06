@@ -28,7 +28,7 @@ fn script_runs_under_sh_with_marker_known_paths_and_caps() {
 #[test]
 fn the_script_runs_in_sh_and_frames_the_answer() {
     // the real /bin/sh with a fake home: a claude in ~/.nvm, no helper: the failure lines framed
-    let dir = std::env::temp_dir().join(format!("tm-ai-{}", std::process::id()));
+    let dir = crate::testutil::temp_root().join(format!("tm-ai-{}", std::process::id()));
     let bin = dir.join(".nvm/versions/node/v22.1.0/bin");
     std::fs::create_dir_all(&bin).unwrap();
     std::fs::write(bin.join("claude"), "#!/bin/sh\n").unwrap();

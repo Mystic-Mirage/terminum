@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn marks_come_back_from_the_file_and_a_broken_one_is_set_aside() {
-        let dir = std::env::temp_dir().join(format!("tm-unread-{}", std::process::id()));
+        let dir = crate::testutil::temp_root().join(format!("tm-unread-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         assert!(Marks::load(&dir).keys.is_empty(), "no file: none");

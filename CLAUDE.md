@@ -96,6 +96,8 @@ tests, experiments, cleanup: !attach to, !type into, !end what they did not star
 one exception: `scripts/leftovers.py`, from `make leftovers END=1` or `make release`: one exact test command, no parent, over 6 h old, read again just before, SIGTERM by pid; dead `tm-*` tmux sockets; folders with a test's prefix in the temporary folders, nothing recent or open in them (AC-102)
 end everything started (terminumd, tmux servers, ssh stand-ins, browsers, containers, temporary folders) on pass, fail or signal (`finally`, SIGTERM/SIGHUP turned into an exit so it runs: `scripts/e2e_ws.py`)
 before delivering: look for leftovers of your runs (`ps`, `tmux -L`/`-S` sockets, `docker ps`), end them as above; a leftover is a test bug to fix, not only to end
+guard: `make check` runs each step under `scripts/check_step.py`, which fails one that leaves something (AC-102)
+test folders: `crate::testutil::temp_root()` (Rust), `short_tmp()`/`shortTmp()` of `scripts/testrun.py`, `web/test/testrun.mjs`; !hard-coded `/tmp`
 run the checks, show results; unverified work is unfinished
 
 ## Workflow

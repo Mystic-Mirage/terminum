@@ -80,7 +80,7 @@ export async function liveDrop(page, { home, work, drag }) {
   await dropFile(page, "Other Notes.txt", 5, 1_792_000_000_000);
   const earlier = await page.waitForFunction(() => document.getElementById("toast").innerText.startsWith("Their own paths"), null, { timeout: 5000 })
     .then(() => page.evaluate(() => document.getElementById("toast").innerText)).catch(() => "");
-  const copied = await page.waitForFunction(() => document.getElementById("screen").innerText.includes("Other_Notes.txt"), null, { timeout: 5000 })
+  const copied = await page.waitForFunction(() => document.getElementById("screen").innerText.replace(/\s/g, "").includes("Other_Notes.txt"), null, { timeout: 5000 })
     .then(() => true).catch(() => false);   // the copy's path typed before the line is cleared
   await page.keyboard.press("Control+U");
   check("AC-36 a file not among the drag's files is uploaded, the toast saying so and naming what the drag held",
@@ -95,7 +95,7 @@ export async function liveDrop(page, { home, work, drag }) {
   const saved = shots(home).find((f) => f.endsWith("Cat_Package.zip") || f.endsWith("Cat-Package.zip") || /Cat.Package\.zip$/.test(f));
   const size = saved ? fs.statSync(path.join(home, "tmp", saved)).size : 0;
   await page.waitForTimeout(300);
-  const typed = await page.evaluate(() => document.getElementById("screen").innerText.includes("Package.zip"));
+  const typed = await page.evaluate(() => document.getElementById("screen").innerText.replace(/\s/g, "").includes("Package.zip"));   // a long path wraps
   await page.keyboard.press("Control+U");
   const why = await page.evaluate(() => document.getElementById("toast").innerText);
   check("AC-36 a 22 MB file not on the drag pasteboard is uploaded (100 MB at most), its path pasted, the toast saying why",

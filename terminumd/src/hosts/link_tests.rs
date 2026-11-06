@@ -58,7 +58,7 @@ fn link_lines_and_retry_timing() {
 
 #[test]
 fn the_mac_id_is_made_once_and_kept() {
-    let d = std::env::temp_dir().join(format!("tm-macid-{}", crate::auth::crypto::random_hex::<4>()));
+    let d = crate::testutil::temp_root().join(format!("tm-macid-{}", crate::auth::crypto::random_hex::<4>()));
     std::fs::create_dir_all(&d).unwrap();
     let a = mac_id(&d).unwrap();
     assert_eq!(a.len(), 12);

@@ -10,7 +10,6 @@
 
 import fs from "node:fs";
 import http from "node:http";
-import os from "node:os";
 import path from "node:path";
 import { slack } from "../../web/test/check.mjs";
 import { manyPanels } from "./e2e_sockets.mjs";
@@ -427,7 +426,6 @@ try {
   await sp.close();
 
   check("no page errors or alerts", errors.length === 0, errors.join("; "));
-  await page.screenshot({ path: path.join(os.tmpdir(), "tm-e2e-panel.png") });
 } finally {
   await browser.close();
   await cleanup();

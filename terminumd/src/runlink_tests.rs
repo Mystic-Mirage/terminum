@@ -12,7 +12,7 @@ impl Drop for Tmp {
     }
 }
 fn tmp(tag: &str) -> Tmp {
-    let p = std::env::temp_dir().join(format!("tmrl-{}-{tag}", std::process::id()));
+    let p = crate::testutil::temp_root().join(format!("tmrl-{}-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
     Tmp(p)

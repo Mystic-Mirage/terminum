@@ -83,7 +83,7 @@ def main():
 
         t0 = time.time()
         ws.send({"t": "sub", "id": local_pane, "cols": 90, "rows": 25})
-        opened = ws.until(lambda m: m["t"] == "screen" and m.get("sid", local_pane) == local_pane, 15)
+        opened = ws.until(lambda m: m["t"] == "screen" and m.get("sid") == local_pane, 15)
         check("AC-132 a local pane opens while the host hangs", opened is not None and time.time() - t0 < FAST, f"{time.time() - t0:.2f} s")
         echo = typed_echo(ws, "local")
         check("AC-132 a key on a local pane echoes while the host hangs", echo is not None and echo < FAST, f"{echo} s")
@@ -109,13 +109,9 @@ def main():
         ws.send({"t": "sub", "id": host_pane, "cols": 90, "rows": 25})
         ws.until(lambda m: m["t"] == "screen", 15)
         ids = [i["id"] for i in host_group(back or [{}])["items"]] if back else []
-        for line in open(os.path.join(t.root, "ssh-pids")):
-            pid, _, rest = line.partition(" ")
-            if "new-session" in rest:
-                try:
-                    os.kill(int(pid), signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
+        # the control clients end, as with a real ssh going (the watchdog's kill left fake_ssh's child up)
+        for pid in tmux(REMOTE, "list-clients", "-F", "#{client_pid}").split():
+            os.kill(int(pid), signal.SIGTERM)
         lost = wait_layout(ws, lambda g: (h := host_group(g)) is not None and h.get("state") in ("reconnecting", "failed"), 20)
         h = host_group(lost or []) or {}
         check("AC-81 the link cut: its group says so", bool(lost), h.get("why"))

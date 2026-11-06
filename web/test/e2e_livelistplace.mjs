@@ -56,7 +56,7 @@ export async function liveListPlace(page, { tmux, work, app }) {
   await projectMenu(shown);
   const offered = await page.locator('#rowmenu button:has-text("Spared")').count();
   await page.keyboard.press("Escape");
-  check("AC-92 a member just added closes: its project goes after 5 s and every page is told, with no other change", gone && !offered, JSON.stringify({ gone, offered }));
+  check("AC-110 a member just added closes: it leaves after 5 s, its project stays, with no other change", gone && offered === 1, JSON.stringify({ gone, offered }));
 
   await page.click(row(a));
   await page.waitForTimeout(300);

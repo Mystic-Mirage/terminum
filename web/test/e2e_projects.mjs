@@ -359,7 +359,7 @@ export async function webProjects(browser, name) {
   });
   await pause(p.page, 100);
   check("AC-07 the finger's lift asks nothing: Close Session, now first, stays unpressed", under && !await p.page.evaluate(() => document.getElementById("confirmbox").open));
-  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Close Session" && held[1] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Tasks…") && held.includes("Diagnostics…") && held.length === 12, held.join());
+  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Close Session" && held[1] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Tasks…") && held.includes("Diagnostics…") && held.length === 13, held.join());
   const pm = await mark(p.page);
   check("AC-93 on a phone too an unread row is hatched", pm.hatched && !pm.blob, JSON.stringify(pm));
   check("AC-07 on a phone (no hover) Clone is always there", await clone(p.page, 2) === "0.8");

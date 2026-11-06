@@ -19,7 +19,7 @@ import { diagnostics } from "./diag.js";
 const $ = (id) => document.getElementById(id);
 const HOLD = 500;                // ms a finger rests before its menu opens
 // each item's icon, by its action (icons.js); a destructive one's is a red ×
-const MARKS = { clone: "copy-plus", project: "folder-plus", unproject: "folder-minus", plan: "list-checks", lastlines: "history",
+const MARKS = { newtask: "list-checks", clone: "copy-plus", project: "folder-plus", unproject: "folder-minus", plan: "list-checks", lastlines: "history",
   diag: "activity", top: "arrow-up-to-line", up: "arrow-up", down: "arrow-down", bottom: "arrow-down-to-line", movewin: "arrow-right-left",
   close: "x", new: "plus", newproject: "plus", rename: "pencil", ungroup: "ungroup", back: "chevron-left", session: "terminal",
   paste: "clipboard", copy: "copy", undo: "undo-2", redo: "redo-2" };

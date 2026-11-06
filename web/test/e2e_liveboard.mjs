@@ -218,6 +218,11 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
     await page.screenshot({ path: path.join(shots, "new-wide.png") });
     await page.click("#newdiscard");
   }
+  // the checks after this one go on where they expect: a session shown on the session page
+  await page.goto(`${base}/sessions/`);
+  await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 10000 });
+  await page.click('#sessions .item');
+  await page.waitForSelector("#term", { state: "visible", timeout: 5000 });
 }
 
 /** A phone: one column at a time, Move to… and no sideways scroll (AC-105). */

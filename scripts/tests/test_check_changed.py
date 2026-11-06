@@ -60,9 +60,9 @@ class Plan(unittest.TestCase):
         self.assertNotIn("critical", got)
         self.assertNotIn("cargo", got)
 
-    def test_dockers_checks_run_only_when_changed_themselves(self):
+    def test_dockers_checks_take_arguments_and_are_run_by_hand(self):
         self.assertNotIn("e2e_remote_sshd", steps(["terminumd/src/hosts/link.rs"], ["scripts/e2e_remote_sshd.py"]))
-        self.assertIn("e2e_remote_sshd", steps(["scripts/e2e_remote_sshd.py"]))
+        self.assertNotIn("e2e_remote_sshd", steps(["scripts/e2e_remote_sshd.py"]))
 
     def test_a_live_part_runs_with_the_critical_step(self):
         got = steps(["scripts/worktree.py"], ["web/test/e2e_livenotes.mjs"])

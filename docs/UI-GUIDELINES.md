@@ -12,7 +12,7 @@ here: an error shows in place, never only in the console.
 | --- | --- |
 | Terminal first | The terminal gets the space; chrome is one header row, one list, floating buttons only where the thumb is. Nothing covers terminal text without a way to dismiss it. |
 | IDE-standard | Controls look and behave like VS Code / iTerm2 / macOS: segmented controls, ghost icon buttons, popover menus, modal dialogs for irreversible actions. No novel widgets. |
-| Phone = finger-sized | Under `(max-width: 860px)` or `(pointer: coarse)` every tappable target is ≥ 44 × 44 px (≥ 40 inside a list row whose height is 40); text fields keep their role's size (§4.6: the viewport's `maximum-scale=1` stops iOS zooming in on focus). |
+| Phone = finger-sized | Under `(max-width: 860px)` or `(pointer: coarse)` every tappable target is ≥ 44 × 44 px (≥ 40 inside a list row whose height is 40); text fields keep their role's size (§4.6). |
 | Theme-driven colors | Surfaces, text, lines and accent derive from the session's theme (`--t-bg`, `--t-fg`, `--accent`). Fixed hues only for meaning that must not change with the theme (§2.2), and they must read on a light theme too. |
 | One look per kind | Two controls of the same kind share one class and one rule. Style by class; ids are for behavior and tests. |
 | Surfaces, not lines | Elements are set apart by space or by a step of background (§2.1); a 1px line only for a tree guide or rendered content. |
@@ -28,7 +28,7 @@ added there first, with its role, and here.
 
 ### 2.1 Theme colors and surfaces (`tokens.css`; the theme by app.js on `:root`)
 
-Elevation is a step of background, never a line: each surface is `--t-fg` mixed into `--t-bg`.
+Each surface is `--t-fg` mixed into `--t-bg` (§1, Surfaces, not lines).
 
 | Token | Use |
 | --- | --- |
@@ -45,7 +45,7 @@ Elevation is a step of background, never a line: each surface is `--t-fg` mixed 
 | `--accent` | The theme's cursor color: selection, primary button fill, active tab. |
 | `--ring` | The focus ring: `--accent`, or `--t-fg` when the accent is under 3:1 against `--t-bg` (contrast.js). |
 | `--sel`, `--selfg` | Terminal text selection. |
-| `--size` | Terminal font size; also dialogs, footer forms and their fields, find box (tmux.css). |
+| `--size` | Terminal font size; also what §4.6 names (tmux.css). |
 | `:root.light` | Set by app.js when the theme says `dark: false`: lighter shadows, darker folder hues, fields get a resting ring. |
 | `--ui`, `--term-font` | Chrome font; terminal font (also forms and dialogs, §4.6). |
 
@@ -83,8 +83,8 @@ it on the light theme. Fills carrying white text reach 4.5:1 on their own (do no
 ### 2.3 Fonts and type scale
 
 Two families: `--ui` (the system's: SF Pro on Apple devices) for chrome at fixed sizes, and
-`--term-font` (the theme's font, else Menlo) for the terminal and for what is typed (dialogs, forms,
-fields, the find box: §4.6) at `--size`, which the user scales with − and +. Chrome does not scale
+`--term-font` (the theme's font, else Menlo) for the terminal and for what is typed (§4.6) at
+`--size`, which the user scales with − and +. Chrome does not scale
 with `--size`; a phone gets its own steps (below). Body 14px/1.35.
 
 | Token | Size | Weight | Use |
@@ -105,8 +105,8 @@ change (counts, sizes, positions) use `font-variant-numeric: tabular-nums`.
 ### 2.4 Grid, spacing, radii, heights
 
 A 4px grid: `--sp-0` 2 (inside a control only), `--sp-1` 4, `--sp-2` 8, `--sp-3` 12, `--sp-4` 16,
-`--sp-5` 20, `--sp-6` 24. The older 6px and 10px steps stay where they are until that rule is next
-changed (they become 4/8 and 8/12). `--gutter`: 12px wide, 16px on a touch screen.
+`--sp-5` 20, `--sp-6` 24. A 6px or 10px step left in a rule stays until that rule is next changed
+(it becomes 4/8 or 8/12). `--gutter`: 12px wide, 16px on a touch screen.
 
 | Rhythm | Value |
 | --- | --- |
@@ -169,9 +169,8 @@ changed (they become 4/8 and 8/12). `--gutter`: 12px wide, 16px on a touch scree
 
 ### 2.7 Material (`web/static/shapes.css`, shared with the Panel; the grain: `grain.css`, the Page's)
 
-After todobem's panel: no outline is drawn, no box bows. A surface is told by its fill (§2.1) and
-two hairlines of light, never a line of color: a light catch on its top edge and a shade on its
-bottom one. Tokens (tokens.css; their strengths change on a light theme under `:root.light`):
+No outline is drawn, no box bows. A surface is told by its fill (§2.1) and two hairlines of light
+(`--m-edge`), never a line of color. Tokens (tokens.css; their strengths change on a light theme under `:root.light`):
 
 | Token | What | Where |
 | --- | --- | --- |
@@ -179,7 +178,7 @@ bottom one. Tokens (tokens.css; their strengths change on a light theme under `:
 | `--m-edge-ctl` | A key's edges, a little stronger, and a 1px drop | Filled buttons: dialog and form actions, footer buttons, segments' track, `.new`, banner and note buttons. |
 | `--m-well` | A recess: shade inside the top, a faint inner ring | Fields, the find field, a pressed key (`:active`), a toggle's track. |
 | `--m-matte` | A faint top-lit falloff over a key's fill (a gradient image) | Every filled key, so a fill is never one flat value. |
-| `--m-seam` | A bar's lower edge: a dark hairline and a faint light one under it | `.wavebar` headers (`#bar`, `.winhead`, the Panel's header), the list's right edge. |
+| `--m-seam` | A bar's lower edge: a dark hairline and a faint light one under it | `.wavebar` headers (Header, below), the list's right edge. |
 | `--chamfer` | A plate's corners cut instead of rounded (clip-path polygon) | Tags that are information, never pressed: the session pill, `kbd`. |
 | `--grain`, `--grain-opacity` | One 512px tile of monochrome specks laid twice (512 and 571px) | Over the chrome only (grain.css): the list, the header, Files' head, popovers, footer forms, the toast, the floating box; never over the terminal, Files' or View's content, a box that scrolls, or a modal dialog (WebKit then keeps the dialog at its opening scale). Always a raster drawn from grain.svg at the screen's density (grain.js, `data:` URLs; at most 2x and fainter on a phone): the SVG itself is never a background, WebKit re-evaluates its filters on every repaint. Off under `prefers-contrast: more`. |
 
@@ -190,8 +189,8 @@ bottom one. Tokens (tokens.css; their strengths change on a light theme under `:
 | Box | `.box` (popovers, footer forms, dialogs, find box, bookmark bar, waiting cards, toast; Panel `.modal`, `.ctx`) | `background: var(--fill)`, `--r-lg` (dialogs `--r-xl`), `box-shadow: var(--shadow-far)` (which carries `--m-edge`). |
 | Field | `.field` (an input, a textarea, or a wrapper label such as `.search`, `.lead`; Panel `.filter`) | A well on `--surface-2`: `--m-well`; focus adds a 2px inset `--ring`. |
 | Header | `.wavebar` (`#bar`, `.winhead`, the Panel's header) | `background: var(--fill)`, `--m-seam` under it. The class keeps its name. |
-| Blob | `#fabs button`, `#findfab`, the bookmark buttons, `#bottom`, the touch footer's icons | Kept from the earlier look: a `--blob-*` radius, its drift and pulse (motion.css). |
-| Marks | `.wave.mark`, `.wave.remind` | Kept: the wavy bookmark and reminder lines (`--wave-line`). |
+| Blob | `#fabs button`, `#findfab`, the bookmark buttons, `#bottom`, the touch footer's icons | A `--blob-*` radius, its drift and pulse (motion.css). |
+| Marks | `.wave.mark`, `.wave.remind` | The wavy bookmark and reminder lines (`--wave-line`). |
 
 The black and white alphas of these tokens are the material's own and the one exception to "no
 raw colors" besides shadows (§2.2); colors themselves stay the theme's (§2.1, §2.2).
@@ -217,7 +216,7 @@ raw colors" besides shadows (§2.2); colors themselves stay the theme's (§2.1, 
 | Hover (`(hover: hover) and (pointer: fine)` only) | Color: one surface step. Never the outline or the size (a sweep across a toolbar must stay calm). Rows: fill and their folder bar brighten. Blobs lift 2px and grow 12% on a spring (`--ease-spring`), their icon nods once (a small turn back and forth, `--dur-pop`). |
 | Press | A key sinks: `--m-well` for the press, no scale. Blobs squash to .9. |
 | Release | Color back. Blobs pulse in their own outline. |
-| A window opens or closes (a `.box`: pane, menu, form, toast, dialog; a phone's sheet) | Flies out of what opened it: its origin the press or the focused key (`pop.js`), held to 40 px outside it, so a menu grows out of its button and a dialog in the middle from its side towards it; opened by nothing (a toast), from its middle. From .3 and a 10px blur, in focus within 80ms, ~10% past its size and back on a spring (`--ease-pop`, 350ms); a menu's rows come up one after another, 25ms apart. Out: back the same way, to .3, blurred and faded in 160ms, still in sight while it goes; its backdrop or shade fades with it. Safari has no `overlay`: a closed dialog stays laid out there, out of sight (`visibility`), so it can go the same way. |
+| A window opens or closes (a `.box`: pane, menu, form, toast, dialog; a phone's sheet) | Flies out of what opened it: its origin the press or the focused key (`pop.js`), held to 40 px outside it, so a menu grows out of its button and a dialog in the middle from its side towards it; opened by nothing (a toast), from its middle. From `--pop-from` and `--pop-blur`, in focus within `--dur-focus`, past its size and back on a spring (`--ease-pop`, `--dur-pop`); a menu's rows come up one after another (`--row-step`). Out: back the same way, to `--pop-from`, blurred and faded in `--dur-leave`, still in sight while it goes; its backdrop or shade fades with it. Safari has no `overlay`: a closed dialog stays laid out there, out of sight (`visibility`), so it can go the same way. |
 | The shown session changes | Its row's fill settles from the accent, its bar grows in (`.fresh`, once). |
 | A session works | Its bar pulses, in the list and the header (its color glows and fades, 1.4 s); no hourglass. A state, not motion: nothing moves, so it stays with Reduce Motion. |
 | Never | Anything in `#term`, the key bar, what is typed; width, height, position or layout; banners and error text (they show at once); a new loop. |
@@ -228,7 +227,7 @@ settle; colors still change. The browser checks run with reduced motion (fake.mj
 
 ## 3. Components
 
-Rule: style by a shared class, never by a single `#id` when a sibling of the same kind exists.
+Rule: never style by a single `#id` when a sibling of the same kind exists (§1, One look per kind).
 Before adding a rule, find the sibling's class and reuse it; add a modifier only for a real
 difference.
 
@@ -253,12 +252,12 @@ setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own
 | --- | --- | --- | --- |
 | Footer button | `button.footbtn` > `svg.lu --s:15px` + `span` (label, its tail in `span.more`) | style.css | Same look for all four; a count is `span.count`. Do not add per-id size, color or padding (the icon's color may vary by meaning, e.g. `#marksbtn > svg`). On a touch screen or below 860px: one row of four blobs (48px icon fill, a different `--blob-*` each), the label's first words under each as a caption (`.more` hidden, so the name stays whole), the bookmark count a badge. |
 | Footer form | `form.footform.box` + `p.hint` + `p[role=alert]` + `.row` > `button.primary` + Cancel | tmux.css | One open at a time; opens above the footer; primary first, Cancel second; fields `.field`. Error text only in the `role="alert"` line. |
-| Header icon button | `button.icon` | style.css | Ghost; 32/44px. Pressed or expanded state via `aria-*`, not a class. |
-| Segmented control | `div.seg` > `button[aria-pressed]` or `[role=tab][aria-selected]` | style.css | Views, Last Lines' choice, a bookmark's kind. Text labels, 12.5px. |
-| Popover menu | `div.box[role=menu]` > `button` | tmux.css (`#hostmenu`, `#updmenu`), controls.css (items), style.css (`#menu`) | todobem's dropdown plate: `--fill: var(--chrome-2)`, `--r-lg`, padding 4, `--shadow-far`, no border; items left-aligned, 34px, `--r-xs`, hover `--surface-4`; destructive item in `--danger-text`, last, set apart by 8px; Esc closes it. A new popover joins the `:is(#hostmenu, #updmenu)` item rules. |
+| Header icon button | `button.icon` | style.css | Ghost; its size in §2.4. Pressed or expanded state via `aria-*`, not a class. |
+| Segmented control | `div.seg` > `button[aria-pressed]` or `[role=tab][aria-selected]` | style.css | Views, Last Lines' choice, a bookmark's kind. Text labels (`--fs-label`). |
+| Popover menu | `div.box[role=menu]` > `button` | tmux.css (`#hostmenu`, `#updmenu`), controls.css (items), style.css (`#menu`) | A dropdown plate: `--fill: var(--chrome-2)`, `--r-lg`, padding 4, `--shadow-far`, no border; items left-aligned, their height in §2.4, `--r-xs`, hover `--surface-4`; destructive item in `--danger-text`, last, set apart by 8px; Esc closes it. A new popover joins the `:is(#hostmenu, #updmenu)` item rules. |
 | Settings menu row | `#menu .row` (button or label) with `small` description | style.css | Label left, control right; danger row last with a divider. |
-| Dialog, list foot form | `<dialog class="box dlg">` > `form[method=dialog]` > `.dhead` (`h2` title, `button.icon.x` ×) > labels over `.field`s > `.actions` (Cancel, then primary); a list foot's `form.footform.box` the same inside | controls.css (one rule set for both); feature sheets only for a primary's hue | `--fill: var(--chrome)`, `--r-xl` (a foot form `--r-lg`), padding 16, no border, `--shadow-far`, width ≤ 480px; actions are keys (§2.7), 38px; title `--fs-title` 600; × 32px (44 on a phone) in the corner, as Esc; label `--fs-label` muted; every field `--term-font` at `--size`, padding 10/12, a well (§2.7) on `--surface-2`, `--r-sm`; a quote shown in it (`#asktext`, `#marktext`) as a field on `--t-bg`. The primary in the hue of what opened it: `--accent`, Ask's `--ask`, the bookmark's `--mark`, a reminder's `--remind`, an irreversible verb's `--danger-fill` (`#confirmbox`, whose question is its title). Use `askConfirm(text, verb)` (navtools.js) for every irreversible action. |
-| Primary button | `button.primary` | per container | Fill `--accent`, text `--t-bg`, weight 600, `--focus: var(--t-bg)`. Danger: `--danger-fill` + white. Bookmark: `--mark`. Make sure no container rule out-ranks it (test the computed fill). |
+| Dialog, list foot form | `<dialog class="box dlg">` > `form[method=dialog]` > `.dhead` (`h2` title, `button.icon.x` ×) > labels over `.field`s > `.actions` (Cancel, then primary); a list foot's `form.footform.box` the same inside | controls.css (one rule set for both); feature sheets only for a primary's hue | `--fill: var(--chrome)`, `--r-xl` (a foot form `--r-lg`), padding 16, no border, `--shadow-far`, width ≤ 480px; actions are keys (§2.7), 38px; title `--fs-title` 600; × 32px (44 on a phone) in the corner, as Esc; label `--fs-label` muted; every field `--term-font` at `--size`, padding 10/12, a well (§2.7) on `--surface-2`, `--r-sm`; a quote shown in it (`#asktext`, `#marktext`) as a field on `--t-bg`. The primary in the hue of what opened it (Primary key, above), an irreversible verb's `--danger-fill` (`#confirmbox`, whose question is its title), Ask's `--ask`. Use `askConfirm(text, verb)` (navtools.js) for every irreversible action. |
+| Primary button | `button.primary` | per container | Fill `--accent`, text `--t-bg`, weight 600, `--focus: var(--t-bg)`; other hues: Primary key, above. Make sure no container rule out-ranks it (test the computed fill). |
 | Banner | `div[role=status]` under the header (`#status`, `#restored`, `#stall`, `#sized`) | style.css | Full width, 6px 12px, white on a fixed fill (§2.2); a close `.x` when it does not clear itself. |
 | Toast | `#toast` via `toast(text, ms)` (toast.js) | style.css | One line when short, wraps when long, never wider than the terminal column minus 32px; 12px under the terminal's top (under the bookmark bar or the Paused chip when one shows; under the header while the terminal is hidden), where the eye is, not over an agent's input; clicks go through it. |
 | Tip of the day | `#tip` > `.tiphead` (`h2`, `#tipclose.icon.x`) + `#tiptext` + `.tipacts` keys (tips.js) | foot.css | A computer's only, above the list's tools; a `--surface-3` card with `--r-lg`, `--fs-meta` in `--t-fg` (muted falls under 4.5:1 there), 24px keys; inline icons 13px. |
@@ -310,14 +309,13 @@ setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own
 ## 5. Adding UI
 
 1. Find the closest existing component in §3 and its class; reuse it unchanged if possible.
-2. Markup in `index.html` (static) or built in a module with `el()`/`icon()`; ids only for wiring
-   and tests.
+2. Markup in `index.html` (static) or built in a module with `el()`/`icon()`; ids as §1.
 3. CSS in the file that owns the area (style.css: shell, list, header, terminal; layout.css: the
    phone's drawer, the views and Files docked beside the terminal; tmux.css:
    terminum's additions, forms, dialogs; marks.css, find.css, widgets.css: their features;
    shapes.css: the material by kind; grain.css: where the grain lies). Respect the 500-line cap; split by feature, not by squeezing.
 4. Tokens only (§2); no new font size, radius or height outside the scales.
-5. Phone: add the finger size in controls.css's `max-width: 860px` block (≥ 44px; 40 inside a 40px row; a segment 34).
+5. Phone: add the finger size (§1, §2.4) in controls.css's `max-width: 860px` block.
 6. States: hover, focus-visible, pressed/expanded, disabled; `aria-*` drives them.
 7. Copy per §4; add the words to the spec's scenario first when behavior changes (CLAUDE.md §7).
 
@@ -334,7 +332,7 @@ screenshots you looked at. A copy-only change needs §4 and one screenshot.
       reduced-motion switch (§2.8).
 - [ ] A dark and a light theme (in `openPage`'s `hook`, answer `sub` with `say({ t: "theme", sid: m.id, theme: { ...THEME, bg: "#ffffff", fg: "#1f2328", dark: false } })`): text and fixed hues readable
       (≥ 4.5:1 for text, ≥ 3:1 for icons and edges).
-- [ ] Touch targets ≥ 44px on the phone (measure `getBoundingClientRect`, not the CSS).
+- [ ] Touch targets as §1 on the phone (measure `getBoundingClientRect`, not the CSS).
 - [ ] Keyboard: reachable by Tab, visible focus ring, Esc closes popovers and forms.
 - [ ] Hover, pressed, expanded and disabled states; no hover left on after a tap.
 - [ ] Long text: a long session/host name, a long error and toast, a 300px and a 640px sidebar;

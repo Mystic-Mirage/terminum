@@ -45,8 +45,7 @@ The commands and what they need are in the [README](../README.md#install). This 
 
 The installer checks the release's signature, installs into `~/.terminum/` (`builds/<build>`, `current`, the command
 `~/.terminum/bin/terminum`, which is terminumd itself, and `daemon/terminumd`, the copy launchd
-runs), loads the launchd agent `io.terminum.terminumd` and says how to set the password. launchd holds `127.0.0.1:48080` from
-then on, so no other program can take the page's port while terminumd restarts or is upgraded.
+runs), loads the launchd agent `io.terminum.terminumd`, which holds the page's port from then on ([SECURITY.md](../SECURITY.md)), and says how to set the password.
 
 During the install macOS asks on the Mac's screen, once per folder, whether programs in
 terminum's terminals may read Desktop, Documents, Downloads and each cloud folder
@@ -74,8 +73,8 @@ hand (`claude --continue`, `codex resume --last`).
 On a Linux server terminumd is the systemd user service `io.terminum.terminumd`
 (`~/.config/systemd/user/`), started at once and at every login; a restart, an upgrade or an
 uninstall ends terminumd alone, never the terminals. Without linger the user's services end at
-logout, terminals too: `terminum status` says so, and `sudo loginctl enable-linger $USER` keeps
-them from boot. The README says how to reach its page. Finder and default apps are a Mac's only.
+logout, terminals too: `terminum status` says so. The [README](../README.md#on-a-ubuntudebian-server)
+has the command that keeps them and says how to reach its page. Finder and default apps are a Mac's only.
 
 From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools needed;
 [CONTRIBUTING](../CONTRIBUTING.md#worktrees) says when it refuses).
@@ -97,9 +96,7 @@ terminum help                 # every command
 ```
 
 Every browser, on the Mac or another device, signs in with the password; until one is set the
-page says how. The page asks terminumd to prove it knows the page's sign-in before sending it,
-and keeps the sign-in in its own origin's storage, never in its address or a cookie (see
-[SECURITY.md](../SECURITY.md)). `tmux -L terminum attach` from any terminal shows the same sessions.
+page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmux -L terminum attach` from any terminal shows the same sessions.
 
 - **Under the list**: New session, Bookmarks / Reminders, Add host and Attach tmux sessions
   fold into one row of their icons with ▸ on a computer; click it and they unfold (▾) until you
@@ -120,8 +117,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   backed up first; nothing else in it changes, lines of others inside the markers are kept, a
   symlinked file is written where it points). An `[mcp_servers.terminum]` of your own there, or a
   file changed while the install ran, is refused, not overwritten. Restart running Codex sessions
-  to give them the server. Codex still runs terminum's hooks only once trusted in its `/hooks`;
-  `terminum hooks remove` takes the block out. The server starts in every Claude Code and Codex
+  to give them the server. `terminum hooks remove` takes the block out. The server starts in every Claude Code and Codex
   session on the Mac, but outside a terminum pane it offers no tools and no instructions, so it
   costs those sessions nothing.
 - **Sent history**: the speech bubble under the split shows what you sent in the pane's folder
@@ -155,8 +151,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
 - **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when its
   session's agent ends a turn, its count filled, and the terminal's top says so for 4 seconds
   ("api: 16 reminders, 3 new"; another session's when you open it next). It opens the same window as the bookmarks' button,
-  with the open reminders only, those up first: Show in terminal, Resolve (it ends it, with Undo) and
-  Quote in chat. Quote in chat, on a reminder or a bookmark, and Insert into chat on a sent message
+  with the open reminders only, those up first (Going through them, below), and Quote in chat. Quote in chat, on a reminder or a bookmark, and Insert into chat on a sent message
   paste it (a bookmark's note and its text) into the session's input, without Enter.
   Bookmarks and reminders show only in the session they were made in, in a project or not.
   Bookmarks / Reminders below the sessions lists them all, each with its project or session
@@ -271,8 +266,7 @@ where it is:
 - **"MCP server failed" in Claude Code or Codex** after `terminum uninstall` or `terminum
   upgrade --to` a release older than 0.23.0 (an upgrade does move `~/.terminum/bin/terminum`): the
   older build has no `terminum mcp`. Run `terminum hooks remove` with the newer build first;
-  after the fact, delete Codex's block between `# >>> terminum: MCP server …` and `# <<<
-  terminum` in `~/.codex/config.toml` and run `terminum hooks install` with the build you kept.
+  after the fact, delete Codex's block (MCP server, above) in `~/.codex/config.toml` and run `terminum hooks install` with the build you kept.
 - **A host's agents do not show**: see Remote hosts below.
 - **Stored where**: plans in `~/.terminum/state/plans.json`, the agent's records with your
   bookmarks in `~/.terminum/state/web-bookmarks.json`. To clear the plans, stop terminumd first (`launchctl bootout gui/$(id -u)/io.terminum.terminumd`; on Linux

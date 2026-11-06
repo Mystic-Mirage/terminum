@@ -50,13 +50,13 @@ says so; macOS then asks again for protected folders after an upgrade.
 
 A build's compiler or linker `warning:` is said, by a release and by `make install`, and stops neither.
 
-Release notes go in `docs/releases/vX.Y.Z.md`, committed before `main` is pushed; the release
+Release notes go in `docs/releases/vX.Y.Z.md`, landed from a worktree before `make release`; the release
 command refuses an empty or unreadable file and a symlink out of the tree.
 
 Who else could ship code to users is in [SECURITY.md](../SECURITY.md) ("The installer and
 releases"). Keep the key and its passphrase backed up: a new key makes existing installs refuse
-upgrades until they are installed again with the one-line installer. The key is shared with
-iterm-enhancer, so a leaked key is replaced for both: a new key in both repositories'
+upgrades until they are installed again with the one-line installer. A leaked key is replaced
+for both products: a new key in both repositories'
 `release-signers` and `install.sh`, a release of each, and every install of each installed
 again with its one-line installer.
 
@@ -106,7 +106,7 @@ home bound in) and capped in memory (`MemoryMax=2G`, `OOMPolicy=continue`: a job
 fails alone), labels `terminum`. Packages: `tmux build-essential` and the browsers' system
 libraries (`npx -y playwright-core@<ui's version> install-deps chromium webkit`, as root); Rust,
 Node and the browsers install per job into the runner's home. rustc alone peaks near 1.3 GB
-building the tests (a 1536M cap stalled it for most of an hour, 2026-10-31); each run prints
+building the tests (a 1536M cap stalls it); each run prints
 that peak and the job's cap hits. It builds with one rustc and no debug info (the workflow's
 env), since two rustc with it outgrew a 2 GB machine. The registration token travels on stdin,
 never on a command line:

@@ -25,7 +25,7 @@ The agreement is recorded by a CLA check on the pull request (until it is set up
 ## Worktrees
 
 Who needs a worktree and how to stay on a fresh `origin/main` is in [CLAUDE.md](CLAUDE.md) §9.
-Read-only work (a question, a review) and `make release` (the primary checkout's `main`) need none.
+Read-only work (a question, a review) and the `make release` command itself (the primary checkout's `main`) need none; a release's edits (`/simplify`'s fixes, its notes) land from a tree like any other.
 
 | Step | How |
 | --- | --- |
@@ -38,7 +38,7 @@ Read-only work (a question, a review) and `make release` (the primary checkout's
 | Land | `make land SLUG=<slug>` from the primary checkout, the work committed: targeted checks (`scripts/check_changed.py`), merge with `origin/main`, push, the primary checkout fast-forwarded, the tree deleted (spec AC-104) |
 | Finish | `worktree.py list`: each tree's branch, uncommitted files, commits not in `origin/main`, processes in it; `scripts/delete_worktree.sh <slug>`, or `worktree.py remove <slug>`, for a tree with nothing to land: it refuses while a process works in the tree (exit that shell or session; it ends nothing) or, without `--discard`, while the tree holds uncommitted changes, ignored files that are not build output, or commits on a detached HEAD; it deletes the branch only when it is in `origin/main` or `main` |
 | Forgotten | `worktree.py sweep` (what it removes: CLAUDE.md §9): "its own work" is a commit or a real merge, looking through fast-forwards and rebases, not its creation or a reset; "idle" is no commit and no index write. It keeps `remove`'s refusals. A squash merge is not seen, nor are Claude Code's own `.claude/worktrees`. Its remote branch stays. `.worktrees/.git` is an invalid git file on purpose: a removed tree's folder made again finds it, so git there fails instead of working on the primary checkout's `main` |
-| Hooks | `.claude/settings.json` runs the primary checkout's `scripts/worktree_fresh.py` and `worktree.py`, always exiting 0 and doing nothing in another repository: at a session's start `fresh --start` says the checkout, the branch (or a detached HEAD) and how far behind `origin/main`; at each prompt `fresh` says it for the primary checkout when behind, for a tree when it holds no work yet or `origin/main` changed files it changes, and names merged trees still here; `git fetch` at most every 5 minutes for the repository. Only sessions in this repository: not `terminum hooks install`, not the package |
+| Hooks | `.claude/settings.json` runs the primary checkout's `scripts/worktree_fresh.py` and `worktree.py`, always exiting 0 and doing nothing in another repository: at a session's start `fresh --start` says the checkout, the branch (or a detached HEAD) and how far behind `origin/main`; at each prompt `fresh` says it for the primary checkout when behind, for a tree when it holds no work yet or `origin/main` changed files it changes, and names merged trees still here; `git fetch` at most every 5 minutes for the repository. Before an `Edit`, `MultiEdit`, `Write` or `NotebookEdit`, `edit-check` refuses a file of the primary checkout (links resolved; not a file git ignores, not `project-memory/`, not a tree's; `TM_EDIT_PRIMARY=1` at a session's start is the maintainer's own way past it); it sees no shell command, and what it cannot judge it lets through. Only sessions in this repository: not `terminum hooks install`, not the package |
 
 ## Before a pull request
 

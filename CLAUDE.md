@@ -189,8 +189,9 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
   stays; a conflict stays in the tree for you to resolve, commit and land again. Several trees
   land at once, each tested alone. This is the one standing permission to push: no other push,
   no force-push, nothing published without the user's request in this session.
-- Each writing agent, and any change made while another session's or agent's changes are in
-  the checkout, gets its own worktree: `python3 scripts/worktree.py add <slug> --kind <kind>`
+- Every change to the repository's files, however small and with the checkout clean or not, is made
+  in its own worktree (a hook refuses Claude Code's edits in the primary checkout; `TM_EDIT_PRIMARY=1`
+  is the maintainer's own, CONTRIBUTING.md "Hooks"): `python3 scripts/worktree.py add <slug> --kind <kind>`
   (from a fresh `origin/main`), never a raw `git worktree add`; a test run takes a free port and
   its own tmux sockets, so trees run checks at once, except Docker's `e2e_remote_sshd*.py`
   (`tm-test-sshd` on a fixed port): one tree at a time; `make land` removes it, or

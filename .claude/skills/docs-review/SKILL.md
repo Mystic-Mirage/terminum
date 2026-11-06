@@ -11,7 +11,7 @@ description: Review terminum's docs and specs against what changed since the new
 
 ## 1. Scope
 
-`git fetch origin`, then `python3 scripts/worktree.py add docs-review-<date> --kind docs --from main` (in a release, with `/simplify`'s fixes already committed on `main`, so this tree sees them). List `git log --oneline <tag>..HEAD`, and `git diff --stat <tag>..HEAD`. `python3 scripts/check_docs.py`: its findings come first.
+`git fetch origin`, then `python3 scripts/worktree.py add docs-review-<date> --kind docs --from main` (in a release, with `/simplify`'s fixes already landed on `main`, so this tree sees them). List `git log --oneline <tag>..HEAD`, and `git diff --stat <tag>..HEAD`. `python3 scripts/check_docs.py`: its findings come first.
 
 ## 2. Read the changes, then the docs they touch
 

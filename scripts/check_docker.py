@@ -76,6 +76,7 @@ def main(argv):
     why = why_not()
     failed = False
     if not why:
+        subprocess.run(["make", "ui"], cwd=REPO, check=True)   # terminumd embeds it
         # named by the agent id, not this commit's TM_BUILD: a tree that keeps terminumd's sources keeps its builds
         built = agents.build(PLATFORMS, build_id=f"agent-{agents.agent_id()}")
         mac, linux = (str(built[p]) for p in PLATFORMS)

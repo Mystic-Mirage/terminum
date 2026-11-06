@@ -72,6 +72,7 @@ class Record(unittest.TestCase):
             self.assertEqual(skip.read_text(), "Docker does not answer\n")
             with mock.patch.object(check_docker, "why_not", return_value=""), mock.patch.object(check_docker, "run_all", return_value=(False, "")), \
                     mock.patch.object(check_docker.agents, "build", return_value=dict.fromkeys(check_docker.PLATFORMS, "x")), \
+                    mock.patch.object(check_docker.subprocess, "run"), \
                     mock.patch.object(check_docker.agents, "agent_id", return_value="id"):
                 self.assertEqual(check_docker.main(["abc"]), 0)
             self.assertFalse(skip.exists())

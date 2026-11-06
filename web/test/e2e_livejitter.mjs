@@ -12,7 +12,9 @@ const PROGRAM = `const G = ["·", "✢", "✳", "✶", "✻", "✽"];
 let k = 0;
 const spin = () => G[k % G.length] + " Beaming… (" + k + "s)";
 // drawn whole at the start and at each new size (the page sizes the window it shows), the cursor in the box
+let back;
 const draw = () => {
+  clearTimeout(back);    // a size between the two writes: drawn whole, the cursor already in the box
   const rule = "─".repeat(process.stdout.columns);
   const lines = ["⏺ Bash(npm test)", "  ⎿  Running…", "", spin(), "", rule, "❯\\u00a0", rule, "  ~/p Opus 5.5 (high) main", "  ⏵⏵ bypass permissions on (shift+tab to cycle)"];
   process.stdout.write("\\x1b[2J\\x1b[H" + lines.join("\\r\\n") + "\\x1b[3A\\r\\x1b[2C");
@@ -22,7 +24,7 @@ process.stdout.on("resize", draw);
 setInterval(() => {
   k++;
   process.stdout.write("\\x1b[3A\\r\\x1b[2K" + spin());
-  setTimeout(() => process.stdout.write("\\x1b[3B\\r\\x1b[2C"), 2);
+  back = setTimeout(() => process.stdout.write("\\x1b[3B\\r\\x1b[2C"), 2);
 }, 100);`;
 
 export async function liveJitter(page, { tmux, work }) {
@@ -31,8 +33,8 @@ export async function liveJitter(page, { tmux, work }) {
   // a window named claude (-n: tmux renames it no more): its pane is a coding agent's (titles.rs); its row found by its pane
   const pane = tmux("new-window", "-P", "-F", "#{pane_id}", "-n", "claude", `node ${prog}`);
   try {
-    // right after the restart checks (e2e_live.mjs): the page settled first (status line clear), then the row shown
-    await page.waitForFunction(() => !document.getElementById("status").innerText.trim(), null, { timeout: 8000 }).catch(() => {});
+    // right after the restart checks (e2e_live.mjs): the page settled first (no status line; a hidden one keeps its old text), then the row shown
+    await page.waitForFunction(() => document.getElementById("status").hidden, null, { timeout: 8000 }).catch(() => {});
     await page.click(`#sessions .item[data-id$=":${pane}"]`);
     const ready = await page.waitForFunction(() => document.querySelector("#screen .blk.inbox .cur"), null, { timeout: 8000 }).then(() => "", (e) => e.message);
     if (ready) {
@@ -40,7 +42,7 @@ export async function liveJitter(page, { tmux, work }) {
       const state = await page.evaluate(() => {
         const on = document.querySelector("#sessions .item.on");
         return { row: on?.dataset.id, title: on?.innerText.split("\n")[0], focus: document.hasFocus(), visibility: document.visibilityState,
-          status: document.getElementById("status").innerText.trim(), hasbox: document.getElementById("term").classList.contains("hasbox"),
+          status: document.getElementById("status").hidden ? "" : document.getElementById("status").innerText.trim(), hasbox: document.getElementById("term").classList.contains("hasbox"),
           screen: [...document.querySelectorAll("#screen .ln")].map((l) => l.textContent).filter((t) => t.trim()).slice(0, 6).map((t) => t.slice(0, 40)) };
       });
       state.tmux = tmux("capture-pane", "-p", "-t", pane).split("\n").filter(Boolean).slice(0, 4);

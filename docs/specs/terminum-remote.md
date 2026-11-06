@@ -129,7 +129,7 @@ Scenario: AC-82 failure — the agent stalls or answers badly
   Then a request that gets no bytes for 30 s, or no end within 120 s, fails and frees its connection; requests and answers are capped at 64 MB, an upload at 100 MB; a lagged event stream reconnects with a host-scoped rescan; a dialog answered after the page switched hosts does nothing ("The panel switched to another pane — nothing changed"); a document saves to the host it came from
 
 Scenario: AC-82 security — the agent
-  Then the agent listens only on a Unix socket with a random name in a 0700 folder on the host (removed on exit), takes its token on stdin (never a command line), exits on stdin EOF, on SIGHUP or after 90 s with no event stream, writes only under $HOME and /tmp on the host; on the Mac the forwarded socket is in the app folder (0700) and only terminumd connects to it; answers are untrusted (capped, streamed, Origin not forwarded; their type and policy terminumd's: a raw file's by its name with the `sandbox` policy, every other answer JSON)
+  Then the agent listens only on a Unix socket with a random name in a 0700 folder on the host (removed on exit), takes its token on stdin (never a command line), exits on stdin EOF, on SIGHUP or after 90 s with no event stream and no line on its stdin (the Mac's terminumd sends one every 15 s while that ssh runs, AC-99), writes only under $HOME and /tmp on the host; on the Mac the forwarded socket is in the app folder (0700) and only terminumd connects to it; answers are untrusted (capped, streamed, Origin not forwarded; their type and policy terminumd's: a raw file's by its name with the `sandbox` policy, every other answer JSON)
 ```
 
 ### AC-83 — Enable a host's files [SHOULD / P1]
@@ -268,6 +268,12 @@ Scenario: AC-99 happy path — the link
   And the link counts as up only after the helper's ready line; the helper checks "run" (the user's, 0700, not a symlink) and the forwarded socket (a socket of the user's), points "run/mac-<mac id>.sock" at it atomically, and removes only its own Mac's sockets that refuse a connection
   And with files enabled too, the same ssh carries both: no extra connection
 
+Scenario: AC-99 edge — a link in use stays up with files off
+  Given devbox's agents are enabled and its files not, so no event stream runs to its helper
+  When more than 90 s pass
+  Then terminumd's line every 15 s on the helper's stdin keeps it running: it logs no "no Mac connected for 90 s", the same ssh and link stay, "terminum hosts" keeps saying the link is up, and devbox's hook state stays
+  And a helper that hears neither that line nor an event stream for 90 s, with its stdin still open, exits, logging "no Mac connected for 90 s"
+
 Scenario: AC-99 happy path — events and MCP from a host pane
   Given Claude Code runs in a pane of devbox's "terminum" session
   When its hooks fire and it calls update_session_plan through "terminum-host mcp"
@@ -367,7 +373,6 @@ A shown pane keeps its last screen while reconnecting; typing is refused with th
 | AC-84 | The Files header's "(helper updated to <build>)" for 60 s is absent: the page shows only the toast. | `ui/src/host-offer.ts:19` |
 | AC-84 | "updating the helper on devbox…" and "Could not update the helper on devbox: <reason>" (AC-82's no-helper case too) never reach the page or `terminum hosts`: a host's note is sent only for a failed ticked enabling. | `terminumd/src/hosts/tunnel.rs:407`, `terminumd/src/hosts/mod.rs:460` |
 | AC-84 | The 10-minute retry after a failed copy has no test. | `terminumd/src/hosts/tunnel.rs:31` |
-| AC-99 | With agents on and files off, terminumd opens no event stream to the helper, so the helper exits after 90 s and the link drops and reconnects, losing the host's hook state. Read from the code, not run. | `terminumd/src/main.rs:157`, `terminumd/src/hosts/tunnel.rs:284` |
 | AC-99 | Never run: a macOS host over real sshd, Dropbear, a ForceCommand account, two Macs on one host over real sshd, real Claude Code and Codex on a host. | `docs/specs/history/terminum-remote.md:72` |
 | AC-81 | Key echo over a LAN host and remote file open have targets (§9 Performance) and no measurement: `bench_echo.py` has no host mode. | `scripts/bench_echo.py:30` |
 | AC-81 | The metrics `hosts_attached` and `host_reconnects` do not exist; only the log events of §9 do. | `terminumd/src/hosts/mod.rs:251` |
@@ -422,7 +427,7 @@ Control client command: `ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o Se
 | Refused forward (AC-99) | retried with `-R` after 10 min, then 20, 40, 80, 160 min while refused (that ssh reconnects: files pause a moment) | files keep running without it |
 | Agent requests and answers | 64 MB; 30 s idle, 120 s total | request fails, connection freed |
 | Upload or paste to a host | 100 MB; 2 at once | "Larger than 100 MB"; "Two uploads are running already" |
-| Helper with no event stream | exits after 90 s | "no Mac connected for 90 s" in its log |
+| Helper with no event stream and no line on its stdin (the Mac sends one every 15 s) | exits after 90 s | "no Mac connected for 90 s" in its log |
 | Helper copy (enable, update, agents on) | 300 s | failure shown, retry later |
 | Helper removal (files remove; agents off with files off) | 60 s | failure shown |
 | Agents off (AC-99) | saved here first, then the host's hooks removed within 90 s | "Turned off here; could not take terminum's hooks out of devbox: <why>" |

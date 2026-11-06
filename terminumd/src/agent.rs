@@ -128,27 +128,39 @@ fn private_dir(dir: &Path) -> std::io::Result<()> {
     })
 }
 
-/// Exit when stdin closes: the ssh connection that carries this agent is gone.
-pub fn exit_with_stdin(exit: impl Fn() + Send + 'static) {
+/// Exit when stdin closes: the ssh connection that carries this agent is gone. Each line on it
+/// is the Mac's terminumd saying it is still there (`hosts::link::keep_alive`).
+pub fn exit_with_stdin(heard: impl Fn() + Send + 'static, exit: impl Fn() + Send + 'static) {
     std::thread::spawn(move || {
-        let mut sink = String::new();
-        while std::io::stdin().lock().read_line(&mut sink).map(|n| n > 0).unwrap_or(false) {
-            sink.clear();
-        }
+        read_until_closed(std::io::stdin().lock(), heard);
         exit();
     });
 }
 
-/// The Mac's terminumd keeps one event stream open while it uses this agent; none for 90 s
-/// means the connection died without closing stdin (sshd may not notice for hours).
-pub fn exit_when_unused(subscribers: impl Fn() -> usize + Send + 'static, exit: impl Fn() + Send + 'static) {
+fn read_until_closed(mut input: impl BufRead, heard: impl Fn()) {
+    let mut sink = String::new();
+    while input.read_line(&mut sink).map(|n| n > 0).unwrap_or(false) {
+        sink.clear();
+        heard();
+    }
+}
+
+/// The Mac's terminumd sends a line every 15 s for as long as it runs this agent's ssh, and an
+/// event stream while its Files are on; neither for 90 s means the connection died without
+/// closing stdin (sshd may not notice for hours).
+pub fn exit_when_unused(used: impl Fn() -> bool + Send + 'static, exit: impl Fn() + Send + 'static) {
+    watch_use(std::time::Duration::from_secs(15), 6, used, exit);
+}
+
+fn watch_use(tick: std::time::Duration, ticks_to_exit: u32, used: impl Fn() -> bool + Send + 'static, exit: impl Fn() + Send + 'static) {
     std::thread::spawn(move || {
         let mut idle = 0;
         loop {
-            std::thread::sleep(std::time::Duration::from_secs(15));
-            idle = if subscribers() == 0 { idle + 15 } else { 0 };
-            if idle >= 90 {
+            std::thread::sleep(tick);
+            idle = if used() { 0 } else { idle + 1 };
+            if idle >= ticks_to_exit {
                 exit();
+                return;
             }
         }
     });
@@ -185,5 +197,36 @@ mod tests {
         assert_eq!(std::fs::metadata(&base).unwrap().mode() & 0o777, 0o700);
         assert!(private_dir(&base).is_err(), "an existing folder (a home, say) is never taken over");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn every_line_on_stdin_counts_until_it_closes() {
+        let heard = std::sync::atomic::AtomicU32::new(0);
+        read_until_closed(&b"\n\n\n"[..], || { heard.fetch_add(1, std::sync::atomic::Ordering::Relaxed); });
+        assert_eq!(heard.load(std::sync::atomic::Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn only_a_helper_nothing_uses_exits() {
+        use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+        use std::sync::Arc;
+        let tick = std::time::Duration::from_millis(5);
+        // a fixed wait for the helper that stays; one that exits is waited for, for a loaded machine
+        let run = |used: Arc<dyn Fn(u32) -> bool + Send + Sync>, expect_exit: bool| {
+            let (polls, exits) = (Arc::new(AtomicU32::new(0)), Arc::new(AtomicU32::new(0)));
+            let (p, e) = (polls.clone(), exits.clone());
+            watch_use(tick, 6, move || used(p.fetch_add(1, Relaxed)), move || { e.fetch_add(1, Relaxed); });
+            let mut waited = 0;
+            while waited < 40 || (expect_exit && exits.load(Relaxed) == 0 && waited < 2000) {
+                std::thread::sleep(tick);
+                waited += 1;
+            }
+            (polls.load(Relaxed), exits.load(Relaxed))
+        };
+        assert_eq!(run(Arc::new(|_| true), false).1, 0, "in use: stays");
+        assert_eq!(run(Arc::new(|_| false), true), (6, 1), "nothing connected: exits after 6 ticks, once");
+        let (polls, exits) = run(Arc::new(|n| n % 5 == 4), false);
+        assert_eq!(exits, 0, "a line every fifth tick resets the count: {polls} polls");
+        assert_eq!(run(Arc::new(|n| n < 3), true), (9, 1), "used, then not: 6 ticks from the last use");
     }
 }

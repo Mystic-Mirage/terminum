@@ -12,15 +12,11 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, tmux_on as tmux, unix_request, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, host_group, summary, tmux_on as tmux, unix_request, wait_layout  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL, REMOTE = own("tm-test-slocal"), own("tm-test-sremote")
-
-
-def host_group(groups):
-    return next((g for g in groups if g.get("host") == "devbox" and not g.get("attached")), None)
 
 
 def tries(pids):
@@ -57,7 +53,7 @@ def main():
         check("AC-81 it stops trying and offers Reconnect", bool(stopped) and h.get("state") == "failed" and said in (h.get("why") or ""), h)
         check("AC-81 its rows stay, dimmed", [i["id"] for i in h.get("items", [])] == ids and all(i.get("offline") for i in h.get("items", [])), h.get("items"))
         at_stop = tries(pids)
-        time.sleep(35)                         # more than the longest back-off
+        time.sleep(12)                         # more than the back-off a try would come after (8 s)
         check("AC-81 no more tries once stopped: nothing piles up on the host", tries(pids) == at_stop, f"{at_stop} then {tries(pids)}")
         check("AC-81 `terminum status` says so", next(x for x in unix_request(t.sock, "GET", "/hosts")[1]["hosts"] if x["name"] == "devbox")["state"] == "failed")
 

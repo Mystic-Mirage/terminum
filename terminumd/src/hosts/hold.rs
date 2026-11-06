@@ -17,9 +17,8 @@ pub(super) async fn hold(app: Shared, server: Arc<Server>, retry: Arc<Notify>) {
     if let Link::Ssh { args, .. } = &server.link {
         learn_timeout(args).await;
     }
-    let (mut backoff, mut silent) = (1u64, 0u32);
+    let (mut backoff, mut silent_tries) = (1u64, 0u32);
     loop {
-        let mut stopped = false;
         *server.status.lock() = Status::Connecting;
         app.dirty.notify_one();
         let t0 = std::time::Instant::now();
@@ -31,7 +30,7 @@ pub(super) async fn hold(app: Shared, server: Arc<Server>, retry: Arc<Notify>) {
             Ok(()) => {
                 tracing::info!(event = "host.attached", host = %server.name, ms = t0.elapsed().as_millis() as u64);
                 *server.status.lock() = Status::Attached;
-                (backoff, silent) = (1, 0);
+                (backoff, silent_tries) = (1, 0);
                 app.dirty.notify_one();
                 tunnel::reconcile(&app, &server.name);
                 // judged by its `terminum` client alone: the user's session clients (AC-89)
@@ -56,21 +55,24 @@ pub(super) async fn hold(app: Shared, server: Arc<Server>, retry: Arc<Notify>) {
                 server.disconnect();
                 // ssh works and tmux stays silent: a try costs the host a client, and helps nothing
                 let found = if why == SSH_NO_ANSWER || why == NO_ATTACH { silent::look(&server).await } else { None };
-                silent = if found.is_some() { silent + 1 } else { 0 };
-                stopped = silent >= silent::TRIES;
-                let why = found.unwrap_or(why);
-                if stopped {
-                    tracing::warn!(event = "host.stopped", host = %server.name, why);
-                    *server.status.lock() = Status::Stopped { why };
-                } else {
-                    tracing::warn!(event = "host.failed", host = %server.name, why, retry_s = backoff);
-                    *server.status.lock() = Status::Failed { why };
+                silent_tries = if found.is_some() { silent_tries + 1 } else { 0 };
+                match found {
+                    Some(found) if silent_tries >= silent::TRIES => {
+                        silent::sweep(&server, &found).await;
+                        tracing::warn!(event = "host.stopped", host = %server.name, why = found.why);
+                        *server.status.lock() = Status::Stopped { why: found.why };
+                    }
+                    other => {
+                        let why = other.map_or(why, |f| f.why);
+                        tracing::warn!(event = "host.failed", host = %server.name, why, retry_s = backoff);
+                        *server.status.lock() = Status::Failed { why };
+                    }
                 }
             }
         }
         app.dirty.notify_one();
-        if stopped {
-            retry.notified().await;                  // one try for each Reconnect: `silent` stays
+        if silent_tries >= silent::TRIES {
+            retry.notified().await;                  // one try for each Reconnect: the count stays
             backoff = 1;
             continue;
         }

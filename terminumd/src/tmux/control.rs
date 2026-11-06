@@ -109,6 +109,8 @@ impl Control {
         let clean = Arc::new(AtomicBool::new(false));
         let heard = Arc::new(Mutex::new(Instant::now()));
         let errors: Arc<Mutex<Vec<u8>>> = Arc::default();
+        // the watchdog ended it: its stderr's last line (an ssh warning) is not why
+        let silent = Arc::new(AtomicBool::new(false));
 
         // writer: the lines queued now (a frame's display and capture, a batch of keys), their
         // waiters in line, one write; once stdin is closed, new lines fail at once (those
@@ -153,7 +155,7 @@ impl Control {
         });
 
         // reader: notices and answers; at the end every waiter learns why
-        let (p, a, att, end, cl, h) = (pending.clone(), alive.clone(), attached.clone(), ended.clone(), clean.clone(), heard.clone());
+        let (p, a, att, end, cl, h, hung_up) = (pending.clone(), alive.clone(), attached.clone(), ended.clone(), clean.clone(), heard.clone(), silent.clone());
         tokio::spawn(async move {
             let mut reader = BufReader::with_capacity(1 << 16, stdout);
             let mut block: Option<(String, bool)> = None; // (the %begin's "time num flags", ours)
@@ -223,7 +225,8 @@ impl Control {
                 let _ = tokio::time::timeout(STDERR_WAIT, stderr_done).await;
             }
             let quiet = if via_ssh && !att.load(Ordering::Relaxed) { SSH_NO_ANSWER } else { "tmux exited" };
-            let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).unwrap_or_else(|| quiet.into());
+            let said_nothing = hung_up.load(Ordering::Relaxed) && via_ssh && !att.load(Ordering::Relaxed);
+            let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).filter(|_| !said_nothing).unwrap_or_else(|| quiet.into());
             for w in p.lock().drain(..) {
                 let _ = w.reply.send(Err(why.clone()));
             }
@@ -242,6 +245,7 @@ impl Control {
                 let late = p.lock().front().is_some_and(|w| hung(w.at.elapsed(), heard.lock().elapsed()));
                 if late {
                     tracing::warn!(event = "tmux.timeout", pid = ?pid, "control client timed out");
+                    silent.store(true, Ordering::Relaxed);
                     if let Some(pid) = pid {
                         // SAFETY: a signal to our own child process
                         unsafe { libc::kill(pid as i32, libc::SIGKILL) };

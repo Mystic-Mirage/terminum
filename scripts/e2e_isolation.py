@@ -15,16 +15,12 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, tmux_on as tmux, unix_request, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, host_group, summary, tmux_on as tmux, unix_request, wait_layout  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL, REMOTE = own("tm-test-ilocal"), own("tm-test-iremote")
 FAST = 1.0                              # seconds: the targets of §9 Performance
-
-
-def host_group(groups):
-    return next((g for g in groups if g.get("host") == "devbox" and not g.get("attached")), None)
 
 
 def local_ids(groups):

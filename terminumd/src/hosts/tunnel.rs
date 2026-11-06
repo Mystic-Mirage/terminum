@@ -108,7 +108,7 @@ fn ssh_cmd(recipe: &[String]) -> Command {
 
 
 /// Runs `command` on the host; its stdout, or ssh's last words.
-async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>, timeout: Duration) -> Result<String, String> {
+pub(super) async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>, timeout: Duration) -> Result<String, String> {
     let mut c = ssh_cmd(recipe);
     with_command(&mut c, recipe, command);
     c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);

@@ -19,16 +19,11 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, host_group, results, summary, unix_request, wait_layout  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT, LOCAL_SOCKET, REMOTE_SOCKET = free_port(), own("tm-test-rlocal"), own("tm-test-remote")
-
-
-def host_group(layout, name):
-    """The host's own group (its `terminum` session or its state), not a session attached there (AC 89)."""
-    return next((g for g in layout if g.get("host") == name and not g.get("attached")), None)
 
 
 def api(t, secret, path, host=None, method="GET", body=None, headers=None):

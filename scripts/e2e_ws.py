@@ -65,6 +65,11 @@ def wait_for(read, predicate, seconds=15, every=0.1):
     raise AssertionError(f"The expected private test state did not arrive; last: {str(value)[:300]}")
 
 
+def host_group(groups, name="devbox"):
+    """The host's own group (its `terminum` session or its state), not a session attached there (AC-89)."""
+    return next((g for g in groups if g.get("host") == name and not g.get("attached")), None)
+
+
 def wait_layout(ws, pred, timeout=5):
     """The groups of the first layout message for which pred(groups) holds, or None."""
     m = ws.until(lambda m: m["t"] == "layout" and pred(m["groups"]), timeout)

@@ -13,13 +13,28 @@
 //! tmux listed them. Never the server: its pid is skipped, and a server started by terminum's
 //! command keeps that command line (it is named `tmux: server`). The script tells what it
 //! ended through a user option of the server, read and removed by terminumd. Where no control
-//! client answers, the same script goes over a plain ssh (hosts/silent.rs).
+//! client answers, the same script goes over a plain ssh (`over_ssh`, hosts/silent.rs).
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use super::args::quote;
 use super::Server;
+
+/// What the sweep needs of the server: its pid and socket; its clients, for `listed`.
+pub(crate) const SERVER_FORMAT: &str = "#{pid} #{socket_path}";
+pub(crate) const CLIENTS_FORMAT: &str = "#{client_pid} #{client_control_mode} #{client_flags}";
+
+/// The command for a plain ssh, when no control client can run the sweep: it prints `ended`'s input.
+pub(crate) fn over_ssh(pid: u32, socket: &str, clients: &[String]) -> String {
+    let opt = answer_option();
+    format!("{}; tmux show-options -gqv {opt}; tmux set-option -gu {opt}", script(pid, socket, &listed(clients), &opt))
+}
+
+/// The pids the script says it ended; None before it is done.
+pub(crate) fn ended(answer: &str) -> Option<Vec<u32>> {
+    Some(answer.lines().next()?.strip_prefix("done")?.split_whitespace().filter_map(|p| p.parse().ok()).collect())
+}
 
 /// Once a connection of a host's server: its orphaned terminum control clients are ended.
 pub fn sweep_once(server: &Arc<Server>) {
@@ -32,7 +47,7 @@ pub fn sweep_once(server: &Arc<Server>) {
 
 /// The control clients tmux lists with `ignore-size`, as terminum's are, from
 /// `list-clients -F '#{client_pid} #{client_control_mode} #{client_flags}'`.
-pub(crate) fn listed(lines: &[String]) -> Vec<u32> {
+fn listed(lines: &[String]) -> Vec<u32> {
     lines.iter().filter_map(|l| {
         let mut f = l.split(' ');
         let (pid, control, flags) = (f.next()?, f.next()?, f.next()?);
@@ -43,18 +58,18 @@ pub(crate) fn listed(lines: &[String]) -> Vec<u32> {
 /// The server's user option the script answers in: one per sweep, its name random (a pid and a
 /// connection's number repeat across Macs and across host names of one server), so no sweep reads
 /// another's and a late answer is never taken for a later sweep's.
-pub(crate) fn answer_option() -> String {
+fn answer_option() -> String {
     format!("@tm-orphans-{}", crate::auth::crypto::random_hex::<8>())
 }
 
 async fn sweep(server: &Server) {
     // the server's own pid, never a candidate: without it, nothing is swept; its socket names
     // its clients where tmux rewrote their command line
-    let Some((pid, socket)) = server.run("display-message -p '#{pid} #{socket_path}'").await.ok().and_then(|l| {
+    let Some((pid, socket)) = server.run(format!("display-message -p '{SERVER_FORMAT}'")).await.ok().and_then(|l| {
         let (p, s) = l.first()?.trim().split_once(' ')?;
         Some((p.parse::<u32>().ok()?, s.to_string()))
     }) else { return };
-    let lines = server.run("list-clients -F '#{client_pid} #{client_control_mode} #{client_flags}'").await.unwrap_or_default();
+    let lines = server.run(format!("list-clients -F '{CLIENTS_FORMAT}'")).await.unwrap_or_default();
     let opt = answer_option();
     let _ = server.run(format!("set-option -gu {opt}")).await;
     // in the background (a slow `ps` never holds up the host's commands), quiet: a control
@@ -66,9 +81,8 @@ async fn sweep(server: &Server) {
     for _ in 0..40 {
         tokio::time::sleep(Duration::from_millis(250)).await;
         let Ok(got) = server.run(format!("show-options -gqv {opt}")).await else { return };
-        let Some(ended) = got.first().and_then(|l| l.strip_prefix("done")) else { continue };
+        let Some(ended) = got.first().and_then(|l| ended(l)) else { continue };
         let _ = server.run(format!("set-option -gu {opt}")).await;
-        let ended: Vec<u32> = ended.split_whitespace().filter_map(|p| p.parse().ok()).collect();
         if !ended.is_empty() {
             tracing::info!(event = "clients.orphans", server = %server.id(), ended = ?ended);
         }
@@ -93,7 +107,7 @@ const SHAPES: &str = "*\" -u -C new-session -A -f ignore-size -s terminum \"|*\"
 /// one (a socket path of other characters than [A-Za-z0-9/._-] leaves this rule out). Processes are
 /// read with `ps`, else (busybox: no -U, no -p) from /proc; every read that fails skips its
 /// process. No `#` (run-shell expands formats) and no `'` (it is quoted for the host's shell).
-pub(crate) fn script(server: u32, socket: &str, listed: &[u32], opt: &str) -> String {
+fn script(server: u32, socket: &str, listed: &[u32], opt: &str) -> String {
     let listed = match listed {
         [] => "\" - \"".to_string(),                                   // a pattern no pid matches
         l => l.iter().map(|p| format!("\" {p} \"")).collect::<Vec<_>>().join("|"),

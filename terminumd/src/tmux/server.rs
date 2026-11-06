@@ -447,8 +447,9 @@ impl Server {
             }
             Link::Ssh { ssh, args } => {
                 // ConnectTimeout also bounds the banner exchange: a hung sshd ends the link with ssh's own
-                // message instead of a wait without end (unless the user's ssh config sets its own)
-                let mut c = crate::hosts::ssh_command(ssh, args, &["-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2"]);
+                // message instead of a wait without end (unless the user's ssh config sets its own);
+                // screens are text: compressed, a slow link carries three times as many (AC-132)
+                let mut c = crate::hosts::ssh_command(ssh, args, &["-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2", "-o", "Compression=yes"]);
                 c.args(crate::hosts::recipe::argv(args)).arg(remote);
                 c
             }

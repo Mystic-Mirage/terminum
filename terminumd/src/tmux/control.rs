@@ -5,7 +5,9 @@
 //!
 //! A line holding several commands (`a ; b`) is answered by several blocks, and a failing
 //! one stops the rest, so every command is a line of its own: callers pipeline lines, never
-//! join them. A command left unanswered for `ANSWER_WAIT` kills the client (AC-14).
+//! join them. A command left unanswered for `ANSWER_WAIT` while nothing else arrives kills the
+//! client (AC-14); on a slow link bytes keep arriving, and killing it would only send them again
+//! (AC-132).
 
 use std::collections::VecDeque;
 use std::process::Stdio;
@@ -18,8 +20,11 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::{mpsc, oneshot};
 
-/// A command not answered within this long means a hung client: it is killed (AC-14).
+/// How long a caller waits for an answer; with nothing arriving meanwhile, the client is hung
+/// and is killed (AC-14).
 pub const ANSWER_WAIT: Duration = Duration::from_secs(10);
+/// A command this old means a hung client even while other bytes arrive (AC-132).
+const ANSWER_MOST: Duration = Duration::from_secs(60);
 /// stderr kept to say why a client ended (ssh's "Permission denied (publickey)").
 const STDERR_KEPT: usize = 4096;
 /// How long the reason waits for stderr's end once stdout ended (a child left holding it).
@@ -88,6 +93,7 @@ impl Control {
         let attached = Arc::new(AtomicBool::new(false));
         let ended: Arc<Mutex<Option<String>>> = Arc::default();
         let clean = Arc::new(AtomicBool::new(false));
+        let heard = Arc::new(Mutex::new(Instant::now()));
         let errors: Arc<Mutex<Vec<u8>>> = Arc::default();
 
         // writer: the lines queued now (a frame's display and capture, a batch of keys), their
@@ -133,7 +139,7 @@ impl Control {
         });
 
         // reader: notices and answers; at the end every waiter learns why
-        let (p, a, att, end, cl) = (pending.clone(), alive.clone(), attached.clone(), ended.clone(), clean.clone());
+        let (p, a, att, end, cl, h) = (pending.clone(), alive.clone(), attached.clone(), ended.clone(), clean.clone(), heard.clone());
         tokio::spawn(async move {
             let mut reader = BufReader::with_capacity(1 << 16, stdout);
             let mut block: Option<(String, bool)> = None; // (the %begin's "time num flags", ours)
@@ -145,7 +151,7 @@ impl Control {
                 buf.clear();
                 match reader.read_until(b'\n', &mut buf).await {
                     Ok(0) | Err(_) => break,
-                    Ok(_) => {}
+                    Ok(_) => *h.lock() = Instant::now(),
                 }
                 if buf.last() == Some(&b'\n') {
                     buf.pop();
@@ -211,7 +217,7 @@ impl Control {
             let _ = done.send(why);
         });
 
-        // watchdog: a command unanswered for ANSWER_WAIT means a hung client (AC-14)
+        // watchdog: a command long unanswered with nothing arriving means a hung client (AC-14)
         let (p, a) = (pending.clone(), alive.clone());
         tokio::spawn(async move {
             loop {
@@ -219,7 +225,7 @@ impl Control {
                 if !a.load(Ordering::Relaxed) {
                     break;
                 }
-                let late = p.lock().front().is_some_and(|w| w.at.elapsed() > ANSWER_WAIT);
+                let late = p.lock().front().is_some_and(|w| hung(w.at.elapsed(), heard.lock().elapsed()));
                 if late {
                     tracing::warn!(event = "tmux.timeout", pid = ?pid, "control client timed out");
                     if let Some(pid) = pid {
@@ -305,6 +311,11 @@ impl Drop for Control {
     fn drop(&mut self) {
         self.kill();
     }
+}
+
+/// Whether a client is hung: its oldest command waited `oldest`, its last line came `quiet` ago.
+fn hung(oldest: Duration, quiet: Duration) -> bool {
+    oldest > ANSWER_MOST || (oldest > ANSWER_WAIT && quiet > ANSWER_WAIT)
 }
 
 /// `Some(true)` for the `%end`, `Some(false)` for the `%error` that closes block `id`.

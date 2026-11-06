@@ -344,6 +344,9 @@ ${"z".repeat(400)}
     try { await f(); } catch (e) { check(`${name} ran to its end`, false, e.message.split("\n").slice(0, 6).join(" | ")); await page.unroute("**/*").catch(() => {}); }
     await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); }).catch(() => {});
   }
+  // the checks after these stand on the session page
+  await page.goto(`${base}/sessions/`);
+  await page.waitForSelector("#term", { state: "attached" });
 }
 
 /** AS-112's tasks against §9's budgets: `node web/test/e2e_live.mjs board`, a run alone. */

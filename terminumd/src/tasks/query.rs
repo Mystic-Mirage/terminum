@@ -4,7 +4,7 @@
 use rusqlite::Transaction;
 use serde_json::{json, Value};
 
-use super::ops::{sql, task_of, Task, COLUMNS, TASK};
+use super::ops::{rows, sql, task_of, Task, COLUMNS, TASK};
 
 /// A page of the board's cards.
 #[derive(Default, Clone)]
@@ -13,13 +13,37 @@ pub struct Query {
     pub severities: Vec<String>,
     pub statuses: Vec<String>,
     pub owner: Option<String>,
-    pub session: Option<String>,
     /// an agent's reach: tasks of this pane (linked or made), or of this project
     pub reach: Option<(String, Option<String>)>,
     pub text: Option<String>,
     pub with_subtasks: bool,
     pub after: i64,
     pub limit: i64,
+}
+
+/// `text` for a LIKE with `ESCAPE '\\'`: found as it is.
+pub(super) fn like_escaped(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+/// An agent's reach, over `tasks t`: tasks of this pane, linked or made there, and of its project;
+/// never by a session's title, which two sessions can share (AC-110, AC-115).
+fn reach_sql(pane: &str, project: Option<&str>, args: &mut Vec<String>) -> String {
+    args.push(pane.to_string());
+    let n = args.len();
+    let mut any = format!("t.session_key = ?{n} OR t.made_in = ?{n}");
+    if let Some(p) = project {
+        args.push(p.to_string());
+        any.push_str(&format!(" OR t.project = ?{}", args.len()));
+    }
+    any
+}
+
+/// Whether task number `number` is within that reach.
+pub fn within_reach(tx: &Transaction, number: i64, pane: &str, project: Option<&str>) -> Result<bool, String> {
+    let mut args = vec![number.to_string()];
+    let reach = reach_sql(pane, project, &mut args);
+    tx.query_row(&format!("SELECT count(*) FROM tasks t WHERE t.number = ?1 AND ({reach})"), rusqlite::params_from_iter(args.iter()), |r| r.get::<_, i64>(0)).map(|n| n > 0).map_err(sql)
 }
 
 /// `WHERE …` of what `q` asks, over `tasks t JOIN users u`, and its arguments.
@@ -32,18 +56,8 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
             text.push_str(&format!(" AND {column} IN ({marks})"));
         }
     }
-    if let Some(s) = &q.session {
-        args.push(s.clone());
-        text.push_str(&format!(" AND t.session_key = ?{}", args.len()));
-    }
     if let Some((pane, project)) = &q.reach {
-        args.push(pane.clone());
-        let n = args.len();
-        let mut any = format!("t.session_key = ?{n} OR t.made_in = ?{n}");
-        if let Some(p) = project {
-            args.push(p.clone());
-            any.push_str(&format!(" OR t.project = ?{}", args.len()));
-        }
+        let any = reach_sql(pane, project.as_deref(), &mut args);
         text.push_str(&format!(" AND ({any})"));
     }
     match q.owner.as_deref() {
@@ -56,7 +70,7 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
         None => {}
     }
     if let Some(found) = q.text.as_deref().filter(|t| !t.is_empty()) {
-        args.push(format!("%{}%", found.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
+        args.push(format!("%{}%", like_escaped(found)));
         let n = args.len();
         text.push_str(&format!(" AND (t.title LIKE ?{n} ESCAPE '\\' OR t.body LIKE ?{n} ESCAPE '\\' OR 'T-' || t.number LIKE ?{n} ESCAPE '\\')"));
     }
@@ -70,20 +84,14 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
 pub fn list(tx: &Transaction, q: &Query) -> Result<Vec<Task>, String> {
     let (filter, args) = filter_of(q);
     let limit = if q.limit <= 0 { 200 } else { q.limit.min(200) };
-    let text = format!("{TASK}{filter} ORDER BY t.severity, t.rank LIMIT {limit} OFFSET {}", q.after.max(0));
-    let mut st = tx.prepare(&text).map_err(sql)?;
-    let rows = st.query_map(rusqlite::params_from_iter(args.iter()), task_of).map_err(sql)?;
-    rows.collect::<Result<_, _>>().map_err(sql)
+    rows(tx, &format!("{TASK}{filter} ORDER BY t.severity, t.rank LIMIT {limit} OFFSET {}", q.after.max(0)), rusqlite::params_from_iter(args.iter()), task_of)
 }
 
 /// The count of each column under the filter (`q`'s `statuses` ignored), so a head says it.
 pub fn counts(tx: &Transaction, q: &Query) -> Result<Value, String> {
-    let mut out = serde_json::Map::new();
-    for column in COLUMNS {
-        let only = Query { statuses: vec![column.to_string()], ..q.clone() };
-        let (filter, args) = filter_of(&only);
-        let n: i64 = tx.query_row(&format!("SELECT count(*) FROM tasks t JOIN users u ON u.id = t.owner{filter}"), rusqlite::params_from_iter(args.iter()), |r| r.get(0)).map_err(sql)?;
-        out.insert(column.to_string(), json!(n));
-    }
+    let (filter, args) = filter_of(&Query { statuses: Vec::new(), ..q.clone() });
+    let found: Vec<(String, i64)> = rows(tx, &format!("SELECT t.status, count(*) FROM tasks t JOIN users u ON u.id = t.owner{filter} GROUP BY t.status"), rusqlite::params_from_iter(args.iter()), |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let mut out: serde_json::Map<String, Value> = COLUMNS.iter().map(|c| (c.to_string(), json!(0))).collect();
+    out.extend(found.into_iter().map(|(status, n)| (status, json!(n))));
     Ok(Value::Object(out))
 }

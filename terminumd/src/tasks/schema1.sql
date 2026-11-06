@@ -27,8 +27,6 @@ CREATE TABLE tasks (
   number INTEGER NOT NULL UNIQUE,
   project TEXT NOT NULL REFERENCES projects,
   parent TEXT REFERENCES tasks,
-  title TEXT NOT NULL,
-  body TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('TODO', 'IN PROGRESS', 'WAIT FOR HUMAN', 'FAILED', 'DONE')),
   severity TEXT NOT NULL CHECK (severity IN ('P0', 'P1', 'P2', 'P3')),
   rank REAL NOT NULL,
@@ -39,11 +37,15 @@ CREATE TABLE tasks (
   agent_session TEXT,
   budget_seconds INTEGER,
   archived_at INTEGER,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  -- last: a scan of the columns above never walks a long text's pages
+  title TEXT NOT NULL,
+  body TEXT NOT NULL
 );
 CREATE INDEX tasks_board ON tasks (archived_at, status, severity, rank);
-CREATE INDEX tasks_project ON tasks (project);
-CREATE INDEX tasks_session ON tasks (session_key);
+CREATE INDEX tasks_project ON tasks (project, archived_at);
+CREATE INDEX tasks_session ON tasks (session_key, status, archived_at, number);
+CREATE INDEX tasks_parent ON tasks (parent, status);
 CREATE TABLE events (
   id TEXT PRIMARY KEY,
   task TEXT NOT NULL REFERENCES tasks,
@@ -61,7 +63,6 @@ CREATE TABLE files (
   name TEXT NOT NULL,
   bytes INTEGER NOT NULL,
   mime TEXT NOT NULL,
-  author TEXT NOT NULL,
   at INTEGER NOT NULL
 );
 CREATE INDEX files_task ON files (task);

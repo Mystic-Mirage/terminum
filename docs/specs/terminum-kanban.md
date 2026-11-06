@@ -569,11 +569,17 @@ CREATE TABLE list_order (place INTEGER PRIMARY KEY, part TEXT NOT NULL);  -- pro
 CREATE TABLE servers (start TEXT PRIMARY KEY, terminum_id TEXT NOT NULL);  -- each server's identity by its keys' start
 CREATE TABLE project_members (project TEXT REFERENCES projects, pane_key TEXT UNIQUE, place INTEGER);
 CREATE TABLE tasks (id TEXT PRIMARY KEY, number INTEGER UNIQUE NOT NULL, project TEXT REFERENCES projects, parent TEXT REFERENCES tasks,
-  title TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, severity TEXT NOT NULL, rank REAL NOT NULL, owner TEXT REFERENCES users,
-  by_agent INTEGER NOT NULL, session_key TEXT, made_in TEXT, agent_session TEXT, budget_seconds INTEGER, archived_at INTEGER, updated_at INTEGER NOT NULL);
+  status TEXT NOT NULL, severity TEXT NOT NULL, rank REAL NOT NULL, owner TEXT REFERENCES users,
+  by_agent INTEGER NOT NULL, session_key TEXT, made_in TEXT, agent_session TEXT, budget_seconds INTEGER, archived_at INTEGER, updated_at INTEGER NOT NULL,
+  title TEXT NOT NULL, body TEXT NOT NULL);   -- the long columns last: a scan of the others never walks a text's pages
+CREATE INDEX tasks_board ON tasks (archived_at, status, severity, rank);
+CREATE INDEX tasks_project ON tasks (project, archived_at);
+CREATE INDEX tasks_session ON tasks (session_key, status, archived_at, number);
+CREATE INDEX tasks_parent ON tasks (parent, status);
 CREATE TABLE events (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, at INTEGER NOT NULL, author TEXT REFERENCES users, kind TEXT NOT NULL, text TEXT, data TEXT);
 CREATE INDEX events_task ON events (task, at);
-CREATE TABLE files (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, event TEXT REFERENCES events, name TEXT NOT NULL, bytes INTEGER NOT NULL, mime TEXT NOT NULL);
+CREATE TABLE files (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, event TEXT REFERENCES events, name TEXT NOT NULL, bytes INTEGER NOT NULL, mime TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE INDEX files_task ON files (task);
 ```
 
 Sample event: `{"task":"T-12","at":1792003600,"author":"Dispatcher","kind":"comment","text":"Session started: claude in window api:4, on this Mac."}`
@@ -583,11 +589,11 @@ Sample event: `{"task":"T-12","at":1792003600,"author":"Dispatcher","kind":"comm
 | Route | Does |
 |---|---|
 | `GET /`, `/sessions/`, `/kanban/`, `/kanban/T-12` | redirect keeping the query (`?trace=1`); the session page; the board |
-| `GET /api/tasks?project=&severity=&owner=&status=&q=&after=&limit=` | a page of 200 at most |
+| `GET /api/tasks?project=&severity=&owner=&status=&q=&after=&limit=&counts=1` | a page of 200 at most; with `counts=1`, each column's count under the same filters |
 | `POST /api/tasks`, `PATCH /api/tasks/T-12`, `POST /api/tasks/T-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}` |
 | `GET /api/task-files/<id>` | header sign-in only, never an address (terminum.md AC-09): the page fetches and shows a blob, as `web/static/shown.js` does; `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; inline only for PNG, JPEG, GIF, WebP |
 
-Pages hear `taskchange {id, status, rev}` over the page's WebSocket.
+Pages hear over the page's WebSocket: `taskchange {id}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it; `taskmarks {marks, counts}` when the open tasks by session or the tasks by project change, for the session list; the `layout` it hears anyway gives a board its cards' session states.
 
 **MCP tools** added to `terminum mcp`: `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `add_comment`, `attach_file`, `get_file`, `finish_task`. `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 

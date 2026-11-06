@@ -73,10 +73,6 @@ pub struct Projects {
     untold: bool,
     /// the session list's order, projects and tmux groups together ("p:<id>", "g:<group>"): every page's
     order: Vec<String>,
-    /// open tasks by project, for the dialog of Delete Project
-    tasks: HashMap<String, i64>,
-    /// open tasks by session, for their rows' marks (AC-113)
-    marks: BTreeMap<String, Vec<String>>,
 }
 
 /// A project's name as typed (trimmed): a short name (settings::is_short_name), and not Default's.
@@ -108,7 +104,6 @@ impl Projects {
         (self.list, self.servers, self.order) = (saved.list, saved.servers, saved.order);
         self.loaded = true;
         self.untold = true;
-        self.refresh_counts();
         Ok(())
     }
 
@@ -120,38 +115,6 @@ impl Projects {
             (self.list, self.servers, self.order) = (before.list, before.servers, before.order);
         }
         done
-    }
-
-    /// Reads the tasks by project again: whether they changed. Off the async workers.
-    pub fn refresh_counts(&mut self) -> bool {
-        let Some(store) = &self.store else { return false };
-        use crate::tasks::ops::sql;
-        let counts_marks = store.with(|tx| {
-            let mut st = tx.prepare("SELECT project, count(*) FROM tasks WHERE archived_at IS NULL GROUP BY project").map_err(sql)?;
-            let counts = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(sql)?.collect::<Result<HashMap<_, _>, _>>().map_err(sql)?;
-            let mut st = tx.prepare("SELECT session_key, 'T-' || number FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number").map_err(sql)?;
-            let mut marks: BTreeMap<String, Vec<String>> = BTreeMap::new();
-            for row in st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(sql)? {
-                let (key, id) = row.map_err(sql)?;
-                marks.entry(key).or_default().push(id);
-            }
-            Ok((counts, marks))
-        });
-        // a passing failure says nothing about the tasks: the last numbers stand
-        let Ok((counts, marks)) = counts_marks else { return false };
-        let changed = counts != self.tasks || marks != self.marks;
-        self.tasks = counts;
-        self.marks = marks;
-        changed
-    }
-
-    /// The projects as a page gets them.
-    fn told(&self) -> Vec<Value> {
-        self.list.iter().map(|p| {
-            let mut v = serde_json::to_value(p).unwrap_or_default();
-            v["tasks"] = json!(self.tasks.get(&p.id).copied().unwrap_or(0));
-            v
-        }).collect()
     }
 
     pub fn list(&self) -> &[Project] {
@@ -268,9 +231,8 @@ impl Projects {
         let mut after = self.saved();
         after.list.retain(|p| p.id != id);
         if let Some(store) = &self.store {
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
             store.with(|tx| {
-                stored::move_tasks_to_default(tx, id, &name, now)?;
+                stored::move_tasks_to_default(tx, id, &name, crate::tasks::ops::now())?;
                 stored::write(tx, &after)
             })?;
         }
@@ -368,12 +330,13 @@ impl Projects {
 
 fn message(app: &Shared) -> String {
     let projects = app.projects.lock();
-    json!({"t": "projects", "items": projects.told(), "order": projects.list_order(), "taskmarks": projects.marks}).to_string()
+    json!({"t": "projects", "items": projects.list(), "order": projects.list_order()}).to_string()
 }
 
 /// A page that connects learns the projects.
 pub fn hello(app: &Shared, page: &Page) {
     page.send(message(app));
+    crate::tasks::marks::hello(app, page);
 }
 
 /// Every page learns the projects (after a change).
@@ -498,7 +461,7 @@ pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
     // the pane's host and folder, for a new project's [+]
     let (host, dir) = if action == "add" { crate::page::marks::find_item(&app.layout.read(), &key).map(|it| crate::page::marks::project_of(&it)).unwrap_or_default() } else { Default::default() };
     let a = app.clone();
-    let done = tokio::task::spawn_blocking(move || {
+    let done = crate::http::off(move || {
         let mut ps = a.projects.lock();
         match action.as_str() {
             "add" if crate::tmux::parse_key(&key).is_some() => ps.add(&key, project.as_deref(), None, host, dir.unwrap_or_default(), given.as_deref()).map(|_| ()),
@@ -509,7 +472,7 @@ pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
             "members" => ps.members(project.as_deref().unwrap_or(""), &keys),
             _ => Err(format!("Not a project action: {action}")),
         }
-    }).await.map_err(|e| e.to_string()).and_then(|r| r);
+    }).await;
     match done {
         Ok(()) => tell(app),
         Err(e) => super::client::error(page, e, None),

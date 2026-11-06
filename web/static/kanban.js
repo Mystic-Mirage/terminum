@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The board at /kanban/ (terminum-kanban.md): five columns of tasks, filters kept in the URL, moves
-// by drag or Move to…; terminumd owns the cards and every page hears of a change. signin.js comes
-// first: every fetch then carries the sign-in, and a page with none goes to /sessions/, whose form
-// signs in.
+// by drag or Move to…; terminumd owns the cards and every page hears of a change, this one too.
+// signin.js comes first: every fetch then carries the sign-in.
 import * as signin from "./signin.js";
 import { pageColors } from "./contrast.js";
+import { askConfirm, askName } from "./dialogs.js";
+import { projectColor } from "./nav.js";
+import { takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
-import { COLUMNS, api, ask, el, say } from "./kanbanutil.js";
+import { $, COLUMNS, SEVERITIES, api, button, el, say } from "./kanbanutil.js";
 
-const $ = (id) => document.getElementById(id);
-const SEVERITIES = ["P0", "P1", "P2", "P3"];
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [] };
 let cards = new Map(COLUMNS.map((c) => [c, []]));
@@ -47,30 +47,26 @@ function banner(text) {
   box.textContent = text ?? "";
   box.hidden = !text;
   if (text && meta.set_aside) {
-    const start = el("button", null, "Start empty");
-    start.type = "button";
-    start.addEventListener("click", async () => {
-      if (!await ask("Start with an empty store?", "The one set aside stays where it is, untouched.", "Start empty")) return;
+    box.append(" ", button(null, "Start empty", async () => {
+      if (!await askConfirm("Start with an empty store? The one set aside stays where it is, untouched.", "Start empty")) return;
       try {
-        await api("/api/tasks/start-empty", { method: "POST", body: {} });
+        await api("/api/tasks/start-empty", { method: "POST" });
         await loadMeta();
         await load();
       } catch (e) { say(e.message); }
-    });
-    box.append(" ", start);
+    }));
   }
 }
 
 /** Each column's first page; a failure keeps what is shown and says so (AC-105). */
 async function load() {
   try {
-    const parts = await Promise.all(COLUMNS.map((c) => api(`/api/tasks?${query({ status: c, limit: PAGE })}`)));
+    const parts = await Promise.all(COLUMNS.map((c, i) => api(`/api/tasks?${query({ status: c, limit: PAGE, counts: i === 0 ? 1 : undefined })}`)));
     cards = new Map(COLUMNS.map((c, i) => [c, parts[i].tasks]));
     counts = parts[0].counts;
     banner(meta.problem ?? "");
     draw();
   } catch (e) {
-    if (e.status === 401) { location.href = "/sessions/"; return; }
     banner(`The board is out of date: ${e.message}`);
   }
 }
@@ -85,8 +81,8 @@ async function more(column) {
 }
 
 const projectOf = (id) => meta.projects.find((p) => p.id === id);
-/** A project's color, as the session list's (nav.js projectColor, the page's palette). */
-const projectHue = (p) => (p?.color >= 0 ? `hsl(${(p.color * 36 + 8) % 360} 62% 72%)` : "var(--muted)");
+/** A project's color, the session list's; Default has none. */
+const projectHue = (p) => (p?.color >= 0 ? projectColor(p) : "var(--muted)");
 
 function sessionLine(t) {
   if (!t.session) return null;
@@ -102,10 +98,8 @@ function card(t) {
   c.tabIndex = 0;
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
-  const menu = el("button", "cmove", "Move to…");
-  menu.type = "button";
+  const menu = button("cmove", "Move to…", (e) => { e.stopPropagation(); moveMenu(t, menu); });
   menu.setAttribute("aria-haspopup", "true");
-  menu.addEventListener("click", (e) => { e.stopPropagation(); moveMenu(t, menu); });
   head.append(menu);
   const foot = el("div", "cfoot");
   const p = projectOf(t.project);
@@ -130,10 +124,8 @@ function moveMenu(t, anchor) {
   const m = el("div", "box movemenu");
   m.setAttribute("role", "menu");
   for (const c of COLUMNS.filter((x) => x !== t.status)) {
-    const b = el("button", null, c);
-    b.type = "button";
+    const b = button(null, c, (e) => { e.stopPropagation(); m.remove(); moveTo(t, c); });
     b.setAttribute("role", "menuitem");
-    b.addEventListener("click", (e) => { e.stopPropagation(); m.remove(); moveTo(t, c); });
     m.append(b);
   }
   anchor.closest(".card").append(m);
@@ -142,26 +134,20 @@ function moveMenu(t, anchor) {
   setTimeout(() => addEventListener("click", () => m.remove(), { once: true }));
 }
 
-/** A move stands once terminumd said so; refused, the card stays and the toast says why. */
+/** A change stands once terminumd said so, and every page hears of it; refused, the toast says why. */
+const change = (t, body) => api(`/api/tasks/${t.id}`, { method: "PATCH", body }).catch((e) => say(e.message));
+
 async function moveTo(t, status) {
-  if (status === "IN PROGRESS" && !t.session) {
-    const ok = await ask(`${t.id} has no session. Move it to IN PROGRESS?`, "Link a session in its window to have an agent work on it.", "Move");
-    if (!ok) return;
-  }
-  try {
-    await api(`/api/tasks/${t.id}`, { method: "PATCH", body: { status } });
-  } catch (e) { say(e.message); }
-  load();
+  if (status === "IN PROGRESS" && !t.session
+    && !await askConfirm(`${t.id} has no session. Move it to IN PROGRESS? Link a session in its window to have an agent work on it.`, "Move")) return;
+  await change(t, { status });
 }
 
-async function dropOn(column, before) {
+function dropOn(column, before) {
   const t = dragging;
   if (!t) return;
-  try {
-    if (t.status !== column) await moveTo(t, column);
-    else await api(`/api/tasks/${t.id}`, { method: "PATCH", body: before ? { before } : { order_end: true } });
-  } catch (e) { say(e.message); }
-  load();
+  if (t.status !== column) moveTo(t, column);
+  else change(t, before ? { before } : { order_end: true });
 }
 
 function draw() {
@@ -177,10 +163,7 @@ function draw() {
     list.append(...have.map(card));
     if (!have.length) list.append(el("p", "colempty", hasFilter() ? "No tasks match" : "No tasks"));
     if (have.length < (counts[column] ?? 0)) {
-      const b = el("button", "colmore", `Show ${Math.min(PAGE, counts[column] - have.length)} more`);
-      b.type = "button";
-      b.addEventListener("click", () => more(column));
-      list.append(b);
+      list.append(button("colmore", `Show ${Math.min(PAGE, counts[column] - have.length)} more`, () => more(column)));
     }
     col.addEventListener("dragover", (e) => { if (dragging) { e.preventDefault(); col.classList.add("over"); } });
     col.addEventListener("dragleave", (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove("over"); });
@@ -194,13 +177,34 @@ function draw() {
     return col;
   }));
   $("colswitch").replaceChildren(...COLUMNS.map((c) => {
-    const b = el("button", null, `${c} ${counts[c] ?? 0}`);
-    b.type = "button";
+    const b = button(null, `${c} ${counts[c] ?? 0}`, () => showColumn(c));
+    b.dataset.status = c;
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", String(c === shownColumn));
-    b.addEventListener("click", () => { shownColumn = c; draw(); });
     return b;
   }));
+}
+
+/** A phone's one column: the cards stay as they are. */
+function showColumn(column) {
+  shownColumn = column;
+  for (const col of $("board").children) col.classList.toggle("shown", col.dataset.status === column);
+  for (const b of $("colswitch").children) b.setAttribute("aria-selected", String(b.dataset.status === column));
+}
+
+/** The session list changed: the pickers' sessions and the cards' states come with it, no task did. */
+function sessionsCame(groups) {
+  const items = groups.flatMap((g) => g.items ?? []);
+  meta.sessions = items.map((it) => ({ key: it.id, title: it.title }));
+  const live = new Map(items.map((it) => [it.id, it]));
+  const shownCards = new Map([...cards.values()].flat().map((t) => [t.id, t]));
+  for (const c of $("board").querySelectorAll(".card")) {
+    const t = shownCards.get(c.dataset.id);
+    if (!t?.session) continue;
+    const it = live.get(t.session.key);
+    t.session = it ? { key: it.id, state: it.state, closed: false } : { key: t.session.key, closed: true };
+    c.querySelector(".cstate")?.replaceWith(sessionLine(t));
+  }
 }
 
 const hasFilter = () => { const f = filters(); return f.project.length || f.severity.length || f.owner || f.q; };
@@ -237,13 +241,12 @@ async function loadMeta() {
     if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
     drawFilters();
   } catch (e) {
-    if (e.status === 401) location.href = "/sessions/";
-    else banner(`The board is out of date: ${e.message}`);
+    banner(`The board is out of date: ${e.message}`);
   }
 }
 
-const windowed = taskWindow({ getMeta: () => meta, onChange: load });
-const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: load });
+const windowed = taskWindow({ getMeta: () => meta });
+const form = taskForm({ getMeta: () => meta, getFilter: filters });
 
 function openTask(id) {
   history.replaceState(null, "", `/kanban/${id}${location.search}`);
@@ -254,24 +257,27 @@ $("taskbox").addEventListener("close", () => history.replaceState(null, "", `/ka
 $("newtask").addEventListener("click", () => form.open());
 $("find").addEventListener("input", () => { clearTimeout($("find").wait); $("find").wait = setTimeout(() => setFilters({ q: $("find").value }), 200); });
 $("clearfilters").addEventListener("click", () => setFilters({ project: [], severity: [], owner: "", q: "" }));
-$("newproject").addEventListener("click", async () => {
-  const { askName } = await import("./kanbanutil.js");
-  await askName("New project", "", "Create", async (name) => {
-    await api("/api/task-projects", { method: "POST", body: { name } });
-    await loadMeta();
-  });
-});
+$("newproject").addEventListener("click", () => askName("New project", "", "Create", 40, async (name) => {
+  await api("/api/task-projects", { method: "POST", body: { name } });
+  await loadMeta();
+}));
 
-/** Every page hears of a task's change: the columns are read again, once a burst ends. */
+/** Every page hears of a task's change: the columns are read again once a burst ends, an open
+ *  window only when it shows a task that changed. */
 function listen() {
-  let wait = 0;
-  const again = () => { clearTimeout(wait); wait = setTimeout(() => { load(); windowed.refresh(); }, 100); };
+  let wait = 0, windowToo = false;
+  const again = (id) => {
+    windowToo ||= !id || windowed.shows(id);
+    clearTimeout(wait);
+    wait = setTimeout(() => { load(); if (windowToo) windowed.refresh(); windowToo = false; }, 100);
+  };
   signin.prove().then(() => {
     const ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`, signin.protocols());
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
-      if (m.t === "taskchange") again();
-      else if (m.t === "projects" || m.t === "layout") { clearTimeout(ws.wait); ws.wait = setTimeout(() => { loadMeta(); again(); }, 500); }
+      if (m.t === "taskchange") again(m.id);
+      else if (m.t === "layout") sessionsCame(m.groups);
+      else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(() => { loadMeta(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);
   });
@@ -284,7 +290,7 @@ const wanted = /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
 if (wanted) openTask(wanted);
 const asked = new URLSearchParams(location.search);
 if (asked.get("new") === "1") {
-  form.open({ session: asked.get("session"), project: asked.get("for"), text: form.takeSelection() });
+  form.open({ session: asked.get("session"), project: asked.get("for"), text: takeSelection() });
   for (const k of ["new", "session", "for"]) asked.delete(k);
   history.replaceState(null, "", `/kanban/${asked.size ? `?${asked}` : ""}`);
 }

@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use serde_json::Value;
 
 use super::ops::{self, Task};
-use super::store::{DISPATCHER, HUMAN};
+use super::store::DISPATCHER;
 use crate::app::Shared;
 
 /// Lines waiting for a pane's next context, with their tasks.
@@ -51,12 +51,10 @@ fn say(app: &Shared, task: &str, text: String) {
     let a = app.clone();
     let id = task.to_string();
     tokio::task::spawn_blocking(move || {
-        let done = a.tasks.with(|tx| {
-            let key: String = tx.query_row("SELECT id FROM tasks WHERE number = ?1", [ops::number_of(&id)?], |r| r.get(0)).map_err(ops::sql)?;
-            ops::log(tx, &key, DISPATCHER, "told", &text, None, ops::now()).map(|_| ())
-        });
-        if let Err(e) = done {
-            tracing::warn!(event = "tasks.told", error = %e);
+        let done = a.tasks.with(|tx| ops::log(tx, &ops::key_of(tx, &id)?, DISPATCHER, "told", &text, None, ops::now()).map(|_| ()));
+        match done {
+            Ok(()) => super::api::change_heard(&a, &id),   // an open window shows it
+            Err(e) => tracing::warn!(event = "tasks.told", error = %e),
         }
     });
 }
@@ -72,7 +70,7 @@ pub async fn human_moved(app: &Shared, task: &Task) {
         return;
     }
     let a = app.clone();
-    let user = tokio::task::spawn_blocking(move || a.tasks.with(|tx| tx.query_row("SELECT name FROM users WHERE id = ?1", [HUMAN], |r| r.get::<_, String>(0)).map_err(ops::sql))).await;
+    let user = tokio::task::spawn_blocking(move || a.tasks.with(|tx| ops::user_name(tx, super::store::HUMAN))).await;
     let user = user.ok().and_then(Result::ok).unwrap_or_else(|| "the user".into());
     app.task_lines.push(key, &task.id, line_of(&task.id, &task.status, &user));
     say(app, &task.id, "Waits for the session's next tool call".to_string());

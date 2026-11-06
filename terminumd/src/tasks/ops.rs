@@ -3,22 +3,30 @@
 //! AC-107, AC-108, AC-113). The rules are here for humans and agents alike; who may ask is the
 //! caller's (`tools.rs` for agents).
 
-use rusqlite::{OptionalExtension, Row, Transaction};
+use std::collections::HashMap;
+
+use rusqlite::{OptionalExtension, Params, Row, Transaction};
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use super::files::File;
 use super::store::{DEFAULT_PROJECT, HUMAN};
 
 pub const COLUMNS: [&str; 5] = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 pub const SEVERITIES: [&str; 4] = ["P0", "P1", "P2", "P3"];
 const TITLE_MOST: usize = 200;
-const TEXT_MOST: usize = 1 << 20;
-const COMMENT_MOST: usize = 256 << 10;
+pub const TEXT_MOST: usize = 1 << 20;
+pub const COMMENT_MOST: usize = 256 << 10;
 /// Open tasks by agents in one project (AC-115).
 pub const AGENTS_OPEN_MOST: i64 = 200;
 
 pub fn sql(e: rusqlite::Error) -> String {
-    format!("The tasks' store: {e}")
+    super::store::message(&e)
+}
+
+/// Every row `query` finds.
+pub(super) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: impl FnMut(&Row) -> rusqlite::Result<T>) -> Result<Vec<T>, String> {
+    tx.prepare(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)
 }
 
 pub fn now() -> i64 {
@@ -39,19 +47,21 @@ pub struct Task {
     pub owner_kind: String,
     pub by_agent: bool,
     pub session: Option<String>,
-    /// the pane of the agent that made it: an agent's reach (tools.rs)
-    pub made_in: Option<String>,
     pub files: i64,
     pub subtasks_done: i64,
     pub subtasks: i64,
-    pub updated_at: i64,
+    /// the row's key and place in its column: the rules', never shown
+    #[serde(skip)]
+    pub(super) key: String,
+    #[serde(skip)]
+    rank: f64,
 }
 
 pub(super) const TASK: &str = "SELECT t.number, t.project, (SELECT 'T-' || p.number FROM tasks p WHERE p.id = t.parent), t.title, t.status, t.severity,
     t.owner, u.name, u.kind, t.by_agent, t.session_key,
     (SELECT count(*) FROM files f WHERE f.task = t.id),
     (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.status = 'DONE'),
-    (SELECT count(*) FROM tasks s WHERE s.parent = t.id), t.updated_at, t.made_in
+    (SELECT count(*) FROM tasks s WHERE s.parent = t.id), t.id, t.rank
     FROM tasks t JOIN users u ON u.id = t.owner";
 
 pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
@@ -70,8 +80,8 @@ pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
         files: r.get(11)?,
         subtasks_done: r.get(12)?,
         subtasks: r.get(13)?,
-        updated_at: r.get(14)?,
-        made_in: r.get(15)?,
+        key: r.get(14)?,
+        rank: r.get(15)?,
     })
 }
 
@@ -80,23 +90,25 @@ pub fn number_of(id: &str) -> Result<i64, String> {
     id.strip_prefix("T-").and_then(|n| n.parse().ok()).filter(|n| *n > 0).ok_or_else(|| format!("No task {id}"))
 }
 
+/// What `query` reads of task `id`.
+fn of_task<T>(tx: &Transaction, id: &str, query: &str, f: impl FnOnce(&Row) -> rusqlite::Result<T>) -> Result<T, String> {
+    tx.query_row(query, [number_of(id)?], f).optional().map_err(sql)?.ok_or_else(|| format!("No task {id}"))
+}
+
 /// The row's key of task `id`.
 pub(super) fn key_of(tx: &Transaction, id: &str) -> Result<String, String> {
-    let n = number_of(id)?;
-    tx.query_row("SELECT id FROM tasks WHERE number = ?1", [n], |r| r.get(0)).optional().map_err(sql)?.ok_or_else(|| format!("No task {id}"))
+    of_task(tx, id, "SELECT id FROM tasks WHERE number = ?1", |r| r.get(0))
 }
 
 pub fn get(tx: &Transaction, id: &str) -> Result<Task, String> {
-    let n = number_of(id)?;
-    tx.query_row(&format!("{TASK} WHERE t.number = ?1"), [n], task_of).optional().map_err(sql)?.ok_or_else(|| format!("No task {id}"))
+    of_task(tx, id, &format!("{TASK} WHERE t.number = ?1"), task_of)
 }
 
 pub fn text_of(tx: &Transaction, id: &str) -> Result<String, String> {
-    let n = number_of(id)?;
-    tx.query_row("SELECT body FROM tasks WHERE number = ?1", [n], |r| r.get(0)).optional().map_err(sql)?.ok_or_else(|| format!("No task {id}"))
+    of_task(tx, id, "SELECT body FROM tasks WHERE number = ?1", |r| r.get(0))
 }
 
-fn user_name(tx: &Transaction, user: &str) -> Result<String, String> {
+pub(super) fn user_name(tx: &Transaction, user: &str) -> Result<String, String> {
     tx.query_row("SELECT name FROM users WHERE id = ?1", [user], |r| r.get(0)).optional().map_err(sql)?.ok_or_else(|| format!("No user {user}"))
 }
 
@@ -138,6 +150,10 @@ fn check_text(text: &str) -> Result<(), String> {
     if text.len() > TEXT_MOST { Err("Text: at most 1 MiB".into()) } else { Ok(()) }
 }
 
+fn check_comment(text: &str) -> Result<(), String> {
+    if text.len() > COMMENT_MOST { Err("Comment: at most 256 KiB".into()) } else { Ok(()) }
+}
+
 fn check_severity(s: &str) -> Result<(), String> {
     if SEVERITIES.contains(&s) { Ok(()) } else { Err(format!("Severity: one of {}", SEVERITIES.join(", "))) }
 }
@@ -172,7 +188,7 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
             if up.parent.is_some() {
                 return Err("A subtask cannot have subtasks".into());
             }
-            Some((key_of(tx, p)?, up.project))
+            Some((up.key, up.project))
         }
         None => None,
     };
@@ -196,60 +212,59 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     get(tx, &format!("T-{number}"))
 }
 
-/// A task of `session` standing in IN PROGRESS other than `but` (AC-113).
-fn in_progress_of(tx: &Transaction, session: &str, but: &str) -> Result<Option<String>, String> {
-    tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL", (session, but), |r| r.get(0))
-        .optional().map_err(sql)
+/// A session works on one task at a time (AC-113): refused while another than `but` stands in IN PROGRESS.
+fn check_free(tx: &Transaction, session: &str, but: &str) -> Result<(), String> {
+    let other: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL", (session, but), |r| r.get(0))
+        .optional().map_err(sql)?;
+    match other {
+        Some(other) => Err(format!("Session {} already works on {other}. Finish or move {other} first.", pane_of(session))),
+        None => Ok(()),
+    }
 }
 
 /// Moves a task to a column, on top of its severity's cards; its history says who did it.
-pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) -> Result<Task, String> {
+pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) -> Result<(), String> {
     if !COLUMNS.contains(&status) {
         return Err(format!("Status: one of {}", COLUMNS.join(", ")));
     }
     let task = get(tx, id)?;
     if task.status == status {
-        return Ok(task);
+        return Ok(());
     }
-    let key = key_of(tx, id)?;
     if status == "IN PROGRESS"
-        && let Some(session) = &task.session
-            && let Some(other) = in_progress_of(tx, session, &key)? {
-                return Err(format!("{} already works on {other}. Finish or move {other} first.", session_name(session)));
-            }
+        && let Some(session) = &task.session {
+            check_free(tx, session, &task.key)?;
+        }
     let rank = top_rank(tx, status, &task.severity)?;
-    tx.execute("UPDATE tasks SET status = ?1, rank = ?2, updated_at = ?3 WHERE id = ?4", (status, rank, at, &key)).map_err(sql)?;
+    tx.execute("UPDATE tasks SET status = ?1, rank = ?2, updated_at = ?3 WHERE id = ?4", (status, rank, at, &task.key)).map_err(sql)?;
     let who = user_name(tx, author)?;
-    log(tx, &key, author, "move", &format!("{who} moved it from {} to {status}", task.status), Some(&json!({"from": task.status, "to": status})), at)?;
-    get(tx, id)
+    log(tx, &task.key, author, "move", &format!("{who} moved it from {} to {status}", task.status), Some(&json!({"from": task.status, "to": status})), at).map(|_| ())
 }
 
-/// A session's name in a refusal: the pane's key names no more; the page says its title elsewhere.
-fn session_name(key: &str) -> String {
-    format!("Session {}", key.rsplit(':').next().unwrap_or(key))
+/// A session in a refusal: its pane; the page says its title elsewhere.
+pub(super) fn pane_of(key: &str) -> &str {
+    key.rsplit(':').next().unwrap_or(key)
 }
 
 /// A card dragged within its column: above `before`, last with none. A card dropped among another
 /// severity's stays its severity, on top of its own (AC-105).
-pub fn reorder(tx: &Transaction, id: &str, before: Option<&str>, at: i64) -> Result<Task, String> {
+pub fn reorder(tx: &Transaction, id: &str, before: Option<&str>, at: i64) -> Result<(), String> {
     let task = get(tx, id)?;
-    let key = key_of(tx, id)?;
+    let key = &task.key;
     let neighbour = before.map(|b| get(tx, b)).transpose()?;
     let rank = match neighbour {
         Some(n) if n.severity == task.severity && n.status == task.status => {
-            let (n_key, n_rank): (String, f64) = tx.query_row("SELECT id, rank FROM tasks WHERE number = ?1", [number_of(&n.id)?], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
             let above: Option<f64> = tx.query_row("SELECT max(rank) FROM tasks WHERE status = ?1 AND severity = ?2 AND archived_at IS NULL AND rank < ?3 AND id <> ?4 AND id <> ?5",
-                                                  (&task.status, &task.severity, n_rank, &n_key, &key), |r| r.get(0)).map_err(sql)?;
-            above.map_or(n_rank - 1.0, |a| (a + n_rank) / 2.0)
+                                                  (&task.status, &task.severity, n.rank, &n.key, key), |r| r.get(0)).map_err(sql)?;
+            above.map_or(n.rank - 1.0, |a| (a + n.rank) / 2.0)
         }
         Some(_) => top_rank(tx, &task.status, &task.severity)?,
         None => {
-            let max: Option<f64> = tx.query_row("SELECT max(rank) FROM tasks WHERE status = ?1 AND severity = ?2 AND archived_at IS NULL AND id <> ?3", (&task.status, &task.severity, &key), |r| r.get(0)).map_err(sql)?;
+            let max: Option<f64> = tx.query_row("SELECT max(rank) FROM tasks WHERE status = ?1 AND severity = ?2 AND archived_at IS NULL AND id <> ?3", (&task.status, &task.severity, key), |r| r.get(0)).map_err(sql)?;
             max.map_or(0.0, |m| m + 1.0)
         }
     };
-    tx.execute("UPDATE tasks SET rank = ?1, updated_at = ?2 WHERE id = ?3", (rank, at, &key)).map_err(sql)?;
-    get(tx, id)
+    tx.execute("UPDATE tasks SET rank = ?1, updated_at = ?2 WHERE id = ?3", (rank, at, key)).map(|_| ()).map_err(sql)
 }
 
 /// What a human may change in a task's window; absent keeps.
@@ -261,7 +276,10 @@ pub struct Edit {
     pub owner: Option<String>,
 }
 
-pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> Result<Task, String> {
+pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> Result<(), String> {
+    if change.title.is_none() && change.text.is_none() && change.severity.is_none() && change.owner.is_none() {
+        return Ok(());
+    }
     let key = key_of(tx, id)?;
     let who = user_name(tx, author)?;
     if let Some(t) = change.title {
@@ -288,36 +306,69 @@ pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> 
         tx.execute("UPDATE tasks SET owner = ?1 WHERE id = ?2", (&o, &key)).map_err(sql)?;
         log(tx, &key, author, "edit", &format!("{who} gave it to {name}"), None, at)?;
     }
-    touch(tx, &key, at)?;
-    get(tx, id)
+    touch(tx, &key, at)
 }
 
 /// Links a session (AC-113), or unlinks with none.
-pub fn link(tx: &Transaction, author: &str, id: &str, session: Option<&str>, at: i64) -> Result<Task, String> {
-    let key = key_of(tx, id)?;
+pub fn link(tx: &Transaction, author: &str, id: &str, session: Option<&str>, at: i64) -> Result<(), String> {
     let task = get(tx, id)?;
-    if let (Some(s), "IN PROGRESS") = (session, task.status.as_str())
-        && let Some(other) = in_progress_of(tx, s, &key)? {
-            return Err(format!("{} already works on {other}. Finish or move {other} first.", session_name(s)));
-        }
-    tx.execute("UPDATE tasks SET session_key = ?1, updated_at = ?2 WHERE id = ?3", (session, at, &key)).map_err(sql)?;
+    let key = &task.key;
+    if let (Some(s), "IN PROGRESS") = (session, task.status.as_str()) {
+        check_free(tx, s, key)?;
+    }
+    tx.execute("UPDATE tasks SET session_key = ?1, updated_at = ?2 WHERE id = ?3", (session, at, key)).map_err(sql)?;
     let who = user_name(tx, author)?;
     let said = if session.is_some() { format!("{who} linked a session") } else { format!("{who} unlinked its session") };
-    log(tx, &key, author, "session", &said, None, at)?;
-    get(tx, id)
+    log(tx, key, author, "session", &said, None, at).map(|_| ())
 }
 
-/// Another project, its subtasks with it, in one transaction (AC-112, AC-113). A linked session is
-/// the caller's to move or unlink first: `unlink` drops the link here.
-pub fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, unlink: bool, at: i64) -> Result<Task, String> {
+/// What became of a move to another project.
+#[derive(Debug, PartialEq)]
+pub enum ProjectMove {
+    Done,
+    /// the task moved, and this session goes where it went
+    SessionFollows(String),
+    /// it has a session: nothing moved until the human says what becomes of that
+    Ask,
+}
+
+/// A human moves a task to `project` (AC-113): a session goes with it (`choice` "move") unless it
+/// holds another open task, or is unlinked (any other choice); with no choice, that is asked first.
+pub fn change_project(tx: &Transaction, author: &str, id: &str, project: &str, choice: Option<&str>, at: i64) -> Result<ProjectMove, String> {
+    let task = get(tx, id)?;
+    if task.project == project {
+        return Ok(ProjectMove::Done);
+    }
+    let Some(session) = task.session else {
+        set_project(tx, author, id, project, at)?;
+        return Ok(ProjectMove::Done);
+    };
+    match choice {
+        None => Ok(ProjectMove::Ask),
+        Some("move") => {
+            let other: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND id <> ?2 AND status <> 'DONE' AND archived_at IS NULL", (&session, &task.key), |r| r.get(0))
+                .optional().map_err(sql)?;
+            if let Some(other) = other {
+                return Err(format!("This session also holds {other}: unlink it, or move {other} first."));
+            }
+            set_project(tx, author, id, project, at)?;
+            Ok(ProjectMove::SessionFollows(session))
+        }
+        Some(_) => {
+            link(tx, author, id, None, at)?;
+            set_project(tx, author, id, project, at)?;
+            Ok(ProjectMove::Done)
+        }
+    }
+}
+
+/// Another project, its subtasks with it, in one transaction (AC-112).
+fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, at: i64) -> Result<(), String> {
     check_project(tx, project)?;
     let key = key_of(tx, id)?;
     let who = user_name(tx, author)?;
     let name: String = tx.query_row("SELECT name FROM projects WHERE id = ?1", [project], |r| r.get(0)).map_err(sql)?;
-    if unlink {
-        link(tx, author, id, None, at)?;
-    }
-    let kids: Vec<String> = tx.prepare("SELECT id FROM tasks WHERE parent = ?1").map_err(sql)?.query_map([&key], |r| r.get(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
+    let kids: Vec<String> = rows(tx, "SELECT id FROM tasks WHERE parent = ?1", [&key], |r| r.get(0))?;
     let held: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE parent = ?1 AND session_key IS NOT NULL", [&key], |r| r.get(0)).optional().map_err(sql)?;
     if let Some(kid) = held {
         return Err(format!("{kid} has a session of its own: unlink it first."));
@@ -326,21 +377,12 @@ pub fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, unli
         tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE id = ?3", (project, at, k)).map_err(sql)?;
         log(tx, k, author, "project", &format!("{who} moved it to {name}"), None, at)?;
     }
-    get(tx, id)
-}
-
-/// Another open task of `session` than `id`, which stops the session following it (AC-113).
-pub fn other_open_of_session(tx: &Transaction, session: &str, id: &str) -> Result<Option<String>, String> {
-    let key = key_of(tx, id)?;
-    tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND id <> ?2 AND status <> 'DONE' AND archived_at IS NULL", (session, &key), |r| r.get(0))
-        .optional().map_err(sql)
+    Ok(())
 }
 
 /// A comment (AC-108): the event's id.
 pub fn comment(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
-    if text.len() > COMMENT_MOST {
-        return Err("Comment: at most 256 KiB".into());
-    }
+    check_comment(text)?;
     let key = key_of(tx, id)?;
     touch(tx, &key, at)?;
     log(tx, &key, author, "comment", text, None, at)
@@ -355,9 +397,7 @@ pub fn change_comment(tx: &Transaction, author: &str, id: &str, event: &str, tex
     if kind != "comment" || by != author {
         return Err("Only its human author can change a comment.".into());
     }
-    if text.is_some_and(|t| t.len() > COMMENT_MOST) {
-        return Err("Comment: at most 256 KiB".into());
-    }
+    check_comment(text.unwrap_or(""))?;
     let who = user_name(tx, author)?;
     match text {
         Some(t) => {
@@ -383,14 +423,16 @@ pub fn purge_text(tx: &Transaction, author: &str, id: &str, at: i64) -> Result<(
 /// A task's comments and history, oldest first, with its files by event.
 pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
     let key = key_of(tx, id)?;
-    let mut files = tx.prepare("SELECT id, name, bytes, mime FROM files WHERE event = ?1").map_err(sql)?;
-    let mut rows = tx.prepare("SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid").map_err(sql)?;
+    let mut files: HashMap<String, Vec<File>> = HashMap::new();
+    for (event, file) in rows(tx, "SELECT event, id, name, bytes, mime FROM files WHERE task = ?1 AND event IS NOT NULL", [&key], |r| Ok((r.get(0)?, File::of_row(r, 1)?)))? {
+        files.entry(event).or_default().push(file);
+    }
+    let mut events = tx.prepare("SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid").map_err(sql)?;
     let mut out = Vec::new();
-    let mut got = rows.query([&key]).map_err(sql)?;
+    let mut got = events.query([&key]).map_err(sql)?;
     while let Some(r) = got.next().map_err(sql)? {
         let event: String = r.get(0).map_err(sql)?;
-        let attached: Vec<Value> = files.query_map([&event], |f| Ok(json!({"id": f.get::<_, String>(0)?, "name": f.get::<_, String>(1)?, "bytes": f.get::<_, i64>(2)?, "mime": f.get::<_, String>(3)?})))
-            .map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
+        let attached = files.remove(&event).unwrap_or_default();
         out.push(json!({"id": event, "at": r.get::<_, i64>(1).map_err(sql)?, "author": r.get::<_, String>(2).map_err(sql)?,
             "author_name": r.get::<_, String>(3).map_err(sql)?, "author_kind": r.get::<_, String>(4).map_err(sql)?,
             "kind": r.get::<_, String>(5).map_err(sql)?, "text": r.get::<_, Option<String>>(6).map_err(sql)?, "files": attached}));

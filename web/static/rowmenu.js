@@ -11,7 +11,7 @@ import { askConfirm, askName, closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
 import { inside, placeModal } from "./fabpane.js";
 import { floats } from "./fold.js";
-import { groupKey, groupRows, projectColor, taskMarksOf } from "./nav.js";
+import { groupKey, groupRows, projectColor, taskMarksOf, tasksOfProject } from "./nav.js";
 import { newTaskUrl } from "./tasklink.js";
 import { lastLinesView } from "./lastlines.js";
 import { diagnostics } from "./diag.js";
@@ -210,17 +210,12 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     if (name && name !== p.name) send({ t: "project", action: "rename", project: p.id, name });
   }
 
-  /** A project's menu, under its ⋯ `b` or at x, y (a right click on its header): a new session in
-   *  its folder, Rename, moves among the projects as the list shows them, Delete Project (asks; its
-   *  sessions stay, back in their tmux groups, its tasks in Default), Close Project (its sessions
-   *  end, after asking; the project stays). */
   /** A new window of project `p`, after its session `last`; with none, on its host in its folder,
    *  asked for once (AC-110). */
   async function newInProject(p, last) {
     if (last) return send({ t: "clone", id: last, project: p.id });
-    const dir = p.dir ? "" : (await askName(`The folder of ${p.name}`, "", "Open", 4096))?.trim();
-    if (dir === undefined || (!p.dir && !dir)) return;
-    send({ t: "projectwindow", project: p.id, dir });
+    const dir = p.dir ? "" : await askName(`The folder of ${p.name}`, "", "Open", 4096);
+    if (p.dir || dir) send({ t: "projectwindow", project: p.id, dir });
   }
 
   function plural(n, one) { return n === 1 ? `1 ${one}` : `${n} ${one}s`; }
@@ -228,10 +223,14 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
   /** Deleted only once asked (AC-110): nothing closes, nothing is lost. */
   async function deleteProject(p, sessions) {
     hide();
-    const them = `Its ${plural(sessions, "session")} and ${plural(p.tasks ?? 0, "task")} move to Default; nothing is closed.`;
+    const them = `Its ${plural(sessions, "session")} and ${plural(tasksOfProject(p.id), "task")} move to Default; nothing is closed.`;
     if (await askConfirm(`Delete the project ${p.name}? ${them}`, "Delete Project")) send({ t: "project", action: "delete", project: p.id });
   }
 
+  /** A project's menu, under its ⋯ `b` or at x, y (a right click on its header): a new session in
+   *  its folder, Rename, moves among the projects as the list shows them, Delete Project (asks; its
+   *  sessions stay, back in their tmux groups, its tasks in Default), Close Project (its sessions
+   *  end, after asking; the project stays). */
   function headMenu(p, b, x, y) {
     if (b && box.open && box.dataset.for === p.id) return hide();
     const here = p.members.filter((k) => item(k));

@@ -1,26 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The new-task window (AC-106): a title, Markdown with Preview, files dropped or pasted into the
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
-import { api, el, fileMarkdown, renderInto, upload } from "./kanbanutil.js";
+import { $, api, el, fileMarkdown, fillSelect, onFiles, renderInto, sessionOptions, upload } from "./kanbanutil.js";
 
-const $ = (id) => document.getElementById(id);
-const DRAFT = "tm.taskdraft", SELECTION = "tm.taskselection";
+const DRAFT = "tm.taskdraft";
 
 function read(key) { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } }
 function write(key, v) { try { if (v) localStorage.setItem(key, JSON.stringify(v)); else localStorage.removeItem(key); } catch { /* private mode: this page's only */ } }
 
-export function taskForm({ getMeta, getFilter, onMade }) {
+export function taskForm({ getMeta, getFilter }) {
   const box = $("newbox");
   let files = [];
 
   const error = (text) => { $("newerror").textContent = text ?? ""; $("newerror").hidden = !text; };
   const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files });
   const keep = () => write(DRAFT, draft());
-
-  function fill(select, options, chosen) {
-    select.replaceChildren(...options.map(([id, name]) => { const o = el("option", null, name); o.value = id; return o; }));
-    select.value = options.some(([id]) => id === chosen) ? chosen : options[0]?.[0] ?? "";
-  }
 
   function showFiles() {
     $("newfiles").replaceChildren(...files.map((f) => {
@@ -51,7 +45,7 @@ export function taskForm({ getMeta, getFilter, onMade }) {
     error(null);
     for (const f of list) {
       try {
-        const kept = await upload(f);
+        const kept = await upload(f, getMeta().most_bytes);
         files.push(kept);
         insert(`${fileMarkdown(kept)}\n`);
       } catch (e) { error(e.message); }
@@ -71,10 +65,10 @@ export function taskForm({ getMeta, getFilter, onMade }) {
   function open(given = {}) {
     const meta = getMeta(), saved = read(DRAFT) ?? {};
     const filter = getFilter().project;
-    fill($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? saved.project ?? (filter.length === 1 ? filter[0] : "default"));
-    fill($("newsession"), [["", "None"], ...meta.sessions.map((s) => [s.key, s.title || s.key])], given.session ?? saved.session ?? "");
+    fillSelect($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? saved.project ?? (filter.length === 1 ? filter[0] : "default"));
+    fillSelect($("newsession"), sessionOptions(meta), given.session ?? saved.session ?? "");
     $("newsev").value = saved.severity ?? "P2";
-    fill($("newowner"), meta.users.map((u) => [u.id, u.name]), saved.owner ?? "human");
+    fillSelect($("newowner"), meta.users.map((u) => [u.id, u.name]), saved.owner ?? "human");
     $("newtitle").value = saved.title ?? "";
     $("newtext").value = given.text ? `${saved.text ? `${saved.text}\n\n` : ""}${given.text}` : saved.text ?? "";
     files = saved.files ?? [];
@@ -88,15 +82,13 @@ export function taskForm({ getMeta, getFilter, onMade }) {
   async function create() {
     error(null);
     const d = draft();
-    if (!d.title.trim()) { error("Title: 1–200 characters"); $("newtitle").focus(); return; }
     $("newcreate").disabled = true;
     try {
       await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, session: d.session || undefined, files: files.map((f) => f.id) } });
       write(DRAFT, null);
       files = [];
       box.close();
-      onMade();
-    } catch (e) { error(e.message); } finally { $("newcreate").disabled = false; }
+    } catch (e) { error(e.message); $("newtitle").focus(); } finally { $("newcreate").disabled = false; }
   }
 
   $("newcreate").addEventListener("click", create);
@@ -107,22 +99,7 @@ export function taskForm({ getMeta, getFilter, onMade }) {
   $("newwrite").addEventListener("click", () => view(false));
   $("newpreview").addEventListener("click", () => view(true));
   $("newpick").addEventListener("change", (e) => { add([...e.target.files]); e.target.value = ""; });
-  const area = $("newtext");
-  area.addEventListener("paste", (e) => { const list = [...(e.clipboardData?.files ?? [])]; if (list.length) { e.preventDefault(); add(list); } });
-  box.addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) { e.preventDefault(); box.classList.add("dropping"); } });
-  box.addEventListener("dragleave", (e) => { if (!box.contains(e.relatedTarget)) box.classList.remove("dropping"); });
-  box.addEventListener("drop", (e) => {
-    const list = [...(e.dataTransfer?.files ?? [])];
-    box.classList.remove("dropping");
-    if (list.length) { e.preventDefault(); add(list); }
-  });
+  onFiles($("newtext"), box, add, (on) => box.classList.toggle("dropping", on));
 
-  /** What the session page left from a terminal's selection, once. */
-  function takeSelection() {
-    const v = read(SELECTION);
-    write(SELECTION, null);
-    return typeof v === "string" ? v : "";
-  }
-
-  return { open, takeSelection };
+  return { open };
 }

@@ -31,8 +31,13 @@ pub use crate::plans::rules::NOT_IN_PANE;
 use crate::plans::rules::{self, STATUSES};
 pub const DOWN: &str = "terminum is not running; go on without it.";
 
-pub const TOOLS: [&str; 11] = ["update_session_plan", "get_session_plan",
-    "list_tasks", "get_task", "create_task", "take_task", "move_task", "add_comment", "attach_file", "get_file", "finish_task"];
+pub const PLAN_TOOLS: [&str; 2] = ["update_session_plan", "get_session_plan"];
+use crate::tasks::tools::NAMES as TASK_TOOLS;
+
+/// Every tool offered.
+pub fn tool_names() -> Vec<&'static str> {
+    PLAN_TOOLS.iter().chain(TASK_TOOLS.iter()).copied().collect()
+}
 
 /// The agent's environment: TMUX and TMUX_PANE; `known`: whether a sink knows the pane
 /// (None until probed).
@@ -125,8 +130,8 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
         "tools/list" => result(id, json!({"tools": if knows(env, forward) { tools() } else { json!([]) }})),
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-            if !TOOLS.contains(&name) {
-                return error(id, -32602, &format!("Unknown tool {name:?}: the tools are {}", TOOLS.join(", ")));
+            if !PLAN_TOOLS.contains(&name) && !TASK_TOOLS.contains(&name) {
+                return error(id, -32602, &format!("Unknown tool {name:?}: the tools are {}", tool_names().join(", ")));
             }
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
             let session = params.pointer("/_meta/sessionId").and_then(Value::as_str);

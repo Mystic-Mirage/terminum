@@ -6,7 +6,7 @@
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
-import { newTaskUrl } from "./tasklink.js";
+import { leaveSelection, newTaskUrl } from "./tasklink.js";
 import { placeModal, placePane } from "./fabpane.js";
 import { sendOnModEnter } from "./modenter.js";
 import { Find } from "./find.js";
@@ -190,8 +190,7 @@ export class Marks {
 
   /** The selection goes to the board's new-task window, quoted; nothing is kept until Create (AC-106). */
   toTask() {
-    const quoted = (this.editing?.text ?? "").split("\n").map((l) => `> ${l}`).join("\n");
-    try { localStorage.setItem("tm.taskselection", JSON.stringify(quoted)); } catch { /* private mode: the window opens empty */ }
+    leaveSelection((this.editing?.text ?? "").split("\n").map((l) => `> ${l}`).join("\n"));
     location.href = newTaskUrl(this.sid(), this.projectOf()?.id);
   }
 

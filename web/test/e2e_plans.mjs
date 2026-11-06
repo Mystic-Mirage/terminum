@@ -38,7 +38,7 @@ export async function webPlans(browser, name) {
     } });
     const { page } = f;
     f.say({ t: "marks", items: records(), error: null });
-    f.say({ t: "projects", items: [], order: [], taskmarks: { [A]: ["T-12"] } });
+    f.say({ t: "taskmarks", marks: { [A]: ["T-12"] } });
     await drawn(page);
     await pause(page, 200);
 

@@ -91,6 +91,7 @@ pub struct App {
     pub tasks: Arc<crate::tasks::store::Store>,
     /// lines of humans' moves waiting for a pane's next hook (AC-114)
     pub task_lines: crate::tasks::tell::Lines,
+    pub task_marks: crate::tasks::marks::Marks,
     /// panes whose agent ended a turn nobody has looked at since (AC-93)
     pub unread: Mutex<crate::page::unread::Marks>,
     /// turn ends read from the screen, waiting to stay so (AC-91, AC-93)

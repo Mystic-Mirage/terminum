@@ -76,9 +76,7 @@ body:not([data-shown="term"]) #planpane { display: none !important; }
   max-height: calc(var(--app-h, 100dvh) - var(--plan-top, 0px)) !important; border-radius: 0; }
 .plempty { white-space: normal; }
 .plfinished { font-weight: 600; }
-/* what the agent kept for the user (AC-98): a press opens its session's bookmarks and reminders */
+/* the session's tasks: each opens on the board (terminum-kanban.md AC-113) */
 .plkept { margin-top: 0; color: var(--t-fg); }
-.plkept button { all: unset; cursor: pointer; color: var(--t-fg); font-weight: var(--fw-head); text-decoration: underline; text-underline-offset: 2px; }
 .plkept a { color: var(--t-fg); font-weight: var(--fw-head); }
 @media (pointer: coarse) { .plkept a { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; } }
-.plkept button:focus-visible { outline: 2px solid var(--t-fg); outline-offset: 2px; border-radius: 2px; }

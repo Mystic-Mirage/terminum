@@ -40,6 +40,16 @@ pub async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static)
     tokio::task::spawn_blocking(f).await.map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, "internal", e.to_string()))
 }
 
+/// `blocking`'s for work that answers with its own message; a panic in it says so too.
+pub async fn off<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| e.to_string())?
+}
+
+/// A refusal the page shows as it is: `{"error": message}`.
+pub fn refuse(status: StatusCode, message: impl Into<String>) -> Response {
+    (status, Json(json!({"error": message.into()}))).into_response()
+}
+
 /// An absolute path without `..` components.
 pub fn abs(path: &str) -> Result<PathBuf, Response> {
     let p = PathBuf::from(path);

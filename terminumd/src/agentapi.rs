@@ -13,12 +13,11 @@ use crate::plans::{Plans, Update};
 
 use crate::plans::rules::{self, NOT_IN_PANE, STATUSES};
 
-/// The caller: its pane key, where its records go (AC-98), agent and session; whether terminumd has a hook
+/// The caller: its pane key, agent and session; whether terminumd has a hook
 /// event of the pane, and whether the call's own session (Codex's _meta.sessionId) is another
 /// than the hooked one (a subagent's).
 pub struct Caller {
     pub key: String,
-    pub place: Place,
     pub agent: String,
     pub session: Option<String>,
     pub hooks: bool,
@@ -30,24 +29,8 @@ pub const HOOKS_OFF: &str = "terminum's hooks are not running in this session (C
 /// The answer to a plan update from another session than the pane's hooked one.
 pub const OTHER_SESSION: &str = "Not applied: this call comes from another session than the pane's main agent (a subagent's). Only the main agent calls update_session_plan; report to it instead.";
 
-/// A pane as the tools see it: its project, row's title, host and folder.
-#[derive(Default)]
-pub struct Place {
-    pub project: Option<String>,
-    pub title: String,
-    pub host: Option<String>,
-    pub dir: Option<String>,
-}
-
 /// The answer to a note tool of an agent started before the upgrade (AC-98).
 pub const NOTES_GONE: &str = "This tool is gone. Use create_task for what must not get lost.";
-
-/// What a tool call changed, so the list is read again and the plans saved.
-#[derive(Debug, PartialEq)]
-pub enum Changed {
-    Nothing,
-    Plan,
-}
 
 pub async fn agent(State(app): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
     let server = crate::links::resolve(&app, crate::links::Via::Local, &body).await;
@@ -68,7 +51,7 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let main = hooked.as_ref().map(|(_, s)| s.clone()).filter(|s| !s.is_empty());
     let other = matches!((&main, &asked), (Some(m), Some(a)) if !a.is_empty() && m != a);
     let (hooks, session) = (hooked.is_some(), main.or(asked));
-    let caller = Caller { place: place_of(&app, &key), agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
+    let caller = Caller { agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
     let (tool, args) = (body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());
     if crate::tasks::tools::NAMES.contains(&tool.as_str()) {
         return task_tool(&app, &caller, tool, args).await;
@@ -78,8 +61,8 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
         let working = a.hooks.working(&caller.key);
         run(&a.plans, &caller, &tool, &args, working, crate::auth::store::unix_now())
     }).await;
-    let Ok((text, error, changed)) = done else { return answer("terminum could not answer the call.", true) };
-    if changed == Changed::Plan {
+    let Ok((text, error, plan_changed)) = done else { return answer("terminum could not answer the call.", true) };
+    if plan_changed {
         crate::plans::save(&app);
         crate::page::plans::tell(&app.pages, std::slice::from_ref(&key));
         app.dirty.notify_one();
@@ -89,12 +72,14 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
 
 /// A task tool (AC-115): every page hears of what it changed.
 async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> Json<Value> {
+    let row = crate::page::marks::find_item(&app.layout.read(), &caller.key).unwrap_or_default();
+    let (host, dir) = crate::page::marks::project_of(&row);
     let who = crate::tasks::tools::Who {
         key: caller.key.clone(),
         agent: caller.agent.clone(),
-        title: if caller.place.title.is_empty() { "session".into() } else { caller.place.title.clone() },
-        project: caller.place.project.clone(),
-        dir: caller.place.host.is_none().then(|| caller.place.dir.clone()).flatten(),
+        title: row["title"].as_str().filter(|t| !t.is_empty()).unwrap_or("session").to_string(),
+        project: app.projects.lock().of(&caller.key).map(|p| p.id.clone()),
+        dir: if host.is_none() { dir } else { None },
     };
     let a = app.clone();
     let done = tokio::task::spawn_blocking(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await;
@@ -110,25 +95,16 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
     }
 }
 
-/// Where pane `key`'s records go: its project, its row's title, host and folder, as a bookmark
-/// the user makes there (page/marks.rs).
-fn place_of(app: &Shared, key: &str) -> Place {
-    let item = crate::page::marks::find_item(&app.layout.read(), key).unwrap_or_default();
-    let (host, dir) = crate::page::marks::project_of(&item);
-    let project = app.projects.lock().of(key).map(|p| p.id.clone());
-    Place { project, title: item["title"].as_str().unwrap_or("").to_string(), host, dir }
-}
-
 fn answer(text: &str, error: bool) -> Json<Value> {
     Json(json!({"text": text, "error": error}))
 }
 
-/// One tool call: (answer, is an error, what changed).
-pub fn run(plans: &Plans, c: &Caller, tool: &str, args: &Value, working: bool, now: u64) -> (String, bool, Changed) {
+/// One tool call: (answer, is an error, whether the plan changed: the list is read again, the plans saved).
+pub fn run(plans: &Plans, c: &Caller, tool: &str, args: &Value, working: bool, now: u64) -> (String, bool, bool) {
     let r = match tool {
         "update_session_plan" if c.other => Err(OTHER_SESSION.to_string()),
-        "update_session_plan" => update_plan(plans, c, args, now).map(|t| (t, Changed::Plan)),
-        "get_session_plan" => Ok((plan_text(plans, &c.key, working, now), Changed::Nothing)),
+        "update_session_plan" => update_plan(plans, c, args, now).map(|t| (t, true)),
+        "get_session_plan" => Ok((plan_text(plans, &c.key, working, now), false)),
         // an agent started before the upgrade still holds the old list (AC-98)
         "add_notes_for_user" | "update_notes_for_user" | "get_notes_for_user" | "delete_notes_for_user" => Err(NOTES_GONE.to_string()),
         other => Err(format!("unknown tool {other}: update_session_plan, get_session_plan, {}", crate::tasks::tools::NAMES.join(", "))),
@@ -139,7 +115,7 @@ pub fn run(plans: &Plans, c: &Caller, tool: &str, args: &Value, working: bool, n
     });
     match r {
         Ok((t, ch)) => (t, false, ch),
-        Err(e) => (e, true, Changed::Nothing),
+        Err(e) => (e, true, false),
     }
 }
 

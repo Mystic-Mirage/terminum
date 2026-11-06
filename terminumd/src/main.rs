@@ -87,6 +87,8 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
     // an Agent keeps no tasks: the Mac's terminumd holds the one store
     let tasks = Arc::new(if cfg.agent { tasks::store::Store::absent() } else { tasks::store::Store::open(dir.join("kanban.sqlite")) });
     let projects = if cfg.agent { Default::default() } else { page::projects::Projects::load(tasks.clone(), &dir.join("projects.json")) };
+    let task_marks = tasks::marks::Marks::default();
+    task_marks.refresh(&tasks);
     Arc::new(App {
         store: Store::load(dir.join("workspaces.json"), env.ttl_days, bus.clone()),
         roots: Roots::parse(&env.roots),
@@ -122,6 +124,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         projects: Mutex::new(projects),
         tasks,
         task_lines: Default::default(),
+        task_marks,
         unread: Mutex::new(page::unread::Marks::load(&dir)),
         turns: Default::default(),
         plans: plans::Plans::load(&dir),

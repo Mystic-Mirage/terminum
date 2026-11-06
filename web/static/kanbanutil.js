@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the board's parts share: terminumd's routes, small DOM helpers, dialogs and files.
+import * as signin from "./signin.js";
+import { el } from "./nav.js";
+import { renderers } from "./renderlib.js";
+import { toast } from "./toast.js";
+
+export { el };
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
-const $ = (id) => document.getElementById(id);
-const MOST_BYTES = 100 << 20;
+export const SEVERITIES = ["P0", "P1", "P2", "P3"];
+export const $ = (id) => document.getElementById(id);
 
-export function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text !== undefined && text !== null) e.textContent = text;
-  return e;
-}
+/** A page with no sign-in goes to /sessions/, whose form signs in. */
+const toSignIn = () => { location.href = "/sessions/"; };
+signin.onRefused(toSignIn);
 
-/** A JSON route; a refusal throws terminumd's message, with its status. */
+/** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
+ *  message, with its status. */
 export async function api(path, { method = "GET", body } = {}) {
-  const r = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const sent = method === "GET" ? undefined : JSON.stringify(body ?? {});
+  const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent });
   const m = await r.json().catch(() => ({}));
+  if (r.status === 401) toSignIn();
   if (!r.ok) {
     const e = new Error(m.error ?? `terminumd answered ${r.status}`);
     e.status = r.status;
@@ -23,27 +29,35 @@ export async function api(path, { method = "GET", body } = {}) {
   return m;
 }
 
-let toastTimer = 0;
 /** One short message, where the action was taken cannot hold it. */
-export function say(text, ms = 4000) {
-  const t = $("toast");
-  t.textContent = text;
-  t.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, ms);
+export const say = (text) => toast(text, 4000);
+
+export function button(cls, text, onClick) {
+  const b = el("button", cls, text);
+  b.type = "button";
+  if (onClick) b.addEventListener("click", onClick);
+  return b;
 }
 
-/** Yes or no in the page's dialog. */
-export function ask(title, more, yes) {
-  const box = $("confirmbox");
-  $("confirmtitle").textContent = title;
-  $("confirmtext").textContent = more ?? "";
-  $("confirmtext").hidden = !more;
-  $("confirmok").textContent = yes;
-  $("confirmacts").querySelectorAll("[data-extra]").forEach((b) => b.remove());
-  box.returnValue = "";
-  box.showModal();
-  return new Promise((resolve) => box.addEventListener("close", () => resolve(box.returnValue === "ok"), { once: true }));
+/** `select`'s options, each [value, label]; `chosen` if it is one of them, else the first. */
+export function fillSelect(select, options, chosen) {
+  select.replaceChildren(...options.map(([value, label]) => { const o = el("option", null, label); o.value = value; return o; }));
+  select.value = options.some(([value]) => value === chosen) ? chosen : options[0]?.[0] ?? "";
+}
+
+/** The sessions a task can be linked to. */
+export const sessionOptions = (meta) => [["", "None"], ...meta.sessions.map((s) => [s.key, s.title || s.key])];
+
+/** Files pasted into `area` or dropped on `zone` go to `add`; `lit(on)` says one is over it. */
+export function onFiles(area, zone, add, lit = () => {}) {
+  area.addEventListener("paste", (e) => { const list = [...(e.clipboardData?.files ?? [])]; if (list.length) { e.preventDefault(); add(list); } });
+  zone.addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) { e.preventDefault(); lit(true); } });
+  zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) lit(false); });
+  zone.addEventListener("drop", (e) => {
+    const list = [...(e.dataTransfer?.files ?? [])];
+    lit(false);
+    if (list.length) { e.preventDefault(); add(list); }
+  });
 }
 
 /** Several ways on: the value of the button pressed, or null for Cancel and Esc. */
@@ -53,55 +67,25 @@ export function choose(title, more, options) {
   $("confirmtext").textContent = more ?? "";
   $("confirmtext").hidden = !more;
   $("confirmok").hidden = true;
-  acts.querySelectorAll("[data-extra]").forEach((b) => b.remove());
-  for (const [value, label] of options) {
-    const b = el("button", null, label);
+  const added = options.map(([value, label]) => {
+    const b = button(null, label);
     b.type = "submit";
     b.value = value;
-    b.dataset.extra = "1";
-    acts.append(b);
-  }
+    return b;
+  });
+  acts.append(...added);
   box.returnValue = "";
   box.showModal();
   return new Promise((resolve) => box.addEventListener("close", () => {
     $("confirmok").hidden = false;
+    added.forEach((b) => b.remove());
     resolve(box.returnValue && box.returnValue !== "cancel" ? box.returnValue : null);
   }, { once: true }));
 }
 
-/** A name in the page's dialog; `save` throwing keeps it open with terminumd's message. */
-export function askName(text, value, yes, save, most = 40) {
-  const box = $("namebox"), field = $("namefield"), error = $("nameerror");
-  $("nametext").textContent = text;
-  $("nameok").textContent = yes;
-  field.value = value;
-  field.maxLength = most;
-  error.hidden = true;
-  box.showModal();
-  field.select();
-  return new Promise((resolve) => {
-    const go = async () => {
-      try {
-        await save(field.value.trim());
-        box.close();
-      } catch (err) {
-        error.textContent = err.message;
-        error.hidden = false;
-      }
-    };
-    // Enter is the named button: the form's first submit button is Cancel
-    const submit = (e) => { if (e.submitter?.value === "ok") { e.preventDefault(); go(); } };
-    const key = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); go(); } };
-    const form = box.querySelector("form");
-    form.addEventListener("submit", submit);
-    field.addEventListener("keydown", key);
-    box.addEventListener("close", () => { form.removeEventListener("submit", submit); field.removeEventListener("keydown", key); resolve(); }, { once: true });
-  });
-}
-
-/** Keeps a file with terminumd: its {id, name, bytes, mime}. Over 100 MB is said before it is sent. */
-export async function upload(file) {
-  if (file.size > MOST_BYTES) throw new Error(`${file.name} is over 100 MB`);
+/** Keeps a file with terminumd: its {id, name, bytes, mime}. Over `most` bytes is said before it is sent. */
+export async function upload(file, most) {
+  if (file.size > most) throw new Error(`${file.name} is over ${Math.round(most / 2 ** 20)} MB`);
   const r = await fetch(`/api/task-files?name=${encodeURIComponent(file.name)}`, { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
   const m = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(m.error ?? `${file.name}: terminumd answered ${r.status}`);
@@ -110,8 +94,8 @@ export async function upload(file) {
 
 const fileUrl = (id) => `/api/task-files/${id}`;
 
-/** Markdown of a kept file: an image shows, anything else links. */
-export const fileMarkdown = (f) => `${f.mime?.startsWith("image/") && f.mime !== "image/svg+xml" ? "!" : ""}[${f.name.replace(/[[\]]/g, "")}](${fileUrl(f.id)})`;
+/** Markdown of a kept file: terminumd calls a file image/* only when it shows as one; anything else links. */
+export const fileMarkdown = (f) => `${f.mime?.startsWith("image/") ? "!" : ""}[${f.name.replace(/[[\]]/g, "")}](${fileUrl(f.id)})`;
 
 /** Saves a file through a fetch with the sign-in, never its address (terminum.md AC-09). */
 export async function download(id, name) {
@@ -125,19 +109,15 @@ export async function download(id, name) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
-let lib = null;
-const renderers = () => (lib ??= import("/fb/renderers.js"));
-
 /** Markdown by the Panel's rules (raw HTML off, javascript: links dropped, remote images not
  *  loaded); a task's own pictures are fetched with the sign-in, its files download. */
 export async function renderInto(box, text) {
   box.textContent = text;
   try {
-    const r = await renderers();
-    box.innerHTML = r.taskMarkdownHtml(text);
+    box.innerHTML = (await renderers()).taskMarkdownHtml(text);
   } catch { return; }
   for (const img of box.querySelectorAll("img[data-raw]")) {
-    fetch(img.dataset.raw).then((r) => (r.ok ? r.blob() : null)).then((b) => { if (b) img.src = URL.createObjectURL(b); }).catch(() => {});
+    signin.blobUrl(img.dataset.raw).then((got) => { if (got.url) img.src = got.url; });
   }
   for (const a of box.querySelectorAll("a")) {
     const id = /^\/api\/task-files\/([0-9a-f]{32})$/.exec(a.getAttribute("href") ?? "")?.[1];

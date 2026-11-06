@@ -8,7 +8,8 @@ use std::path::Path;
 use rusqlite::Transaction;
 use serde_json::{json, Value};
 
-use super::store::{Store, DEFAULT_PROJECT, HUMAN};
+use super::ops::{log, rows, sql};
+use super::store::{Store, DEFAULT_PROJECT, DISPATCHER, HUMAN};
 use crate::page::projects::Project;
 
 /// What the session list's projects hold.
@@ -19,24 +20,18 @@ pub struct Saved {
     pub order: Vec<String>,
 }
 
-fn sql(e: rusqlite::Error) -> String {
-    format!("The tasks' store: {e}")
-}
-
 fn read(tx: &Transaction) -> Result<Saved, String> {
     let mut members = tx.prepare("SELECT pane_key FROM project_members WHERE project = ?1 ORDER BY place").map_err(sql)?;
     let mut projects = tx.prepare("SELECT id, name, color, host, dir FROM projects WHERE is_default = 0 ORDER BY place").map_err(sql)?;
-    let rows = projects.query_map([], |r| Ok(Project { id: r.get(0)?, name: r.get(1)?, color: r.get::<_, i64>(2)? as usize, host: r.get(3)?, dir: r.get(4)?, members: Vec::new() })).map_err(sql)?;
+    let found = projects.query_map([], |r| Ok(Project { id: r.get(0)?, name: r.get(1)?, color: r.get::<_, i64>(2)? as usize, host: r.get(3)?, dir: r.get(4)?, members: Vec::new() })).map_err(sql)?;
     let mut list = Vec::new();
-    for p in rows {
+    for p in found {
         let mut p = p.map_err(sql)?;
         p.members = members.query_map([&p.id], |r| r.get(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
         list.push(p);
     }
-    let servers = tx.prepare("SELECT start, terminum_id FROM servers").map_err(sql)?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
-    let order = tx.prepare("SELECT part FROM list_order ORDER BY place").map_err(sql)?
-        .query_map([], |r| r.get(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
+    let servers = rows(tx, "SELECT start, terminum_id FROM servers", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect();
+    let order = rows(tx, "SELECT part FROM list_order ORDER BY place", [], |r| r.get(0))?;
     Ok(Saved { list, servers, order })
 }
 
@@ -45,8 +40,7 @@ fn read(tx: &Transaction) -> Result<Saved, String> {
 pub fn write(tx: &Transaction, saved: &Saved) -> Result<(), String> {
     tx.execute("DELETE FROM project_members", []).map_err(sql)?;
     let kept: Vec<&str> = saved.list.iter().map(|p| p.id.as_str()).collect();
-    let on_disk: Vec<String> = tx.prepare("SELECT id FROM projects WHERE is_default = 0").map_err(sql)?
-        .query_map([], |r| r.get(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
+    let on_disk: Vec<String> = rows(tx, "SELECT id FROM projects WHERE is_default = 0", [], |r| r.get(0))?;
     for gone in on_disk.iter().filter(|id| !kept.contains(&id.as_str())) {
         tx.execute("DELETE FROM projects WHERE id = ?1", [gone]).map_err(sql)?;
     }
@@ -71,11 +65,9 @@ pub fn write(tx: &Transaction, saved: &Saved) -> Result<(), String> {
 
 /// A deleted project's tasks stand in Default, each one's history saying so (AC-110). How many.
 pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i64) -> Result<usize, String> {
-    let tasks: Vec<String> = tx.prepare("SELECT id FROM tasks WHERE project = ?1").map_err(sql)?
-        .query_map([project], |r| r.get(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
+    let tasks: Vec<String> = rows(tx, "SELECT id FROM tasks WHERE project = ?1", [project], |r| r.get(0))?;
     for task in &tasks {
-        tx.execute("INSERT INTO events (id, task, at, author, kind, text) VALUES (?1, ?2, ?3, ?4, 'project', ?5)",
-                   (crate::auth::crypto::random_hex::<16>(), task, now, HUMAN, format!("Project {name} was deleted: moved to Default"))).map_err(sql)?;
+        log(tx, task, HUMAN, "project", &format!("Project {name} was deleted: moved to Default"), None, now)?;
     }
     tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE project = ?3", (DEFAULT_PROJECT, now, project)).map_err(sql)?;
     Ok(tasks.len())
@@ -114,15 +106,13 @@ pub fn links_dropped(tx: &Transaction, prefix: &str, now: i64) -> Result<usize, 
 }
 
 fn linked_on(tx: &Transaction, prefix: &str) -> Result<Vec<(String, String)>, String> {
-    let like = format!("{}%", prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
-    let mut st = tx.prepare("SELECT id, session_key FROM tasks WHERE session_key LIKE ?1 ESCAPE '\\'").map_err(sql)?;
-    let rows = st.query_map([like], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
-    rows.collect::<Result<_, _>>().map_err(sql)
+    let like = format!("{}%", super::query::like_escaped(prefix));
+    rows(tx, "SELECT id, session_key FROM tasks WHERE session_key LIKE ?1 ESCAPE '\\'", [like], |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
 fn drop_link(tx: &Transaction, task: &str, now: i64) -> Result<(), String> {
     tx.execute("UPDATE tasks SET session_key = NULL, updated_at = ?1 WHERE id = ?2", (now, task)).map_err(sql)?;
-    super::ops::log(tx, task, super::store::DISPATCHER, "session", "Its tmux server started anew: the session's link was dropped", None, now).map(|_| ())
+    log(tx, task, DISPATCHER, "session", "Its tmux server started anew: the session's link was dropped", None, now).map(|_| ())
 }
 
 /// What projects.json held, read as an older terminum wrote it; one that cannot be read is set

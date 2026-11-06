@@ -18,7 +18,10 @@ fn column(s: &Store, status: &str) -> Vec<String> {
 }
 
 fn moved(s: &Store, id: &str, to: &str) -> Result<Task, String> {
-    s.with(|tx| move_to(tx, HUMAN, id, to, 200))
+    s.with(|tx| {
+        move_to(tx, HUMAN, id, to, 200)?;
+        get(tx, id)
+    })
 }
 
 #[test]
@@ -57,8 +60,8 @@ fn ac105_a_column_reads_by_severity_new_on_top_of_its_own_and_by_hand_within() {
     assert_eq!(column(&s, "TODO"), [t3.clone(), t4.clone(), t1.clone(), t2.clone()], "dragged above T-2");
     s.with(|tx| reorder(tx, &t4, None, 300)).unwrap();
     assert_eq!(column(&s, "TODO"), [t3.clone(), t1.clone(), t2.clone(), t4.clone()], "dragged to the end of its severity");
-    let t = s.with(|tx| reorder(tx, &t2, Some(&t3), 300)).unwrap();
-    assert_eq!(t.severity, "P1", "dropped among P0 cards it stays P1");
+    s.with(|tx| reorder(tx, &t2, Some(&t3), 300)).unwrap();
+    assert_eq!(s.with(|tx| get(tx, &t2)).unwrap().severity, "P1", "dropped among P0 cards it stays P1");
     assert_eq!(column(&s, "TODO"), [t3, t2, t1, t4], "on top of the P1 cards");
 }
 
@@ -75,7 +78,8 @@ fn ac107_any_column_to_any_column_with_its_history() {
     let me = s.with(|tx| user_name(tx, HUMAN)).unwrap();
     assert_eq!(lines[1], format!("{me} moved it from TODO to WAIT FOR HUMAN"));
     assert_eq!(lines.len(), 6, "made, then five moves");
-    assert_eq!(s.with(|tx| move_to(tx, DISPATCHER, &id, "DONE", 300)).unwrap().status, "DONE");
+    s.with(|tx| move_to(tx, DISPATCHER, &id, "DONE", 300)).unwrap();
+    assert_eq!(s.with(|tx| get(tx, &id)).unwrap().status, "DONE");
     let h = s.with(|tx| history(tx, &id)).unwrap();
     assert_eq!(h.as_array().unwrap().last().unwrap()["author_kind"], "system", "Dispatcher writes as itself");
 }
@@ -106,7 +110,8 @@ fn ac113_a_session_holds_one_task_in_progress() {
     moved(&s, &c, "IN PROGRESS").unwrap();
     assert!(s.with(|tx| link(tx, HUMAN, &c, Some(key), 1)).is_err(), "nor by linking one in progress to it");
     assert_eq!(s.with(|tx| get(tx, &c)).unwrap().session, None);
-    assert_eq!(s.with(|tx| link(tx, HUMAN, &b, None, 1)).unwrap().session, None);
+    s.with(|tx| link(tx, HUMAN, &b, None, 1)).unwrap();
+    assert_eq!(s.with(|tx| get(tx, &b)).unwrap().session, None);
 }
 
 #[test]
@@ -152,26 +157,33 @@ fn ac112_one_level_of_subtasks_counted_on_the_parent_and_moved_with_it() {
     let all = s.with(|tx| list(tx, &Query { statuses: vec!["DONE".into()], with_subtasks: true, ..Default::default() })).unwrap();
     assert_eq!(all.len(), 1);
     s.with(|tx| tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('web', 'web', 1, '', 0)", []).map_err(sql)).unwrap();
-    s.with(|tx| set_project(tx, HUMAN, &up, "web", false, 2)).unwrap();
+    s.with(|tx| set_project(tx, HUMAN, &up, "web", 2)).unwrap();
     assert_eq!(s.with(|tx| get(tx, &kid.id)).unwrap().project, "web");
     let asked = s.with(|tx| create(tx, HUMAN, NewTask { title: "kid2".into(), parent: Some(up.clone()), project: Some("default".into()), ..Default::default() }, 1)).unwrap();
     assert_eq!(asked.project, "web", "a subtask stands in its parent's project");
     s.with(|tx| link(tx, HUMAN, &asked.id, Some("tmux:local:t:%1"), 1)).unwrap();
-    let refused = s.with(|tx| set_project(tx, HUMAN, &up, "default", false, 2));
+    let refused = s.with(|tx| set_project(tx, HUMAN, &up, "default", 2));
     assert_eq!(refused.unwrap_err(), format!("{} has a session of its own: unlink it first.", asked.id));
 }
 
 #[test]
-fn ac113_moving_across_projects_can_unlink_and_sees_a_session_s_other_tasks() {
+fn ac113_moving_across_projects_asks_can_unlink_and_sees_a_session_s_other_tasks() {
     let s = store("t-across");
     s.with(|tx| tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('web', 'web', 1, '', 0)", []).map_err(sql)).unwrap();
-    let (a, b) = (new(&s, "a", "P2").id, new(&s, "b", "P2").id);
+    let (a, b, free) = (new(&s, "a", "P2").id, new(&s, "b", "P2").id, new(&s, "free", "P2").id);
     let key = "tmux:local:terminum:%7";
     s.with(|tx| link(tx, HUMAN, &a, Some(key), 1)).unwrap();
     s.with(|tx| link(tx, HUMAN, &b, Some(key), 1)).unwrap();
-    assert_eq!(s.with(|tx| other_open_of_session(tx, key, &a)).unwrap(), Some(b.clone()));
-    let t = s.with(|tx| set_project(tx, HUMAN, &a, "web", true, 2)).unwrap();
+    let moved = |id: &str, choice: Option<&str>| s.with(|tx| change_project(tx, HUMAN, id, "web", choice, 2));
+    assert_eq!(moved(&a, None).unwrap(), ProjectMove::Ask);
+    assert_eq!(s.with(|tx| get(tx, &a)).unwrap().project, "default", "nothing moved until it is answered");
+    assert_eq!(moved(&a, Some("move")).unwrap_err(), format!("This session also holds {b}: unlink it, or move {b} first."));
+    assert_eq!(moved(&a, Some("unlink")).unwrap(), ProjectMove::Done);
+    let t = s.with(|tx| get(tx, &a)).unwrap();
     assert_eq!((t.project.as_str(), t.session.as_deref()), ("web", None));
+    assert_eq!(moved(&b, Some("move")).unwrap(), ProjectMove::SessionFollows(key.to_string()), "alone in it now, the session goes too");
+    assert_eq!(moved(&free, None).unwrap(), ProjectMove::Done, "no session, nothing to ask");
+    assert_eq!(moved(&free, None).unwrap(), ProjectMove::Done, "already there");
 }
 
 #[test]

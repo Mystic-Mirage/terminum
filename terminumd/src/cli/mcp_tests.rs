@@ -116,7 +116,7 @@ fn tools_list_has_its_tools_with_schemas_and_hints() {
     let r = ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"progressToken":1}}}"#);
     let tools = r["result"]["tools"].as_array().unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, TOOLS);
+    assert_eq!(names, tool_names());
     for t in tools {
         let name = t["name"].as_str().unwrap();
         if crate::tasks::tools::NAMES.contains(&name) {
@@ -166,7 +166,7 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
                    env(Some(TMUX), Some("%x"), None), env(Some(TMUX), Some("%"), None),
                    env(Some(",1,0"), Some("%3"), None)];
     for env in &outside {
-        for t in TOOLS {
+        for t in tool_names() {
             let args = match t {
                 "update_session_plan" => json!({"items": [{"text": "a", "status": "pending"}]}),
                 "list_tasks" | "get_session_plan" => json!({}),
@@ -242,7 +242,7 @@ fn outside_tmux_initialize_has_no_instructions_and_no_tools() {
         assert_eq!(say(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"], json!({"tools": []}));
     }
     assert_eq!(ask(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#)["result"]["instructions"], INSTRUCTIONS, "in a pane: kept");
-    assert_eq!(ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"]["tools"].as_array().unwrap().len(), TOOLS.len());
+    assert_eq!(ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"]["tools"].as_array().unwrap().len(), tool_names().len());
 }
 
 #[test]
@@ -289,7 +289,7 @@ fn nothing_up_at_the_start_still_offers_the_tools_and_asks_again() {
     let init = say(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#);
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS, "nothing up: offered");
     let list = say(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#);
-    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), TOOLS.len());
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), tool_names().len());
     assert_eq!(probes.get(), 2, "a probe that reached nobody is not kept");
     let call = say(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_session_plan","arguments":{}}}"#);
     assert_eq!(call["result"]["content"][0]["text"], DOWN, "{call}");
@@ -314,7 +314,7 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
     let init: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &e, &f).unwrap()).unwrap();
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS);
     let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
-    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), TOOLS.len());
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), tool_names().len());
 }
 
 /// What every session in a terminum pane pays for terminum's tools stays small (the owner

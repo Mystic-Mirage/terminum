@@ -34,15 +34,7 @@ pub struct Store {
     state: Mutex<State>,
 }
 
-/// What opening found.
-enum Opened {
-    Ready(Connection),
-    /// Not a database or corrupt: the file must go aside.
-    Broken(String),
-    Refused(String),
-}
-
-fn message(e: &rusqlite::Error) -> String {
+pub(super) fn message(e: &rusqlite::Error) -> String {
     format!("The tasks' store: {e}")
 }
 
@@ -56,7 +48,7 @@ fn upgrade(conn: &mut Connection, path: &Path, migrations: &[&str]) -> rusqlite:
     if version >= migrations.len() {
         return Ok(());
     }
-    if version > 0 && path.as_os_str() != ":memory:" {
+    if version > 0 {
         let backup = path.with_file_name(format!("kanban.sqlite.bak-{version}"));
         let _ = std::fs::remove_file(&backup);
         conn.execute("VACUUM INTO ?1", [backup.display().to_string()])?;
@@ -86,25 +78,6 @@ fn prepare(mut conn: Connection, path: &Path) -> rusqlite::Result<Result<Connect
     Ok(Ok(conn))
 }
 
-fn open_file(path: &Path) -> Opened {
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-    if let Some(dir) = path.parent()
-        && let Err(e) = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir) {
-            return Opened::Refused(format!("The tasks' store: {e}"));
-        }
-    // SQLite gives its -wal and -shm the main file's permissions
-    if let Err(e) = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(path) {
-        return Opened::Refused(format!("The tasks' store: {e}"));
-    }
-    let done = Connection::open(path).and_then(|c| prepare(c, path));
-    match done {
-        Ok(Ok(c)) => Opened::Ready(c),
-        Ok(Err(why)) => Opened::Refused(why),
-        Err(e) if is_broken(&e) => Opened::Broken(message(&e)),
-        Err(e) => Opened::Refused(message(&e)),
-    }
-}
-
 /// Beside the store while one is set aside: a restart must not make an empty one unasked (AC-119).
 fn marker(path: &Path) -> PathBuf {
     path.with_file_name("kanban.sqlite.aside")
@@ -116,8 +89,7 @@ fn aside_message(aside: &str) -> String {
 
 /// The store and its -wal and -shm go aside as `kanban.sqlite.bad-<time>`; where it went.
 fn set_aside(path: &Path) -> String {
-    let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    let aside = path.with_file_name(format!("kanban.sqlite.bad-{at}"));
+    let aside = path.with_file_name(format!("kanban.sqlite.bad-{}", super::ops::now()));
     for ext in ["", "-wal", "-shm"] {
         let from = PathBuf::from(format!("{}{ext}", path.display()));
         if from.exists() {
@@ -135,17 +107,27 @@ fn set_aside(path: &Path) -> String {
 }
 
 fn state_of(path: &Path) -> State {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     if let Ok(aside) = std::fs::read_to_string(marker(path)) {
         return State::SetAside(aside_message(&aside));
     }
-    match open_file(path) {
-        Opened::Ready(c) => State::Open(c),
-        Opened::Refused(why) => State::Failed(why),
-        Opened::Broken(why) => {
+    if let Some(dir) = path.parent()
+        && let Err(e) = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir) {
+            return State::Failed(format!("The tasks' store: {e}"));
+        }
+    // SQLite gives its -wal and -shm the main file's permissions
+    if let Err(e) = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(path) {
+        return State::Failed(format!("The tasks' store: {e}"));
+    }
+    match Connection::open(path).and_then(|c| prepare(c, path)) {
+        Ok(Ok(c)) => State::Open(c),
+        Ok(Err(why)) => State::Failed(why),
+        Err(e) if is_broken(&e) => {
             let aside = set_aside(path);
-            tracing::warn!(event = "tasks.broken", why = %why, aside = %aside);
+            tracing::warn!(event = "tasks.broken", why = %message(&e), aside = %aside);
             State::SetAside(aside_message(&aside))
         }
+        Err(e) => State::Failed(message(&e)),
     }
 }
 

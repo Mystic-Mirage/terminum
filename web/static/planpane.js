@@ -9,6 +9,7 @@ import { fabPane } from "./fabpane.js";
 import { icon } from "./icons.js";
 import { el } from "./marks.js";
 import { ageText, clock, etaLine, pctText, rowTitle, sourceText, statusIcon } from "./plans.js";
+import { taskUrl } from "./tasklink.js";
 
 const $ = (id) => document.getElementById(id);
 const now = () => Date.now() / 1000;
@@ -38,13 +39,13 @@ export function planPane({ send, sid, tasks }) {
   /** The header's button and the column's progress circle for the shown row (item: a layout row or null). */
   function header(item) {
     shown = item;
-    const plan = item?.plan ?? null, notes = item ? tasks().length : 0;
+    const plan = item?.plan ?? null, open = item ? tasks().length : 0;
     $("planmenu").hidden = !item;                    // the header ⋯ menu's entry, for any shown session
     if (pane.open() && sid() !== of) pane.toggle(false);
     else if (pane.open() && waiting) ask();          // asked while terminumd was away (a restart): its next layout asks again
-    fab.hidden = !plan && !notes && !item?.agent;    // tasks alone, or a coding agent without a plan yet, still open the pane
-    const said = notes ? `${notes} task${notes === 1 ? "" : "s"}` : "";
-    fab.title = plan ? `Plan: ${rowTitle(plan, now())}${said && ` · ${said}`}` : said ? `Kept: ${said}` : "Plan: none yet";
+    fab.hidden = !plan && !open && !item?.agent;    // tasks alone, or a coding agent without a plan yet, still open the pane
+    const said = open ? `${open} task${open === 1 ? "" : "s"}` : "";
+    fab.title = plan ? `Plan: ${rowTitle(plan, now())}${said && ` · ${said}`}` : said ? `Open: ${said}` : "Plan: none yet";
     fab.setAttribute("aria-label", fab.title);
     const pct = plan ? Math.round(Math.max(0, Math.min(100, plan.pct ?? 0))) : 0;
     $("curplanp").textContent = pct ? `${pct}%` : "";   // 0%: nothing, the icon alone
@@ -131,7 +132,7 @@ export function planPane({ send, sid, tasks }) {
     const kept = el("p", "plmeta plkept", open.length ? "" : "No task in this session.");
     for (const id of open) {
       const a = el("a", "linkish", id);
-      a.href = `/kanban/${id}`;
+      a.href = taskUrl(id);
       kept.append(a, " ");
     }
     body.push(kept);

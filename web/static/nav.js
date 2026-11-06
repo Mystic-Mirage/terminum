@@ -11,6 +11,7 @@ import { icon } from "./icons.js";
 import { planPct, planTrack } from "./planrow.js";
 import { arranged } from "./reorder.js";
 import { textForm } from "./render.js";
+import { taskUrl } from "./tasklink.js";
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
 // but a quiet terminal mark while a shell, a monitor or a task it started still runs (terminumd reads
@@ -159,9 +160,11 @@ function iconButton(cls, name, label, title, onClick) {
 }
 
 /** Open tasks by session (terminumd's): a row shows them, each opening its window on the board (AC-113). */
-let taskMarks = {};
-export function setTaskMarks(marks) { taskMarks = marks ?? {}; }
+let taskMarks = {}, projectTasks = {};
+/** terminumd's `taskmarks`: open tasks by session, tasks by project. */
+export function setTaskMarks(m) { taskMarks = m.marks ?? {}; projectTasks = m.counts ?? {}; }
 export const taskMarksOf = (id) => taskMarks[id] ?? [];
+export const tasksOfProject = (id) => projectTasks[id] ?? 0;
 
 function row(item, current, onPick, movable, child = false, marked = new Map(), opts = {}) {
   const li = document.createElement("li");
@@ -201,7 +204,7 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   for (const task of taskMarksOf(item.id)) {
     const t = el("span", "taskmark", task);
     t.title = `Open ${task} on the board`;
-    t.addEventListener("click", (e) => { e.stopPropagation(); location.href = `/kanban/${task}`; });
+    t.addEventListener("click", (e) => { e.stopPropagation(); location.href = taskUrl(task); });
     b.append(t);
   }
   // its bookmarks and open reminders: a wavy orange and a wavy pink line at the row's right edge

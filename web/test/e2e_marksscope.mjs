@@ -45,7 +45,8 @@ export async function webMarksScope(browser, name) {
     } });
     const { page } = f;
     await drawn(page);
-    f.say({ t: "projects", items: [PROJECT], taskmarks: TASKS });
+    f.say({ t: "projects", items: [PROJECT] });
+    f.say({ t: "taskmarks", marks: TASKS });
     f.say({ t: "marks", items: ITEMS, error: null });
     await show(page, A);
 
@@ -101,11 +102,11 @@ export async function webMarksScope(browser, name) {
     const inD = await buttons(page);
     check(`AC-33 ${at} a session of the project with none of its own: no button, no bell`, inD.marks === null && inD.bell === null, JSON.stringify(inD));
     check(`AC-113 (terminum-kanban.md) ${at} with no plan, no agent and no task of its own: no Plan button, the tasks of its project's others not counted`, !(await page.isVisible("#curplan")));
-    f.say({ t: "projects", items: [PROJECT], taskmarks: { ...TASKS, [D]: ["T-7"] } });
+    f.say({ t: "taskmarks", marks: { ...TASKS, [D]: ["T-7"] } });
     await pause(page, 150);
     const alone = await page.getAttribute("#curplan", "title");
-    check(`AC-113 (terminum-kanban.md) ${at} a task alone brings the Plan button, its hover the one task`, (await page.isVisible("#curplan")) && alone === "Kept: 1 task", alone);
-    f.say({ t: "projects", items: [PROJECT], taskmarks: TASKS });
+    check(`AC-113 (terminum-kanban.md) ${at} a task alone brings the Plan button, its hover the one task`, (await page.isVisible("#curplan")) && alone === "Open: 1 task", alone);
+    f.say({ t: "taskmarks", marks: TASKS });
     await pause(page, 150);
     await show(page, C);
     const toldC = await toast(page);

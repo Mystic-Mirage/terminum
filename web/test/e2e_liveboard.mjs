@@ -19,7 +19,12 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
     await page.click("#newcreate");
     await page.waitForSelector("#newbox", { state: "hidden", timeout: 5000 });
   };
-  const idOf = (title) => page.evaluate((t) => [...document.querySelectorAll(".card")].find((c) => c.querySelector(".ctitle").textContent === t)?.dataset.id, title);
+  // a card comes when terminumd told the page: it takes a moment after its window closed
+  const idOf = async (title) => {
+    let id;
+    await until(async () => (id = await page.evaluate((t) => [...document.querySelectorAll(".card")].find((c) => c.querySelector(".ctitle").textContent === t)?.dataset.id, title)));
+    return id;
+  };
 
   await page.goto(`${base}/`);
   check("AC-105 / leads to /sessions/", new URL(page.url()).pathname === "/sessions/", page.url());
@@ -51,7 +56,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-106 with its files", (await page.textContent("#newfiles")).includes("shot.png"));
   await page.fill("#newtitle", "");
   await page.click("#newcreate");
-  check("AC-106 no title is said in place, the window stays", await page.textContent("#newerror") === "Title: 1–200 characters" && await page.isVisible("#newbox"));
+  check("AC-106 no title is refused by terminumd, said in place, the window stays", await until(async () => await page.textContent("#newerror") === "Title: 1–200 characters") && await page.isVisible("#newbox"));
   await page.fill("#newtitle", "Fix the retry loop");
   await page.click("#newcreate");
   await page.waitForSelector("#newbox", { state: "hidden", timeout: 5000 });
@@ -90,7 +95,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click('.newcomment button:has-text("CLOSE")');
   await page.waitForSelector("#taskbox", { state: "hidden", timeout: 5000 });
   await page.click(card(second));
-  await within("AC-108 a comment shows as Markdown", () => page.waitForSelector("#taskbody .ev-comment .md strong", { timeout: 5000 }));
+  await within("AC-108 a comment shows as Markdown", () => page.waitForSelector("#taskbody .ev-comment .markdown strong", { timeout: 5000 }));
   check("AC-108 CLOSE moves nothing", (await inColumn("WAIT FOR HUMAN")).includes(second));
   // an edit of the text
   await page.click('.tasktext button:has-text("Edit")');
@@ -173,6 +178,8 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.waitForSelector("#namebox", { state: "hidden", timeout: 5000 });
   await page.click("#fproject summary");
   check("AC-110 a project made on the board is offered", await until(() => page.isVisible('#fproject label:has-text("Billing")')));
+  check("AC-111 a picker floats on its own background, never its text over a column's", await page.evaluate(() => { const c = getComputedStyle(document.querySelector("#fproject > div")).backgroundColor; return c !== "rgba(0, 0, 0, 0)" && c !== "transparent"; }));
+  check("AC-92 a project's color on the board is the session list's: its tokens are here too", await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--proj-l").trim() !== ""));
   await page.click("#newproject");
   await page.fill("#namefield", "Billing");
   await page.press("#namefield", "Enter");

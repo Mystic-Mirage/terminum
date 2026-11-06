@@ -7,7 +7,7 @@ import "./press.js";                                // a pressed blob's pulse (m
 import "./pop.js";                                  // where a window flies out of (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
-import { findItem, listParts, renderNav, seeWaits, setTaskMarks } from "./nav.js";
+import { findItem, listParts, renderNav, seeWaits, setTaskMarks, taskMarksOf } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
 import { sessionDrawer } from "./drawer.js";
@@ -16,7 +16,6 @@ import { colorSchemes } from "./schemes.js";
 import { menuPrefs } from "./prefs.js";
 import { markDoc } from "./markdoc.js";
 import { reminders as reminderBox } from "./reminders.js";
-import { marksFull } from "./marksfull.js";
 import { listFoot, showBuild } from "./foot.js";
 import { cellAt, cursorCell, shellMove } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
@@ -284,7 +283,6 @@ function onMessage(m) {
     case "copied": sizing.onCopied(m); break;   // what a full-screen program copied after our release (AC-06)
     case "settings": settings.apply(m); break;
     case "restore": if (!embedded) menu.showRestore(m.report); break;
-    case "marksfull": if (!embedded) full.show(m.items); break;   // agents' records that went for room (AC-98)
     case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files
     case "quickmade": quick.made(m); break;
     case "hostadded": case "hostagents": tools.hostAnswer(m); break;
@@ -336,11 +334,6 @@ const ask = askBox({ send, toChat: (text, stay) => input.paste(text, stay ? "ask
   pane: () => ({ cols: view.cols, rows: view.rows, used: view.boxHeight }), asked: asked.asked, toast });
 bookmarks.onAsk = (text, line) => ask.open(text, line);
 const reminded = reminderBox({ marks: bookmarks });
-const full = marksFull({ box: $("marksfull"), send, open: (b) => {   // that pane gone: the list below the sessions
-  if (!findItem(st.groups, b.sid)) return bookmarks.toggleList(true);
-  if (st.sid !== b.sid) pick(b.sid);
-  requestAnimationFrame(() => (b.remind ? reminded.open() : bookmarks.togglePane(true, "bookmark")));
-} });
 listFoot({ store });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
 bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };
@@ -373,7 +366,7 @@ function toggleGroup(key) {
 
 // The header (header.js): the title, then the folder with its Copy, the window, what runs there.
 const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
-  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), records: () => bookmarks.agentRecords(), toast });
+  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), tasks: () => taskMarksOf(st.sid), toast });
 
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;

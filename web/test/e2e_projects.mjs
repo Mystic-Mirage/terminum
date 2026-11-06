@@ -142,7 +142,7 @@ export async function webProjects(browser, name) {
   const focused = await page.evaluate(() => document.activeElement?.dataset.action);
   check("AC-07 the row's menu opens with its focus on Clone, never on Close Session above it (Enter asks nothing)", focused === "clone", String(focused));
   check("AC-07 a right click opens the row's menu, Close Session first; the moves its place allows",
-    items.join() === "Close Session,Clone,Add to Project…,Plan and Notes…,Mark as Unread,Diagnostics…,Split Below,Split Right,Split Left,Move to the Top,Move Up,Move Down,Move to the Bottom,Move to Session…", items.join());
+    items.join() === "Close Session,Clone,New Task…,Add to Project…,Plan and Tasks…,Mark as Unread,Diagnostics…,Split Below,Split Right,Split Left,Move to the Top,Move Up,Move Down,Move to the Bottom,Move to Session…", items.join());
   // each item with its icon, Close Session's a red ×; the three splits side by side, each drawn
   const menuLook = await page.evaluate(() => {
     const shown = [...document.querySelectorAll("#rowmenu[open] button:not([data-action=x])")].filter((b) => b.getClientRects().length);
@@ -359,7 +359,7 @@ export async function webProjects(browser, name) {
   });
   await pause(p.page, 100);
   check("AC-07 the finger's lift asks nothing: Close Session, now first, stays unpressed", under && !await p.page.evaluate(() => document.getElementById("confirmbox").open));
-  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Close Session" && held[1] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Notes…") && held.includes("Diagnostics…") && held.length === 12, held.join());
+  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Close Session" && held[1] === "Clone" && held.includes("Split Below") && !held.includes("Split Right") && held.includes("Plan and Tasks…") && held.includes("Diagnostics…") && held.length === 12, held.join());
   const pm = await mark(p.page);
   check("AC-93 on a phone too an unread row is hatched", pm.hatched && !pm.blob, JSON.stringify(pm));
   check("AC-07 on a phone (no hover) Clone is always there", await clone(p.page, 2) === "0.8");

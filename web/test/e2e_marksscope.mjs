@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-33, AC-91, AC-98 against a fake terminumd (fake.mjs): with a session selected only its own
 // bookmarks and reminders show, on every path to them: the bookmarks' button and pane, the bell, its
-// toast, the Plan pane's "kept for you" from the header and from a row's percent, a banner's Open, the
-// rows' wavy lines; another session of its project shows nothing of them. Only Bookmarks / Reminders
-// below the sessions lists every session's.
+// toast, the rows' wavy lines; another session of its project shows nothing of them. Only Bookmarks /
+// Reminders below the sessions lists every session's. The Plan pane, from the header and from a row's
+// percent, links only the shown session's tasks (terminum-kanban.md AC-113), its records not counted.
 import { check, runningIn } from "./check.mjs";
 import { drawn, group, item, openPage, pause, pressFab, SIZES } from "./fake.mjs";
 
@@ -14,6 +14,7 @@ const layout = () => [group("main", [item(A, "api", { plan: rowPlan }), item(B, 
 const PROJECT = { id: "P", name: "Work", color: 0, host: null, dir: "~/work", members: [A, B, D] };
 const rec = (id, sid, extra = {}) => ({ id, sid, key: sid, n: -1, text: `${id} text`, note: `note ${id}`, title: "t", host: null, at: 1790000000, project: "P", ...extra });
 const agent = { by: "claude" };
+const TASKS = { [A]: ["T-1", "T-2"], [B]: ["T-3", "T-4", "T-5", "T-6"] };
 const ITEMS = [rec("a1", A, agent), rec("a2", A, { ...agent, remind: true, due: true }), rec("a3", A, { n: 3 }),
   rec("b1", B, agent), rec("b2", B, agent), rec("b3", B, agent), rec("b4", B, { ...agent, remind: true, resolved: 1790000001 }),
   rec("c1", C, { project: undefined }), rec("c2", C, { project: undefined, remind: true })];
@@ -32,7 +33,7 @@ const buttons = (page) => page.evaluate(() => ({ marks: document.getElementById(
 const waves = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#sessions .item")].map((r) =>
   [r.dataset.id.split(":").pop(), `${r.querySelector(".wave.mark") ? "m" : ""}${r.querySelector(".wave.remind") ? "r" : ""}`])));
 const toast = (page) => page.evaluate(() => (document.getElementById("toast").hidden ? "" : document.getElementById("toast").textContent));
-const kept = (page) => page.evaluate(() => document.querySelector("#planbody .plkept")?.textContent ?? null);
+const links = (page) => page.evaluate(() => [...document.querySelectorAll("#planbody .plkept a.linkish")].map((a) => `${a.textContent}=${a.getAttribute("href")}`).join());
 const planOpen = (page) => page.waitForFunction(() => document.querySelector("#planbody .plkept"), null, { timeout: 3000 });
 
 export async function webMarksScope(browser, name) {
@@ -44,7 +45,7 @@ export async function webMarksScope(browser, name) {
     } });
     const { page } = f;
     await drawn(page);
-    f.say({ t: "projects", items: [PROJECT] });
+    f.say({ t: "projects", items: [PROJECT], taskmarks: TASKS });
     f.say({ t: "marks", items: ITEMS, error: null });
     await show(page, A);
 
@@ -57,15 +58,17 @@ export async function webMarksScope(browser, name) {
     check(`AC-33 ${at} the rows' wavy lines: each session's own kinds; a session of the same project with none has none`,
       rows["%1"] === "mr" && rows["%2"] === "m" && rows["%3"] === "mr" && rows["%4"] === "", JSON.stringify(rows));
 
-    // the owner's path: the Plan pane, "kept for you", show them
+    // the Plan pane: this session's tasks; its records by the bookmarks' own button
     await page.click("#curplan");
     await planOpen(page);
-    const words = await kept(page), hover = await page.getAttribute("#curplan", "title");
-    check(`AC-98 ${at} the Plan pane and the header's hover count the agent's records of this session alone`,
-      words === "2 kept for you by the agent: show them" && hover.includes("2 from its agent"), JSON.stringify({ words, hover }));
-    await page.click("#planbody .plkept button");
+    const words = await links(page), hover = await page.getAttribute("#curplan", "title");
+    check(`AC-113 (terminum-kanban.md) ${at} the Plan pane and the header's hover name this session's tasks alone`,
+      words === "T-1=/kanban/T-1,T-2=/kanban/T-2" && hover.endsWith(" · 2 tasks"), JSON.stringify({ words, hover }));
+    await page.keyboard.press("Escape");
+    await pause(page, 150);
+    await pressFab(page, "#marksfab");
     await pause(page, 200);
-    check(`AC-98 ${at} "show them" lists only this session's`, (await ids(page, "markpane")) === "a3,a1,a2" && (await heading(page, "markpane")) === "Bookmarks and reminders of this session",
+    check(`AC-98 ${at} the bookmarks' button lists only this session's`, (await ids(page, "markpane")) === "a3,a1,a2" && (await heading(page, "markpane")) === "Bookmarks and reminders of this session",
       `${await ids(page, "markpane")} | ${await heading(page, "markpane")}`);
 
     // what comes while the pane is open
@@ -97,14 +100,13 @@ export async function webMarksScope(browser, name) {
     await show(page, D);
     const inD = await buttons(page);
     check(`AC-33 ${at} a session of the project with none of its own: no button, no bell`, inD.marks === null && inD.bell === null, JSON.stringify(inD));
-    await page.click("#curplan").catch(() => {});
-    if (await page.isVisible("#curplan")) {
-      await planOpen(page);
-      const none = await kept(page);
-      check(`AC-98 ${at} its Plan pane says nothing was kept`, none === "Nothing kept for you by the agent.", none);
-      await page.keyboard.press("Escape");
-      await pause(page, 150);
-    }
+    check(`AC-113 (terminum-kanban.md) ${at} with no plan, no agent and no task of its own: no Plan button, the tasks of its project's others not counted`, !(await page.isVisible("#curplan")));
+    f.say({ t: "projects", items: [PROJECT], taskmarks: { ...TASKS, [D]: ["T-7"] } });
+    await pause(page, 150);
+    const alone = await page.getAttribute("#curplan", "title");
+    check(`AC-113 (terminum-kanban.md) ${at} a task alone brings the Plan button, its hover the one task`, (await page.isVisible("#curplan")) && alone === "Kept: 1 task", alone);
+    f.say({ t: "projects", items: [PROJECT], taskmarks: TASKS });
+    await pause(page, 150);
     await show(page, C);
     const toldC = await toast(page);
     check(`AC-91 ${at} another session's reminder is said when that session is shown`, toldC === "docs: 1 reminder, 1 new", toldC);
@@ -114,24 +116,14 @@ export async function webMarksScope(browser, name) {
     await page.evaluate((k) => document.querySelector(`#sessions .item[data-id="${k}"] .plpct`).click(), B);
     await planOpen(page);
     await pause(page, 200);
-    const fromRow = await kept(page);
-    check(`AC-98 ${at} a row's percent: that session's count`, fromRow === "4 kept for you by the agent: show them", fromRow);
-    await page.click("#planbody .plkept button");
-    await pause(page, 200);
-    check(`AC-98 ${at} and its "show them": that session's`, (await ids(page, "markpane")) === "b1,b2,b3,b9", await ids(page, "markpane"));
+    const fromRow = await links(page);
+    check(`AC-113 (terminum-kanban.md) ${at} a row's percent: that session's tasks`, fromRow === ["T-3", "T-4", "T-5", "T-6"].map((t) => `${t}=/kanban/${t}`).join(), fromRow);
     await page.keyboard.press("Escape");
     await pause(page, 150);
-
-    // a banner's Open: the pane that made room, its own
-    await show(page, A);
-    f.say({ t: "marksfull", items: [{ scope: B, remind: false, most: 50, label: "session web", sid: B }] });
-    await pause(page, 150);
-    await page.click("#marksfull .link");
-    await page.waitForSelector("#markpane:not([hidden])", { timeout: 3000 });
+    await pressFab(page, "#marksfab");
     await pause(page, 200);
-    check(`AC-98 ${at} a banner's Open shows the pane that made room with its own`, (await ids(page, "markpane")) === "b1,b2,b3,b9", await ids(page, "markpane"));
+    check(`AC-98 ${at} and its bookmarks' button: that session's`, (await ids(page, "markpane")) === "b1,b2,b3,b9", await ids(page, "markpane"));
     await page.keyboard.press("Escape");
-    f.say({ t: "marksfull", items: [] });
     await pause(page, 150);
 
     // another project now, or none: still its own
@@ -172,27 +164,6 @@ export async function webMarksScope(browser, name) {
     await pressFab(page, "#marksfab");
     await pause(page, 150);
     check(`AC-33 ${at} the choice stays when the button opens it again`, (await pressed("scope")) === "all" && (await pressed("kind")) === "reminder", `${await pressed("scope")} ${await pressed("kind")}`);
-    await page.keyboard.press("Escape");
-    await pause(page, 150);
-    await page.click("#curplan");
-    await planOpen(page);
-    await page.click("#planbody .plkept button");
-    await pause(page, 200);
-    check(`AC-33 ${at} "show them", with All and Reminders chosen: this once the session's own, everything`, (await pressed("scope")) === "session" && (await pressed("kind")) === "all" && (await ids(page, "markpane")) === "a3,a1,a2,a9", await ids(page, "markpane"));
-    await page.keyboard.press("Escape");
-    await pause(page, 150);
-    f.say({ t: "marksfull", items: [{ scope: A, remind: false, most: 50, label: "session api", sid: A }] });
-    await pause(page, 150);
-    await page.click("#marksfull .link");
-    await page.waitForSelector("#markpane:not([hidden])", { timeout: 3000 });
-    await pause(page, 150);
-    check(`AC-33 ${at} a banner's Open bookmarks: this once the session's bookmarks`, (await pressed("kind")) === "bookmark" && (await ids(page, "markpane")) === "a3,a1,a9", await ids(page, "markpane"));
-    await page.keyboard.press("Escape");
-    f.say({ t: "marksfull", items: [] });
-    await pause(page, 150);
-    await pressFab(page, "#marksfab");
-    await pause(page, 150);
-    check(`AC-33 ${at} the button again: the list chosen`, (await pressed("scope")) === "all" && (await pressed("kind")) === "reminder", `${await pressed("scope")} ${await pressed("kind")}`);
     await pick("kind", "all");
     // what became of a closed session's record, an orphaned one's own name
     f.say({ t: "mark", item: rec("z1", "tmux:local:terminum:%77", { orphaned: 1790000100, title: "old one" }) });

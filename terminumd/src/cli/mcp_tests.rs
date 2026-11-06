@@ -62,10 +62,8 @@ fn initialize_answers_the_clients_version_when_known() {
 fn the_instructions_stand_in_512_characters() {
     let first: String = INSTRUCTIONS.chars().take(512).collect();
     assert_eq!(first, INSTRUCTIONS, "whole within 512, so a client's cut loses nothing");
-    for w in ["update_session_plan", "eta_minutes", "add_notes_for_user", "every 10 minutes", "stop calling",
-              "Only the main agent calls update_session_plan; subagents report to it.",
-              // one record per item: the agent's own bookkeeping filled the 50-record limit (AC-98)
-              "one record", "never progress", "update_notes_for_user one"] {
+    for w in ["update_session_plan", "eta_minutes", "create_task", "finish_task", "every 10 minutes", "stop calling",
+              "Only the main agent calls update_session_plan; subagents report to it.",] {
         assert!(first.contains(w), "{w}");
     }
     assert!(first.ends_with('.'));
@@ -122,10 +120,9 @@ fn tools_list_has_its_tools_with_schemas_and_hints() {
     for t in tools {
         let name = t["name"].as_str().unwrap();
         if crate::tasks::tools::NAMES.contains(&name) {
-            assert_eq!(t["annotations"]["destructiveHint"], false, "{name}");
             continue;
         }
-        assert_eq!(t["annotations"], json!({"readOnlyHint": name.starts_with("get_"), "destructiveHint": (["update_notes_for_user", "delete_notes_for_user"].contains(&name)), "idempotentHint": true, "openWorldHint": false}));
+        assert_eq!(t["annotations"], json!({"readOnlyHint": name.starts_with("get_"), "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}));
         assert_eq!(t["inputSchema"]["type"], "object");
         assert!(t["description"].as_str().unwrap().len() < 500);
     }
@@ -138,18 +135,6 @@ fn tools_list_has_its_tools_with_schemas_and_hints() {
     assert_eq!((plan["properties"]["doing"]["maxLength"].clone(), plan["properties"]["title"]["maxLength"].clone()), (json!(120), json!(80)));
     let d = tools[0]["description"].as_str().unwrap();
     assert!(d.contains("whole plan") && d.contains("pending, in_progress, completed or blocked") && d.contains("minutes"));
-    let notes = &tools[2]["inputSchema"]["properties"]["notes"];
-    assert_eq!((notes["maxItems"].clone(), notes["items"]["properties"]["kind"]["enum"].clone()), (json!(20), json!(["bug", "deferred", "followup", "question", "report"])));
-    assert_eq!(notes["items"]["required"], json!(["title", "text"]));
-    assert_eq!((notes["items"]["properties"]["title"]["maxLength"].clone(), notes["items"]["properties"]["text"]["maxLength"].clone(), notes["items"]["properties"]["file"]["maxLength"].clone()),
-               (json!(120), json!(2000), json!(300)));
-    assert_eq!(notes["items"]["properties"]["remind"]["type"], "boolean");
-    let d = tools[2]["description"].as_str().unwrap();
-    for w in ["final report", "deferred work", "a question", "remind: true", "only for kind question", "replaces", "close what your work covered"] {
-        assert!(d.contains(w), "{w}");
-    }
-    assert_eq!(tools[4]["inputSchema"]["required"], json!(["id"]));
-    assert_eq!(tools[4]["inputSchema"]["properties"]["status"]["enum"], json!(["open", "done"]));
 }
 
 #[test]
@@ -164,10 +149,6 @@ fn a_call_goes_to_terminumd_with_the_pane_and_only_known_fields() {
                  "doing": "Run the tests", "eta_minutes": 45}}));
     let (r, sent) = tool("get_session_plan", json!({}), &in_pane(), Ok((200, Some(json!({"text": "[x] a", "error": true})))));
     assert_eq!((r["isError"].clone(), sent.unwrap()["args"].clone()), (json!(true), json!({})), "terminumd's error flag kept");
-    let (_, sent) = tool("add_notes_for_user", json!({"notes": [{"title": "BOM", "text": "The parser drops a BOM", "kind": "bug", "file": "src/parse.rs", "remind": true, "x": 1}]}), &in_pane(), Ok((200, Some(json!({"text": "n1"})))));
-    assert_eq!(sent.unwrap()["args"], json!({"notes": [{"title": "BOM", "text": "The parser drops a BOM", "kind": "bug", "file": "src/parse.rs", "remind": true}]}));
-    let (_, sent) = tool("update_notes_for_user", json!({"id": "n1", "status": "done"}), &in_pane(), Ok((200, Some(json!({"text": "ok"})))));
-    assert_eq!(sent.unwrap()["args"], json!({"id": "n1", "status": "done"}));
 }
 
 #[test]
@@ -188,10 +169,7 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
         for t in TOOLS {
             let args = match t {
                 "update_session_plan" => json!({"items": [{"text": "a", "status": "pending"}]}),
-                "add_notes_for_user" => json!({"notes": [{"title": "t", "text": "a"}]}),
-                "update_notes_for_user" => json!({"id": 1, "status": "done"}),
-                "delete_notes_for_user" => json!({"ids": ["n1"]}),
-                "list_tasks" | "get_session_plan" | "get_notes_for_user" => json!({}),
+                "list_tasks" | "get_session_plan" => json!({}),
                 "create_task" => json!({"title": "t"}),
                 "move_task" => json!({"id": "T-1", "to": "DONE"}),
                 "add_comment" => json!({"id": "T-1", "text": "a"}),
@@ -247,35 +225,6 @@ fn update_session_plan_is_checked_before_it_goes() {
 }
 
 #[test]
-fn notes_are_checked_before_they_go() {
-    let note = |k: &str, t: &str| json!({"title": "t", "kind": k, "text": t});
-    assert!(refused("add_notes_for_user", json!({"notes": []})).contains("1–20 records"));
-    assert!(refused("add_notes_for_user", json!({"notes": vec![note("bug", "a"); 21]})).contains("at most 20"));
-    let k = refused("add_notes_for_user", json!({"notes": [note("todo", "a")]}));
-    assert!(k.contains("notes[0].kind") && k.contains("bug, deferred, followup, question, report"), "{k}");
-    assert!(refused("add_notes_for_user", json!({"notes": [note("bug", &"x".repeat(2001))]})).contains("over 2000"));
-    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "x".repeat(121), "text": "a"}]})).contains("title is over 120"));
-    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "t", "text": "a", "file": "f".repeat(301)}]})).contains("file is over 300"));
-    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "t"}]})).contains("text is required"));
-    assert!(refused("add_notes_for_user", json!({"notes": [{"text": "a"}]})).contains("title is required"));
-    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "t", "text": "a", "remind": "yes"}]})).contains("true or false"));
-    assert!(refused("delete_notes_for_user", json!({})).contains("record ids"));
-    assert!(refused("delete_notes_for_user", json!({"ids": []})).contains("record ids"));
-    assert!(refused("delete_notes_for_user", json!({"ids": [{"id": 1}]})).contains("ids must be"));
-    assert!(refused("get_notes_for_user", json!({"id": -1})).contains("id must be"));
-    assert_eq!(checked("get_notes_for_user", &json!({"id": "aB3", "x": 1})).unwrap(), json!({"id": "aB3"}));
-    assert_eq!(checked("delete_notes_for_user", &json!({"ids": ["aB3", 7]})).unwrap(), json!({"ids": ["aB3", "7"]}));
-    assert!(refused("update_notes_for_user", json!({"status": "done"})).contains("id is required"));
-    assert!(refused("update_notes_for_user", json!({"id": -1, "status": "done"})).contains("id is required"));
-    assert!(refused("update_notes_for_user", json!({"id": "n1"})).contains("nothing to change"));
-    assert!(refused("update_notes_for_user", json!({"id": "n1", "status": "closed"})).contains("open, done"));
-    assert!(refused("update_notes_for_user", json!({"id": "n1", "remind": 1})).contains("true or false"));
-    assert!(checked("add_notes_for_user", &json!({"notes": vec![note("question", "a"); 20]})).is_ok());
-    assert_eq!(checked("update_notes_for_user", &json!({"id": "aB3", "text": "new", "remind": false, "kind": "x"})).unwrap(), json!({"id": "aB3", "text": "new", "remind": false}),
-               "only the fields it takes");
-}
-
-#[test]
 fn mcp_is_a_command_without_arguments() {
     let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     assert_eq!(crate::cli::parse(&args(&["mcp"])), Ok(crate::cli::Cmd::Mcp));
@@ -303,7 +252,6 @@ fn lengths_count_after_cleaning_and_eta_is_an_integer() {
     assert_eq!(sent.unwrap()["args"]["items"][0]["text"], "x".repeat(200), "{r}");
     assert!(refused("update_session_plan", json!({"items": [{"text": "\u{2066}\u{7}", "status": "pending"}]})).contains("empty"));
     assert!(refused("update_session_plan", json!({"items": [{"text": "a", "status": "pending"}], "eta_minutes": 30.0})).contains("whole number"));
-    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "t", "text": "x".repeat(2001)}]})).contains("over 2000"));
 }
 
 #[test]

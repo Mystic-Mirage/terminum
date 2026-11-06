@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core). This spec holds tasks, the board at `/kanba
 
 | Field | Value |
 |---|---|
-| Status | approved, not built |
+| Status | current |
 
 A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
@@ -123,7 +123,7 @@ Scenario: AC-106 happy path — the window
 Scenario: AC-106 happy path — from a session and from a terminal's selection
   When the user picks New task in a session's menu
   Then the window opens with that session and its project
-  When the user selects lines in a terminal and picks New task from selection
+  When the user selects lines in a terminal, presses its [+] and picks New task from selection in that dialog
   Then the window opens with them as a quoted block in the text, the session and its project; nothing is kept until Create
 
 Scenario: AC-106 edge — a draft
@@ -535,14 +535,14 @@ Comments and history are one table, `events`: a window lists them in one order. 
 
 ## 7. Current behavior and gaps
 
-Nothing of this spec is built: `/` is the only page route (`terminumd/src/routes.rs:50`), projects with no session go (`terminumd/src/page/projects.rs:127`), and no store exists.
-
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-105…AC-120 | Not built. | no system today |
-| AC-110 | An empty project goes; Ungroup is its way out. | `terminumd/src/page/projects.rs:143`, `terminumd/src/page/projects.rs:155` |
-| AC-114 | Nothing types for a tool today. | `CLAUDE.md` §2, `terminumd/src/page/typing.rs:294` |
-| AC-115 | MCP offers only plan and notes tools. | `terminumd/src/cli/mcp.rs:35` |
+| AC-112 | Subtasks are kept and counted; no window makes one and Show subtasks is not there. | `terminumd/src/tasks/ops.rs`, `web/static/kanbanwin.js` |
+| AC-114 | A line reaches a session by its next hook; typing into an idle session comes with Dispatcher's gate. | `terminumd/src/tasks/tell.rs` |
+| AC-116 | No record offers Make a task. | `web/static/marks.js` |
+| AC-117 | No banner or count on the Kanban link. | `web/static/kanban.js` |
+| AC-118 | No archive: nothing leaves the board by itself. | `terminumd/src/tasks/query.rs` |
+| AC-120 | A host's agent lists, reads and writes tasks over its link; get_file says it cannot yet, and a long get_task is not paged. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -568,7 +568,7 @@ CREATE TABLE servers (start TEXT PRIMARY KEY, terminum_id TEXT NOT NULL);  -- ea
 CREATE TABLE project_members (project TEXT REFERENCES projects, pane_key TEXT UNIQUE, place INTEGER);
 CREATE TABLE tasks (id TEXT PRIMARY KEY, number INTEGER UNIQUE NOT NULL, project TEXT REFERENCES projects, parent TEXT REFERENCES tasks,
   title TEXT NOT NULL, body TEXT NOT NULL, status TEXT NOT NULL, severity TEXT NOT NULL, rank REAL NOT NULL, owner TEXT REFERENCES users,
-  by_agent INTEGER NOT NULL, session_key TEXT, session_server TEXT, agent_session TEXT, budget_seconds INTEGER, archived_at INTEGER, updated_at INTEGER NOT NULL);
+  by_agent INTEGER NOT NULL, session_key TEXT, agent_session TEXT, budget_seconds INTEGER, archived_at INTEGER, updated_at INTEGER NOT NULL);
 CREATE TABLE events (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, at INTEGER NOT NULL, author TEXT REFERENCES users, kind TEXT NOT NULL, text TEXT, data TEXT);
 CREATE INDEX events_task ON events (task, at);
 CREATE TABLE files (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, event TEXT REFERENCES events, name TEXT NOT NULL, bytes INTEGER NOT NULL, mime TEXT NOT NULL);
@@ -607,27 +607,25 @@ Pages hear `taskchange {id, status, rev}` over the page's WebSocket.
 
 | Stage | Cases | What a user can do |
 |---|---|---|
-| Spike | none | The first C compile: `rusqlite` built for all four targets (`python3 scripts/agents.py build`), CI's Linux and a clean Mac's `make build`. |
-| Stage 1 | AC-105, AC-106, AC-107, AC-108, AC-109, AC-110, AC-113, AC-114 by hook only, AC-115, AC-119 | Keep tasks and files on a board, comment, link sessions, and agents work with them. |
-| Stage 2 | AC-111, AC-112, AC-116, AC-118, AC-120 | Filters, subtasks, records into tasks, archive, agents on hosts. |
+| Stage 2 | AC-112, AC-116, AC-118, AC-120 | Subtasks, records into tasks, archive, agents on hosts in full. |
 
-AC-117 and AC-114's typing ship with `terminum-dispatcher.md`'s Stage 1, which follows this Stage 1. On hosts the old note tools stay until AC-120. Depends on: the store first; then pages; then tools.
+AC-117 and AC-114's typing ship with `terminum-dispatcher.md`'s Stage 1. Depends on: nothing more.
 
 ## 11. Checklist with Definition of Done
 
-- [ ] AC-105 — new `web/test/e2e_board.mjs`, `web/test/e2e_liveboard.mjs`
-- [ ] AC-106 — new `web/test/e2e_taskwindow.mjs`, `web/test/e2e_liveboard.mjs`
-- [ ] AC-107 — `cargo test tasks::`, `web/test/e2e_board.mjs`
-- [ ] AC-108 — `cargo test tasks::`, `web/test/e2e_taskwindow.mjs`
-- [ ] AC-109 — `cargo test tasks::files`, `web/test/e2e_taskwindow.mjs`
-- [ ] AC-110 — `cargo test page::projects`, `cargo test tasks::projects`, `web/test/e2e_projects.mjs`, `web/test/e2e_board.mjs`
-- [ ] AC-111 — `web/test/e2e_board.mjs`, `cargo test tasks::query`, `scripts/bench_board.py`
-- [ ] AC-112 — `cargo test tasks::subtasks`, `web/test/e2e_board.mjs`
-- [ ] AC-113 — `cargo test tasks::links`, `web/test/e2e_liveboard.mjs`
-- [ ] AC-114 — `cargo test tasks::tell`, new `web/test/e2e_liveprogs_tasks.mjs` in Claude Code's two TUIs and Codex
-- [ ] AC-115 — `cargo test cli::mcp`, `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
-- [ ] AC-116 — `cargo test page::bookmarks`, `web/test/e2e_taskwindow.mjs`
-- [ ] AC-117 — `web/test/e2e_board.mjs`
-- [ ] AC-118 — `cargo test tasks::archive`, `web/test/e2e_board.mjs`
-- [ ] AC-119 — `cargo test tasks::store`, `scripts/e2e_install.sh`, `SECURITY.md` carries the store and tasks' files
-- [ ] AC-120 — `scripts/e2e_remote_tasks.py`, Docker's `scripts/e2e_remote_sshd.py`
+- [x] AC-105 — `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`
+- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `cargo test tasks::ops`
+- [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
+- [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
+- [x] AC-109 — `cargo test tasks::files`, `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
+- [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
+- [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
+- [ ] AC-112 — `cargo test tasks::ops` for the rules; the window to come
+- [x] AC-113 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
+- [x] AC-114 — `cargo test tasks::tell`, `web/test/e2e_livenotes.mjs`; typing with `terminum-dispatcher.md`
+- [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
+- [ ] AC-116 — to come
+- [ ] AC-117 — to come
+- [ ] AC-118 — to come
+- [x] AC-119 — `cargo test tasks::store`
+- [ ] AC-120 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py` for what is built

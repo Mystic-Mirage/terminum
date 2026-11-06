@@ -374,6 +374,12 @@ pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String], e
     if changed {
         save(app).await;
     }
+    if closed == Closed::All {
+        links_changed(app, {
+            let prefix = prefix.clone();
+            move |tx, now| stored::links_dropped(tx, &prefix, now)
+        }).await;
+    }
     let live: HashSet<String> = every.iter().cloned().collect();
     orphan(app, move |k| k.starts_with(&prefix) && match closed {
         Closed::None => false,
@@ -389,8 +395,24 @@ pub async fn restarted(app: &Shared, prefix: &str, panes: &[(String, String)]) {
         save(app).await;
         tell(app);
     }
+    links_changed(app, {
+        let (prefix, panes) = (prefix.to_string(), panes.to_vec());
+        move |tx, now| stored::links_restored(tx, &prefix, &panes, now)
+    }).await;
     let (a, prefix, panes) = (app.clone(), prefix.to_string(), panes.to_vec());
     told(app, tokio::task::spawn_blocking(move || a.bookmarks.lock().restarted(&prefix, &panes)).await);
+}
+
+/// Tasks' links changed with a server (AC-113): the board and the rows' marks hear of it.
+async fn links_changed(app: &Shared, f: impl FnOnce(&rusqlite::Transaction, i64) -> Result<usize, String> + Send + 'static) {
+    let a = app.clone();
+    let done = tokio::task::spawn_blocking(move || a.tasks.with(|tx| f(tx, crate::tasks::ops::now()))).await;
+    match done {
+        Ok(Ok(0)) => {}
+        Ok(Ok(_)) => crate::tasks::api::told(app, ""),
+        Ok(Err(e)) => tracing::warn!(event = "tasks.links", error = %e),
+        Err(e) => tracing::warn!(event = "tasks.links", error = %e),
+    }
 }
 
 /// The bookmarks whose session `closed` says closed are orphaned (AC-33): saved off the async

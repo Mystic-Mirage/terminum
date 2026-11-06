@@ -2,7 +2,7 @@
 //! Room in web-bookmarks.json (AC-33, AC-91): the user's own bookmarks and open reminders have
 //! limits of their own and are refused beyond them, never deleted for room; a resolved reminder
 //! counts in no limit and is deleted for good 30 days after it was resolved. Agents' records
-//! make their own room (agentmarks.rs).
+//! made their own room.
 
 use super::{err, Item, MarkError, Store, MAX_ITEMS, MAX_REMINDERS};
 use crate::app::Shared;

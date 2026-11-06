@@ -7,11 +7,8 @@ use axum::extract::State;
 use axum::Json;
 use serde_json::{json, Value};
 
-use parking_lot::Mutex;
 
-use crate::agentmarks::{self, Place, Record, Told};
 use crate::app::Shared;
-use crate::page::bookmarks::Store;
 use crate::plans::{Plans, Update};
 
 use crate::plans::rules::{self, NOT_IN_PANE, STATUSES};
@@ -33,13 +30,23 @@ pub const HOOKS_OFF: &str = "terminum's hooks are not running in this session (C
 /// The answer to a plan update from another session than the pane's hooked one.
 pub const OTHER_SESSION: &str = "Not applied: this call comes from another session than the pane's main agent (a subagent's). Only the main agent calls update_session_plan; report to it instead.";
 
+/// A pane as the tools see it: its project, row's title, host and folder.
+#[derive(Default)]
+pub struct Place {
+    pub project: Option<String>,
+    pub title: String,
+    pub host: Option<String>,
+    pub dir: Option<String>,
+}
+
+/// The answer to a note tool of an agent started before the upgrade (AC-98).
+pub const NOTES_GONE: &str = "This tool is gone. Use create_task for what must not get lost.";
+
 /// What a tool call changed, so the list is read again and the plans saved.
 #[derive(Debug, PartialEq)]
 pub enum Changed {
     Nothing,
     Plan,
-    /// the bookmarks and reminders an agent made or changed (AC-98)
-    Marks(Vec<Told>),
 }
 
 pub async fn agent(State(app): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
@@ -69,24 +76,12 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let (a, key) = (app.clone(), caller.key.clone());
     let done = tokio::task::spawn_blocking(move || {
         let working = a.hooks.working(&caller.key);
-        run(&a.plans, &a.bookmarks, &caller, &tool, &args, working, crate::auth::store::unix_now())
+        run(&a.plans, &caller, &tool, &args, working, crate::auth::store::unix_now())
     }).await;
     let Ok((text, error, changed)) = done else { return answer("terminum could not answer the call.", true) };
-    match &changed {
-        Changed::Plan => {
-            crate::plans::save(&app);
-            crate::page::plans::tell(&app.pages, std::slice::from_ref(&key));
-        }
-        Changed::Marks(told) => for t in told {
-            match t {
-                Told::Mark(item) => crate::page::marks::tell_mark(&app, item),
-                Told::Unmark(id) => crate::page::marks::tell_unmark(&app, id),
-                Told::Full(remind) => crate::page::marksfull::went(&app, &key, *remind),
-            }
-        },
-        Changed::Nothing => {}
-    }
-    if changed != Changed::Nothing {
+    if changed == Changed::Plan {
+        crate::plans::save(&app);
+        crate::page::plans::tell(&app.pages, std::slice::from_ref(&key));
         app.dirty.notify_one();
     }
     answer(&text, error)
@@ -120,8 +115,8 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
 fn place_of(app: &Shared, key: &str) -> Place {
     let item = crate::page::marks::find_item(&app.layout.read(), key).unwrap_or_default();
     let (host, dir) = crate::page::marks::project_of(&item);
-    let (project, members) = app.projects.lock().of(key).map_or((None, Vec::new()), |p| (Some(p.id.clone()), p.members.clone()));
-    Place { key: key.to_string(), project, members, title: item["title"].as_str().unwrap_or("").to_string(), host, dir }
+    let project = app.projects.lock().of(key).map(|p| p.id.clone());
+    Place { project, title: item["title"].as_str().unwrap_or("").to_string(), host, dir }
 }
 
 fn answer(text: &str, error: bool) -> Json<Value> {
@@ -129,16 +124,14 @@ fn answer(text: &str, error: bool) -> Json<Value> {
 }
 
 /// One tool call: (answer, is an error, what changed).
-pub fn run(plans: &Plans, marks: &Mutex<Store>, c: &Caller, tool: &str, args: &Value, working: bool, now: u64) -> (String, bool, Changed) {
+pub fn run(plans: &Plans, c: &Caller, tool: &str, args: &Value, working: bool, now: u64) -> (String, bool, Changed) {
     let r = match tool {
         "update_session_plan" if c.other => Err(OTHER_SESSION.to_string()),
         "update_session_plan" => update_plan(plans, c, args, now).map(|t| (t, Changed::Plan)),
         "get_session_plan" => Ok((plan_text(plans, &c.key, working, now), Changed::Nothing)),
-        "add_notes_for_user" => add_notes(marks, c, args).map(|(t, told)| (t, Changed::Marks(told))),
-        "update_notes_for_user" => agentmarks::update(&mut marks.lock(), &c.place, args).map(|(t, told)| (t, Changed::Marks(told))),
-        "get_notes_for_user" => agentmarks::read(&marks.lock(), &c.place, args).map(|t| (t, Changed::Nothing)),
-        "delete_notes_for_user" => agentmarks::delete(&mut marks.lock(), &c.place, args).map(|(t, told)| (t, Changed::Marks(told))),
-        other => Err(format!("unknown tool {other}: update_session_plan, get_session_plan, add_notes_for_user, get_notes_for_user, update_notes_for_user, delete_notes_for_user")),
+        // an agent started before the upgrade still holds the old list (AC-98)
+        "add_notes_for_user" | "update_notes_for_user" | "get_notes_for_user" | "delete_notes_for_user" => Err(NOTES_GONE.to_string()),
+        other => Err(format!("unknown tool {other}: update_session_plan, get_session_plan, {}", crate::tasks::tools::NAMES.join(", "))),
     };
     let r = r.map(|(t, ch)| match tool {
         "update_session_plan" | "get_session_plan" if !c.hooks => (format!("{t}\n{HOOKS_OFF}"), ch),
@@ -216,19 +209,6 @@ pub fn plan_text(plans: &Plans, key: &str, working: bool, now: u64) -> String {
     }
     out.push(format!("Updated {} min ago; {} of {} completed.", now.saturating_sub(d.row.updated) / 60, d.row.done, d.row.total));
     out.join("\n")
-}
-
-fn add_notes(marks: &Mutex<Store>, c: &Caller, args: &Value) -> Result<(String, Vec<Told>), String> {
-    let list = args["notes"].as_array().ok_or("notes is required: a list of 1–20 records")?;
-    let mut records = Vec::new();
-    for (i, n) in list.iter().enumerate() {
-        let s = |k: &str| n[k].as_str().map(str::to_string);
-        records.push(Record { title: s("title").ok_or_else(|| format!("notes[{i}].title is required"))?,
-                              text: s("text").ok_or_else(|| format!("notes[{i}].text is required"))?,
-                              remind: n["remind"] == true, kind: s("kind"), file: s("file") });
-    }
-    let replaces: Vec<String> = args["replaces"].as_array().map_or_else(Vec::new, |ids| ids.iter().filter_map(|v| v.as_str().map(str::to_string)).collect());
-    agentmarks::add(&mut marks.lock(), &c.place, &c.agent, records, &replaces)
 }
 
 #[cfg(test)]

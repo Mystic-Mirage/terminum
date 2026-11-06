@@ -437,6 +437,4 @@ export class Marks {
     if (was && !open) this.placeFab();             // the session's own ran out meanwhile: no button
   }
   drawPane() { this.nav.draw(); }
-  /** The shown session's open records from its coding agent (AC-98), and a way to them: the Plan pane says so. */
-  agentRecords() { return { n: this.here().filter((b) => b.by && (!b.remind || openReminder(b))).length, open: () => this.togglePane(true, "all") }; }
 }

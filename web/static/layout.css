@@ -75,7 +75,6 @@ body.wide #status { grid-row: 2; }
 body.wide #restored { grid-row: 3; }
 body.wide #stall { grid-row: 4; }
 body.wide #sized { grid-row: 5; }
-body.wide #marksfull { grid-row: 6; }
 body.wide #asks { grid-row: 7; }
 body.wide #term { grid-row: 8; }
 body.wide #hotkeys { grid-row: 9; }

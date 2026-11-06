@@ -13,7 +13,6 @@ mod activation;
 mod agent;
 mod agentapi;
 mod agentmarks;
-mod agentmarks_scope;
 mod api_fs;
 mod app;
 mod attach;
@@ -120,7 +119,6 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         restore: Default::default(),
         recorder: page::trace::Recorder::new(cfg.home.join("logs")),
         bookmarks: Mutex::new(page::bookmarks::Store::load(dir.join("web-bookmarks.json"))),
-        marks_full: Default::default(),
         projects: Mutex::new(projects),
         tasks,
         task_lines: Default::default(),

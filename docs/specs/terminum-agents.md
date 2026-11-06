@@ -199,7 +199,7 @@ Scenario: AC-97 happy path — the Plan pane
 
 Scenario: AC-97 happy path — found before a plan
   Given a pane runs a coding agent that has made no plan yet
-  Then the header shows a Plan button (its icon alone, right of ✎, its hover "Plan: none yet"), and the column no progress circle; a row's menu and the header's ⋯ menu have "Plan and Notes…" for any session
+  Then the header shows a Plan button (its icon alone, right of ✎, its hover "Plan: none yet"), and the column no progress circle; a row's menu and the header's ⋯ menu have "Plan and Tasks…" for any session
   And the Plan pane without a plan says "No plan: the agent has not sent one for this session.", then the notes
 
 Scenario: AC-97 edge — the agent exited
@@ -335,7 +335,6 @@ sequenceDiagram
 | AC-39 | A changed wording of Claude Code or Codex shows no state. | `terminumd/src/tmux/agentstate.rs:25` |
 | AC-39 | Codex's startup prompts (trust, update) show no state; nor does a `node` Codex with a typed draft and no other mark, until it is sent; nor does a custom `[tui].terminal_title` mark a question. | `terminumd/src/tmux/agentstate.rs:37`, `terminumd/src/tmux/agentstate.rs:62` |
 | AC-39 | An error still in the last 25 rows after a later finished turn reads as failed. | `terminumd/src/tmux/agentstate.rs:325` |
-| AC-98 | Agents still make and manage records through the four tools; `terminum-kanban.md` AC-115 replaces them. | `terminumd/src/cli/mcp.rs:35` |
 
 ## 8. Recommendation and ownership
 
@@ -421,11 +420,11 @@ An older Codex SessionEnd entry: AC-39.
 
 ## 10. Delivery stages
 
-AC-98 ships with `terminum-kanban.md` AC-115; all else is shipped.
+All cases are shipped; nothing is staged.
 
 ## 11. Checklist with Definition of Done
 
 - [x] AC-39 — `cargo test tmux::agentstate`, `cargo test tmux::hookstate`, `cargo test tmux::titles`, `cargo test cli::` (`terminumd/src/cli/tests/hooks_tests.rs`), `scripts/e2e_agentstate.py`, `scripts/e2e_hooks.py`, `web/test/e2e_app.mjs`, `web/test/e2e_rows.mjs`, `web/test/e2e_look.mjs`
 - [x] AC-93 — `cargo test page::unread`, `cargo test page::turns`, `scripts/e2e_hooks.py`, `web/test/e2e_projects.mjs`
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
-- [ ] AC-98 — `cargo test cli::mcp`, `cargo test page::bookmarks`, `web/test/e2e_marksfull.mjs`, `web/test/e2e_marksscope.mjs`
+- [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`

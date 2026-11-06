@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Plans (AC-97) against a fake terminumd (fake.mjs), at both sizes: a row's percent and track; the
-// header's progress; the Plan pane opened from either, its items, ETA and source, and how many records
-// the agent kept for the user (AC-98), a press opening them; plannew asks again; another session
-// closes it; the agent's text stays text. Alone: node web/test/e2e_all.mjs webPlans.
+// header's progress; the Plan pane opened from either, its items, ETA and source, and the session's open
+// tasks as links to the board (terminum-kanban.md AC-113); what an agent kept earlier stays in the session's
+// bookmarks' pane (AC-98); plannew asks again; another session closes it; the agent's text stays text.
+// Alone: node web/test/e2e_all.mjs webPlans.
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, openPage, pause, SIZES } from "./fake.mjs";
+import { drawn, group, item, openPage, pause, pressFab, SIZES } from "./fake.mjs";
 import { planLook } from "./e2e_planslook.mjs";
 
 const A = "tmux:local:terminum:%1", B = "tmux:local:terminum:%2", C = "tmux:local:terminum:%3";
@@ -17,7 +18,7 @@ const ITEMS = [["read the code", "completed"], ["write the check", "in_progress"
   ["ship it", "blocked"], [HOSTILE, "pending"], ["red \x1b[31mtext\x1b[0m and a bell\x07", "pending"]];
 const plan = () => ({ title: "Session plans", doing: "writing the browser check", items: ITEMS.map(([text, status]) => ({ text, status })),
   done: 3, total: 7, pct: 43, eta: NOW + 3600, eta_given: NOW - 600, updated: NOW - 300, source: "mcp", partial: true, agent: "claude" });
-// what A's agent kept for the user (AC-98): a bookmark, an open reminder, a resolved one (not counted); and the user's own
+// what A's agent kept earlier (AC-98): a bookmark, an open reminder, a resolved one; and the user's own. None counts as a task
 const records = () => [{ id: "r1", sid: A, key: A, n: -1, note: "Final report: retry loop fixed", text: "What changed: …", title: "api", at: NOW - 60, by: "claude", kind: "report" },
   { id: "r2", sid: A, key: A, n: -1, note: "Decide the API name", text: "fetch_all or list_all?", title: "api", at: NOW - 30, by: "claude", remind: true },
   { id: "r3", sid: A, key: A, n: -1, note: "Old question", text: "settled", title: "api", at: NOW - 900, by: "claude", remind: true, resolved: NOW - 800 },
@@ -37,6 +38,7 @@ export async function webPlans(browser, name) {
     } });
     const { page } = f;
     f.say({ t: "marks", items: records(), error: null });
+    f.say({ t: "projects", items: [], order: [], taskmarks: { [A]: ["T-12"] } });
     await drawn(page);
     await pause(page, 200);
 
@@ -63,9 +65,9 @@ export async function webPlans(browser, name) {
         renameShown: er.width > 0, gap: Math.round(r.left - er.right), mid: Math.abs((r.top + r.bottom) / 2 - (er.top + er.bottom) / 2), clear: t.right <= Math.min(r.left, er.left) + 1,
         beforeMenu: r.right <= m.left, fits, w: Math.round(r.width), h: Math.round(r.height),
         withMenu: Math.abs((r.top + r.bottom) / 2 - (m.top + m.bottom) / 2) <= 1 && Math.round(r.height) === Math.round(m.height) }; });
-    check(`AC-97 the header's Plan button right of ✎ (${phone ? 4 : 10} px apart, level with it), as tall as ⋯ and level with it, 43% beside its icon, room for 100%, its hover the progress and what its agent kept`,
+    check(`AC-97 the header's Plan button right of ✎ (${phone ? 4 : 10} px apart, level with it), as tall as ⋯ and level with it, 43% beside its icon, room for 100%, its hover the progress and its task (terminum-kanban.md AC-113), the agent's records not counted`,
       !head.hidden && head.inLine && head.afterRename && head.renameShown && head.gap === (phone ? 4 : 10) && head.mid <= 1 && head.withMenu && head.clear && head.beforeMenu && head.fits
-      && head.text === "43%" && /^Plan: 3 of 7 · ETA ~\d\d:\d\d · updated 5 min ago · 2 from its agent$/.test(head.title) && head.h === (phone ? 44 : 30), JSON.stringify(head));
+      && head.text === "43%" && /^Plan: 3 of 7 · ETA ~\d\d:\d\d · updated 5 min ago · 1 task$/.test(head.title) && head.h === (phone ? 44 : 30), JSON.stringify(head));
     if (phone) {
       const folded = await q(page, () => getComputedStyle(document.getElementById("planfab")).visibility);
       check("a phone: the progress circle is folded under ⟨…⟩", folded === "hidden", folded);
@@ -94,7 +96,8 @@ export async function webPlans(browser, name) {
       const b = document.getElementById("planbody"), t = (s) => b.querySelector(s)?.textContent;
       return { title: t(".pltitle"), doing: t(".pldoing"), marks: [...b.querySelectorAll(".plitem .plmark")].map((e) => e.textContent).join(""),
         partial: t(".plpartial"), meta: [...b.querySelectorAll(".plmeta")].map((e) => e.textContent),
-        kept: t(".plkept"),
+        kept: t(".plkept"), section: [...b.querySelectorAll(".plsec")].map((e) => e.textContent),
+        links: [...b.querySelectorAll(".plkept a.linkish")].map((a) => [a.textContent, a.getAttribute("href")]),
         expanded: document.getElementById("curplan").getAttribute("aria-expanded") };
     });
     check("AC-97 a press on the header's Plan button opens the Plan pane and asks {t:plan, key}", await paneOpen(page) && asked(f, from) === 1, JSON.stringify(f.sent.slice(from)));
@@ -102,7 +105,8 @@ export async function webPlans(browser, name) {
       drawnPane.title === "Session plans" && drawnPane.doing === "writing the browser check" && drawnPane.marks === "✓▶○!○○" && /partial/.test(drawnPane.partial ?? ""), JSON.stringify(drawnPane));
     check("AC-97 the pane's ETA is the agent's estimate with its time given, and the source",
       drawnPane.meta.some((m) => /^ETA ~\d\d:\d\d \(agent's estimate, given \d\d:\d\d\)$/.test(m)) && drawnPane.meta.some((m) => /MCP/.test(m)), JSON.stringify(drawnPane.meta));
-    check("AC-98 the pane says how many open records the agent kept (a resolved reminder and the user's own not counted)", drawnPane.kept === "2 kept for you by the agent: show them", JSON.stringify(drawnPane));
+    check("AC-113 (terminum-kanban.md) the pane's section Tasks links the session's open task to the board; the agent's records are not in it",
+      drawnPane.section.includes("Tasks") && JSON.stringify(drawnPane.links) === '[["T-12","/kanban/T-12"]]' && drawnPane.kept.trim() === "T-12", JSON.stringify(drawnPane));
 
     // hostile text: the agent's words are text
     const hostile = await q(page, (h) => {
@@ -136,12 +140,14 @@ export async function webPlans(browser, name) {
       check("a phone: no sideways scroll with the pane open", ph.scroll <= 0, JSON.stringify(ph));
     }
 
-    // what the agent kept: a press closes the Plan pane and opens the session's bookmarks and reminders there
-    await page.click("#planbody .plkept button");
+    // what the agent kept earlier: in the session's bookmarks and reminders, by that pane's own button
+    await page.keyboard.press("Escape");
+    await pause(page, 150);
+    await pressFab(page, "#marksfab");
     await pause(page, 200);
     const kept = await q(page, () => ({ plan: !document.getElementById("planpane").hidden, marks: !document.getElementById("markpane").hidden,
       rows: [...document.querySelectorAll("#markpane .mknav li")].map((l) => l.dataset.id) }));
-    check("AC-98 \"show them\" opens the session's bookmarks and reminders, the agent's records among them", !kept.plan && kept.marks && kept.rows.includes("r1") && kept.rows.includes("r2"),
+    check("AC-98 the session's bookmarks' button opens its bookmarks and reminders, the agent's earlier records among them", !kept.plan && kept.marks && kept.rows.includes("r1") && kept.rows.includes("r2"),
       JSON.stringify(kept));
     await page.keyboard.press("Escape");
     await pause(page, 150);
@@ -153,10 +159,11 @@ export async function webPlans(browser, name) {
     await pause(page, 300);
     check("AC-97 a press on a row's percent shows its session and opens its Plan pane", await paneOpen(page) && asked(f, from, B) >= 1 && asked(f, from, A) === 0,
       JSON.stringify(f.sent.slice(from).filter((m) => m.t !== "in")));
+    f.say({ t: "mark", item: { id: "c1", sid: C, key: C, n: -1, note: "kept earlier", text: "x", title: "notes", at: NOW - 60, by: "claude" } });
     await q(page, (c) => document.querySelector(`.item[data-id="${c}"]`).click(), C);
     await pause(page, 300);
     const gone = await q(page, () => [document.getElementById("curplan").hidden, document.getElementById("planfab").hidden]);
-    check("AC-97 showing another session closes the pane; the Plan button and the progress circle hide without a plan or records", !await paneOpen(page) && gone[0] && gone[1], JSON.stringify({ gone }));
+    check("AC-97 showing another session closes the pane; the Plan button and the progress circle hide without a plan or tasks, an agent's earlier record not counting", !await paneOpen(page) && gone[0] && gone[1], JSON.stringify({ gone }));
 
     // 0%: the button's icon alone, no circle
     f.say({ t: "layout", groups: [group("main", [item(A, "api", { plan: { ...rowPlan(), done: 0, pct: 0 } }), item(C, "notes", { index: "3" })])] });

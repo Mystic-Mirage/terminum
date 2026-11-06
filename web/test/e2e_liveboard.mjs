@@ -66,10 +66,12 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await make("second p2");
   await make("urgent", { severity: "P0" });
   const [second, urgent] = [await idOf("second p2"), await idOf("urgent")];
-  await until(async () => (await inColumn("TODO")).length === 3);
-  check("AC-105 a column reads by severity, new on top of its own", (await inColumn("TODO")).join() === [urgent, second, first].join(), (await inColumn("TODO")).join());
+  // this test's own cards: an earlier check may have left tasks on the same board
+  const ours = async () => (await inColumn("TODO")).filter((id) => [first, second, urgent].includes(id)).join();
+  await until(async () => (await ours()).split(",").length === 3);
+  check("AC-105 a column reads by severity, new on top of its own", await ours() === [urgent, second, first].join(), await ours());
   await page.dragAndDrop(card(first), card(second), { targetPosition: { x: 20, y: 3 } });
-  check("AC-105 a drag orders within a severity", await until(async () => (await inColumn("TODO")).join() === [urgent, first, second].join()), (await inColumn("TODO")).join());
+  check("AC-105 a drag orders within a severity", await until(async () => await ours() === [urgent, first, second].join()), await ours());
 
   // Move to…, the history
   await page.hover(card(second));

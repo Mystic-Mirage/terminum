@@ -95,8 +95,8 @@ fn ac113_a_session_holds_one_task_in_progress() {
     let s = store("t-one");
     let (a, b) = (new(&s, "a", "P2").id, new(&s, "b", "P2").id);
     let key = "tmux:local:terminum:%7";
-    s.with(|tx| link(tx, HUMAN, &a, Some((key, Some("id1"))), 1)).unwrap();
-    s.with(|tx| link(tx, HUMAN, &b, Some((key, Some("id1"))), 1)).unwrap();
+    s.with(|tx| link(tx, HUMAN, &a, Some(key), 1)).unwrap();
+    s.with(|tx| link(tx, HUMAN, &b, Some(key), 1)).unwrap();
     moved(&s, &a, "IN PROGRESS").unwrap();
     assert_eq!(moved(&s, &b, "IN PROGRESS").unwrap_err(), format!("Session %7 already works on {a}. Finish or move {a} first."));
     assert_eq!(s.with(|tx| get(tx, &b)).unwrap().status, "TODO", "it stays where it was");
@@ -104,7 +104,7 @@ fn ac113_a_session_holds_one_task_in_progress() {
     assert_eq!(moved(&s, &b, "IN PROGRESS").unwrap().status, "IN PROGRESS");
     let c = new(&s, "c", "P2").id;
     moved(&s, &c, "IN PROGRESS").unwrap();
-    assert!(s.with(|tx| link(tx, HUMAN, &c, Some((key, None)), 1)).is_err(), "nor by linking one in progress to it");
+    assert!(s.with(|tx| link(tx, HUMAN, &c, Some(key), 1)).is_err(), "nor by linking one in progress to it");
     assert_eq!(s.with(|tx| get(tx, &c)).unwrap().session, None);
     assert_eq!(s.with(|tx| link(tx, HUMAN, &b, None, 1)).unwrap().session, None);
 }
@@ -162,8 +162,8 @@ fn ac113_moving_across_projects_can_unlink_and_sees_a_session_s_other_tasks() {
     s.with(|tx| tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('web', 'web', 1, '', 0)", []).map_err(sql)).unwrap();
     let (a, b) = (new(&s, "a", "P2").id, new(&s, "b", "P2").id);
     let key = "tmux:local:terminum:%7";
-    s.with(|tx| link(tx, HUMAN, &a, Some((key, None)), 1)).unwrap();
-    s.with(|tx| link(tx, HUMAN, &b, Some((key, None)), 1)).unwrap();
+    s.with(|tx| link(tx, HUMAN, &a, Some(key), 1)).unwrap();
+    s.with(|tx| link(tx, HUMAN, &b, Some(key), 1)).unwrap();
     assert_eq!(s.with(|tx| other_open_of_session(tx, key, &a)).unwrap(), Some(b.clone()));
     let t = s.with(|tx| set_project(tx, HUMAN, &a, "web", true, 2)).unwrap();
     assert_eq!((t.project.as_str(), t.session.as_deref()), ("web", None));
@@ -205,4 +205,24 @@ fn ac115_a_repeat_and_the_agents_limit() {
     let over = s.with(|tx| create(tx, &agent, NewTask { title: "over".into(), by_agent: true, ..Default::default() }, 1)).unwrap_err();
     assert_eq!(over, "This project holds 200 open tasks by agents. Ask the user to close some.");
     assert!(s.with(|tx| create(tx, HUMAN, NewTask { title: "a human's".into(), ..Default::default() }, 1)).is_ok());
+}
+
+#[test]
+fn ac113_a_link_follows_a_restore_and_drops_when_the_server_starts_anew() {
+    use crate::tasks::projects::{links_dropped, links_restored};
+    let s = store("t-links");
+    let (a, b, c) = (new(&s, "a", "P2").id, new(&s, "b", "P2").id, new(&s, "c", "P2").id);
+    let prefix = "tmux:local:terminum:";
+    s.with(|tx| link(tx, HUMAN, &a, Some("tmux:local:terminum:%1"), 1)).unwrap();
+    s.with(|tx| link(tx, HUMAN, &b, Some("tmux:local:terminum:%2"), 1)).unwrap();
+    s.with(|tx| link(tx, HUMAN, &c, Some("tmux:devbox:default:%1"), 1)).unwrap();
+    let session = |id: &str| s.with(|tx| get(tx, id)).unwrap().session;
+    assert_eq!(s.with(|tx| links_restored(tx, prefix, &[("%1".into(), "%7".into())], 2)).unwrap(), 2);
+    assert_eq!(session(&a).as_deref(), Some("tmux:local:terminum:%7"), "the restored pane");
+    assert_eq!(session(&b), None, "not made again: dropped, never naming another pane");
+    assert_eq!(session(&c).as_deref(), Some("tmux:devbox:default:%1"), "another server's stays");
+    assert!(s.with(|tx| history(tx, &b)).unwrap().as_array().unwrap().iter().any(|e| e["text"] == "Its tmux server started anew: the session's link was dropped"));
+    assert_eq!(s.with(|tx| links_dropped(tx, prefix, 3)).unwrap(), 1);
+    assert_eq!(session(&a), None);
+    assert_eq!(session(&c).as_deref(), Some("tmux:devbox:default:%1"));
 }

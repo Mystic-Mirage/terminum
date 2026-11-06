@@ -85,8 +85,6 @@ pub struct App {
     pub recorder: Arc<crate::page::trace::Recorder>,
     /// bookmarks (AC-33)
     pub bookmarks: Mutex<crate::page::bookmarks::Store>,
-    /// agents' records that went for room, said over the terminal at the turn's end (AC-98)
-    pub marks_full: crate::page::marksfull::Full,
     /// named groups of sessions in the list (AC-92)
     pub projects: Mutex<crate::page::projects::Projects>,
     /// the tasks' store (terminum-kanban.md AC-119)

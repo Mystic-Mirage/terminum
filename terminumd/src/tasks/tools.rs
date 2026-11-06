@@ -114,7 +114,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 if t.session.is_some() {
                     return Err(format!("{id} has a session already."));
                 }
-                ops::link(tx, &me, id, Some((&who.key, None)), at)?;
+                ops::link(tx, &me, id, Some(&who.key), at)?;
                 ops::edit(tx, &me, id, ops::Edit { owner: Some(me.clone()), ..Default::default() }, at)?;
                 Ok((format!("{id} is this session's now, in {}. move_task when you start on it.", t.status), vec![id.to_string()]))
             }

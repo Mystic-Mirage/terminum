@@ -15,13 +15,12 @@ const now = () => Date.now() / 1000;
 export const EMPTY = "No plan: the agent has not sent one for this session.";
 const STATUS = { completed: "completed", in_progress: "in progress", pending: "pending", blocked: "blocked" };
 
-/** send(msg) to terminumd; sid(): the shown pane's key; records(): {n, open()}, its agent's open
- *  records (marks.js agentRecords). */
+/** send(msg) to terminumd; sid(): the shown pane's key; tasks(): its open tasks' IDs. */
 /** The bottom of the banners shown (banners.js), else of the header (#bar): a phone's sheet starts there. */
 const bannersEnd = () => Math.max($("bar").getBoundingClientRect().bottom,
   ...[...document.querySelectorAll(".banner")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.getBoundingClientRect().bottom));
 
-export function planPane({ send, sid, records }) {
+export function planPane({ send, sid, tasks }) {
   const fab = $("curplan"), ring = $("planfab");
   let of = null, shown = null, waiting = false;   // the key the pane shows; the shown row (layout); asked, no answer yet
   const pane = fabPane({ fab, pane: $("planpane"), close: $("planclose"), onToggle: (on) => {
@@ -39,12 +38,12 @@ export function planPane({ send, sid, records }) {
   /** The header's button and the column's progress circle for the shown row (item: a layout row or null). */
   function header(item) {
     shown = item;
-    const plan = item?.plan ?? null, notes = item ? records().n : 0;
+    const plan = item?.plan ?? null, notes = item ? tasks().length : 0;
     $("planmenu").hidden = !item;                    // the header ⋯ menu's entry, for any shown session
     if (pane.open() && sid() !== of) pane.toggle(false);
     else if (pane.open() && waiting) ask();          // asked while terminumd was away (a restart): its next layout asks again
-    fab.hidden = !plan && !notes && !item?.agent;    // records alone, or a coding agent without a plan yet, still open the pane
-    const said = notes ? `${notes} from its agent` : "";
+    fab.hidden = !plan && !notes && !item?.agent;    // tasks alone, or a coding agent without a plan yet, still open the pane
+    const said = notes ? `${notes} task${notes === 1 ? "" : "s"}` : "";
     fab.title = plan ? `Plan: ${rowTitle(plan, now())}${said && ` · ${said}`}` : said ? `Kept: ${said}` : "Plan: none yet";
     fab.setAttribute("aria-label", fab.title);
     const pct = plan ? Math.round(Math.max(0, Math.min(100, plan.pct ?? 0))) : 0;
@@ -126,15 +125,14 @@ export function planPane({ send, sid, records }) {
       foot.append(el("p", "plmeta", `Updated ${ageText(p.updated, now())} (${clock(p.updated)})`), el("p", "plmeta", sourceText(p.source)));
       body.push(foot);
     }
-    // what its agent kept for the user: its bookmarks and reminders (AC-98)
-    const { n, open } = records();
-    body.push(section("For you"));
-    const kept = el("p", "plmeta plkept", n ? `${n} kept for you by the agent: ` : "Nothing kept for you by the agent.");
-    if (n) {
-      const b = el("button", "linkish", n > 1 ? "show them" : "show it");
-      b.type = "button";
-      b.onclick = () => { pane.toggle(false); open(); };
-      kept.append(b);
+    // this session's open tasks, each opening its window on the board (terminum-kanban.md AC-113)
+    const open = tasks();
+    body.push(section("Tasks"));
+    const kept = el("p", "plmeta plkept", open.length ? "" : "No task in this session.");
+    for (const id of open) {
+      const a = el("a", "linkish", id);
+      a.href = `/kanban/${id}`;
+      kept.append(a, " ");
     }
     body.push(kept);
     const held = $("planpane").contains(document.activeElement);   // a pressed Done goes with the redraw: the pane keeps the keys (Esc)

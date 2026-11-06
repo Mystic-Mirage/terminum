@@ -289,20 +289,18 @@ pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> 
     get(tx, id)
 }
 
-/// Links a session (AC-113), or unlinks with none. `server`: its server's `@terminum-id`, which
-/// decides whether the pane's ID still names it.
-pub fn link(tx: &Transaction, author: &str, id: &str, session: Option<(&str, Option<&str>)>, at: i64) -> Result<Task, String> {
+/// Links a session (AC-113), or unlinks with none.
+pub fn link(tx: &Transaction, author: &str, id: &str, session: Option<&str>, at: i64) -> Result<Task, String> {
     let key = key_of(tx, id)?;
     let task = get(tx, id)?;
-    if let (Some((s, _)), "IN PROGRESS") = (session, task.status.as_str()) {
+    if let (Some(s), "IN PROGRESS") = (session, task.status.as_str()) {
         if let Some(other) = in_progress_of(tx, s, &key)? {
             return Err(format!("{} already works on {other}. Finish or move {other} first.", session_name(s)));
         }
     }
-    let (s, server) = session.map_or((None, None), |(s, v)| (Some(s), v));
-    tx.execute("UPDATE tasks SET session_key = ?1, session_server = ?2, updated_at = ?3 WHERE id = ?4", (s, server, at, &key)).map_err(sql)?;
+    tx.execute("UPDATE tasks SET session_key = ?1, updated_at = ?2 WHERE id = ?3", (session, at, &key)).map_err(sql)?;
     let who = user_name(tx, author)?;
-    let said = if s.is_some() { format!("{who} linked a session") } else { format!("{who} unlinked its session") };
+    let said = if session.is_some() { format!("{who} linked a session") } else { format!("{who} unlinked its session") };
     log(tx, &key, author, "session", &said, None, at)?;
     get(tx, id)
 }

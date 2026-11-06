@@ -141,6 +141,7 @@ async function wide(browser, name) {
   });
   await signIn(page);
   if (BOARD_ALONE) {
+    await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
     await liveBoard(page, { base: BASE, tmux, work: WORK, shots: process.env.TM_TEST_SHOTS });
     return ctx;
   }

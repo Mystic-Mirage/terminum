@@ -33,11 +33,11 @@ pub fn line_of(task: &str, column: &str, user: &str) -> String {
 }
 
 /// What became of a move for this session: a line to carry, or why none.
-pub fn delivery(item: Option<&Value>, host_up: bool) -> Result<(), &'static str> {
+pub fn delivery(item: Option<&Value>, host_up: bool, hooked: bool) -> Result<(), &'static str> {
     let Some(item) = item else {
         return Err(if host_up { "Not delivered: session closed" } else { "Not delivered: host out of reach" });
     };
-    if item["agent"].is_null() { Err("Not delivered: no agent in the session") } else { Ok(()) }
+    if item["agent"].is_null() && !hooked { Err("Not delivered: no agent in the session") } else { Ok(()) }
 }
 
 fn say(app: &Shared, task: &str, text: String) {
@@ -60,7 +60,7 @@ pub async fn human_moved(app: &Shared, task: &Task) {
     let Some(key) = &task.session else { return };
     let item = crate::page::marks::find_item(&app.layout.read(), key);
     let host_up = crate::tmux::parse_key(key).is_some_and(|(h, _, _)| h == "local" || app.tmux.host(h).is_some_and(|s| s.connected()));
-    if let Err(why) = delivery(item.as_ref(), host_up) {
+    if let Err(why) = delivery(item.as_ref(), host_up, app.hooks.session(key).is_some()) {
         say(app, &task.id, why.to_string());
         return;
     }
@@ -96,10 +96,11 @@ mod tests {
 
     #[test]
     fn ac114_what_cannot_be_delivered_says_why() {
-        assert_eq!(delivery(None, true), Err("Not delivered: session closed"));
-        assert_eq!(delivery(None, false), Err("Not delivered: host out of reach"));
-        assert_eq!(delivery(Some(&json!({"agent": null})), true), Err("Not delivered: no agent in the session"));
-        assert_eq!(delivery(Some(&json!({"agent": "claude"})), true), Ok(()));
+        assert_eq!(delivery(None, true, false), Err("Not delivered: session closed"));
+        assert_eq!(delivery(None, false, false), Err("Not delivered: host out of reach"));
+        assert_eq!(delivery(Some(&json!({"agent": null})), true, false), Err("Not delivered: no agent in the session"));
+        assert_eq!(delivery(Some(&json!({"agent": "claude"})), true, false), Ok(()));
+        assert_eq!(delivery(Some(&json!({"agent": null})), true, true), Ok(()), "a hook's event says an agent runs there");
     }
 
     #[test]

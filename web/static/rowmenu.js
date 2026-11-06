@@ -126,7 +126,7 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
       ...(mine ? [button(`Remove from ${mine.name}`, "unproject", () => { hide(); send({ t: "project", action: "remove", id }); })] : []),
       // as if nobody had opened it since its agent finished, on every page, until it is shown again (AC-93)
       // the Plan pane is the shown session's (AC-97): shown first, then opened
-      button("Plan and Notes…", "plan", () => { hide(); li.querySelector(":scope > .item").click(); document.dispatchEvent(new Event("planopen")); }),
+      button("Plan and Tasks…", "plan", () => { hide(); li.querySelector(":scope > .item").click(); document.dispatchEvent(new Event("planopen")); }),
       button(it.unread ? "Mark as Read" : "Mark as Unread", "unread", () => { hide(); send({ t: "unread", id, on: !it.unread }); }, true, it.unread ? "mail-open" : "mail"),
       // what it showed before its tmux restarted, kept by terminumd (AC-96)
       ...(lastLines() > 0 ? [button(`Show Last ${lastLines()} Lines`, "lastlines", () => { hide(); kept.open(id, lastLines()); })] : []),

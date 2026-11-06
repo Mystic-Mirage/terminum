@@ -194,7 +194,6 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     let reorder = before.is_some() || body.get("order_end").is_some();
     let before = before.and_then(Value::as_str).map(str::to_string);
     let session = body.get("session").cloned();
-    let server = session_server(&app, session.as_ref().and_then(Value::as_str)).await;
     let done = store(&app, move |tx| {
         let at = ops::now();
         let was = ops::get(tx, &wanted)?;
@@ -215,7 +214,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
             }
         }
         if let Some(s) = &session {
-            ops::link(tx, HUMAN, &wanted, s.as_str().map(|k| (k, server.as_deref())), at)?;
+            ops::link(tx, HUMAN, &wanted, s.as_str(), at)?;
         }
         ops::edit(tx, HUMAN, &wanted, edit, at)?;
         if let Some(status) = &to_status {
@@ -253,12 +252,6 @@ async fn follow_session(app: &Shared, session: String, project: String) {
         tracing::warn!(event = "tasks.follow", "the session did not follow its task");
     }
     crate::page::projects::tell(app);
-}
-
-/// The `@terminum-id` of a session's server, which says a pane ID still names it (AC-113).
-async fn session_server(app: &Shared, key: Option<&str>) -> Option<String> {
-    let (server, _) = app.tmux.resolve(key?)?;
-    server.identity().await
 }
 
 async fn add_comment(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {

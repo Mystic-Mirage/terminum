@@ -81,6 +81,50 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
     Ok(tasks.len())
 }
 
+/// A server was restored (`panes`: old id, new id): its tasks' links take the new panes' keys; one not
+/// made again drops, said on its task (AC-113).
+pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)], now: i64) -> Result<usize, String> {
+    let linked = linked_on(tx, prefix)?;
+    let mut changed = 0;
+    for (task, key) in linked {
+        let old = key.strip_prefix(prefix).unwrap_or(&key);
+        match panes.iter().find(|(o, _)| o == old) {
+            Some((_, new)) if new == old => {}
+            Some((_, new)) => {
+                tx.execute("UPDATE tasks SET session_key = ?1, updated_at = ?2 WHERE id = ?3", (format!("{prefix}{new}"), now, &task)).map_err(sql)?;
+                changed += 1;
+            }
+            None => {
+                drop_link(tx, &task, now)?;
+                changed += 1;
+            }
+        }
+    }
+    Ok(changed)
+}
+
+/// A server started anew without a restore: its pane IDs name other panes now, so its tasks' links
+/// drop, said on each task (AC-113). How many.
+pub fn links_dropped(tx: &Transaction, prefix: &str, now: i64) -> Result<usize, String> {
+    let linked = linked_on(tx, prefix)?;
+    for (task, _) in &linked {
+        drop_link(tx, task, now)?;
+    }
+    Ok(linked.len())
+}
+
+fn linked_on(tx: &Transaction, prefix: &str) -> Result<Vec<(String, String)>, String> {
+    let like = format!("{}%", prefix.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+    let mut st = tx.prepare("SELECT id, session_key FROM tasks WHERE session_key LIKE ?1 ESCAPE '\\'").map_err(sql)?;
+    let rows = st.query_map([like], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
+    rows.collect::<Result<_, _>>().map_err(sql)
+}
+
+fn drop_link(tx: &Transaction, task: &str, now: i64) -> Result<(), String> {
+    tx.execute("UPDATE tasks SET session_key = NULL, updated_at = ?1 WHERE id = ?2", (now, task)).map_err(sql)?;
+    super::ops::log(tx, task, super::store::DISPATCHER, "session", "Its tmux server started anew: the session's link was dropped", None, now).map(|_| ())
+}
+
 /// What projects.json held, read as an older terminum wrote it; one that cannot be read is set
 /// aside as before (`projects.json.bak`).
 fn legacy(path: &Path) -> Saved {

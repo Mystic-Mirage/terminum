@@ -357,7 +357,7 @@ function drawNav() {
   if (!found) {
     const stay = st.sid && serverDown(st.groups, st.sid), next = stay ? null : place.next();   // its project's or group's first, else the list's (AC-92); while its server is away, the pane (AC-132)
     if (next) select(next);
-    else showCurrent(stay ? undefined : null);     // undefined: its header stays as it is
+    else if (!stay) showCurrent(null);             // staying: its header too
     if (!st.sid && narrow.matches) openDrawer();
     return quick.sync();
   }

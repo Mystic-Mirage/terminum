@@ -242,7 +242,7 @@ fn off(dir: &Path) {
 /// One round on a server: one read of its panes and the captures of those due, on one control
 /// client (a server that died fails them, never answers for another), then the files written.
 async fn keep(app: &Shared, s: &Server, n: usize, mine: &mut Seen, answered: &Answered) {
-    let Some(c) = s.bulk().filter(|_| !s.backed_up()) else { return };
+    let Some(c) = s.reader() else { return };
     let Some(Ok(lines)) = c.run_all(vec![format!("list-panes -a -F '{FIELDS}'")]).await.pop() else { return };
     // the identity of every pane listed, shown or not: a server none of whose sessions is shown
     // any more (the user detached them) still loses their panes' lines

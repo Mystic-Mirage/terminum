@@ -38,7 +38,6 @@ export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, record
   const full = (title, path) => { $("curfull").querySelector(".ft").textContent = title; $("curfull").querySelector(".fp").textContent = path; };
   function show(found) {
     onShown();                                       // what is said over the terminal follows the pane (AC-132)
-    if (found === undefined) return;                 // the pane stays, its server away
     // drawn again with every change of the list: the full name and path stay up, kept current, until another session shows
     if ((found?.item.id ?? null) !== shown) unpeek();
     shown = found?.item.id ?? null;

@@ -212,8 +212,8 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   return li;
 }
 
-/** The servers that stall now (navtools.js `showStall`), each said in its group (AC-132). */
-export const stalled = new Set();
+/** The servers that stall now (navtools.js `showStall`): server id -> [what, since]; each said in its group (AC-132). */
+export const stalls = new Map();
 
 /** The shown pane's server is cut off or not read yet: its list says nothing of that pane (AC-81, AC-132). */
 export function serverDown(groups, id) {
@@ -225,7 +225,7 @@ export function serverDown(groups, id) {
  *  changed and is not used yet (AC-87); terminumd's `why` says "reconnecting (2 s)" or ssh's
  *  last line, which can be long. */
 export function hostState(g) {
-  if (g.state === "attached") return stalled.has(g.server) ? "not responding" : g.why || "";
+  if (g.state === "attached") return stalls.has(g.server) ? "not responding" : g.why || "";
   if (g.state === "reconnecting") return g.why || "reconnecting";
   if (g.state === "failed") return g.why || "failed";
   if (g.state === "off") return "off";

@@ -366,15 +366,15 @@ async fn tmux_action(State(app): State<Shared>, UrlPath(action): UrlPath<String>
         (host, _) => format!("{host}:default"),
     };
     let place = crate::attach::Place::parse(&app, &id);
-    let result = match (action.as_str(), place) {
-        (_, Err(e)) => Err(e),
-        ("attach", Ok(p)) => crate::attach::add(&app, &p, std::slice::from_ref(&b.session)),
-        ("detach", Ok(p)) => crate::attach::detach(&app, &p, &b.session).await,
+    let result = match (action.as_str(), &place) {
+        (_, Err(e)) => Err(e.clone()),
+        ("attach", Ok(p)) => crate::attach::add(&app, p, std::slice::from_ref(&b.session)),
+        ("detach", Ok(p)) => crate::attach::detach(&app, p, &b.session).await,
         _ => Err(format!("unknown tmux action: {action}")),
     };
     match result {
         Ok(()) => {
-            match app.tmux.all().into_iter().find(|s| s.id() == id) {
+            match place.ok().and_then(|p| p.server(&app)) {
                 Some(server) => crate::lists::refresh_server(&app, &server).await,
                 None => crate::lists::request_all(&app),
             }

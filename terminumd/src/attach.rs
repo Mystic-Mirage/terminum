@@ -52,7 +52,7 @@ impl Place {
         }
     }
 
-    fn server(&self, app: &Shared) -> Option<Arc<Server>> {
+    pub(crate) fn server(&self, app: &Shared) -> Option<Arc<Server>> {
         match self {
             Place::Local(socket) => app.tmux.attached(socket),
             Place::Host(host) => app.tmux.host(host),

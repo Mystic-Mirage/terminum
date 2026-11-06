@@ -65,11 +65,18 @@ pub struct Typed {
     k: Option<super::trace::KeyRec>,
 }
 
+/// What waits for each server: a lane lives while its runner does, so a hung server holds up only
+/// its own keys, and its pastes refuse only its own (AC-132).
 #[derive(Default)]
 pub struct Queue {
+    lanes: Vec<Lane>,
+}
+
+struct Lane {
+    server: Arc<Server>,
     items: VecDeque<Typed>,
-    /// the servers a runner types to: each its own, so a hung one holds up only its keys (AC-132)
-    running: Vec<Arc<Server>>,
+    /// bytes of `items`
+    bytes: usize,
 }
 
 impl Typed {
@@ -79,51 +86,46 @@ impl Typed {
 }
 
 impl Queue {
-    /// Takes `item` unless its server's part is full (QUEUE_BYTES, QUEUE_ITEMS): a slow server's
-    /// pastes never refuse another's keys (AC-132); false: refused.
-    fn push(&mut self, item: Typed) -> bool {
-        let (items, bytes) = self.items.iter().filter(|t| Arc::ptr_eq(&t.server, &item.server)).fold((0, 0), |(n, b), t| (n + 1, b + t.size()));
-        if items >= QUEUE_ITEMS || bytes + item.size() > QUEUE_BYTES {
-            return false;
+    /// Takes `item` unless its server's lane is full (QUEUE_BYTES, QUEUE_ITEMS): None. Some(true):
+    /// its lane is new, and needs a runner.
+    fn push(&mut self, item: Typed) -> Option<bool> {
+        let (at, new) = match self.lanes.iter().position(|l| Arc::ptr_eq(&l.server, &item.server)) {
+            Some(at) => (at, false),
+            None => {
+                self.lanes.push(Lane { server: item.server.clone(), items: VecDeque::new(), bytes: 0 });
+                (self.lanes.len() - 1, true)
+            }
+        };
+        let lane = &mut self.lanes[at];
+        if lane.items.len() >= QUEUE_ITEMS || lane.bytes + item.size() > QUEUE_BYTES {
+            return None;                               // a new lane is never full
         }
-        self.items.push_back(item);
-        true
+        lane.bytes += item.size();
+        lane.items.push_back(item);
+        Some(new)
     }
 
     /// Drops what waits (its page closed).
     fn clear(&mut self) {
-        self.items.clear();
+        self.lanes.clear();
     }
 
-    /// The first of `server`'s items and those of the same pane right behind it among that
-    /// server's; another server's keep their places.
+    /// The first of `server`'s items and those of the same pane right behind it; none left: its lane
+    /// ends with its runner.
     fn batch(&mut self, server: &Arc<Server>) -> Option<Vec<Typed>> {
-        let mut i = self.items.iter().position(|t| Arc::ptr_eq(&t.server, server))?;
-        let key = self.items[i].key.clone();
+        let at = self.lanes.iter().position(|l| Arc::ptr_eq(&l.server, server))?;
+        let lane = &mut self.lanes[at];
+        let Some(key) = lane.items.front().map(|t| t.key.clone()) else {
+            self.lanes.remove(at);
+            return None;
+        };
         let mut out = Vec::new();
-        while i < self.items.len() {
-            if !Arc::ptr_eq(&self.items[i].server, server) {
-                i += 1;
-            } else if self.items[i].key == key {
-                out.push(self.items.remove(i).expect("in range"));
-            } else {
-                break;
-            }
+        while lane.items.front().is_some_and(|t| t.key == key) {
+            let t = lane.items.pop_front().expect("checked");
+            lane.bytes -= t.size();
+            out.push(t);
         }
         Some(out)
-    }
-
-    /// Marks a runner for `server`; false when it has one.
-    fn start(&mut self, server: &Arc<Server>) -> bool {
-        if self.running.iter().any(|s| Arc::ptr_eq(s, server)) {
-            return false;
-        }
-        self.running.push(server.clone());
-        true
-    }
-
-    fn stop(&mut self, server: &Arc<Server>) {
-        self.running.retain(|s| !Arc::ptr_eq(s, server));
     }
 }
 
@@ -163,16 +165,17 @@ fn queue(app: &Shared, page: &Arc<Page>, item: Typed) {
     }
     let mut st = page.state.lock();
     let (key, server) = (item.key.clone(), item.server.clone());
-    if !st.queue.push(item) {
-        drop(st);
-        error(page, OVERLOAD, Some(&key));
-        return;
+    match st.queue.push(item) {
+        None => {
+            drop(st);
+            error(page, OVERLOAD, Some(&key));
+        }
+        Some(true) => {
+            drop(st);
+            tokio::spawn(run(app.clone(), page.clone(), server));
+        }
+        Some(false) => {}
     }
-    if !st.queue.start(&server) {
-        return;
-    }
-    drop(st);
-    tokio::spawn(run(app.clone(), page.clone(), server));
 }
 
 /// A paste the page sent as such (`paste` message).
@@ -191,13 +194,9 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
             let mut st = page.state.lock();
             if page.is_closed() {
                 st.queue.clear();                      // nobody to type for: what waits is dropped
-                st.queue.stop(&server);
                 return;
             }
-            let Some(batch) = st.queue.batch(&server) else {
-                st.queue.stop(&server);
-                return;
-            };
+            let Some(batch) = st.queue.batch(&server) else { return };
             batch
         };
         let (pane, key) = (batch[0].pane.clone(), batch[0].key.clone());
@@ -407,13 +406,14 @@ mod tests {
         let (local, host, other) = (first.server.clone(), remote.server.clone(), replacement.server.clone());
         let mut q = Queue::default();
         for t in [first, same, remote, replacement, mouse] {
-            assert!(q.push(t));
+            assert!(q.push(t).is_some());
         }
         // AC-132: each server's own, in order, whatever waits on another
         assert_eq!(q.batch(&host).unwrap().len(), 2, "the host's, not stopped by the local items before them");
         assert_eq!(q.batch(&local).unwrap().len(), 2, "same key in a row: one batch");
         assert_eq!(q.batch(&other).unwrap().len(), 1, "the same key on another server stays its own");
-        assert!(q.batch(&local).is_none() && q.batch(&host).is_none() && q.items.is_empty());
+        assert!(q.batch(&local).is_none() && q.batch(&host).is_none() && q.batch(&other).is_none());
+        assert!(q.lanes.is_empty(), "each lane ended with its runner");
     }
 
     #[test]
@@ -424,14 +424,13 @@ mod tests {
         let on_host = |data: &str| { let mut t = item(data, b""); t.server = host.clone(); t };
         let mut taken = 0;
         for _ in 0..100 {
-            taken += usize::from(q.push(on_host(&paste)));
+            taken += usize::from(q.push(on_host(&paste)).is_some());
         }
         assert_eq!(taken, QUEUE_BYTES / PASTE_MAX, "a few pastes wait; the rest are refused");
-        assert!(!q.push(on_host("a")), "full: even a key is refused until tmux takes some");
-        assert!(q.push(item("a", b"")), "AC-132: another server's keys are not");
-        let before = q.items.len();
-        assert_eq!(q.batch(&host).unwrap().len(), before - 1, "one pane's in a row: handed to tmux");
-        assert!(q.push(on_host("a")), "drained: typing goes again");
+        assert!(q.push(on_host("a")).is_none(), "full: even a key is refused until tmux takes some");
+        assert_eq!(q.push(item("a", b"")), Some(true), "AC-132: another server's keys are not; its lane is new");
+        assert_eq!(q.batch(&host).unwrap().len(), taken, "one pane's in a row: handed to tmux");
+        assert_eq!(q.push(on_host("a")), Some(false), "drained: typing goes again, its runner still there");
         // the words say the limits the code holds
         assert!(OVERLOAD.contains(&format!("{} MB", QUEUE_BYTES >> 20)) && PASTE_TOO_LARGE.contains(&format!("{} MB", PASTE_MAX >> 20)));
     }
@@ -440,10 +439,10 @@ mod tests {
     fn many_small_items_are_bounded_by_count_and_clear_drops_them() {
         let mut q = Queue::default();
         let host = item("", b"").server;
-        let taken = (0..QUEUE_ITEMS + 5).filter(|_| { let mut t = item("", b"m"); t.server = host.clone(); q.push(t) }).count();
+        let taken = (0..QUEUE_ITEMS + 5).filter(|_| { let mut t = item("", b"m"); t.server = host.clone(); q.push(t).is_some() }).count();
         assert_eq!(taken, QUEUE_ITEMS);
         q.clear();
-        assert!(q.items.is_empty());
+        assert!(q.lanes.is_empty());
     }
 
     #[test]

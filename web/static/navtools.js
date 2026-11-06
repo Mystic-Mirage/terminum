@@ -8,7 +8,7 @@ import { addTmux } from "./addtmux.js";
 import { hostAgents } from "./hostagents.js";
 import { inside, placeModal } from "./fabpane.js";
 import { banner } from "./banners.js";
-import { stalled } from "./nav.js";
+import { stalls } from "./nav.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -214,13 +214,12 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
 
   // ---------- a tmux server not answering (AC-03, AC-14) ----------
   // Screens, keys and histories wait for it: say so, with the time it has not answered.
-  const stalls = new Map();                        // server id -> [what, since (performance.now())]
   let stallTimer = 0;
   function showStall(m) {
-    if (m.clear) { stalls.clear(); stalled.clear(); }
     const key = m.key ?? m.server ?? "local", what = m.what ?? `tmux on ${(m.server ?? "local") === "local" ? "this Mac" : m.server}`;
-    if (m.ok) { stalls.delete(key); stalled.delete(key); }
-    else if (!m.clear && !stalls.has(key)) { stalls.set(key, [what, performance.now() - (m.ms ?? 0)]); stalled.add(key); }
+    if (m.clear) stalls.clear();
+    else if (m.ok) stalls.delete(key);
+    else if (!stalls.has(key)) stalls.set(key, [what, performance.now() - (m.ms ?? 0)]);
     clearInterval(stallTimer);
     sayStalls();
     if (stalls.size) stallTimer = setInterval(sayStalls, 1000);

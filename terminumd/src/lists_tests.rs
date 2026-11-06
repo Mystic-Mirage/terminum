@@ -12,7 +12,7 @@ fn group(wid: &str, items: Vec<Value>) -> Value {
 }
 
 fn read(groups: Vec<Value>) -> Got {
-    Got::Read { groups, absent: Vec::new(), keys: vec!["k".into()], ok: true }
+    Got::Read(Told { groups, keys: vec!["k".into()], ok: true, ..Default::default() })
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn a_server_with_no_way_to_read_keeps_nothing_it_says() {
 fn a_read_with_a_failure_in_it_is_shown_but_not_kept_or_fresh() {
     let list = ServerList::default();
     list.store(read(vec![group("local/main", vec![working("a")])]), Instant::now(), false);
-    let partial = Got::Read { groups: vec![group("local/main", Vec::new())], absent: Vec::new(), keys: Vec::new(), ok: false };
+    let partial = Got::Read(Told { groups: vec![group("local/main", Vec::new())], ..Default::default() });
     assert!(!list.store(partial, Instant::now(), false));
     assert_eq!(list.told().unwrap().groups[0]["items"], json!([]));
     list.store(Got::Down(vec![json!({"wid": "local/main", "items": [], "state": "reconnecting"})]), Instant::now(), false);

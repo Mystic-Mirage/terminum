@@ -15,16 +15,12 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, unix_request, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, summary, tmux_on as tmux, unix_request, wait_layout  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL, REMOTE = own("tm-test-ilocal"), own("tm-test-iremote")
 FAST = 1.0                              # seconds: the targets of §9 Performance
-
-
-def tmux(socket, *args):
-    return subprocess.run(["tmux", "-L", socket, *args], capture_output=True, text=True).stdout.strip()
 
 
 def host_group(groups):

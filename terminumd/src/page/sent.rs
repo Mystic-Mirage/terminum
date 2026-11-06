@@ -15,7 +15,6 @@ use serde_json::{json, Value};
 
 use super::Page;
 use crate::app::Shared;
-use crate::tmux::server::Server;
 
 /// Keeps `text` sent in pane `key` of project (`host`, `path`) and tells the pages; a failure
 /// is logged (the user's command went to the terminal all the same).
@@ -40,9 +39,8 @@ fn title_of(app: &Shared, key: &str) -> String {
     super::marks::find_item(&app.layout.read(), key).and_then(|it| it["title"].as_str().map(str::to_string)).unwrap_or_default()
 }
 
-/// `at`: the pane shown (key, server, pane) when the page sent it; it may wait long in its server's
-/// lane, and what was typed there stays that pane's (AC-132).
-pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value, at: Option<(String, Arc<Server>, String)>) {
+/// `at`: the pane shown when the page sent it: what was typed there stays that pane's (AC-132).
+pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value, at: super::client::At) {
     let agent = msg["agent"].as_str().filter(|a| !a.is_empty());
     let shown_key = at.as_ref().map(|(k, ..)| k.clone());
     let hooked = shown_key.as_ref().is_some_and(|k| app.hooks.has(k));
@@ -60,16 +58,12 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value, at: Op
         return;
     }
     // the project: the pane's host ("local" for every server of this Mac) and folder
-    let found = match &at {
-        Some((key, server, pane)) => super::client::cwd_of(key, server, pane).await,
-        None => Err((None, "No pane is shown.".to_string())),
-    };
-    let (key, host, path) = match found {
-        Ok((key, server, path)) => (key, server.name.clone(), path),
-        Err((_, e)) => {
-            page.send_json(&json!({"t": "sentone", "error": e}));
-            return;
-        }
+    let (key, host, path) = match &at {
+        None => return { page.send_json(&json!({"t": "sentone", "error": "No pane is shown."})); },
+        Some((key, server, pane)) => match super::client::cwd_of(server, pane).await {
+            Ok(path) => (key.clone(), server.name.clone(), path),
+            Err(e) => return { page.send_json(&json!({"t": "sentone", "error": e})); },
+        },
     };
     if t == "askno" {
         let (a, h, p, k) = (app.clone(), host.clone(), path.clone(), key.clone());

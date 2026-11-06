@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 use crate::app::Shared;
-use crate::lists::{self, Got};
+use crate::lists::{self, Got, Told};
 use crate::tmux::control::STALL;
 use crate::tmux::layout;
 use crate::tmux::server::{Server, Status};
@@ -23,8 +23,6 @@ const EVERY: Duration = Duration::from_secs(2);
 const TMUX_AGAIN: Duration = Duration::from_secs(10);
 /// Workspaces of panes gone this long are removed at an inventory this often (AC-71).
 const INVENTORY: Duration = Duration::from_secs(300);
-/// Turns due to settle ask the list at most this often: one on a host that is down stays due (AC-132).
-const SETTLE_POLL: Duration = Duration::from_millis(500);
 
 /// Starts the local server when none runs, and keeps a control client per session.
 async fn ensure_local(app: &Shared) {
@@ -104,18 +102,17 @@ pub async fn read_one(app: &Shared, server: &Arc<Server>) -> Got {
     } else if server.is_local() {
         ensure_local(app).await;
     }
-    let home = crate::config::home().display().to_string();
-    match read_server(app, server.clone(), &home).await {
-        Got::Read { groups, keys, ok, .. } => Got::Read { groups, absent, keys, ok: ok && sure },
+    match read_server(app, server.clone()).await {
+        Got::Read(told) => Got::Read(Told { absent, ok: told.ok && sure, ..told }),
         other => other,
     }
 }
 
 /// One server's groups and pane keys.
-async fn read_server(app: &Shared, server: Arc<Server>, home: &str) -> Got {
+async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
     let local = server.is_local();
     if server.is_users() && !server.connected() {
-        return Got::Read { groups: Vec::new(), absent: Vec::new(), keys: Vec::new(), ok: true };
+        return Got::Read(Told { ok: true, ..Default::default() });
     }
     if !local && !server.attached() {
         // judged by its `terminum` client; the user's sessions there wait with the host's state
@@ -127,7 +124,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str) -> Got {
         return Got::Down(gs);
     }
     let host = (!local).then(|| server.name.clone());
-    let home = if local { home.to_string() } else { server.home().await.unwrap_or_default() };
+    let home = if local { crate::config::home().display().to_string() } else { server.home().await.unwrap_or_default() };
     let looks = &app.looks;
     let out = match layout::read(&server, &app.agent_states, &app.hooks, &app.turns.hooked(Instant::now()), &home, |s| looks.theme_name(host.as_deref(), s)).await {
         Ok(read) => {
@@ -165,7 +162,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str) -> Got {
                 crate::page::plans::tell(&app.pages, &changed);
             }
             server.set_panes(read.panes);
-            Got::Read { groups: gs, absent: Vec::new(), keys: live, ok: true }
+            Got::Read(Told { groups: gs, keys: live, ok: true, ..Default::default() })
         }
         Err(e) => {
             tracing::warn!(event = "tmux.error", server = %server.name, cmd = "list-panes", msg = e);
@@ -251,12 +248,21 @@ pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool) {
         hook_turn_ended(app, &k, "screen");
     }
     // a turn ends when its pane stayed done a while, its subagents too (turns.rs)
+    // whichever server's telling saw an end, its own list settles it, read once SETTLE has passed
+    for k in app.turns.ended(ended, Instant::now()) {
+        let app = app.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(crate::page::turns::SETTLE + Duration::from_millis(50)).await;
+            if let Some((server, _)) = app.tmux.resolve(&k) {
+                lists::request(&app, &server);
+            }
+        });
+    }
     let ended = if fresh {
         let layout = app.layout.read();
         let busy = |k: &str| crate::page::marks::find_item(&layout, k).map(|it| crate::page::turns::busy(&it));
-        app.turns.settle(&server.key(""), ended, busy, Instant::now())
+        app.turns.settle(&server.key(""), busy, Instant::now())
     } else {
-        app.turns.ended(ended, Instant::now());  // another server's end, seen first here: its own list settles it
         Vec::new()
     };
     if !ended.is_empty() {
@@ -278,6 +284,7 @@ pub fn hook_turn_ended(app: &Shared, key: &str, by: &str) {
         Some((server, _)) => { lists::request(app, &server); }   // its server's list alone
         None => app.dirty.notify_one(),
     }
+    app.changed.notify_one();                    // its subagents' wait, worked out anew
     tokio::spawn(crate::page::answers::keep(app.clone(), key.to_string()));
 }
 
@@ -327,21 +334,16 @@ fn announce_offers(app: &Shared) {
 }
 
 /// The loop: every server's list every 2 s while a page looks, and on whatever may concern them
-/// all (`dirty`); a server's own notices (`changed`) ask its list alone (AC-132), and when a turn's
-/// end has settled (turns.rs).
+/// all (`dirty`); a server's own notices (`changed`) ask its list alone (AC-132). The wait is worked
+/// out anew after each: a Stop's subagents may have come meanwhile.
 pub async fn run(app: Shared) {
     tokio::spawn(stalls(app.clone()));
     loop {
         lists::request_all(&app);
         let asked = tokio::time::Instant::now();
         loop {
-            // worked out anew each time: a page just opened, a turn's end that began since (AC-132)
-            let now = tokio::time::Instant::now();
             let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_in_sight() { EVERY } else { Duration::from_secs(30) };
             let wait = app.hooks.subs_due_in(Instant::now()).map_or(wait, |d| wait.min(d));   // a Stop's subagents, also out of sight (AC-39)
-            let reachable = |k: &str| app.tmux.resolve(k).is_some_and(|(s, _)| s.connected());
-            let due = app.turns.due_in(Instant::now(), reachable).map(|d| (d + Duration::from_millis(50)).max(SETTLE_POLL));
-            let turn = due.map_or(asked + wait, |d| (asked + wait).min(now + d));
             tokio::select! {
                 _ = app.dirty.notified() => {
                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -351,11 +353,7 @@ pub async fn run(app: Shared) {
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     lists::request_changed(&app);
                 }
-                _ = tokio::time::sleep_until(turn.min(now + SETTLE_POLL)) => {
-                    if tokio::time::Instant::now() >= turn {
-                        break;
-                    }
-                }
+                _ = tokio::time::sleep_until(asked + wait) => break,
             }
         }
     }

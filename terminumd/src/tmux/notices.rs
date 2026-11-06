@@ -37,6 +37,18 @@ impl Server {
         self.bulk().is_some_and(|c| c.waiting() >= crate::tmux::control::STALL)
     }
 
+    /// The client to ask for what is read over and over (screens for the list, last lines), unless
+    /// it is backed up.
+    pub fn reader(&self) -> Option<Arc<crate::tmux::control::Control>> {
+        self.bulk().filter(|c| c.waiting() < crate::tmux::control::STALL)
+    }
+
+    /// Its list is to be read again, its own alone (lists.rs).
+    pub(super) fn list_changed(&self) {
+        self.list.mark_changed();
+        self.dirty.notify_one();
+    }
+
     /// A page's mouse release went to the pane `%N`: what its program copies within
     /// `COPY_WAIT` goes to `to` (the latest page's release wins).
     pub fn arm_copy(&self, pane: &str, to: OnCopy) {
@@ -91,8 +103,7 @@ pub(super) async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::Unbou
                 s.woke(Some(&pane));
             }
             Notice::Changed => {
-                s.list.mark_changed();
-                s.dirty.notify_one();
+                s.list_changed();
                 // a resize or a zoom redraws shown panes: capture them now
                 s.woke(None);
             }

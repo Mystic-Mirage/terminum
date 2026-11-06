@@ -22,8 +22,8 @@ const READ_WAIT: Duration = Duration::from_secs(30);
 
 /// What a read of a server found.
 pub enum Got {
-    /// its list: `absent` shows after every server's rows; `ok`: nothing in it failed
-    Read { groups: Vec<Value>, absent: Vec<Value>, keys: Vec<String>, ok: bool },
+    /// its list
+    Read(Told),
     /// its link is down: these groups say so, its rows as last read go in them
     Down(Vec<Value>),
     /// no way to read it: these groups, nothing kept
@@ -57,8 +57,10 @@ struct State {
 #[derive(Clone, Default)]
 pub struct Told {
     pub groups: Vec<Value>,
+    /// shown after every server's rows
     pub absent: Vec<Value>,
     pub keys: Vec<String>,
+    /// nothing in it failed
     pub ok: bool,
 }
 
@@ -89,12 +91,13 @@ impl ServerList {
         let mut st = self.state.lock();
         st.tried = true;
         match got {
-            Got::Read { groups, absent, keys, ok } => {
+            Got::Read(told) => {
+                let ok = told.ok;
                 if ok {
-                    st.last_good.clone_from(&groups);
+                    st.last_good.clone_from(&told.groups);
                     st.read_at = Some(now);
                 }
-                st.told = Some(Told { groups, absent, keys, ok });
+                st.told = Some(told);
                 ok
             }
             Got::Down(groups) => {
@@ -102,11 +105,11 @@ impl ServerList {
                     st.last_good.clear();
                 }
                 let groups = kept_rows(groups, &st.last_good);
-                st.told = Some(Told { groups, ok: false, ..Default::default() });
+                st.told = Some(Told { groups, ..Default::default() });
                 false
             }
             Got::Gone(groups) => {
-                st.told = Some(Told { groups, ok: false, ..Default::default() });
+                st.told = Some(Told { groups, ..Default::default() });
                 false
             }
             Got::Unread => {

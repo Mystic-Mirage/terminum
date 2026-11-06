@@ -43,6 +43,7 @@ pub async fn socket(State(app): State<Shared>, headers: HeaderMap, from: Option<
 
 async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver<String>, ws: WebSocket) {
     tracing::info!(event = "page.open", page = page.id, web = page.web, pages = app.pages.count());
+    app.dirty.notify_one();                      // the list every 2 s from now on, not at the end of a wait for no page
     let (mut tx, mut incoming) = ws.split();
     let writer = {
         let page = page.clone();

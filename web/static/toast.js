@@ -3,6 +3,8 @@
 // the bottom: 12 px under the terminal's top (whatever the header's height), under the bookmark bar
 // or the Paused chip when one shows there; under the header while the terminal is hidden (a
 // phone's Files). Clicks go through it (style.css).
+import { underBanners } from "./banners.js";
+
 const $ = (id) => document.getElementById(id);
 const GAP = 12;
 let timer = 0;
@@ -13,8 +15,8 @@ function top() {
   const from = term.offsetParent ? term.offsetTop : bar.offsetParent ? bar.offsetTop + bar.offsetHeight : null;
   if (from === null) return "";
   const over = ["markbar", "paused"].map($).filter((e) => !e.hidden && e.offsetParent);
-  const said = [...$("over").children].filter((e) => !e.hidden).map((e) => $("over").offsetTop + e.offsetTop + e.offsetHeight + 8);   // what is said over the terminal
-  return `${Math.max(from + GAP, ...said, ...over.map((e) => e.offsetTop + e.offsetHeight + 8))}px`;
+  const said = underBanners(0) - $("main").getBoundingClientRect().top + 8;   // what is said over the terminal
+  return `${Math.max(from + GAP, said, ...over.map((e) => e.offsetTop + e.offsetHeight + 8))}px`;
 }
 
 /** Shows `text` for `ms`. */

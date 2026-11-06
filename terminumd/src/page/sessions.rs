@@ -62,33 +62,29 @@ pub(super) fn allowed_now(page: &Page) -> bool {
     true
 }
 
-tokio::task_local! {
-    /// The pane shown when the running action was asked for: it may wait long in its lane (AC-132).
-    pub(super) static ASKED_ON: Option<String>;
-}
-
 /// Something new was made: the list has it before the page is told to show it.
-async fn created(app: &Shared, page: &Page, server: &Arc<Server>, pane_id: &str, note: Option<String>) {
+async fn created(app: &Shared, page: &Page, asked_on: Option<&str>, server: &Arc<Server>, pane_id: &str, note: Option<String>) {
     crate::lists::refresh_server(app, server).await;
     let listed = super::marks::find_item(&app.layout.read(), &server.key(pane_id)).is_some();
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
     // the user went on meanwhile, or the list does not have it yet: they stay where they are (AC-132)
-    let shown = page.state.lock().shown.as_ref().map(|s| s.key.clone());
-    let moved = ASKED_ON.try_with(|asked| *asked != shown).unwrap_or(false);
+    let moved = page.state.lock().shown.as_ref().map(|s| s.key.as_str()) != asked_on;
     page.send_json(&json!({"t": "created", "id": server.key(pane_id), "note": note, "stay": moved || !listed}));
 }
 
-pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
+pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::client::At) {
+    let t = msg["t"].as_str().unwrap_or("");
+    let asked_on = at.as_ref().map(|(key, ..)| key.as_str());
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
     if matches!(t, "new" | "newsession" | "split" | "clone") && !allowed_now(page) {
         error(page, "Wait a second: one new window, session or split a second.", None);
         return;
     }
     let result = match t {
-        "new" => new_window(app, page, &s("group")).await,
-        "newsession" => new_session(app, page, &s("name")).await,
-        "split" => split(app, page, &s("id"), &s("how")).await,
-        "clone" => clone_window(app, page, &s("id"), msg["project"].as_str()).await,
+        "new" => new_window(app, page, asked_on, &s("group")).await,
+        "newsession" => new_session(app, page, asked_on, &s("name")).await,
+        "split" => split(app, page, asked_on, &s("id"), &s("how")).await,
+        "clone" => clone_window(app, page, asked_on, &s("id"), msg["project"].as_str()).await,
         "rename" => rename(app, &s("id"), msg["name"].as_str().unwrap_or("")).await,
         "renamegroup" => rename_group(app, &s("group"), &s("name")).await,
         "reorder" => reorder(app, &s("group"), msg["ids"].as_array().cloned().unwrap_or_default()).await,
@@ -97,13 +93,20 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         _ => Ok(()),
     };
     match result {
-        Ok(()) if matches!(t, "rename" | "renamegroup" | "reorder" | "move" | "kill") => crate::lists::request_all(app),
+        Ok(()) if matches!(t, "rename" | "renamegroup" | "reorder" | "move" | "kill") => {
+            // its server's list alone: nothing else changed
+            let server = msg["id"].as_str().and_then(|id| app.tmux.resolve(id)).or_else(|| msg["group"].as_str().and_then(|g| group(app, g)));
+            match server {
+                Some((server, _)) => { crate::lists::request(app, &server); }
+                None => crate::lists::request_all(app),
+            }
+        }
         Ok(()) => {}
         Err(e) => error(page, e, None),
     }
 }
 
-async fn new_window(app: &Shared, page: &Page, wid: &str) -> Result<(), String> {
+async fn new_window(app: &Shared, page: &Page, asked_on: Option<&str>, wid: &str) -> Result<(), String> {
     let (server, session) = group(app, wid).ok_or("That session is gone.")?;
     // after the shown pane's window, in its folder, when it is in this session
     let shown = page.state.lock().shown.as_ref().filter(|s| s.server.id() == server.id()).map(|s| s.pane.clone());
@@ -121,7 +124,7 @@ async fn new_window(app: &Shared, page: &Page, wid: &str) -> Result<(), String> 
         None => format!("-t {}", args::quote(&format!("={session}:"))),
     };
     let pane = open_window(&server, &target, &dir).await?;
-    created(app, page, &server, &pane, note).await;
+    created(app, page, asked_on, &server, &pane, note).await;
     Ok(())
 }
 
@@ -135,7 +138,7 @@ async fn open_window(server: &Server, target: &str, dir: &str) -> Result<String,
 /// Clone (AC-07): a new window right after pane `id`'s, in its folder, with a shell (what runs
 /// there is not copied). A session of a project (or its [+], `project`) gives the project's
 /// window: in the project's folder while that is usable, and in the project after it (AC-92).
-async fn clone_window(app: &Shared, page: &Page, id: &str, project: Option<&str>) -> Result<(), String> {
+async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &str, project: Option<&str>) -> Result<(), String> {
     let (server, pane) = app.tmux.resolve(id).ok_or(super::CLOSED)?;
     let window = window_of(&server, &pane).await?;
     let joins = {
@@ -157,27 +160,27 @@ async fn clone_window(app: &Shared, page: &Page, id: &str, project: Option<&str>
         }
         super::projects::tell(app);
     }
-    created(app, page, &server, &new, note).await;
+    created(app, page, asked_on, &server, &new, note).await;
     Ok(())
 }
 
-async fn new_session(app: &Shared, page: &Page, name: &str) -> Result<(), String> {
+async fn new_session(app: &Shared, page: &Page, asked_on: Option<&str>, name: &str) -> Result<(), String> {
     let name = args::check_session_name(name)?;
     let server = app.tmux.local.clone();
     let home = home_of(&server);
     let line = format!("new-session -d -s {} -c {} -P -F '#{{pane_id}}'", args::format_arg(&name), args::format_arg(&home));
     let pane = server.run(line).await.map_err(|e| format!("No new session: {}", said(&e)))?;
-    created(app, page, &server, pane.first().map_or("", |s| s.as_str()), None).await;
+    created(app, page, asked_on, &server, pane.first().map_or("", |s| s.as_str()), None).await;
     Ok(())
 }
 
-async fn split(app: &Shared, page: &Page, id: &str, how: &str) -> Result<(), String> {
+async fn split(app: &Shared, page: &Page, asked_on: Option<&str>, id: &str, how: &str) -> Result<(), String> {
     let (server, pane) = app.tmux.resolve(id).ok_or(super::CLOSED)?;
     let (dir, note) = folder_of(&server, &pane).await;
     let flag = if how == "below" { "-v" } else { "-h" };
     let line = format!("split-window {flag} -t {pane} -c {} -P -F '#{{pane_id}}'", args::format_arg(&dir));
     let new = server.run(line).await.map_err(|e| format!("No split: {}", said(&e)))?;
-    created(app, page, &server, new.first().map_or("", |s| s.as_str()), note).await;
+    created(app, page, asked_on, &server, new.first().map_or("", |s| s.as_str()), note).await;
     Ok(())
 }
 

@@ -4,4 +4,11 @@
 # personal names or private hosts) on what the commit takes, as staged (another session's
 # unstaged files never block it), so a leak stops here instead of after a push.
 # Installed by `make hooks` (core.hooksPath: an absolute path, so a branch's own hooks never run).
+# Claude Code in the primary checkout (CLAUDECODE; Codex does not set one): the backstop of its hooks, whatever
+# wrote the files; the maintainer's own terminal is untouched (CLAUDE.md §9, AC-104)
+if [ -n "${CLAUDECODE:-}" ] && [ -z "${TM_EDIT_PRIMARY:-}" ] \
+   && [ "$(git rev-parse --absolute-git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+  echo "terminum: an agent does not commit in the primary checkout (CLAUDECODE is set): python3 scripts/worktree.py add <slug> --kind <kind>" >&2
+  exit 1
+fi
 exec bash "$(git rev-parse --show-toplevel)/scripts/security_check.sh" --staged

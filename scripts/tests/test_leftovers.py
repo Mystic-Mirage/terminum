@@ -4,6 +4,7 @@ a temporary folder; the one process ended is the one this test started."""
 import importlib.util
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import tempfile
@@ -137,6 +138,22 @@ class Folders(unittest.TestCase):
 
     def test_no_temporary_folder(self):
         self.assertEqual(leftovers.folders([self.dir / "none"], time.time(), set()), [])
+
+
+class TheListOfPrefixes(unittest.TestCase):
+    # how tests outside scripts/tests make a folder at the top of a temporary folder
+    MADE = re.compile(r"""(?:mkdtemp|TemporaryDirectory)\(prefix=["']([^"']+)|mktemp -d "?[^" )]*/([^/" )]*?)X{6}"""
+                      r"""|mkdtempSync\(`\$\{shortTmp\(\)\}/([^`$]+)`|mkdtempSync\(path\.join\(os\.tmpdir\(\), "([^"]+)"|ownTmp\("([^"]+)\"""")
+
+    def test_it_holds_every_prefix_a_test_uses(self):
+        repo = Path(__file__).resolve().parents[2]
+        listed = subprocess.run(["git", "ls-files", "scripts", "web/test", "ui/test"], cwd=repo, capture_output=True, text=True, check=True)
+        found = set()
+        for name in listed.stdout.splitlines():
+            if not name.startswith("scripts/tests/"):
+                found |= {next(filter(None, m)) for m in self.MADE.findall((repo / name).read_text(errors="replace"))}
+        self.assertGreater(len(found), 10, found)  # a pattern that stopped matching checks nothing
+        self.assertEqual([p for p in sorted(found) if not p.startswith(leftovers.FOLDER_PREFIXES)], [])
 
 
 if __name__ == "__main__":

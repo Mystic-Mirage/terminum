@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Remote hosts over real ssh (terminum-remote.md AC-81–AC-84): a Linux container with sshd
-and tmux on 127.0.0.1:2222 (Docker), a throwaway key, and a private terminumd whose build
+and tmux on a free port (Docker), a throwaway key, and a private terminumd whose build
 carries the Linux helper. Checks: the host's session over ssh, typing, a dropped link,
 enabling files (the static Linux helper copied and listing), and AC-84: a helper of another
 build is replaced by this build's at terminumd's next start, and the page is told.
@@ -23,9 +23,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_remote import api, host_group  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
-from testrun import free_port, own, short_tmp  # noqa: E402
+from testrun import container_name, free_port, own, short_tmp  # noqa: E402
 
-PORT, SOCKET, NAME, SSH_PORT = free_port(), own("tm-test-rsshd"), "tm-test-sshd", 2222
+PORT, SOCKET, NAME, SSH_PORT = free_port(), own("tm-test-rsshd"), container_name("test-sshd"), free_port()
 HOME = "/home/alex"
 OLD = "0123456789ab"
 
@@ -73,6 +73,16 @@ def start_host(work):
     raise RuntimeError("the container's sshd did not answer: " + r.stderr)
 
 
+def host_or_skip(start, work):
+    """start(work)'s wrapper; if no host came up, no test ran: the image, its packages or Docker
+    (scripts/check_docker.py reads this exit)."""
+    try:
+        return start(work)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+        print(f"could not run: {e}")
+        sys.exit(os.EX_TEMPFAIL)
+
+
 def stage(work, mac, linux):
     """A build folder as the package lays it out: terminumd and agents/<platform>/terminumd."""
     d = f"{work}/build"
@@ -99,7 +109,7 @@ def main():
     work = tempfile.mkdtemp(prefix="tmr-", dir=short_tmp())
     t = None
     try:
-        wrapper = start_host(work)
+        wrapper = host_or_skip(start_host, work)
         import e2e_ws
         e2e_ws.BIN = stage(work, sys.argv[1], sys.argv[2])
         t = Terminumd(PORT, SOCKET, env={"TM_SSH": wrapper})

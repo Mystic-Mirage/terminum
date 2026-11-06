@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_worktree import commit, Repo, SCRIPTS, sh, worktree  # noqa: E402
 import worktree_fresh  # noqa: E402
 
+HOOK_SCRIPTS = ("worktree.py", "worktree_fresh.py", "shell_writes.py")
+
 
 class Fresh(Repo):
     # the hooks' words
@@ -84,7 +86,7 @@ class Fresh(Repo):
         """Runs the real script's edit-check as this repository's copy: `ours` compares with the script's place."""
         script = self.primary / "scripts" / "worktree_fresh.py"
         script.parent.mkdir(exist_ok=True)
-        for name in ("worktree.py", "worktree_fresh.py"):
+        for name in HOOK_SCRIPTS:
             (script.parent / name).write_text((SCRIPTS / name).read_text())
         given = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(target)}})
         run = subprocess.run([sys.executable, str(script), "edit-check"], cwd=self.tmp.name, input=given, text=True,
@@ -127,12 +129,81 @@ class Fresh(Repo):
 
     def test_edit_check_lets_through_what_it_cannot_read(self):
         for words in ("", "not json", "[]", "{}", '{"tool_input": 3}', '{"tool_input": {}}'):
-            self.assertEqual(worktree_fresh.edit_check(io.StringIO(words)), [], words)
+            self.assertEqual(worktree_fresh.hook_answer(io.StringIO(words), worktree_fresh.edit_judge), [], words)
+
+    # the PreToolUse hook on Bash (AC-104): a shell write in the primary checkout
+    def shell_refused(self, command, cwd, env=None):
+        script = self.primary / "scripts" / "worktree_fresh.py"
+        script.parent.mkdir(exist_ok=True)
+        for name in HOOK_SCRIPTS:
+            (script.parent / name).write_text((SCRIPTS / name).read_text())
+        given = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(cwd)})
+        run = subprocess.run([sys.executable, str(script), "bash-check"], cwd=self.tmp.name, input=given, text=True,
+                             capture_output=True, env={**os.environ, "TM_EDIT_PRIMARY": "", **(env or {})})
+        self.assertEqual(run.returncode, 0, run.stderr)
+        return bool(run.stdout)
+
+    def test_a_shell_write_in_the_primary_checkout_is_refused_and_a_trees_is_not(self):
+        tree, _ = worktree.add("shelled", cwd=self.primary)
+        (self.primary / "local.mk").write_text("x\n")
+        (self.primary / "project-memory").mkdir()
+        (tree / "project-memory").unlink(missing_ok=True)
+        worktree.link(tree, self.primary)
+        tracked = "ui/package-lock.json"
+        for command in (f"echo x > {tracked}", f"echo x >> {tracked}", f"echo x | tee {tracked}", f"sed -i '' s/a/b/ {tracked}",
+                        f"perl -pi -e 's/a/b/' {tracked}", f"cp /etc/hosts {tracked}", f"mv {tracked} moved", f"rm -f {tracked}",
+                        f"touch {tracked}", "touch brand-new.txt", "git add .", "git commit -m x", "git stash", "git reset --hard",
+                        "git clean -fd", "git switch -c x", "git pull", "git checkout .", "git restore .", "git merge x",
+                        f"cat <<EOF > {tracked}\nbody\nEOF", f"cd {self.primary} && rm {tracked}", f"git -C {self.primary} stash",
+                        "TM_EDIT_PRIMARY=1 echo hi", "export TM_EDIT_PRIMARY=1"):
+            self.assertTrue(self.shell_refused(command, self.primary), command)
+        for command in (f"cat {tracked}", f"grep '>' {tracked}", f'grep ">" {tracked}', f"grep -n sed {tracked}", "git status",
+                        "git log -3", "git diff", "git fetch origin", "git stash list", "git worktree list", "make land SLUG=x",
+                        "echo x > local.mk", "echo x > project-memory/log.md", "echo x > /dev/null", f"ls {tracked} 2>/dev/null",
+                        "rm /tmp/some-file 2>/dev/null", "echo x > /tmp/some-file", 'echo x > "$SCRATCH/out"', "python3 - <<'EOF'\nopen('f') > 1\nEOF",
+                        f"cat > /tmp/x <<'EOF'\nrm -rf {tracked}\nEOF", f"git -C {tree} commit -m x", f"cd {tree} && git add x && rm y",
+                        "sed -i '' 's/a/b/' /tmp/x", "perl -pi -e 's/a/b/' /tmp/x", "sed -i.bak -e s/a/b/ /tmp/x", "(( n > 1 )) && echo y",
+                        "[[ a > b ]] && echo y", 'cd "$WORK" && rm f && git add x', 'pushd "$WORK" && touch g'):
+            self.assertFalse(self.shell_refused(command, self.primary), command)
+        for command in (f"echo x > {tracked}", "git add x", "git commit -m x", "rm x", "echo x > project-memory/log.md", "rm project-memory"):
+            self.assertFalse(self.shell_refused(command, tree), command)
+        self.assertFalse(self.shell_refused(f"rm {tracked}", self.primary, {"TM_EDIT_PRIMARY": "1"}), "the maintainer's own")
+
+    def test_a_link_in_the_primary_checkout_is_removed_where_it_stands(self):
+        (self.primary / "tracked-link").symlink_to("/tmp")
+        self.assertTrue(self.shell_refused("rm tracked-link", self.primary))
+
+    def test_bash_check_lets_through_what_it_cannot_read(self):
+        for words in ("", "not json", "[]", "{}", '{"tool_input": 3}', '{"tool_input": {}}'):
+            self.assertEqual(worktree_fresh.hook_answer(io.StringIO(words), worktree_fresh.bash_judge), [], words)
+
+    def test_an_agents_commit_in_the_primary_checkout_is_refused_by_git_too(self):
+        hook = SCRIPTS / "hooks" / "pre-commit"
+        tree, _ = worktree.add("hooked", cwd=self.primary)
+        run = lambda cwd, **env: subprocess.run(["bash", str(hook)], cwd=cwd, capture_output=True, text=True,  # noqa: E731
+                                                env={**os.environ, "CLAUDECODE": "", "TM_EDIT_PRIMARY": "", **env})
+        words = "an agent does not commit in the primary checkout"
+        self.assertIn(words, run(self.primary, CLAUDECODE="1").stderr)
+        self.assertEqual(run(self.primary, CLAUDECODE="1").returncode, 1)
+        self.assertNotIn(words, run(tree, CLAUDECODE="1").stderr, "a tree")
+        self.assertNotIn(words, run(self.primary).stderr, "the maintainer's terminal")
+        self.assertNotIn(words, run(self.primary, CLAUDECODE="1", TM_EDIT_PRIMARY="1").stderr, "the maintainer's session")
 
     def test_a_folder_outside_git_hears_nothing(self):
         self.assertEqual(worktree_fresh.fresh(cwd=self.tmp.name), [])
 
     # make install: never a stale main
+    def test_a_running_release_keeps_main_at_the_commit_its_checks_saw(self):
+        self.push_from_another_clone()
+        head = sh(self.primary, "git", "rev-parse", "HEAD")
+        mark = self.primary / ".git" / "terminum-release"
+        mark.write_text(f"{os.getpid()}\n")
+        said = worktree_fresh.freshen(self.primary)
+        self.assertIn("a release is running", said[-1])
+        self.assertEqual(sh(self.primary, "git", "rev-parse", "HEAD"), head)
+        mark.unlink()
+        self.assertIn("fast-forwarded", worktree_fresh.freshen(self.primary)[-1])
+
     def test_freshen_fast_forwards_a_clean_main(self):
         self.assertEqual(worktree_fresh.freshen(self.primary), [])
         self.push_from_another_clone()
@@ -184,7 +255,7 @@ class Fresh(Repo):
         (self.primary / "scripts").mkdir()
         run = lambda cmd, cwd, project=None: subprocess.run(["bash", "-c", cmd], cwd=cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
                                                              env={**os.environ, "CLAUDE_PROJECT_DIR": str(project or tree)})
-        for name in ("worktree.py", "worktree_fresh.py"):
+        for name in HOOK_SCRIPTS:
             (self.primary / "scripts" / name).write_text((SCRIPTS / name).read_text())
         (self.primary / "ui").mkdir(exist_ok=True)
         tree, _ = worktree.add("hooked", cwd=self.primary)
@@ -207,19 +278,19 @@ class Fresh(Repo):
         foreign = Path(self.tmp.name) / "foreign"                 # the session moved to another project
         sh(self.tmp.name, "git", "init", "-q", "-b", "main", str(foreign))
         (foreign / "scripts").mkdir()
-        for name in ("worktree.py", "worktree_fresh.py"):
+        for name in HOOK_SCRIPTS:
             (foreign / "scripts" / name).write_text("print('foreign code ran')\n")
         for event, each in commands.items():
             for cmd in each:
                 moved = run(cmd, foreign)
                 self.assertEqual((moved.returncode, moved.stdout), (0, ""), event)
-        for name in ("worktree.py", "worktree_fresh.py"):
+        for name in HOOK_SCRIPTS:
             (self.primary / "scripts" / name).write_text("raise SystemExit(2)\n")     # Claude Code stops on a 2
         for event, each in commands.items():
             for cmd in each:
                 self.assertEqual(run(cmd, tree).returncode, 0, event)
                 self.assertEqual(run(cmd, self.tmp.name).returncode, 0, f"{event}, outside git")
-        for name in ("worktree.py", "worktree_fresh.py"):
+        for name in HOOK_SCRIPTS:
             (self.primary / "scripts" / name).unlink()
         self.assertEqual(run(commands["Stop"][0], tree).returncode, 0, "no script")
 

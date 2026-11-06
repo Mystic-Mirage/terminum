@@ -25,13 +25,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_remote import api, host_group  # noqa: E402
-from e2e_remote_sshd import stage  # noqa: E402
+from e2e_remote_sshd import host_or_skip, stage  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
-from testrun import free_port, own, short_tmp  # noqa: E402
+from testrun import container_name, free_port, own, short_tmp  # noqa: E402
 
 VARIANT = sys.argv[3] if len(sys.argv) > 3 else "alpine"
 PORT, SOCKET = (free_port(), own("tm-rr9-a")) if VARIANT == "alpine" else (free_port(), own("tm-rr9-d"))
-NAME, SSH_PORT, BOB_PORT = f"tm-rr9-{VARIANT}", (2230 if VARIANT == "alpine" else 2232), (2231 if VARIANT == "alpine" else 2233)
+NAME, SSH_PORT, BOB_PORT = container_name(f"rr9-{VARIANT}"), free_port(), free_port()
 
 STUB = r"""#!/bin/sh
 echo "$*" >> "$HOME/claude-argv.log"
@@ -175,7 +175,7 @@ def main():
     work = tempfile.mkdtemp(prefix="tmr9-", dir=short_tmp())
     t = None
     try:
-        wrapper = start_host(work)
+        wrapper = host_or_skip(start_host, work)
         import e2e_ws
         e2e_ws.BIN = stage(work, sys.argv[1], sys.argv[2])
         t = Terminumd(PORT, SOCKET, env={"TM_SSH": wrapper})

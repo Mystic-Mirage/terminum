@@ -166,23 +166,48 @@ def publish(tag, draft, notes, head="HEAD"):
         return gh("release", "view", tag, "--json", "url", "--jq", ".url").stdout.strip()
 
 
-def main(argv):
-    if len(argv) != 1 or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", argv[0]):
-        sys.exit("usage: release.py vX.Y.Z")
-    tag = argv[0]
+def check_settings():
+    """What a release needs of this machine, before its long checks. The key itself is looked at by sign()."""
     if "ssh-" not in (SIGNERS.read_text() if SIGNERS.is_file() else ""):
         sys.exit("release-signers holds no release key: run make signing-key and commit it first")
     if not os.environ.get("TM_CODESIGN_IDENTITY", "").strip():
         sys.exit("TM_CODESIGN_IDENTITY is not set: a release is signed with the maintainer's Developer ID (docs/RELEASING.md)")
-    head = check_source(tag)
-    notes = release_notes(tag)
-    draft = check_unpublished(tag)
+
+
+def check_gate(head):
+    """The commit is the one the full checks saw (release_turn.py), however long they took."""
+    if os.environ.get("TM_GATE_HEAD", head) != head:
+        sys.exit("HEAD moved since the full checks (another session's make install?): nothing is public; release again")
+
+
+def build(tag):
     run("npm", "ci", "--ignore-scripts", "--no-fund", "--no-audit", cwd=package.REPO / "ui")
     run("npm", "run", "-s", "build", cwd=package.REPO / "ui", env=dict(os.environ, TM_BUILD=tag))
     package.main(["--build", tag, "--release"])
     for platform in ("linux-x86_64", "linux-aarch64"):
         if not (package.OUT / package.NAME / "agents" / platform / "terminumd").is_file():
             sys.exit(f"the package has no {platform} terminumd (run make toolchain): not released")
+
+
+def main(argv):
+    rehearsing = argv[:1] == ["--rehearse"]
+    argv = argv[1:] if rehearsing else argv
+    if len(argv) != 1 or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", argv[0]):
+        sys.exit("usage: release.py [--rehearse] vX.Y.Z")
+    tag = argv[0]
+    check_settings()
+    head = check_source(tag)
+    check_gate(head)
+    if rehearsing:   # as far as nothing is public: no release key, no gh, no tag, no push
+        build(tag)
+        check_unmoved(head)
+        print(f"{tag}: rehearsal passed on {head[:9]}: no release signature, not tagged, not pushed, not published")
+        return
+    notes = release_notes(tag)
+    if os.environ.get("TM_GATE_SAID"):   # what the gate could not run (release_turn.py)
+        notes = f"{notes.rstrip()}\n\n**Not verified:** {os.environ['TM_GATE_SAID']}\n"
+    draft = check_unpublished(tag)
+    build(tag)
     sign(package.OUT / "SHA256SUMS")
     check_unmoved(head)
     print(f"{tag}: {publish(tag, draft, notes, head)}")  # only now does anything become public

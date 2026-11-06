@@ -402,14 +402,15 @@ Scenario: AC-103 happy path — a review before a minor release
 Scenario: AC-104 happy path — targeted checks green, the tree lands
   Given the worktree fix-paste has its work committed
   When the agent runs make land SLUG=fix-paste from the primary checkout
-  Then scripts/check_changed.py runs the security scan, the build, the tests of the changed files, the tests citing the acceptance cases on the changed lines, and the critical functions, not the full run
-  And on green the branch is merged with origin/main and pushed to origin main, never forced
+  Then the branch is merged with origin/main in the tree
+  And on that result scripts/check_changed.py runs the security scan, the build, the tests of the changed files, the tests citing the acceptance cases on the changed lines, and the critical functions, not the full run
+  And on green it is pushed to origin main, never forced
   And the primary checkout is fast-forwarded to it, the tree is deleted by scripts/delete_worktree.sh, and it prints "landed 4f2a91c07 on origin/main"
 
 Scenario: AC-104 failure — a red check lands nothing
   Given a targeted check of the worktree fails
   When make land runs
-  Then it exits 1 saying "targeted checks failed", shows the check's last lines, pushes nothing, and the tree stays
+  Then it exits 1 saying "targeted checks failed" and that nothing was pushed, shows the check's last lines, and the tree stays, with its merge of origin/main
 
 Scenario: AC-104 edge — uncommitted work
   Given the worktree holds an uncommitted file
@@ -420,7 +421,7 @@ Scenario: AC-104 edge — several worktrees land at once
   Given worktrees one and two are each checked on their own
   When one lands while two's checks run
   Then two merges what one landed, and its checks run again only if both changed the same file
-  And only the merge and push take turns, so neither waits for the other's tests
+  And only the last look at origin/main and the push take turns, so neither waits for the other's tests
 
 Scenario: AC-104 failure — others' code breaks the merged build
   Given one tree renamed a function and another, touching other files, added a caller of it
@@ -478,8 +479,79 @@ Scenario Outline: AC-104 — what a change is checked with
 
 Scenario: AC-104 happy path — the full run is the release's gate
   When the maintainer runs make release TAG=v0.32.0
-  Then the full check runs, once per tree: make test, clippy, the Panel, the live page, the page's browser checks, the security scan
-  And a failing test stops the release
+  Then the full check runs, once per tree: make test, clippy, the Panel, the live page, every e2e script, Docker's, the install, the page's browser checks, the security scan
+  And then the Mac test runner's checks, when TM_MAC_RUNNER is set
+  And a failing test in any of them stops the release
+
+Scenario: AC-104 failure — failing tests on the Mac test runner are never read as a runner that could not run them
+  Given make test fails on the Mac test runner, which makes the remote run exit 2
+  When scripts/ci_mac.sh ends
+  Then it exits 1 and make release stops: "failing tests on the Mac test runner stop it: nothing is public"
+
+Scenario Outline: AC-104 edge — the Mac test runner could not run them
+  Given <what>
+  When make release runs
+  Then it goes on, the release's notes get a Not verified line saying "the Mac test runner's checks did not run: <why>", and that is its last line too
+
+  Examples:
+    | what                                                 | why                                     |
+    | no answer over ssh, a dropped link, a failed rsync   | the runner could not run them           |
+    | no tmux, rustup or Playwright's browsers on it       | the runner could not run them           |
+    | another run holds its lock for half an hour, or a stale one | the runner is busy, or its lock is stale |
+    | it runs for over an hour (it gets SIGTERM)           | it took over 60 minutes                 |
+    | no TM_MAC_RUNNER                                     | no TM_MAC_RUNNER                        |
+
+Scenario: AC-104 failure — a commit the checks did not see
+  Given make release's checks ran on 4f2a91c07
+  When HEAD is another commit as it starts to build
+  Then it exits saying "HEAD moved since the full checks": nothing is public
+  And another session's make install during a release leaves main where it is, saying "a release is running"
+
+Scenario: AC-104 happy path — the rehearsal
+  When anyone runs make rehearse TAG=v0.32.0 in a tree at origin/main
+  Then it runs make release's chain: leftovers, the full check, the Mac test runner's, the build of the package
+  And it prints "v0.32.0: rehearsal passed on 4f2a91c07: no release signature, not tagged, not pushed, not published"
+  And its macOS builds are codesigned with the Developer ID, as for real; it reads no release key, runs neither gh nor git tag nor git push, needs no release notes and holds no release mark
+  And in the primary checkout, whose ui/dist and dist/package it would replace, it refuses: "make rehearse runs in a worktree"
+  And while a release runs it refuses: "a release is running: rehearse after it"
+
+Scenario Outline: AC-104 edge — Docker's step cannot run
+  Given <what>
+  When the full check runs
+  Then its step says "SKIP docker: <why>", .checks/<id>.docker-skip keeps it, and the check can pass
+  And a later make check of the same tree, once it could run, runs that step and not the rest
+
+  Examples:
+    | what                                  | why                                 |
+    | Linux, or a Mac with Intel's chips    | not a Mac with Apple's chips        |
+    | no pinned toolchain                   | no pinned toolchain: make toolchain |
+    | docker info fails or takes over 10 s  | Docker does not answer              |
+    | an image or package cannot be fetched | e2e_remote_sshd.py could not start its host |
+
+Scenario: AC-104 failure — Docker's step fails on what is its own
+  Given a test of scripts/e2e_remote_sshd*.py fails, or its script leaves its container tm-rr9-debian-4242 behind
+  Then the step fails; the container is removed and named
+  And two trees run these scripts at once, each with its own container and free ports, and neither ends the other's
+
+Scenario Outline: AC-104 failure — a shell write in the primary checkout
+  Given a Claude Code session with no TM_EDIT_PRIMARY runs <command> in the primary checkout
+  Then its hook refuses it, naming scripts/worktree.py add
+
+  Examples:
+    | command                                                                      |
+    | echo x > ui/package.json, tee, sed -i, perl -i, cp, mv, rm, touch on a tracked or new file |
+    | git add, commit, stash, reset, clean, switch, pull, merge, rebase, checkout, restore       |
+    | TM_EDIT_PRIMARY=1 anything                                                   |
+
+Scenario: AC-104 edge — what the shell guard lets through
+  Given a command that only reads, writes to an ignored file (project-memory, local.mk), to another folder, to a variable's path, or runs in a worktree
+  Then it passes, as does make land and text in a here-document or quotes
+  And a program writing the file itself passes too: it is a heuristic, and the commit hook is its backstop
+
+Scenario: AC-104 failure — an agent's commit in the primary checkout
+  Given CLAUDECODE is set and TM_EDIT_PRIMARY is not
+  When git commit runs in the primary checkout
+  Then scripts/hooks/pre-commit refuses it, and a tree's commit or the maintainer's own terminal is untouched
 
 Scenario Outline: AC-104 edge — only failing tests block a release
   Given <what>
@@ -638,5 +710,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines`; `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh`; `scripts/tests/test_check_step.py`; `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`
-- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

@@ -10,6 +10,8 @@
       (TM_INSTALL_STALE=1: the maintainer's own install as it is); any other branch is left alone
   edit-check      the PreToolUse hook: reads Claude Code's JSON on stdin and refuses an edit of the
       primary checkout's files (TM_EDIT_PRIMARY=1: the maintainer's own session may)
+  bash-check      the same for a shell command (shell_writes.py): its common writes and git's verbs that
+      change a checkout; a heuristic, with scripts/hooks/pre-commit as its backstop
 """
 import argparse
 import json
@@ -19,8 +21,10 @@ import re
 import sys
 import time
 
-from worktree import count, fetched, finished, git, has_ref, ours, primary_of, Refused, said_name, trees
+from shell_writes import writes
+from worktree import count, fetched, finished, git, has_ref, ours, primary_of, Refused, releasing, said_name, trees
 
+REPO = Path(__file__).resolve().parents[1]
 FETCH_EVERY = 300      # seconds between the hooks' fetches, for the whole repository
 EDIT_REFUSED = ("terminum: the primary checkout is the maintainer's; make this change in a worktree: "
                 "python3 scripts/worktree.py add <slug> --kind <kind>, then edit the file there (CLAUDE.md §9). "
@@ -106,6 +110,8 @@ def freshen(cwd="."):
     behind = count("HEAD..origin/main", cwd)
     if not behind:
         return lines
+    if releasing(cwd):   # it publishes the commit its checks saw
+        return lines + [f"warning: a release is running: main stays {commits(behind)} behind origin/main"]
     if os.environ.get("TM_INSTALL_STALE"):
         return lines + [f"warning: {commits(behind)} behind origin/main, installed without them (TM_INSTALL_STALE)"]
     override = "the maintainer alone may install it as it is: TM_INSTALL_STALE=1 make install"
@@ -119,34 +125,61 @@ def freshen(cwd="."):
     return lines + [f"fast-forwarded main by {commits(behind)}: {before}..{git('rev-parse', '--short', 'HEAD', cwd=cwd)}"]
 
 
-def edit_refused(target):
+def edit_refused(target, own_place=False):
     """Whether an agent's edit of `target` (absolute: links resolved, so a tree's link to a shared local
-    file counts where it lives) is one of the primary checkout's files. Judged by the file's repository,
-    not the session's folder: another project's files and the trees' own are none of this."""
-    path = Path(target).expanduser().resolve()
+    file counts where it lives; with `own_place`, as rm and mv act, a link counts where it stands) is one
+    of the primary checkout's files. Judged by the file's repository, not the session's folder: another
+    project's files and the trees' own are none of this."""
+    path = Path(target).expanduser()
+    path = path.parent.resolve() / path.name if own_place else path.resolve()
+    if not path.is_relative_to(REPO) or path.is_relative_to(REPO / ".worktrees"):
+        return False                                # no git for what cannot be refused
     folder = next((parent for parent in path.parents if parent.is_dir()), None)
-    if folder is None or not ours(folder):
+    if folder is None or not holds_primary(path, folder):
+        return False
+    return git("check-ignore", "-q", str(path), cwd=REPO, check=False).returncode == 1  # 0 ignored, else git failed
+
+
+def holds_primary(path, folder):
+    """Whether `path` is in the primary checkout of this repository, not in one of its trees."""
+    if not ours(folder):
         return False
     primary, *others = trees(folder)
-    if not path.is_relative_to(primary) or any(path.is_relative_to(tree) for tree in others):
-        return False
-    return git("check-ignore", "-q", str(path), cwd=primary, check=False).returncode == 1  # 0 ignored, else git failed
+    return path.is_relative_to(primary) and not any(path.is_relative_to(tree) for tree in others)
 
 
-def edit_check(stdin):
-    """The hook's answer as JSON, or nothing: what cannot be read or judged is let through, as a hook
-    never stops the agent over its own failure."""
+def in_primary(folder):
+    path = Path(folder).expanduser().resolve()
+    return path.is_relative_to(REPO) and path.is_dir() and holds_primary(path, path)
+
+
+def edit_judge(given):
+    target = given["tool_input"].get("file_path") or given["tool_input"].get("notebook_path")
+    return EDIT_REFUSED if target and edit_refused(target) else ""
+
+
+def bash_judge(given):
+    """Why this shell command is refused, or nothing (AC-104)."""
+    cwd = given.get("cwd") or os.getcwd()
+    inline, paths, git_folders = writes(given["tool_input"]["command"], cwd)
+    if inline and ours(cwd):
+        return "terminum: TM_EDIT_PRIMARY is the maintainer's, set when they start the session (CLAUDE.md §9)."
+    if any(edit_refused(path, own) for path, own in paths) or any(in_primary(folder) for folder in git_folders):
+        return EDIT_REFUSED
+    return ""
+
+
+def hook_answer(stdin, judge):
+    """The PreToolUse hook's answer as JSON, or nothing: what cannot be read or judged is let through, as a
+    hook never stops the agent over its own failure."""
     if os.environ.get("TM_EDIT_PRIMARY"):
         return []
     try:
-        given = json.load(stdin)["tool_input"]
-        target = given.get("file_path") or given.get("notebook_path")
-        if not target or not edit_refused(target):
-            return []
+        why = judge(json.load(stdin))
     except (ValueError, KeyError, TypeError, AttributeError, OSError, Refused):
         return []
     return [json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                               "permissionDecisionReason": EDIT_REFUSED}})]
+                                               "permissionDecisionReason": why}})] if why else []
 
 
 def main(argv):
@@ -156,9 +189,10 @@ def main(argv):
     commands.add_parser("fresh").add_argument("--start", action="store_true")
     commands.add_parser("freshen")
     commands.add_parser("edit-check")
+    commands.add_parser("bash-check")
     args = parser.parse_args(argv)
-    if args.command == "edit-check":
-        lines = edit_check(sys.stdin)
+    if args.command in ("edit-check", "bash-check"):
+        lines = hook_answer(sys.stdin, edit_judge if args.command == "edit-check" else bash_judge)
     else:
         lines = freshen() if args.command == "freshen" else fresh(args.start) if ours(".") else []
     if lines:

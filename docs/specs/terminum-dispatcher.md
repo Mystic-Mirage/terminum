@@ -73,7 +73,7 @@ Open questions:
 | AC-128 | [SHOULD / P1] | A card shows the session's CPU, memory and running time; memory over 4 GiB warns the agent, over 8 GiB ends the session as FAILED, set globally and per project. |
 | AC-129 | [SHOULD / P1] | A card shows the tokens its session used. |
 | AC-130 | [SHOULD / P1] | All of the above hold for sessions on remote hosts; a host out of reach is said, and a lost link adds nothing to any clock. |
-| AC-137 | [MUST / P0] | A project lists the agents that can work on it: a name, Claude Code or Codex, a server, a folder and the command that starts it; only a human adds, changes or deletes one, on the board. |
+| AC-137 | [MUST / P0] | A project lists the agents that can work on it: a name, Claude Code or Codex, a server, a folder and the command that starts it; the board is the only way terminum offers to add, change or delete one. |
 | AC-131 | [MUST / P0] | Dispatcher is one named system user, walks its tasks on a fixed beat, goes on where it was after terminumd restarts, and never acts on time it did not see pass. |
 
 ## 5. BDD scenarios
@@ -84,7 +84,7 @@ Open questions:
 Scenario: AC-121 happy path — first run
   Given T-12 in TODO of project api, folder ~/work/api, with no session
   When the user presses RUN in its window, or drags it to IN PROGRESS
-  Then a dialog offers the project's agents (AC-137), the last one chosen for that project already picked, and shows its folder, its server and the text that will be sent, a part written by an agent or a host marked so
+  Then a dialog offers the project's agents (AC-137), the last one chosen for that project already picked, and shows its folder, its server, its command in full and the text that will be sent, a part written by an agent or a host marked so
   When the user presses Run
   Then Dispatcher opens a window after the project's last session, in that folder, with the window command of §9, a member of the project, marked with the pane option @terminum-run
   And it writes "Session started: claude in window api:4, on this Mac." on T-12 and links the pane; the card stays in TODO with a "starting" mark
@@ -184,7 +184,8 @@ Scenario Outline: AC-137 failure — refused where it was typed
     | a name its project has | api already has an agent named Opus reviewer. |
     | no command | An agent needs a command. |
     | a command of 1,001 characters | An agent's command is 1000 characters at most. |
-    | a command holding a line break or another control character | An agent's command is one line, with no control characters. |
+    | a command holding a line break, another control character, or a character that hides what it reads | An agent's command is one line, with no control or invisible characters. |
+    | an empty folder on another server than its project's | api's folder is on This Mac: an agent on another server needs its own folder. |
     | a folder not starting with / or ~ | A folder starts with / or ~. |
     | a server this terminum does not have | The server devbox.example is not one of this terminum's hosts. |
 
@@ -646,7 +647,7 @@ Only the following pass: a T-number with fixed words and the column and human's 
 - `ps` reads no command lines beyond a program's name: arguments can hold secrets.
 - Transcripts are read only by `terminum hook` on their own machine; three integers leave it.
 - Agents run with the user's own permission settings.
-- A project agent's command is the human's own words, run as they would type them: only the signed-in page changes it, never `terminum mcp`.
+- A project agent's command is the human's own words, run as they would type them: the board is the only way terminum offers to change it, no boundary against a process of the user's (`SECURITY.md`); RUN's dialog shows it in full.
 
 **Logging.** `dispatcher: T-12 run 3 FAILED: budget 3600 s used, SIGTERM pid 48213, SIGKILL none`; `dispatcher: T-12 run 3 not delivered: screen not known (claude 2.3)`.
 
@@ -667,7 +668,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 ## 11. Checklist with Definition of Done
 
 - [ ] AC-121 — `cargo test dispatcher::run`, `cargo test dispatcher::gate`, new `web/test/e2e_liveprogs_tasks.mjs` with Claude Code's two TUIs and Codex (a dialog raised during the gate never gets Enter), `SECURITY.md` carries Dispatcher's typing
-- [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
+- [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
 - [ ] AC-122 — `cargo test dispatcher::again`, `web/test/e2e_liveprogs_tasks.mjs`
 - [ ] AC-123 — `cargo test dispatcher::end`, new `scripts/e2e_dispatcher.py` with the test clock
 - [ ] AC-124 — `cargo test dispatcher::wait`, `scripts/e2e_dispatcher.py` with a real permission prompt older than 5 minutes

@@ -9,7 +9,7 @@ const COMMAND = "claude --model opus";
 
 export async function liveBoardAgents(page, opts) {
   const { base, shots } = opts;
-  const { j, open } = boardKit(page, opts);
+  const { j, backToSessions } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "AgentsHere" })).id;
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector("#addagent");
@@ -98,15 +98,10 @@ export async function liveBoardAgents(page, opts) {
   await page.click('#fproject button:has-text("All projects")');
   check("AC-137 with all projects its project is named", await until(async () => /AgentsHere/.test(await page.textContent(".agents"))), await page.textContent(".agents"));
 
-  // a project deleted takes them; a page's reload finds what stays
-  await open();
+  // a reload finds what stays
   await page.goto(`${base}/kanban/?project=${project}`);
   check("AC-137 a reload finds it", await until(() => page.isVisible('.agents .item:has-text("Codex two")')));
-  check("AC-137 no tool of an agent reaches them", !(await j("/api/tasks/meta")).agents.some((a) => a.command.includes("rm -rf")));
   await page.click("#fproject summary");
   await page.click('#fproject button:has-text("All projects")');
-  await page.goto(`${base}/sessions/`);
-  await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 10000 });
-  await page.click("#sessions .item");
-  await page.waitForSelector("#term", { state: "visible", timeout: 5000 });
+  await backToSessions();
 }

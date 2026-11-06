@@ -49,6 +49,14 @@ pub(super) fn answer<T: Serialize>(done: Result<T, String>) -> Response {
     }
 }
 
+/// `done`'s answer; every page hears when it changed a project or its agents.
+pub(super) fn told_projects<T: Serialize>(app: &Shared, done: Result<T, String>) -> Response {
+    if done.is_ok() {
+        crate::page::projects::tell(app);
+    }
+    answer(done)
+}
+
 /// `done`'s answer; every page hears when it changed task `id`.
 fn told_answer<T: Serialize>(app: &Shared, id: &str, done: Result<T, String>) -> Response {
     if done.is_ok() {
@@ -141,17 +149,18 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
 async fn meta(State(app): State<Shared>) -> Response {
     let projects: Vec<Value> = std::iter::once(json!({"id": DEFAULT_PROJECT, "name": "Default"}))
         .chain(app.projects.lock().list().iter().map(|p| json!({"id": p.id, "name": p.name, "color": p.color, "dir": p.dir, "host": p.host}))).collect();
-    let hosts: Vec<String> = super::agents::known_hosts(&app);
     let sessions: Vec<Value> = crate::page::marks::layout_items(app.layout.read().as_array().map_or(&[], |a| a.as_slice()))
         .map(|it| json!({"key": it["id"], "title": it["title"]})).collect();
     // the store's lock waits out a running query: off the async workers, its state too
     let a = app.clone();
     let (users, agents, problem, set_aside) = tokio::task::spawn_blocking(move || {
-        let users = a.tasks.with(|tx| ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))).unwrap_or_default();
-        let agents = a.tasks.with(super::agents::list).unwrap_or_default();
+        let (users, agents) = a.tasks.with(|tx| Ok((
+            ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
+            super::agents::list(tx)?,
+        ))).unwrap_or_default();
         (users, agents, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
-    Json(json!({"projects": projects, "agents": agents, "hosts": hosts, "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {
@@ -173,10 +182,7 @@ async fn new_project(State(app): State<Shared>, Json(body): Json<Value>) -> Resp
     let (name, dir, host) = (text(&body, "name").unwrap_or_default(), text(&body, "dir").unwrap_or_default(), text(&body, "host").filter(|h| !h.is_empty()));
     let a = app.clone();
     let done = off(move || a.projects.lock().create(&name, host, dir)).await;
-    if done.is_ok() {
-        crate::page::projects::tell(&app);
-    }
-    answer(done.map(|id| json!({"id": id})))
+    told_projects(&app, done.map(|id| json!({"id": id})))
 }
 
 fn text(v: &Value, key: &str) -> Option<String> {

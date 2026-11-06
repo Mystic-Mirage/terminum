@@ -48,6 +48,11 @@ pub struct Hosts {
 /// A recipe tried and, once in, its answer.
 type Tried = (Vec<String>, Option<Result<(), String>>);
 
+/// The hosts' names, by their records.
+pub fn names(app: &Shared) -> Vec<String> {
+    app.looks.settings.read().hosts.keys().cloned().collect()
+}
+
 fn records(app: &Shared) -> Map<String, Value> {
     app.looks.settings.read().hosts.clone()
 }

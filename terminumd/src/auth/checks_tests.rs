@@ -36,6 +36,10 @@ fn ac09_outline_requests_without_a_sign_in_or_from_elsewhere_are_refused() {
     // GET /ws (no sign-in) → 401 bad_session, with or without the page's Origin
     assert_eq!(ask(&L, "GET", "/ws", &local(&[("origin", PAGE), ("upgrade", "websocket")]), false), Err((401, "bad_session")));
     assert_eq!(ask(&L, "GET", "/ws", &local(&[]), false), Err((401, "bad_session")));
+    // a project's agents (terminum-dispatcher.md AC-137): no sign-in, no write
+    for (method, path) in [("POST", "/api/task-projects/p1/agents"), ("PATCH", "/api/task-agents/a1"), ("DELETE", "/api/task-agents/a1")] {
+        assert_eq!(ask(&L, method, path, &local(&[("origin", PAGE), ("content-type", "application/json")]), false), Err((401, "bad_session")), "{path}");
+    }
     // GET /fb/api/ls?path=/Users/alex, Host: evil.example:48080 → 403 bad_host, signed in or not
     for path in ["/api/ls", "/fb/api/ls"] {
         for signed in [true, false] {

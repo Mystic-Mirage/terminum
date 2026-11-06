@@ -36,5 +36,12 @@ export function boardKit(page, { base, tmux, work, bin, home, app }) {
   const endPanes = () => { for (const pane of panes.splice(0)) tmux("kill-pane", "-t", pane); };
   const card = (id) => `.card[data-id="${id}"]`;
   const open = async () => { await page.goto(`${base}/kanban/`); await page.waitForSelector('.col[data-status="TODO"]'); await nap(250); };
-  return { j, newPane, keyOf, hook, tool, endPanes, card, open };
+  /** Where the live test goes on: a session shown on the session page. */
+  const backToSessions = async () => {
+    await page.goto(`${base}/sessions/`);
+    await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 10000 });
+    await page.click("#sessions .item");
+    await page.waitForSelector("#term", { state: "visible", timeout: 5000 });
+  };
+  return { j, newPane, keyOf, hook, tool, endPanes, card, open, backToSessions };
 }

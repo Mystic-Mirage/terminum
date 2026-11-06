@@ -8,7 +8,7 @@ import { check, until } from "./check.mjs";
 
 export async function liveBoardSessions(page, opts) {
   const { base, shots } = opts;
-  const { j, newPane, keyOf, hook, tool, endPanes, card, open } = boardKit(page, opts);
+  const { j, newPane, keyOf, hook, tool, endPanes, card, open, backToSessions } = boardKit(page, opts);
   /** The project key's menu, and a press in it. */
   const inProjects = async (what) => { await page.click("#fproject summary"); await page.click(`#fproject ${what}`); };
   await open();
@@ -133,10 +133,7 @@ export async function liveBoardSessions(page, opts) {
   await page.click("#newclose");
 
   endPanes();
-  await page.goto(`${base}/sessions/`);
-  await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 10000 });
-  await page.click("#sessions .item");
-  await page.waitForSelector("#term", { state: "visible", timeout: 5000 });
+  await backToSessions();
 }
 
 /** A phone: Sessions the last page of the swipe, the row's press a finger's (AC-134, AC-135). */

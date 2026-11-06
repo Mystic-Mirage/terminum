@@ -224,7 +224,7 @@ const columns = new Map(COLUMNS.map((column) => {
 const SESSIONS = "Sessions";
 const sessionsTab = tabFor(SESSIONS);
 const side = sessionsColumn({ chosen: () => filters().project, openTask, onCount: (n) => { sessionsTab.textContent = `${SESSIONS} ${n}`; } });
-const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: () => loadMeta() });
+const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta });
 side.col.append(agents.box);
 const pages = new Map([...columns, [SESSIONS, { col: side.col, tab: sessionsTab }]]);
 $("board").replaceChildren(side.col, ...[...columns.values()].map((c) => c.col));

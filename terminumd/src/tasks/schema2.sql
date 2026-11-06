@@ -8,6 +8,5 @@ CREATE TABLE project_agents (
   host TEXT,
   dir TEXT NOT NULL,
   command TEXT NOT NULL,
-  place INTEGER NOT NULL,
   UNIQUE (project, name)
 );

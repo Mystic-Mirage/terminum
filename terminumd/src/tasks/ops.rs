@@ -160,7 +160,7 @@ fn check_severity(s: &str) -> Result<(), String> {
     if SEVERITIES.contains(&s) { Ok(()) } else { Err(format!("Severity: one of {}", SEVERITIES.join(", "))) }
 }
 
-fn check_project(tx: &Transaction, project: &str) -> Result<(), String> {
+pub(super) fn check_project(tx: &Transaction, project: &str) -> Result<(), String> {
     let found: Option<i64> = tx.query_row("SELECT 1 FROM projects WHERE id = ?1", [project], |r| r.get(0)).optional().map_err(sql)?;
     found.map(|_| ()).ok_or_else(|| "That project is gone.".to_string())
 }

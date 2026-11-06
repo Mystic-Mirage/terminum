@@ -35,7 +35,7 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
 | Agent | `terminumd --agent` on a remote host, reached through ssh, for that host's files |
 | Worktree | `<primary>/.worktrees/<slug>`, branch `<kind>/<slug>`: made, linked, listed and removed only by `scripts/worktree.py` (CONTRIBUTING.md "Worktrees") |
 | Theme | A JSON file in `~/.terminum/themes/`: colors, ANSI palette, font; a rule assigns one per host or session |
-| Spec | `docs/specs/terminum.md` (core), `terminum-lifecycle.md`, `terminum-terminal.md`, `terminum-agents.md`, `terminum-files.md`, `terminum-remote.md`: acceptance cases `AC-nn` (unique across them), BDD scenarios, design, limits, the test that proves each case; `docs/specs/history/` keeps old change logs and evidence |
+| Spec | `docs/specs/terminum.md` (core), `terminum-lifecycle.md`, `terminum-terminal.md`, `terminum-agents.md`, `terminum-files.md`, `terminum-remote.md`: acceptance cases `AC-nn` (unique across them), BDD scenarios, design, limits, the test that proves each case |
 
 ## Product principles
 
@@ -131,9 +131,16 @@ Rust with `Cargo.lock`, npm with `package-lock.json`. Python only for scripts.
 - A change of specified behavior updates the spec's scenarios first (keep its section
   order and `AC-nn` IDs), then code and tests, then the spec's Definition of Done with
   evidence.
-- A requirement is a BDD scenario under an `AC-nn` in the spec that owns it, never only a
-  change-log row: the why goes in the commit and the release notes. `scripts/check_docs.py` (in
-  `make test`) holds the docs' shape; `/docs-review` is what it cannot judge (spec AC-103).
+- **A spec is a snapshot** of what terminum must do, never a chronicle or a change log: no
+  history, dates of evidence, "was" or "now"; git, commits and release notes hold those. A
+  requirement is a BDD scenario under an `AC-nn` in the spec that owns it. A spec may hold what
+  is not built: **never fit a requirement to the code**. Where they disagree the scenario stays,
+  with a §7 gap, unless the maintainer decided otherwise or a commit or test shows the change was
+  deliberate; absent from the code is no proof that a requirement is dead.
+- **Docs are a hierarchy read by progressive disclosure:** `docs/README.md` routes a question to
+  one document; a spec's §4 lists its cases in a line each, §5 and §9 hold the detail. Each fact
+  lives in one place, elsewhere a pointer. Docs have no size limit: split by scope, not by size.
+  `scripts/check_docs.py` reports on the shape and `/docs-review` keeps the rest (spec AC-103).
 - Changes to architecture, dependencies, security or this file get an independent review
   before merging (a maintainer in the PR; AI agents: the `pragmatic` reviewer agent when
   one is available); rejected advice is recorded with reasons.

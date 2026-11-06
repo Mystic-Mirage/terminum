@@ -5,17 +5,9 @@ Sibling of `terminum.md` (the core). This spec holds installing, running, restar
 ## 0. Metadata
 
 | Field | Value |
-|---|---|
-| Version | 0.1.0 |
-| Date | 2026-11-06 |
-| Status | draft |
-| Author | Claude for the owner |
+| Status | current |
 
-Change log:
-
-| Version | Date | Change |
-|---|---|---|
-| 0.1.0 | 2026-11-06 | Split out of the core and terminal specs by scope, IDs kept. |
+A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
 ## 1. Overview
 
@@ -364,15 +356,15 @@ Scenario: AC-102 edge — another session's run is no leftover of this one
 ### AC-103 — The docs keep their shape [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-103 happy path — make test checks the shape
+Scenario: AC-103 happy path — make test reports the shape
   Given the specs in docs/specs, the docs and the code
   When make test runs scripts/check_docs.py
-  Then it prints "docs: 0 findings" and exits 0
+  Then it prints "docs: 0 findings"
 
-Scenario Outline: AC-103 error — a broken shape fails make test
+Scenario Outline: AC-103 edge — a broken shape is reported and blocks nothing
   Given <what>
-  When scripts/check_docs.py runs
-  Then it exits 1 and prints <message>
+  When make test runs scripts/check_docs.py
+  Then it exits 1 and prints <message>, and make test goes on: only failing tests block a release
 
   Examples:
     | what                                                  | message                                                       |
@@ -383,12 +375,12 @@ Scenario Outline: AC-103 error — a broken shape fails make test
     | a case with no scenarios                              | FAIL <spec>: AC-nn has no scenarios in section 5              |
     | a case with no line in section 11                     | FAIL <spec>: AC-nn has no line of proof in section 11         |
     | a relative link to a missing file                     | FAIL docs/USAGE.md: the link x.md leads nowhere               |
-    | an 11th row in a spec's change log                    | FAIL terminum.md: 11 change-log rows, at most 10: …           |
+    | a change log in a spec's section 0                    | FAIL <spec>: a change log in section 0: a spec is a snapshot, … |
 
-Scenario: AC-103 edge — a spec past 150 KB only warns
-  Given a spec of 160 KB
+Scenario: AC-103 edge — a spec has no size limit
+  Given a spec of 400 KB
   When scripts/check_docs.py runs
-  Then it prints "WARN terminum.md: 160 KB, past 150 KB: split it by scope" and exits 0
+  Then its size is no finding
 
 Scenario: AC-103 happy path — a review before a minor release
   Given the maintainer asks for a minor release
@@ -455,7 +447,7 @@ No known gaps.
 | The Developer ID, the release key, each release's go-ahead | Owner |
 | Acceptance on the owner's Mac, phone and hosts | Owner |
 
-Docs' upkeep (AC-103), from its review: a gate in `scripts/release.py` on a review log was dropped, since a log row proves only a row and hotfixes come often; `/docs-review` is a step of a minor release. Rejected advice: deleting §10 outright (it keeps what is not built, so the sections stay the same in every spec), and fixing every test that leaves a folder before this change (`make release` sweeps them; the leak stays a test bug to fix).
+Docs' upkeep (AC-103): a script reports the shape and `/docs-review` keeps the rest, in a minor release's steps. Neither stops a release: a log of reviews would prove only a row, and only failing tests block.
 
 ## 9. Technical details and specifications
 

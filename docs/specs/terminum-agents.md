@@ -5,17 +5,9 @@ Sibling of `terminum.md` (the core). This spec holds coding agents in terminum: 
 ## 0. Metadata
 
 | Field | Value |
-|---|---|
-| Version | 0.1.0 |
-| Date | 2026-11-06 |
-| Status | draft |
-| Author | Claude for the owner |
+| Status | current |
 
-Change log:
-
-| Version | Date | Change |
-|---|---|---|
-| 0.1.0 | 2026-11-06 | Split out of the core and terminal specs by scope, IDs kept. |
+A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
 ## 1. Overview
 

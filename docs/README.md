@@ -22,7 +22,7 @@ A spec is a snapshot of what terminum must do: never a chronicle or a change log
 | Spec | Holds | Cases |
 |---|---|---|
 | [terminum.md](specs/terminum.md) | The core: session list, screen, typing, sizing, managing sessions, sign-in, themes, keys, budgets, projects, the user's own tmux | AC-01…07, 09, 10, 12, 13, 18…20, 88, 89, 92, 100, 101 |
-| [terminum-lifecycle.md](specs/terminum-lifecycle.md) | Install, run, restart, reboot, upgrade, uninstall, update notice; a tidy machine and docs for a release | AC-08, 11, 14…17, 96, 102, 103 |
+| [terminum-lifecycle.md](specs/terminum-lifecycle.md) | Install, run, restart, reboot, upgrade, uninstall, update notice; landing a worktree, the release's gate, a tidy machine and docs | AC-08, 11, 14…17, 96, 102…104 |
 | [terminum-terminal.md](specs/terminum-terminal.md) | Terminal features: widgets, folds, bookmarks, reminders, search, links, paste, selection, traces, sent history | AC-31…38, 40, 90, 91 |
 | [terminum-agents.md](specs/terminum-agents.md) | Coding agents: states, unread, plans and progress, the bookmarks and reminders they keep | AC-39, 93, 97, 98 |
 | [terminum-files.md](specs/terminum-files.md) | The Files panel | AC-51…73, 94, 95 |

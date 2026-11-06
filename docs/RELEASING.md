@@ -48,8 +48,7 @@ fails the build instead of hanging it. No hardened runtime and no notarization: 
 arrives by curl, which sets no quarantine. Without `local.mk`, `make install` signs ad hoc and
 says so; macOS then asks again for protected folders after an upgrade.
 
-A release refuses builds that printed a compiler or linker `warning:` (`scripts/package.py`;
-`TM_ALLOW_WARNINGS=1` releases anyway and says so); `make install` only says them.
+A build's compiler or linker `warning:` is said, by a release and by `make install`, and stops neither.
 
 Release notes go in `docs/releases/vX.Y.Z.md`, committed before `main` is pushed; the release
 command refuses an empty or unreadable file and a symlink out of the tree.
@@ -62,6 +61,8 @@ iterm-enhancer, so a leaked key is replaced for both: a new key in both reposito
 again with its one-line installer.
 
 ## Before a release
+
+`make release` runs the full checks first (`make check`, once per tree): failing tests stop it, and nothing else that is about quality does.
 
 `make release` first runs `scripts/leftovers.py --end`, which removes what old test runs left and never
 stops the release (spec AC-102): `make leftovers` only says what it would remove, `make leftovers END=1`

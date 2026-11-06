@@ -78,8 +78,9 @@ def check_source(tag):
         if subprocess.run(["git", "merge-base", "--is-ancestor", "HEAD", "origin/main"], cwd=package.REPO).returncode != 0:
             sys.exit(f"{tag} is not on origin/main")
         return head
-    if head != run("git", "rev-parse", "origin/main"):
-        sys.exit("HEAD is not origin/main: push main (or pull) first")
+    # landings go on during a release's long checks (land.py), so origin/main may be ahead of this
+    if subprocess.run(["git", "merge-base", "--is-ancestor", "HEAD", "origin/main"], cwd=package.REPO).returncode != 0:
+        sys.exit("HEAD is not on origin/main: land it first")
     newest = max((version(t) for t in run("git", "tag", "-l", "v*").split() if version(t)), default=None)
     if newest and version(tag) <= newest:
         sys.exit(f"{tag} is not above the newest release tag v{'.'.join(map(str, newest))}")

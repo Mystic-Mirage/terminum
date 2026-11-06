@@ -33,7 +33,7 @@ python3 "$repo/scripts/ci_source.py" "$repo" "$stage"
 # has already happened in the source staging step above.
 rsync -a --delete \
     --exclude .git --exclude target --exclude node_modules --exclude ui/dist --exclude dist \
-    --exclude .toolchain --exclude local.mk --exclude CLAUDE.local.md --exclude MEMORY.md \
+    --exclude .toolchain --exclude local.mk --exclude CLAUDE.local.md --exclude MEMORY.md --exclude project-memory \
     --exclude '.env*' --exclude workspaces.json --exclude .claude --exclude .codex \
     "$stage/" "$host:ci/terminum/"
 running=1

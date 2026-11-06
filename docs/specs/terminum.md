@@ -257,7 +257,7 @@ Scenario: AC-03 edge — a held delete
   Then a character goes at a time, and after 1.5 s a word (C-w) at a time, at most one every 90 ms; in other programs characters only (the pane's program comes with the list, AC-01)
 Scenario: AC-03 failure — the pane is gone or the server stalls
   When "send-keys" answers %error, or the control client has not answered for 3 s
-  Then the keys are dropped, not queued forever; the page shows "tmux did not take the keys: <error>" over the terminal; a line "tmux on this Mac is not responding (N s)" counts while a server stalls and goes when it answers; each such line (an error, a stall, "Sized for another screen") has an × that puts it away until it says something new (its seconds counting on are not new)
+  Then the keys are dropped, not queued forever; the page shows "tmux did not take the keys: <error>" over the terminal; a line "tmux on this Mac is not responding (N s)" counts while the shown pane's server stalls and goes when it answers (another server's stays off this pane, `terminum-remote.md` AC-132); each such line (an error, a stall, "Sized for another screen") has an × that puts it away until it says something new (its seconds counting on are not new)
 ```
 
 ### AC-04 — The pane as tmux has it [SHOULD / P1]

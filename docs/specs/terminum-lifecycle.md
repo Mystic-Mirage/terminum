@@ -28,7 +28,7 @@ In scope:
 - The update notice (AC-17). Tidying before a release (AC-102, AC-103).
 
 Out of scope (explicit):
-- A native app (AC-11 dropped; terminum.md OQ-04). No notarization and no hardened runtime: the package comes by curl, with no quarantine.
+- A native app (AC-11 dropped; terminum.md OQ-04). No notarization and no hardened runtime (`docs/RELEASING.md`).
 - Restarting programs: only shells are made again; programs are named for the user to start (AC-15). tmux's own contents are not restored beyond the last lines kept (AC-96).
 - Asking for Full Disk Access or for iCloud Drive (AC-08).
 - Enabling linger, starting an upgrade from the page, or upgrading by itself: the user runs the commands.
@@ -126,7 +126,7 @@ Scenario: AC-08 happy path — launchd holds the port
   And before it loads the agent again (an install whose plist changed, `terminum restart`) the command waits until nothing answers on 127.0.0.1:<port> (at most 10 s), so an old terminumd that bound the port itself has let go of it
 Scenario: AC-08 happy path — tmux missing
   Given tmux is not on PATH
-  Then the install goes through and prints "tmux is needed for terminals: brew install tmux" ("sudo apt install tmux" on Linux), and the page says the same until tmux appears (checked every 10 s)
+  Then the install goes through and prints "tmux is needed for terminals: brew install tmux" ("sudo apt install tmux" on Linux), and the page says the same until tmux appears (terminum.md AC-01)
 Scenario: AC-08 happy path — status
   When the user runs "terminum status"
   Then it prints the running build, terminumd's pid and uptime, the page's address, whether a password is set, the tmux servers and sessions attached, the hosts and their state, and the pages connected
@@ -549,9 +549,24 @@ No known gaps.
 | The Developer ID, the release key, each release's go-ahead | Owner |
 | Acceptance on the owner's Mac, phone and hosts | Owner |
 
-Docs' upkeep (AC-103): a script reports the shape and `/docs-review` keeps the rest, in a minor release's steps. Neither stops a release: a log of reviews would prove only a row, and only failing tests block.
+Docs' upkeep (AC-103) keeps no log of reviews: it would prove only a row.
 
 ## 9. Technical details and specifications
+
+### Data formats
+
+Layout checkpoint `~/.terminum/state/layout.json` (AC-15):
+
+```json
+{"version": 1, "boot": "8F2C…", "at": 1792000000,
+ "sessions": [{"name": "main", "windows": [{"index": 1, "name": "api", "layout": "b1a2,180x50,0,0{90x50,0,0,3,89x50,91,0,4}",
+   "panes": [{"id": "%3", "dir": "/Users/alex/work/api", "kind": "shell"}, {"id": "%4", "dir": "/Users/alex/work/api", "kind": "other", "program": "claude"}]}]}],
+ "hosts": ["devbox"]}
+```
+
+The checkpoint also names its server's identity: `"identity": "6db00afe9596fc57"` at the top for terminum's tmux, in each of `servers` for the others (AC-96).
+
+Last lines `state/lastlines/local@terminum/6db00afe9596fc57_3.json` (AC-96; `…_3.before.json` from before a restart): `{"key": "tmux:local:terminum:%3", "session": "main", "window": "api", "dir": "/Users/alex/work/api", "at": 1792000000, "text": "…"}`.
 
 ### Configuration
 
@@ -575,8 +590,8 @@ Docs' upkeep (AC-103): a script reports the shape and `/docs-review` keeps the r
 | Item | Design |
 |---|---|
 | One binary | `terminumd` is the server and the command: run by the name `terminum` (`~/.terminum/bin/terminum`) or with a command as its first argument (`terminumd install`) it is the CLI; with no argument or `serve` it is the server; also `--agent`, `--version`, `--agent-id` |
-| Package | `terminum.tar.gz`, one for every OS (each install carries the agents of every remote OS), also published as `terminum-macos.tar.gz` (the same bytes, for installs from before Linux servers; kept until a stated floor version, `docs/RELEASING.md`); both in the signed SHA256SUMS; `terminum upgrade` takes `terminum.tar.gz`, else on a Mac `terminum-macos.tar.gz`, and on Linux refuses a release with only that name: "that release is from before terminum ran as a Linux server: nothing installed". Inside `terminum/`: `BUILD`, `AGENT_ID`, `agents/<platform>/terminumd` (macOS arm64 and x86_64, Linux x86_64 and arm64), `release-signers`, licenses, README |
-| macOS identity | terminumd's macOS builds embed `terminumd/macos/Info.plist` as the `__TEXT,__info_plist` section (build.rs, Apple targets only). package.py signs each staged macOS terminumd `codesign --force -s <identity> -i io.terminum.terminumd` with `$TM_CODESIGN_IDENTITY` (set in the uncommitted `local.mk`; a keychain identity is never picked by itself: it may be another team's, and its key may ask in a dialog); a release adds `--timestamp` and checks each binary's Team ID; the Linux builds are not signed. `daemon/` holds the copy of the live build's terminumd and the links `agents` and `soundfonts` to that build's, so a build finds its files beside itself there as in its own folder, an older build rolled back to too |
+| Package | `terminum.tar.gz`, one for every OS (each install carries the agents of every remote OS), also published as `terminum-macos.tar.gz` (for installs from before Linux servers; the same bytes, how long: `docs/RELEASING.md`); both in the signed SHA256SUMS; `terminum upgrade` takes `terminum.tar.gz`, else on a Mac `terminum-macos.tar.gz`, and on Linux refuses a release with only that name: "that release is from before terminum ran as a Linux server: nothing installed". Inside `terminum/`: `BUILD`, `AGENT_ID`, `agents/<platform>/terminumd` (macOS arm64 and x86_64, Linux x86_64 and arm64), `release-signers`, licenses, README |
+| macOS identity | terminumd's macOS builds embed `terminumd/macos/Info.plist` as the `__TEXT,__info_plist` section (build.rs, Apple targets only). package.py signs each staged macOS terminumd `codesign --force -s <identity> -i io.terminum.terminumd` with `$TM_CODESIGN_IDENTITY` (set in the uncommitted `local.mk`; a keychain identity is never picked by itself: it may be another team's, and its key may ask in a dialog); a release adds `--timestamp` (Apple's secure timestamp, online) and checks each binary's Team ID; the Linux builds are not signed. `daemon/` holds the copy of the live build's terminumd and the links `agents` and `soundfonts` to that build's, so a build finds its files beside itself there as in its own folder, an older build rolled back to too |
 | Install | umask 077; `install.lock` (flock, AC-16); `<pkg>/agents/<platform>/terminumd --version` must equal `BUILD`; copied to `builds/.<build>.tmp` then renamed; `current`, `previous`, `bin/terminum` switched by one rename each; before every start the live build's terminumd is copied to `daemon/.terminumd.new` (0755) and renamed over `daemon/terminumd`; the root is 0700, the log made 0600 before launchd opens it; builds pruned only after success |
 | launchd | plist `io.terminum.terminumd`: ProgramArguments `[<root>/daemon/terminumd, serve]`, RunAtLoad, KeepAlive, ThrottleInterval 1, EnvironmentVariables (PATH: Homebrew's, the system's, then the installing shell's absolute folders outside the home folder; `TM_HOME`, `TM_APP_DIR` when moved), log paths, `Sockets` → `Listeners` = {SockNodeName `127.0.0.1`, SockServiceName `"<port>"` (settings.json `port`), SockFamily `IPv4`, SockType `stream`}; written with one rename and only when its content changes; bootstrap retried for 5 s; `launchctl` is called for the live label only when the install's folders are the real home's (`getpwuid`, not `$HOME`) |
 | Socket activation | terminumd calls `launch_activate_socket("Listeners")`: `ESRCH` (not run by launchd) → it binds the port itself; another error or not exactly one fd → exits with the error; the fd gets `O_NONBLOCK` and `FD_CLOEXEC`; a socket not bound to `127.0.0.1:<port>` (launchd hands `0.0.0.0:0`) → the "held by another program" case of AC-08; `/health` reports the listener's real port; Linux builds have no activation |
@@ -596,19 +611,19 @@ Other commands: `terminum help` lists them; usage is in `docs/USAGE.md`.
 ### Security
 
 - Install and upgrade: nothing from a download runs before the signature, the release line and the checksum passed (§9 Upgrade).
-- launchd holds the port (AC-08), so no other program can serve a page in the page's origin. The residual (before the agent is loaded, after an uninstall, on Linux, `TM_NO_LAUNCHD`) is in terminum.md §9 Security.
-- Last lines (AC-96): what panes showed last is kept on disk, which tmux alone does not do, so printed secrets survive a reboot there; AC-96 says where and for how long.
+- launchd holds the port (AC-08), so no other program can serve a page in the page's origin. What is left: `SECURITY.md` ("A program on terminumd's port").
+- Last lines (AC-96): the threat is in `SECURITY.md`.
 
 ### Compatibility
 
 - State files (AC-16): unknown fields are dropped on the next write; `version` bumped only for a changed meaning.
-- `terminum import` reads `workspaces.json`, `web-bookmarks.json` and `agents.json` from `~/.iterm-enhancer/state`, each only when terminum has none yet; keys of tmux panes are kept and iTerm2 session keys dropped.
+- `terminum import` reads `workspaces.json`, `web-bookmarks.json` and `agents.json` from `~/.iterm-enhancer/state`, each only when terminum has none yet; what it keeps of each: §9 Compatibility of `terminum-files.md`, `terminum-terminal.md`, `terminum-remote.md`.
 
 ### Logging and observability
 
 terminumd logs to `~/.terminum/logs/terminumd.log` (0600); `terminum logs` shows it. Events of these cases: `tmux.timeout`, `tmux.started`, `tmux.restored`, `lastlines.unsaved`, `start.failed`.
 
-`/health` on the socket gives what `terminum status` prints and the upgrade waits for: `build`, `pid`, `uptime_s`, `port`, `password`, `servers`, `hosts`, `pages`, `tmux` (`ok`, `message`, `started_by`), `service`.
+`/health` on the socket (its fields: `terminum.md` §9 Logging and observability) gives what `terminum status` prints and the upgrade waits for.
 
 ## 10. Delivery stages
 

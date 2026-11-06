@@ -42,6 +42,7 @@ SCREENS = {
     # works again, then is done for good
     "turn": {"rows": [], "phases": [[WORK, 3000], [IDLE, 7000], [WORK, 7000], [IDLE, 0]]},
     "shell": {"title": "\u2733 Fix it", "rows": [], "phases": [[SHELL_CC, SHELL_FOR * 1000], [DONE_CC, 0]]},
+    "teammate": {"title": "\u2733 general-purpose", "rows": DONE_CC},
     "switch": {"rows": ["• Created essay.md", "  Worked for 43s • 11:04", "", "› Ask Codex to do anything"],
                "later": ["  ready - started server on 0.0.0.0:3000", "? Would you like to run the app on another port instead? › (Y/n)"]},
 }
@@ -87,7 +88,7 @@ def main():
         index = {}
 
         def run(name):
-            out = tmux("new-window", "-d", "-P", "-F", "#{window_index}", "-t", "main", "node", program, json.dumps(SCREENS[name]))
+            out = tmux("new-window", "-d", "-P", "-F", "#{window_index}", "-t", "main", "node", program, json.dumps(SCREENS[name]), *(["--agent-name", "simplify-altitude"] if name == "teammate" else []))
             index[name] = out.strip()
         for name in SCREENS:
             if name not in ("switch", "turn", "shell"):
@@ -112,6 +113,8 @@ def main():
         ask = seen("ask", lambda r: r["state"] == "waiting")
         check("AC-39 Codex's question waits over \"esc to interrupt\"", ask and ask["agent"] == "codex", ask)
         check("AC-39 the list title leaves out Codex's \"Action Required\" mark", ask and ask["title"] == "Pick a language | p", ask)
+        mate = seen("teammate", lambda r: r["title"] == "simplify-altitude")
+        check("AC-01 a subagent's pane shows its --agent-name, its type under it", mate and mate["agent"] == "claude" and "general-purpose" in mate["sub"], mate)
         dev = seen("dev", lambda r: True)
         check("AC-39 another node program asking a question shows no agent and no state",
               dev and dev["agent"] is None and dev["state"] is None, dev)

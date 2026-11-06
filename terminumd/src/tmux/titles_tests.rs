@@ -45,6 +45,35 @@ fn ac01_a_named_window_and_its_second_pane() {
 }
 
 #[test]
+fn ac01_a_subagents_pane_shows_its_own_name_and_keeps_its_type() {
+    let lead = pane("2.1.319", true, "\u{2733} Fix the list", "2.1.319", "/Users/alex/p");
+    let sub = PaneFields { pane_id: "%4".into(), pane_index: 1, pane_title: "\u{2733} general-purpose".into(),
+                           agent_name: "simplify-altitude".into(), ..lead.clone() };
+    let i = item(&sub, 2, 2, HOME);
+    assert_eq!(i.title, "simplify-altitude");
+    assert_eq!(i.agent, Some("claude"));
+    assert!(i.sub.contains(&"general-purpose".to_string()), "{:?}", i.sub);
+    // alone in a window tmux named after it, too
+    assert_eq!(item(&sub, 1, 1, HOME).title, "simplify-altitude");
+    // a window the user named keeps that name
+    let named = PaneFields { window_name: "review".into(), automatic_rename: false, ..sub.clone() };
+    assert_eq!(item(&named, 1, 1, HOME).title, "review");
+    // another program started with the same flag is not a subagent
+    let other = PaneFields { window_name: "dev".into(), command: "zsh".into(), pane_title: "shell".into(), ..sub.clone() };
+    assert_eq!(item(&other, 2, 2, HOME).title, "shell");
+}
+
+#[test]
+fn ac01_only_a_name_is_taken_from_the_start_command() {
+    let row = |name: &str| format!("main\t1\t@1\tw\t1\t%3\t0\tt\tclaude\t/p\t0\t1\th\t\t\t$1\t\t{name}");
+    assert_eq!(parse_list_panes(&row("simplify-reuse")).unwrap().agent_name, "simplify-reuse");
+    assert_eq!(parse_list_panes(&row("")).unwrap().agent_name, "");
+    for bad in ["a=b", "$(id)", "a/b", &"x".repeat(65)] {
+        assert_eq!(parse_list_panes(&row(bad)).unwrap().agent_name, "", "{bad}");
+    }
+}
+
+#[test]
 fn a_window_tmux_names_shows_the_panes_title_without_marks() {
     let p = pane("claude", true, "\u{2733} Fix the list", "claude", "/Users/alex/p");
     let i = item(&p, 1, 1, HOME);
@@ -163,6 +192,14 @@ fn list_panes_rows() {
     assert!(old.automatic_rename, "a tmux that does not say: a command's name is tmux's");
     let named = parse_list_panes("s\t1\t@1\tmy api\t\t%1\t0\tt\tzsh\t/\t0\t1\th\t\t\t$1").unwrap();
     assert!(!named.automatic_rename);
+}
+
+#[test]
+fn ac01_tmux_says_the_name_a_pane_was_started_with() {
+    let started = "env SECRET=x sh -c 'sleep 30' ignored --agent-id a@s --agent-name simplify-reuse --team-name s";
+    let Some(s) = crate::testutil::Tmux::start("titles-name", (80, 20), started) else { return };
+    let text = s.read(&["list-panes", "-a", "-F", LIST_PANES_FORMAT]);
+    assert_eq!(parse_list_panes(text.trim()).unwrap().agent_name, "simplify-reuse", "{text}");
 }
 
 #[test]

@@ -5,6 +5,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, security). 
 ## 0. Metadata
 
 | Field | Value |
+|---|---|
 | Status | current |
 
 A snapshot of what terminum must do, not a record of how it came to be: git holds that.
@@ -53,7 +54,7 @@ Open questions:
 
 | ID | Question | Owner | Status | Decision |
 |---|---|---|---|---|
-| OQ-31 | Bookmarks are keyed by the pane's key (`tmux:<host>:<socket>:%N`): a pane id is reused by tmux after a server restart. Add the session's creation time to the key? | Claude | resolved | No: the key stays the pane's, and the server's identity decides. A restored server gives bookmarks their panes' new keys; a server started anew (another `@terminum-id`) orphans them (`terminumd/src/page/projects_tests.rs:126`). Written down 2026-11-06. |
+| OQ-31 | Bookmarks are keyed by the pane's key (`tmux:<host>:<socket>:%N`): a pane id is reused by tmux after a server restart. Add the session's creation time to the key? | Claude | resolved | No: the key stays the pane's, and the server's identity decides (AC-33; `terminumd/src/page/projects_tests.rs:126`). |
 
 ## 4. Acceptance cases
 
@@ -83,7 +84,7 @@ Scenario: AC-31 happy path — a file printed by a command
 
 Scenario: AC-31 happy path — fences, documents and diagrams in any output
   When the output holds a fenced block (``` or ~~~, closed by the same fence; any word after it is its language: `gherkin`, `json`…, highlighted where the viewer knows it; `mermaid`, `mermaidjs` or `mmd` a diagram; a fence the output went on past with no closer, at a coding agent's next message or result less indented than it or at a prompt, is text, and what follows is read), a Markdown document (a run of lines with a heading after a blank line, a table or a fence, two kinds of Markdown signs and three lines with one, at most 6 plain lines between, less than 30 % code-like lines, never across a prompt line) or a diagram starting with its keyword alone on a line ("flowchart LR", "sequenceDiagram" …) up to the next blank line
-  Then each region is a widget: a fence named "mermaid" is a diagram, another is code; a document's shared indentation is removed (an agent indents its tools' output), a document may start on a tool's first line ("  ⎿  # Title"); an unfenced diagram starts in Raw (text from anyone reaches Mermaid only when the user presses Diagram)
+  Then each region is a widget: a document's shared indentation is removed (an agent indents its tools' output), a document may start on a tool's first line ("  ⎿  # Title"); an unfenced diagram starts in Raw (text from anyone reaches Mermaid only when the user presses Diagram)
   And Raw shows the lines as before with the bar; the choice is kept per region while the page is open; Copy copies the source (a fence's code without the fence); a click on a diagram opens the viewer
 
 Scenario: AC-31 happy path — a table drawn with rules
@@ -165,7 +166,7 @@ Scenario Outline: AC-32 happy path — what folds
 
 Scenario: AC-32 happy path — a tool's output down to a summary
   Given Claude Code's ("⏺ Bash(…)", "  ⎿  …") or Codex's ("• Ran …", "  └ …") tool output has scrolled into the history
-  Then its command keeps two lines at most, its output its first line and two more, and the rest is one line "⋯ N more lines of output", within a second, also while the agent's next line (its end) is still on the screen; an output going on from the history onto the screen folds once it scrolled off whole
+  Then its command and its output fold as the table above says, within a second, also while the agent's next line (its end) is still on the screen; an output going on from the history onto the screen folds once it scrolled off whole
 Scenario: AC-32 happy path — on the screen too
   Given a tool's long output is still on the screen, under the agent's next line
   Then the same rules fold it there: the screen message carries its folds ([from row, to row, label], when they changed) and the page shows one line with Show and Copy in their place; Show keeps it open while its first row reads the same; the part that may go on (the last), a full-screen program's rows (vim, mc; Codex's own alternate screen is an agent's) and the cursor's never fold
@@ -178,7 +179,7 @@ Scenario: AC-32 edge — a running tool's dot blinks
   Then the command folds alike in both phases ("⋯ 2 more lines of the command"), so the fold neither comes and goes nor moves the page, also on opening it; a row "  Name(" counts as a tool's only when the tool's result ("  ⎿") follows its command, so indented text that looks like a call never folds as one
 Scenario: AC-32 happy path — show and copy
   When the user presses a fold's line
-  Then the page asks terminumd for those lines ("unfold": only a fold terminumd told of, still in the history, at most 20,000) and shows them; the line says "Hide …"
+  Then the page asks terminumd for those lines ("unfold") and shows them; the line says "Hide …"
   And Copy copies the fold's lines (asked for first when not here; copied in the same click over HTTPS, else "The lines are here now: press Copy again.")
 
 Scenario: AC-32 edge — the whole, the screen, a clear
@@ -196,7 +197,7 @@ Scenario: AC-33 happy path — a selection becomes a bookmark
   When the user selects text in the history, the screen or a widget's rendered text
   Then a gray Copy and an orange [+] under it stand in the floating buttons' column (in one line with find and the sent history), Copy level with the selection's first line (kept inside the terminal, following the view), the column's other buttons hidden meanwhile, while the selection lasts (and 600 ms after); Copy, [+] and Ask one gap apart (--sp-3), the same gap between the terminal's top or end and the first or the last; on a phone or a narrow window they stand instead at the terminal's top right, Copy first, in place of the folded floating buttons (terminum.md AC-18); not for a selection in an agent's input box or status lines
   When the user presses [+], types a note and saves (Save, or ⌘Enter or Ctrl+Enter in the dialog; a plain Enter is a new line of the note)
-  Then the dialog, 80% of the terminal's width (480 px at least, the window's less 32 px at most), shows the text it keeps (a longer one: its first 2000 characters, never half an emoji, then "… (the first 2,000 characters are kept)") and the bookmark holds that text, the note (up to 1000), its line, and, stamped by terminumd, the pane's key (OQ-31), title, host and time, in "web-bookmarks.json" (0600) on the Mac, seen by every signed-in client at once
+  Then the dialog, 80% of the terminal's width (480 px at least, the window's less 32 px at most), shows the text it keeps (a longer one: its first 2000 characters, never half an emoji, then "… (the first 2,000 characters are kept)") and the bookmark holds that text, the note (up to 1000), its line, and, stamped by terminumd, the pane's key (OQ-31), title, host and time, in "web-bookmarks.json" on the Mac, seen by every signed-in client at once
 
 Scenario: AC-33 happy path — marks, the way back, the lists
   Given the shown pane has bookmarks
@@ -247,7 +248,7 @@ Scenario: AC-33 happy path — a session's own
 Scenario: AC-33 edge — the lines are gone, a rename, a server restart
   Then a bookmark whose text is no longer in the history says "These lines are no longer in this session's history." with its text and note; it stays until deleted
   And one made on a full-screen program's own screen (tmux's alternate screen, terminum.md AC-06) is found while that screen shows its text, else it says "It was on a full-screen program's own screen, which tmux keeps no history of." with its text and note
-  And the bookmark dialog shows the characters terminumd keeps (its `marks` message says how many: 2000), never the page's own number
+  And the bookmark dialog shows the characters terminumd keeps (its `marks` message says how many), never the page's own number
   And a renamed window keeps its bookmarks (the key is the pane's); a tmux server restored from its checkpoint (terminum-lifecycle.md AC-15) gives its bookmarks their panes' new keys, those of a pane not made again orphaned (a restored pane may take its id); one started anew without a restore (another @terminum-id) orphans its bookmarks: a reused pane id is another pane (OQ-31)
 
 Scenario: AC-33 failure — cannot keep or reach
@@ -317,7 +318,7 @@ Scenario: AC-35 failure — the folder is unknown
 Scenario: AC-36 happy path — paste an image
   Given the shown pane runs on this Mac, or on a host whose files helper is enabled
   When the user pastes an image (a screenshot: PNG, JPEG, GIF, WebP; another type the browser can draw, such as TIFF from Preview or HEIC in Safari, is turned into a PNG first) into the terminal, or presses the hot key Paste over HTTPS with an image on the clipboard
-  Then the image is never typed as text; the page uploads it (at most 100 MB, 2 at once, 300 s to arrive), terminumd saves it where the pane's shell runs ("~/.terminum/tmp/" on the Mac and on a host; folder 0700, file 0600, named by UTC time and 8 random hex digits), and the page pastes the absolute path shell-quoted as text (bracketed when on), no Enter; files older than 7 days go at the next paste, when terminumd starts and once a day (on a host: when its files agent starts and once a day while it runs)
+  Then the image is never typed as text; the page uploads it (300 s to arrive; its limits under "refused or failed"), terminumd saves it where the pane's shell runs ("~/.terminum/tmp/" on the Mac and on a host; folder 0700, file 0600, named by UTC time and 8 random hex digits), and the page pastes the absolute path shell-quoted as text (bracketed when on), no Enter; files older than 7 days go at the next paste, when terminumd starts and once a day (on a host: when its files agent starts and once a day while it runs)
 
 Scenario: AC-36 happy path — upload and drop
   When the user presses Upload and picks a file, or drops files on the page
@@ -327,7 +328,7 @@ Scenario: AC-36 happy path — files dropped from Finder on a pane of this Mac
   Given the page is open in this Mac's browser (http://127.0.0.1:48080, not through tailscale serve: terminumd says so in its `build` message, the page never guesses it from its address) and the shown pane's shell runs on this Mac
   When the user selects "Drums Initial.zip" and "Drums Grade 1.zip" (230 MB) in Finder and drops them on the page
   Then terminumd reads the drag's file paths from macOS's drag pasteboard (`osascript -l JavaScript`: no Apple Events, so no Automation prompt; 3 s at most) and takes them only when each item dropped is one of them, by its name and kind, a file also by its size and its time within 2 s, each path taken once
-  And the page pastes those paths as an upload's paths are pasted (shell-quoted, one per line in a coding agent's box, else separated by spaces), no Enter: nothing is uploaded, at any size, and a dropped folder is put as its path
+  And the page pastes those paths as an upload's paths are pasted, no Enter: nothing is uploaded, at any size, and a dropped folder is put as its path
   But when they are not the files dropped the page uploads copies as below, its toast first saying "Their own paths were not found: <why>", where <why> tells the cases apart:
     | Case | <why> |
     | the drag held no file (from Mail, a browser, another app's window) | "the drag held no file on this Mac's disk (a drag from Mail, a browser or an app's window has none)" |
@@ -366,12 +367,12 @@ Scenario: AC-37 happy path — a phone
   When the user taps the input (the cursor's row, a coding agent's input box) or the keyboard button
   Then the keyboard opens and the page shrinks above it, growing back when it closes; a tap elsewhere on the terminal leaves it as it was
   When the user long-presses
-  Then iOS selects the word with its handles and no menu of its own (no Copy, Find Selection, Translate over the text): the page's Copy, [+] and Ask stand at the terminal's top right (each paragraph a block; a long one cut every 400 lines, so a tap on a selection in 3,000 lines never freezes); with the keyboard up a finger held still 0.45 s closes it and selects the word, kept in sight; the page's Copy copies the selection, also after a tap cleared it and the terminal caught up
+  Then iOS selects the word with its handles and no menu of its own (no Copy, Find Selection, Translate over the text): the page's Copy, [+] and Ask stand where AC-33 says (each paragraph a block; a long one cut every 400 lines, so a tap on a selection in 3,000 lines never freezes); with the keyboard up a finger held still 0.45 s closes it and selects the word, kept in sight; the page's Copy copies the selection, also after a tap cleared it and the terminal caught up
   And with a hardware keyboard ⌘C copies the selected terminal text and ⌘V pastes; the keyboard field gets the focus back when the user was typing when the selection began
 
 Scenario: AC-37 happy path — Ask about a selection
   When the user selects text in the terminal
-  Then an Ask button (a speech bubble with a question mark, no label, on a pastel cornflower blue fill) shows while the selection lasts, just under the selection's [+] on every screen (on a computer the three stand in the floating column from the selection's first line down, a split's embedded page too, which draws no other floating button and no Ask: its Copy and [+] at the same right column; on a phone at the terminal's top right); it is hidden otherwise
+  Then an Ask button (a speech bubble with a question mark, no label, on a pastel cornflower blue fill) shows while the selection lasts, just under the selection's [+] on every screen (AC-33; a split's embedded page draws no other floating button and no Ask: its Copy and [+] at the same right column); it is hidden otherwise
   When the user presses Ask
   Then its dialog opens centered on the window, across and down, as every dialog, and stays there as the window or its field is resized, the dialog scrolling when it is taller than the window, a quarter larger than other dialogs: 600 px wide, the quote up to 37.5% of the window's height, a 4-line question
   When the user types a question and presses Add to Chat
@@ -392,7 +393,7 @@ Scenario: AC-37 happy path — Ask about a selection
 
 Scenario: AC-37 happy path — an asked quote stays marked
   Given the user asked about a selection (Add to Chat or Send to Agent; terminumd gave it its number)
-  Then the quoted text in the terminal keeps a light blue wavy line (the Ask button's blue) down its rows' left, in the terminal's gutter, as a reminder's quote has (no underline), where it was selected: the occurrence nearest the line the selection began on (within 30 lines), never its copy in the message sent (after Ask's `> Quote #0007 >`, or `Quote #0007: «` and `Quote Start ---- «` of before)
+  Then the quoted text in the terminal keeps a light blue wavy line (the Ask button's blue) down its rows' left, in the terminal's gutter, as a reminder's quote has (no underline), where it was selected: the occurrence nearest the line the selection began on (within 30 lines), never its copy in the message sent (after Ask's `> Quote #0007 >`, or the forms `Quote #0007: «` and `Quote Start ---- «` still in a history)
   And terminumd keeps the quote (its number, text and that line) per pane in the project's asked.json, the newest 100 of each pane, so the line shows on every page of that pane, after a reload and after terminumd's restart
   And the line stands beside the rows, which stay as they are (copying, iOS's selection), for the rows within a screen of the visible ones; text in a fold or scrolled out of tmux's history has none
 
@@ -436,7 +437,7 @@ Scenario: AC-90 happy path — kept
   When the user presses Enter in a pane at a shell prompt or in a coding agent's input box
   Then the page tells terminumd what stood there before the key goes: the command after the shell's prompt with the rows it wrapped from, or the agent's typed rows (a faint suggestion is not typed); for a coding agent whose hooks spoke its prompt comes from its hooks exactly and the page's is dropped
   And a prompt whose mark has a variation selector after it (Starship's "at 19:20 ❯︎ ") is told apart from the command: the entry holds the command alone
-  And terminumd keeps it in ~/.terminum/sessions/<project>/sent.jsonl (0600, the folder 0700; meta.json names the project), the project being the pane's host and folder, with the time, the agent and the pane's title
+  And terminumd keeps it in ~/.terminum/sessions/<project>/sent.jsonl (§9), the project being the pane's host and folder, with the time, the agent and the pane's title
 
 Scenario: AC-90 happy path — read back
   When the user presses the speech bubble under the magnifier
@@ -454,8 +455,8 @@ Scenario: AC-90 happy path — the marks on the right edge
   Then the terminal's right edge (where a narrow window shows the bookmarks' marks), placed over the loadable history as a scrollbar's thumb, shows a white rounded bar (4 × 14 px, as a bookmark's mark) where each message sent in the shown pane stands (its newest 200; terminumd finds each by its text near its line; one not found shows none), an orange one at each bookmark the session shows of its own and a pink one at each open reminder (one bar where they meet: pink over orange over white), each titled with its text
   When the user presses a bar
   Then that message, bookmark or reminder is brought into view (a bookmark's bar shows); a bar of several tries them in turn (its color's kind first) until one is found; a coding agent's prompt is found only on a row its transcript opens with "❯ " ("› ", "> "), never where an answer or a tool's output quotes the same words; Claude Code's "[Pasted text #3 +5 lines]" is left out of the text looked for (the transcript shows the paste); a line hidden under a widget or a fold brings the widget or the nearest row shown into view
-  And where each answer of the pane's coding agent ended is a pale blue bar (under white, orange and pink where they meet), titled "Answer ended: <its last row>": at the turn's end (the hooks' Stop, else a turn read from the screen) terminumd reads the pane's screen and keeps the last row above the agent's input box (Claude Code's "❯ " between two rules, Codex's "› "; never a question's options, "❯ 1. Yes") that is not blank, a rule or the turn's "Worked for 43s" line and has 4 letters and digits at least, with its line, in the project's ends.jsonl (2000 kept, cut back as sent.jsonl is), never the sent history; a full-screen program's (no history), a screen at work or one without an input box keeps none; the answer's text never comes through the hooks; every page hears `endnew {key}` and the shown pane's asks for the places again
-  And the rail's height is the whole loadable history (up to the history lines, 12,000 by default): a bar stands at its line's place in it, moves up as the history grows, and is gone once its line left the history
+  And where each answer of the pane's coding agent ended is a pale blue bar (under white, orange and pink where they meet), titled "Answer ended: <its last row>": at the turn's end (the hooks' Stop, else a turn read from the screen) terminumd reads the pane's screen and keeps the last row above the agent's input box (Claude Code's "❯ " between two rules, Codex's "› "; never a question's options, "❯ 1. Yes") that is not blank, a rule or the turn's "Worked for 43s" line and has 4 letters and digits at least, with its line, in the project's ends.jsonl (2000 kept, cut back as sent.jsonl is), never the sent history; a full-screen program's (no history), a screen at work or one without an input box keeps none; every page hears `endnew {key}` and the shown pane's asks for the places again
+  And the rail's height is the whole loadable history (up to the history lines, `tmux.history`): a bar stands at its line's place in it, moves up as the history grows, and is gone once its line left the history
   And Settings' "Side marks" switch (on by default, kept in this browser) hides these marks and the bookmarks' marks of a narrow window, and terminumd is asked for no places while it is off
   And the bars are drawn again when the pane is shown, when its history starts anew, when a message is kept in that pane (not another's) and when the bookmarks change; a narrower window or a phone has no strip
 
@@ -476,7 +477,7 @@ Scenario: AC-90 failure — not written
 ```gherkin
 Scenario: AC-91 happy path — a reminder
   When the user picks Reminder in the bookmark dialog (Bookmark | Reminder; its title and Save turn pale fuchsia) and saves
-  Then it is kept as a bookmark of the kind reminder (AC-33: its text, note, line and pane); the sessions that show it have a wavy pink line in the list; a pale fuchsia bell (on the plain buttons' fill) under the bookmarks' button counts the open reminders the shown session shows
+  Then it is kept as a bookmark of the kind reminder (AC-33: its text, note, line and pane); a pale fuchsia bell (on the plain buttons' fill) under the bookmarks' button counts the open reminders the shown session shows
   And the floating buttons stand in one column at the terminal's top right: find, the split and the sent history, then, set apart, the colored ones (bookmarks, reminders) of one size and look without glow; 14 px below the terminal's top and 12 px apart, the header's ⋯ right above them (its middle on the magnifier's); find's field opens 14 px left of its button, centered on it, which stays in sight (under it where the view is too narrow, above it on a phone's bottom row); a split's embedded page shows none of them
 
 Scenario: AC-33, AC-90, AC-91, AC-97 happy path — the panes are windows as View's
@@ -492,7 +493,7 @@ Scenario: AC-91 happy path — up when the turn ends
   When the coding agent of its pane ends a turn: its hooks say it stopped, failed or was interrupted (also a turn too quick for the list to show it working), or the pane worked or waited and now is done, failed or shows no agent
   Then terminumd puts that pane's open reminders up, keeps that, and tells every page; while that session is shown the bell stands over it, still (nothing blinks, on any screen), its count filled, until pressed
   When the user presses it
-  Then its pane is the bookmarks' navigator (AC-33, the same window, list, line, view, keys and Undo), titled "Reminders of this session", listing only the shown session's open reminders, those up first ("up now" at an entry's right for its time), then newest first; its actions are the bookmarks' pane's: Show in terminal (its session at its text, AC-33), Resolve (with Undo for 5 s; it comes up no more and stays in Bookmarks) and Quote in chat (the pane closes); a reminder seen there is marked again only once put down and up anew
+  Then its pane is the bookmarks' navigator (AC-33, the same window, list, line, view, keys and Undo), titled "Reminders of this session", listing only the shown session's open reminders, those up first ("up now" at an entry's right for its time), then newest first; its actions are the bookmarks' pane's: Show in terminal, Resolve (it comes up no more and stays in Bookmarks) and Quote in chat; a reminder seen there is marked again only once put down and up anew
   And a reminder is put down (up again at the next turn's end) only by terminumd's rules; the pane has no Close or Delete of its own; opening the pane marks the bell no more; a reminder is deleted from the bar after Show in terminal
 
 Scenario: AC-91 happy path — said when they come up
@@ -529,7 +530,7 @@ Scenario: AC-40 happy path — the cursor follows taps and arrows
 Scenario: AC-40 happy path — the panel, status lines, the view
   Then on a phone the input box is a panel at least two rows high, without its rules; the status lines below it (folder, model, context, limits, permission mode) are behind the ⓘ button, remembered per browser; a "/" or "@" list the input opened stays in sight (every other footer line waits, also those it shows only while it works); typing keeps the panel in sight; empty rows below the last text and the cursor are not shown; whole-line key hints ("(ctrl+b to run in background)") are left out on a phone, and a notice pushed right by spaces loses them
   And the view keeps the cursor's row two rows above the bottom edge while typing and for 3 s after
-  And in Wrap the box's rows re-join as Claude Code wrapped them (cols - 2 characters a row, AS-33): a row goes on when the next row's first word would not have fit; a line the user ended stays its own; a space typed at a full row's end keeps the cursor on the same line; when the cursor stands past a row's text on the space it wrapped at, its cell is that space
+  And in Wrap the box's rows re-join as Claude Code wrapped them (AS-33): a row goes on when the next row's first word would not have fit; a line the user ended stays its own; a space typed at a full row's end keeps the cursor on the same line; when the cursor stands past a row's text on the space it wrapped at, its cell is that space
 
 Scenario: AC-40 happy path — slides, held delete, iOS paste
   When the user rests a finger at least 250 ms (however long) on the cursor's row and slides sideways
@@ -561,7 +562,7 @@ Scenario: AC-40 edge — the cursor below the footer
 
 Scenario: AC-40 failure — not an agent's box
   Given a shell, less or htop
-  Then a tap on another row moves nothing (↑ and ↓ would recall history) and leaves the keyboard as it was; a tap on the cursor's row of a shell moves the cursor with ← and → as many as the columns between
+  Then a tap on another row moves nothing (↑ and ↓ would recall history); a tap on the cursor's row of a shell moves the cursor with ← and → as many as the columns between
 ```
 
 ## 6. Flow and sequence diagrams
@@ -583,7 +584,7 @@ sequenceDiagram
   P->>P: scroll, mark with the wavy line, show the bar
 ```
 
-The text, not the number, is the anchor: tmux renumbers when it drops lines. Folds hide lines until the page asks; the page opens the fold a located line is in.
+The text, not the number, is the anchor (AC-33).
 
 ### Output to widgets (AC-31)
 
@@ -597,7 +598,7 @@ flowchart LR
   W -. "Copy / Raw" .-> F
 ```
 
-Widgets never change the rows' text; they are drawn over the first row of a region and removed when the region's lines leave the kept window.
+Widgets are drawn over the first row of a region and removed when the region's lines leave the kept window.
 
 ## 7. Current behavior and gaps
 
@@ -646,7 +647,7 @@ Example:
   "host": "devbox.example", "at": 1792003600, "project": "a1b2c3d4e5f6"}]}
 ```
 
-An item may also carry `remind`, `due`, `resolved` (Unix seconds), `orphaned` (Unix seconds), `alt` (made on a full-screen program's own screen), `by`, `kind`, `file` (an agent's record, terminum-agents.md AC-98) and `dir` (a file before version 3). Versions 1 to 3 are read: a file before 3 gives its bookmarks their projects once; a file before 4 orphans, once, a project's record whose pane is not of that project.
+An item may also carry `remind`, `due`, `resolved` (Unix seconds), `orphaned` (Unix seconds), `alt` (made on a full-screen program's own screen), `by`, `kind`, `file` (an agent's record, terminum-agents.md AC-98) and `dir` (a file before version 3). Versions 1 to 3 are read: a file before 3 as AC-33 says; a file before 4 orphans, once, a project's record whose pane is not of that project.
 
 `sessions/<project>/` (the project: the first 16 hex digits of SHA-256 of `host\0path`; `meta.json` is `{"host", "path"}`; files 0600, folder 0700): `sent.jsonl`, one entry a line, newest last; `ends.jsonl` (`{at, key, line, text}`); `quotes.json` (the last number per pane); `asked.json` (`{n, text, line}` per pane).
 
@@ -685,13 +686,13 @@ Limits a scenario states are in §5. Only these are not:
 
 ### Security
 
-- Terminal output reaches only the panel's Markdown rules (raw HTML off, `http(s)`, `mailto` and relative links only, no image loaded) and Mermaid `securityLevel: "strict"` without HTML labels; a diagram is an image element of its SVG; an unfenced diagram is drawn only on the user's press.
-- Folded lines are sent only for a fold terminumd itself told of; the page cannot name other lines.
-- A path's underline lists the file's folder through the Files API on the pane's host; nothing is read until the user opens it.
-- Bookmarks hold selected terminal text: kept 0600, sent only over a signed-in WebSocket, shown as text; terminumd stamps the pane, key, title and host.
-- Pasted files: 0600 in a 0700 folder; the name is terminumd's; the path is pasted quoted; no Enter.
-- Traces: `?trace=1` holds no content; `?trace=2` stays in the page.
-- Sent history: what the user typed, at rest on the Mac only, sent only to signed-in pages; secrets are redacted before they are written (AC-90).
+- Terminal output reaches only the panel's Markdown rules (raw HTML off, `http(s)`, `mailto` and relative links only, no image loaded) and Mermaid `securityLevel: "strict"` without HTML labels; a diagram is an image element of its SVG.
+- The page cannot name lines outside a fold terminumd told of (AC-32).
+- A path's underline only lists its folder (AC-35); nothing is read until the user opens it.
+- Bookmarks hold selected terminal text: sent only over a signed-in WebSocket, shown as text.
+- Pasted files: the name is terminumd's (AC-36).
+- Traces: AC-38.
+- Sent history: what the user typed, at rest on the Mac only, sent only to signed-in pages; its secrets: AC-90.
 
 Denied request: `{"t":"unfold","n":5,"to":40000}` → `{"t":"lines","sid":"tmux:local:default:%3","first":5,"lines":[],"error":"Not a fold terminumd told of"}`.
 
@@ -706,7 +707,7 @@ Denied request: `{"t":"unfold","n":5,"to":40000}` → `{"t":"lines","sid":"tmux:
 2026-10-15T09:20:30.500Z level=warn event=bookmark.refused reason="300 bookmarks already"
 ```
 
-Pasted files swept log `event=paste.swept`. The metrics this section once named are gaps (§7).
+Pasted files swept log `event=paste.swept`. Metrics: §7.
 
 ## 10. Delivery stages
 

@@ -5,6 +5,7 @@ Sibling of `terminum.md` (the core). This spec holds remote hosts: their tmux se
 ## 0. Metadata
 
 | Field | Value |
+|---|---|
 | Status | current |
 
 A snapshot of what terminum must do, not a record of how it came to be: git holds that.
@@ -17,7 +18,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Expected outcome.** A host is added once by its ssh string. terminumd attaches to its tmux in control mode over ssh, in a session `terminum` it creates when missing, shows its sessions beside the local ones, types into them and reconnects after a drop with back-off. Once the user enables them, the host's files are browsed through a helper terminumd installs and keeps up to date, and coding agents on the host report to the page. The helper and terminumd are built for four platforms from one script and released signed.
 
-**Scenario.** Alex adds `devbox` once in the page. Its session `terminum` is in the list within 5 s, also on the phone. After a drop the group says "reconnecting (4 s)" and comes back; nothing is printed anywhere.
+**Scenario.** Alex adds `devbox` once in the page. Its session `terminum` is in the list, also on the phone. After a drop the group says it is reconnecting and comes back; nothing is printed anywhere.
 
 ## 2. Scope and non-goals
 
@@ -39,7 +40,7 @@ Assumptions:
 | AS-81 | `ssh -T -o BatchMode=yes <options> -- <destination> 'tmux -u -C new-session -A -f ignore-size -s terminum'` gives a control-mode client over ssh whose stdout is line-based and whose `%output` arrives within the link's latency; `pause-after` flow control (`refresh-client -f pause-after=2`) keeps a slow link from backing up. | Claude | verified with `scripts/fake_ssh.py` (`scripts/e2e_remote.py`) and over a real sshd (`scripts/e2e_remote_sshd.py`) |
 | AS-82 | The agent (`terminumd --agent --socket <path>`) serves a Unix socket on the host, takes its token on stdin and exits on stdin EOF. | Claude | verified over a real sshd (`scripts/e2e_remote_sshd.py`) |
 | AS-83 | The hosts in the owner's use are Ubuntu and Debian x86_64 and arm64 and macOS arm64. | Owner | stated |
-| AS-84 | OpenSSH's `-R <host path>:<Mac path>` (AC-99): (a) every refusal (`AllowStreamLocalForwarding no`, `DisableForwarding yes`, Alpine's stock `AllowTcpForwarding no`, a missing folder, a stale file) prints the same line: with `ExitOnForwardFailure=no` `Warning: remote port forwarding failed for listen path <path>` (hidden by `LogLevel=ERROR`), exit 0, the command runs; with `=yes` `Error: …`, exit 255, the command never runs; the client cannot tell them apart, so the helper checks its `--link` socket itself; `DisableForwarding yes` also refuses the Files tunnel's own `-L` (Files fail with it), and `AllowStreamLocalForwarding no` forbids both directions by sshd's definition, so only a refusal of `-R` alone (`AllowStreamLocalForwarding local`) keeps Files working; (b) sshd binds the socket (0600, the user's) before the remote command starts (10 of 10 also with `=no`), never creates its folder, and leaves the file after the connection ends; (c) a stale file is refused (sshd: `Address in use`) and the client's `StreamLocalBindUnlink=yes` does not help: a fresh random name per connection; (d) `-o ControlPath=none` makes no mux master, yet a user config's `RemoteForward` still applies and, failing on the second login, ends the ssh under `ExitOnForwardFailure=yes` (hence `=no`); a mux client's `-R` outlives the client under ControlPersist; a user ControlPath of 104 bytes or more fails the ssh; `ClearAllForwardings=yes` drops the command line's `-R` too (never used); (e) the Mac-side target needs a `/` (a bare name: `Bad remote forwarding specification`, exit 255) and at most 104 bytes; a request takes about 0.7–1.0 ms on loopback; (f) a login shell's rc output (lines above the interactive guard of Debian's `.bashrc`) precedes the command's stdout, `exec /bin/sh -c` included, and `-tt` adds `\r` to each line: output is read after a marker line. Dropbear has no stream-local forwarding, so it refuses Files' `-L` as well as `-R`. | Claude | verified 2026-10-26 against real sshd: OpenSSH 9.7p1 (Alpine 3.20) and 9.2p1 (Debian 12), client OpenSSH 9.9p2 (macOS); the `-L` refusal under `DisableForwarding yes` seen 2026-10-26 (`scripts/e2e_remote_sshd_agents.py`, Alpine: Files "unreachable", connection closed); Dropbear not tested; a macOS host's sshd not verified (Remote Login off on the Mac at hand) |
+| AS-84 | OpenSSH's `-R <host path>:<Mac path>` (AC-99): (a) every refusal (`AllowStreamLocalForwarding no`, `DisableForwarding yes`, Alpine's stock `AllowTcpForwarding no`, a missing folder, a stale file) prints the same line: with `ExitOnForwardFailure=no` `Warning: remote port forwarding failed for listen path <path>` (hidden by `LogLevel=ERROR`), exit 0, the command runs; with `=yes` `Error: …`, exit 255, the command never runs; the client cannot tell them apart, so the helper checks its `--link` socket itself; `DisableForwarding yes` also refuses the Files tunnel's own `-L` (Files fail with it), and `AllowStreamLocalForwarding no` forbids both directions by sshd's definition, so only a refusal of `-R` alone (`AllowStreamLocalForwarding local`) keeps Files working; (b) sshd binds the socket (0600, the user's) before the remote command starts (10 of 10 also with `=no`), never creates its folder, and leaves the file after the connection ends; (c) a stale file is refused (sshd: `Address in use`) and the client's `StreamLocalBindUnlink=yes` does not help: a fresh random name per connection; (d) `-o ControlPath=none` makes no mux master, yet a user config's `RemoteForward` still applies and, failing on the second login, ends the ssh under `ExitOnForwardFailure=yes` (hence `=no`); a mux client's `-R` outlives the client under ControlPersist; a user ControlPath of 104 bytes or more fails the ssh; `ClearAllForwardings=yes` drops the command line's `-R` too (never used); (e) the Mac-side target needs a `/` (a bare name: `Bad remote forwarding specification`, exit 255) and at most 104 bytes; a request takes about 0.7–1.0 ms on loopback; (f) a login shell's rc output (lines above the interactive guard of Debian's `.bashrc`) precedes the command's stdout, `exec /bin/sh -c` included, and `-tt` adds `\r` to each line: output is read after a marker line. Dropbear has no stream-local forwarding, so it refuses Files' `-L` as well as `-R`. | Claude | verified against real sshd: OpenSSH 9.7p1 (Alpine 3.20) and 9.2p1 (Debian 12), client OpenSSH 9.9p2 (macOS); the `-L` refusal under `DisableForwarding yes` seen (`scripts/e2e_remote_sshd_agents.py`, Alpine: Files "unreachable", connection closed); Dropbear not tested; a macOS host's sshd not verified (Remote Login off on the Mac at hand) |
 
 Dependencies:
 
@@ -52,7 +53,7 @@ Open questions:
 
 | ID | Question | Owner | Status | Decision |
 |---|---|---|---|---|
-| OQ-81 | Does a host attach all its tmux sessions or one named session? | Owner | resolved | One session per host, named `terminum`: the user gives only the ssh string; terminumd runs `tmux -C new-session -A -s terminum` on the host, creating it when missing, and makes windows and panes inside it; other sessions on the host are not shown. Owner, 2026-10-15. Amended 2026-10-16: the user may attach other sessions of that tmux by name (AC-89); they are counted on the host's group, never listed or touched until attached. |
+| OQ-81 | Does a host attach all its tmux sessions or one named session? | Owner | resolved | One session per host, named `terminum` (AC-81): the user gives only the ssh string. The user may attach other sessions of that tmux by name (AC-89); they are counted on the host's group, never listed or touched until attached. |
 | OQ-82 | Should the files helper be installed with the host, without the Enable click? | Owner | open | Proposed: keep the click or the tick in Add host (nothing is copied to a host without one), as shipped. |
 
 ## 4. Acceptance cases
@@ -107,9 +108,9 @@ Scenario: AC-81 failure — ssh fails
 ```gherkin
 Scenario: AC-82 happy path — browse and edit
   Given devbox's files are enabled (AC-83) and the page shows its pane in "/home/alex/api"
-  Then terminumd runs "ssh … -o ServerAliveInterval=15 -L <app>/agents/<hash>.sock:/tmp/tm-<12 hex>/s -- <destination> '~/.terminum/bin/terminumd-agent --agent --socket /tmp/tm-<12 hex>/s --log ~/.terminum/logs/agent.log'" (one per host, token on stdin, back-off 1, 2, 4 … 30 s), and within 3 s Files shows "devbox:/home/alex/api" with a green dot
+  Then terminumd runs "ssh … -o ServerAliveInterval=15 -L <app>/agents/<hash>.sock:/tmp/tm-<12 hex>/s -- <destination> '~/.terminum/bin/terminumd-agent --agent --socket /tmp/tm-<12 hex>/s --log ~/.terminum/logs/agent.log'" (one per host, back-off 1, 2, 4 … 30 s), and within 3 s Files shows "devbox:/home/alex/api" with a green dot
   And expanding, opening, editing, saving, creating, renaming and trashing work as locally (AC-52–AC-59): every request carries X-TM-Host: devbox and goes to that host's agent unchanged (token and Host replaced, Origin dropped), never to a local file; a change on the host shows within 2 s
-  And "Reveal in Finder" and "Open with default app" are not offered; terminumd refuses them with "Not available for remote files"; a local and a remote file with one path never share a tab
+  And Finder's actions on a remote file are `terminum-files.md` AC-60, a tab's host AC-70
 
 Scenario: AC-82 edge — the agent connection drops, an older agent
   When the ssh of the agent closes
@@ -118,10 +119,10 @@ Scenario: AC-82 edge — the agent connection drops, an older agent
   Then terminumd installs the matching agent from the running build (AC-84) and reconnects; a build without an agent for that platform says "Could not update the helper on devbox: no helper for <platform> in this build"
 
 Scenario: AC-82 failure — the agent stalls or answers badly
-  Then a request that gets no bytes for 30 s, or no end within 120 s, fails and frees its connection; requests and answers are capped at 64 MB, an upload at 100 MB; a lagged event stream reconnects with a host-scoped rescan; a dialog answered after the page switched hosts does nothing ("The panel switched to another pane — nothing changed"); a document saves to the host it came from
+  Then a request that gets no bytes for 30 s, or no end within 120 s, fails and frees its connection; requests and answers are capped at 64 MB; a lagged event stream is `terminum-files.md` AC-61; a dialog answered after the page switched hosts does nothing ("The panel switched to another pane — nothing changed"); a document saves to the host it came from
 
 Scenario: AC-82 security — the agent
-  Then the agent listens only on a Unix socket with a random name in a 0700 folder on the host (removed on exit), takes its token on stdin (never a command line), exits on stdin EOF, on SIGHUP or after 90 s with no event stream, writes only under $HOME and /tmp on the host; on the Mac the forwarded socket is in the app folder (0700) and only terminumd connects to it; answers are untrusted (capped, streamed, Origin not forwarded; their type and policy terminumd's: a raw file's by its name with the `sandbox` policy, every other answer JSON)
+  Then the agent listens only on a Unix socket with a random name in a 0700 folder on the host (removed on exit), takes its token on stdin (never a command line), also exits on SIGHUP or after 90 s with no event stream ("no Mac connected for 90 s" in its log), writes only under $HOME and /tmp on the host; on the Mac the forwarded socket is in the app folder (0700) and only terminumd connects to it; answers are untrusted (capped, streamed, Origin not forwarded; their type and policy terminumd's: a raw file's by its name with the `sandbox` policy, every other answer JSON)
 ```
 
 ### AC-83 — Enable a host's files [SHOULD / P1]
@@ -173,10 +174,10 @@ Scenario: AC-84 happy path — after an upgrade
 Scenario: AC-84 edge — the same build, two Macs
   Then nothing is copied and no message shows when the helper is current; two Macs of different builds each run their own build's helper on one host (named by agent id) and neither copies again on every connect
 
-Scenario: AC-84 edge — a helper of the old name
+Scenario: AC-84 edge — a helper named terminusd-agent
   Given devbox holds only "~/.terminum/bin/terminusd-agent"
   When terminumd installs its helper or removes it
-  Then the old files are removed too, and terminumd-agent replaces them
+  Then those files are removed too, and terminumd-agent replaces them
 
 Scenario: AC-84 failure — the update fails
   When the copy fails (ssh refused, disk full)
@@ -203,12 +204,12 @@ Scenario: AC-85 failure — not enabled or too slow
 ```gherkin
 Scenario: AC-86 happy path — build on the Mac
   When the maintainer runs "make agents"
-  Then "scripts/agents.py", with zig and cargo-zigbuild pinned in ./.toolchain, builds terminumd for aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-musl and aarch64-unknown-linux-musl (static Linux builds), and reuses a build while its agent id and build are unchanged
-  And "terminum.tar.gz" (the same bytes also as "terminum-macos.tar.gz") holds terminumd for the four targets (the Mac's own chosen at install), which is also the installer and the command
+  Then "scripts/agents.py" (DEP-82) builds terminumd for aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-musl and aarch64-unknown-linux-musl (static Linux builds), and reuses a build while its agent id and build are unchanged
+  And what the package holds is `terminum-lifecycle.md` §9 Package
 
 Scenario: AC-86 security — signed releases, a public repository
   When the maintainer runs "make release TAG=vX.Y.Z" (only on their request, CLAUDE.md §10)
-  Then it refuses unless the tree is clean, the version is above every v* tag, HEAD is origin/main and TM_CODESIGN_IDENTITY is set; builds with "npm ci" and "cargo --locked"; refuses a package without both Linux builds; signs SHA256SUMS through ssh-agent with the release key (loaded 2 minutes, passphrase from the login Keychain, never prompting); refuses when HEAD moved during the build ("nothing is public; release again"); only then tags, pushes the tag, fills a draft and publishes it; release notes come from "docs/releases/vX.Y.Z.md" (refused when empty, unreadable or a symlink out of the tree)
+  Then it refuses unless the tree is clean, the version is above every v* tag and HEAD is origin/main (no Developer ID: `terminum-lifecycle.md` AC-08); builds with "npm ci" and "cargo --locked"; refuses a package without both Linux builds; signs SHA256SUMS through ssh-agent with the release key (loaded 2 minutes, passphrase from the login Keychain, never prompting); refuses when HEAD moved during the build ("nothing is public; release again"); only then tags, pushes the tag, fills a draft and publishes it; release notes come from "docs/releases/vX.Y.Z.md" (refused when empty, unreadable or a symlink out of the tree)
   And the CI workflow runs on the owner's runner only, on pushes and manual dispatch, with no permissions and pinned actions; it has no pull-request trigger and fork pull requests' workflows wait for approval; install.sh and "terminum upgrade" verify the signature with the key they carry before the checksum, and an older signed manifest never replaces a newer install
 
 Scenario: AC-86 failure — a build or check fails
@@ -234,7 +235,7 @@ Scenario: AC-87 edge — settings.json edited under an attached host
   Then its link stays, its group says "settings.json: option not allowed: -o; still connected with the previous recipe" under its name, and typing reaches it
   When the new recipe is valid but different ("-p 2223", "alex@refused.example")
   Then terminumd tries it first (`ssh … tmux -V`, BatchMode, 10 s) with the old link kept ("trying the new recipe; still connected with the previous one"); once it answers the host moves to it (its old helper and agents' link stop first, as above); if it fails the group says "the new recipe failed: <ssh's last line>; still connected with the previous one (terminum hosts retry devbox)", the same recipe is not tried again until Retry or another edit
-  And a host that is not attached (connecting, reconnecting, failed) takes a new recipe at once, as a fix of it should; `hosts add`, `remove`, `off` and `on` act at once as before
+  And a host that is not attached (connecting, reconnecting, failed) takes a new recipe at once, as a fix of it should; `hosts add`, `remove`, `off` and `on` act at once
 
 Scenario: AC-87 failure — a bad record
   Given settings.json names a host with an option not allowed or a destination with control characters
@@ -333,8 +334,6 @@ flowchart LR
   P["Page"] -- "X-TM-Host: devbox" --> D
 ```
 
-Terminals and the helper are separate ssh processes: the control client exists for every attached host; the helper only once files (AC-83) or agents (AC-99) are enabled.
-
 ### Reconnect (AC-81)
 
 ```mermaid
@@ -342,14 +341,12 @@ stateDiagram-v2
   [*] --> attached
   attached --> reconnecting: ssh exits
   reconnecting --> attached: %begin seen
-  reconnecting --> reconnecting: back-off 1,2,4…30 s
+  reconnecting --> reconnecting: back-off
   reconnecting --> failed: ssh error before %begin
   failed --> reconnecting: back-off or Retry now
   attached --> off: hosts off
   off --> attached: hosts on
 ```
-
-A shown pane keeps its last screen while reconnecting; typing is refused with the reason.
 
 ## 7. Current behavior and gaps
 
@@ -366,7 +363,7 @@ A shown pane keeps its last screen while reconnecting; typing is refused with th
 
 ## 8. Recommendation and ownership
 
-**Recommended approach.** terminumd owns both ssh processes of a host: the tmux control client and the helper's tunnel. Both start from one allowlisted recipe, checked before any shell sees it. The helper is terminumd itself in agent mode; coding agents' events ride on the helper's ssh as a reverse forward. A host's identity is its record's name.
+**Recommended approach.** terminumd owns both ssh processes of a host: the tmux control client and the helper's tunnel. Both start from one allowlisted recipe, checked before any shell sees it. The helper is terminumd itself in agent mode; coding agents' events ride on the helper's ssh as a reverse forward.
 
 **Rejected alternative.** One ssh with file traffic multiplexed over the control channel: tmux's control protocol is line-based text, so file bodies would need their own framing.
 
@@ -376,7 +373,7 @@ A shown pane keeps its last screen while reconnecting; typing is refused with th
 
 `terminum hosts add [<name>] '<destination and options>' [--files]`, `hosts remove|enable|files-remove|off|on|retry <name>`, `hosts agents <name> on|off`, `hosts` (list). Page messages: `addhost {name, recipe, files}` (an empty name: the destination's host; answered `hostadded {name}` or `error`), `hostaction {name, action}`, `hostagents {name, on}` (answered `hostagents {name, on, ok, lines}`); the layout carries `host` per group and `state: attached|reconnecting|failed|off`, `files: enabled|declined|wanted|null`.
 
-Control client command: `ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -o ConnectTimeout=10 <options> -- <destination> '<remote command>'` where the remote command is `tmux -u -C new-session -A -f ignore-size -s terminum`; `refresh-client -f pause-after=2` after attach.
+Control client: AC-81's command; `refresh-client -f pause-after=2` after attach.
 
 ### Data formats
 
@@ -408,25 +405,21 @@ Control client command: `ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o Se
 | Limit | Value | When exceeded |
 |---|---|---|
 | Hosts | 32 | "At most 32 hosts" |
-| Reconnect back-off | 1, 2, 4 … 30 s | — |
 | ssh connections per host | 1 + one per attached session (AC-89) + one helper ssh while files or agents are enabled (agents' `-R` rides on it, AC-99) | sessions start one at a time, back-off 1 … 30 s each |
-| Agents link (AC-99) | the host's socket path ≤ 100 bytes; 64 KB a request; 50 requests a second in a burst, 20 sustained, per link; 16 connections at once, one request each, its head within 5 s and its body and answer within 5 s; a disable ends its open connections | agents refused with why; 413; 429 (never queued); over 16 closed unread; 408 or closed |
-| Refused forward (AC-99) | retried with `-R` after 10 min, then 20, 40, 80, 160 min while refused (that ssh reconnects: files pause a moment) | files keep running without it |
-| Agent requests and answers | 64 MB; 30 s idle, 120 s total | request fails, connection freed |
+| Agents link (AC-99) | 64 KB a request; 50 requests a second in a burst, 20 sustained, per link; 16 connections at once, one request each, its head within 5 s and its body and answer within 5 s; a disable ends its open connections | 413; 429 (never queued); over 16 closed unread; 408 or closed |
+| Refused forward (AC-99) | at each retry files pause a moment as that ssh reconnects | — |
 | Upload or paste to a host | 100 MB; 2 at once | "Larger than 100 MB"; "Two uploads are running already" |
-| Helper with no event stream | exits after 90 s | "no Mac connected for 90 s" in its log |
 | Helper copy (enable, update, agents on) | 300 s | failure shown, retry later |
 | Helper removal (files remove; agents off with files off) | 60 s | failure shown |
-| Agents off (AC-99) | saved here first, then the host's hooks removed within 90 s | "Turned off here; could not take terminum's hooks out of devbox: <why>" |
 | A host's answers to terminumd's ssh (probe, install, agents) | 1 MB of stdout, the last 4 KB of stderr, a helper's ready line 4 KB | the step fails with ssh's last words |
-| Network loss | ~30 s (ServerAliveInterval 15 × ServerAliveCountMax 2) on the control client; ~45 s on the helper's ssh (ServerAliveInterval 15, ssh's default count of 3) | reconnect with back-off |
+| Network loss on the helper's ssh (the control client's: AC-81) | ~45 s (ServerAliveInterval 15, ssh's default count of 3) | reconnect with back-off |
 | `terminum hosts <action>` wait | 5 s + enable 360 s, agents-on 630 s, agents-off 150 s, files-remove 60 s | "no answer from terminumd to /hosts/<action> within <n> s; it may still be working (see: terminum hosts)" |
 
 ### Security
 
-The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no remote command but tmux, the agent or terminumd's own helper scripts, each shell-quoted for the host; `BatchMode=yes`; the remote command is always on ssh's command line, so a `RemoteCommand` of the user's ssh config makes ssh refuse to start, never run, and `RemoteCommand=none` is not passed: ssh older than OpenSSH 7.6 refuses that option); a host is its record, never a name it reports; the agent's token on stdin; on a host terminumd ends only the user's orphaned tmux control clients (AC-81: listed by that tmux with `ignore-size` and still a tmux process, or on Linux named `tmux: client` with terminum's command line; a parent that is init or a shell of init's; never the server; one with `ignore-size` that init runs on purpose is taken for one, an accepted risk); answers untrusted; nothing copied to a host before Enable; releases signed on the Mac only; a host's other sessions are never typed into or sized until the user attaches them (AC-89), attached by session id with `-E` (no name in the host's shell, no environment copied into them). Denied: `terminum hosts add x 'alex@h -o ProxyCommand=…'` → `option not allowed: -o`.
+The recipe allowlist (AC-81), with no remote command but tmux, the agent or terminumd's own helper scripts, each shell-quoted for the host; the remote command is always on ssh's command line, so a `RemoteCommand` of the user's ssh config makes ssh refuse to start, never run, and `RemoteCommand=none` is not passed: ssh older than OpenSSH 7.6 refuses that option; on a host terminumd ends only the user's orphaned tmux control clients (AC-81), and one with `ignore-size` that init runs on purpose is taken for one, an accepted risk; releases signed on the Mac only; a host's other sessions are never typed into or sized until the user attaches them (AC-89), attached by session id with `-E` (no name in the host's shell, no environment copied into them).
 
-Agents' link (AC-99): nothing is written to a host's `~/.claude` or `~/.codex` before the user turns agents on, and remove takes off only entries whose command is terminum-host. A process on the host (the user, or root) can, only for that host's rows: post status, plan and prompt events for panes of the host's default server, write and read their plans and notes, and receive reminder text; it cannot reach other routes, local or other hosts' keys, or the Mac's files (a note's file is shown as text). Other users of the host cannot connect: sshd binds the socket 0600 in a 0700 folder; root can, an accepted risk. The Mac-side socket `<app>/links/<host id>.sock` (0600, folder 0700) has two routes only, `POST /hook` and `POST /agent`, with the limits of §9 Constraints; the host is the listener's, never a name in the body; the body's socket path must equal that server's `#{socket_path}`; a prompt is kept under that host. The helper, not shell glue, checks `~/.terminum/run` (the user's, 0700, not a symlink) and the socket's owner before linking, and the hook checks the folder the same way before connecting. A host's notes shown in a project mixing local panes carry the host's name.
+Agents' link (AC-99): a process on the host (the user, or root) can, only for that host's rows: post status, plan and prompt events for panes of the host's default server, write and read their plans and notes, and receive reminder text; it cannot reach other routes, local or other hosts' keys, or the Mac's files (a note's file is shown as text). Other users of the host cannot connect: sshd binds the socket 0600 in a 0700 folder; root can, an accepted risk. The Mac-side socket `<app>/links/<host id>.sock` (0600, folder 0700) has two routes only, `POST /hook` and `POST /agent`, with the limits of §9 Constraints; a body never names the host. The helper's check of `run` (AC-99) is its own code, not shell glue, and the hook checks the folder the same way before connecting. A host's notes shown in a project mixing local panes carry the host's name.
 
 ### Compatibility
 

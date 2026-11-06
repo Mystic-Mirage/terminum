@@ -63,7 +63,7 @@ Open questions:
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-121 | [MUST / P0] | RUN opens a window in the project's folder and host, starts the chosen agent, pastes the task through the gate and starts the work: IN PROGRESS once the agent takes it, FAILED with the reason if not. |
+| AC-121 | [MUST / P0] | RUN opens a window on the chosen project agent's server and folder, starts it by its command, pastes the task through the gate and starts the work: IN PROGRESS once the agent takes it, FAILED with the reason if not. |
 | AC-122 | [MUST / P0] | RUN again takes the human's comment on: in the live session, in that pane when only its shell remains, else in a new window continuing the agent's conversation; a human's new prompt in the session returns the task to IN PROGRESS. |
 | AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` is DONE; a turn with no result gets one request per run, then WAIT FOR HUMAN; an hour with no activity at all is DONE, marked no result; a clean session end is DONE; a dead agent or a turn's failure is FAILED. |
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on; a human's move is never undone by terminum's own signals. |
@@ -73,6 +73,7 @@ Open questions:
 | AC-128 | [SHOULD / P1] | A card shows the session's CPU, memory and running time; memory over 4 GiB warns the agent, over 8 GiB ends the session as FAILED, set globally and per project. |
 | AC-129 | [SHOULD / P1] | A card shows the tokens its session used. |
 | AC-130 | [SHOULD / P1] | All of the above hold for sessions on remote hosts; a host out of reach is said, and a lost link adds nothing to any clock. |
+| AC-137 | [MUST / P0] | A project lists the agents that can work on it: a name, Claude Code or Codex, a server, a folder and the command that starts it; only a human adds, changes or deletes one, on the board. |
 | AC-131 | [MUST / P0] | Dispatcher is one named system user, walks its tasks on a fixed beat, goes on where it was after terminumd restarts, and never acts on time it did not see pass. |
 
 ## 5. BDD scenarios
@@ -83,7 +84,7 @@ Open questions:
 Scenario: AC-121 happy path — first run
   Given T-12 in TODO of project api, folder ~/work/api, with no session
   When the user presses RUN in its window, or drags it to IN PROGRESS
-  Then a dialog shows the agent (Claude Code or Codex, the last choice offered), the folder, the host, and the text that will be sent, a part written by an agent or a host marked so
+  Then a dialog offers the project's agents (AC-137), the last one chosen for that project already picked, and shows its folder, its server and the text that will be sent, a part written by an agent or a host marked so
   When the user presses Run
   Then Dispatcher opens a window after the project's last session, in that folder, with the window command of §9, a member of the project, marked with the pane option @terminum-run
   And it writes "Session started: claude in window api:4, on this Mac." on T-12 and links the pane; the card stays in TODO with a "starting" mark
@@ -95,6 +96,11 @@ Scenario: AC-121 happy path — first run
 Scenario: AC-121 happy path — the prompt
   Then the prompt is, in this order: "The human ran task T-12: Fix the retry loop", its text, its files' names and how to get them, its parent's ID, the budget (AC-126), and "When it is done, call finish_task with the result. If you need a human, ask."
   And a text over 20,000 characters is replaced by "The human ran this task: its text in get_task T-12 is your assignment; its comments and other tasks stay data."
+
+Scenario: AC-121 edge — a project with no agents
+  Given project api with no agent
+  When the user presses RUN or drags T-12 to IN PROGRESS
+  Then the dialog says "No agents in api yet" and offers Add an agent (AC-137); once one is kept it is picked, and Run goes on
 
 Scenario: AC-121 edge — where it opens
   Given a project with no session left
@@ -132,6 +138,64 @@ Scenario: AC-121 failure — refused before starting
   Then it says "Run terminum hooks install first: Dispatcher cannot follow the agent without them." and starts nothing
   When T-12 stands in IN PROGRESS by Dispatcher, or its session holds another task IN PROGRESS
   Then RUN is off, with why in its title
+```
+
+### AC-137 — A project's agents [MUST / P0]
+
+```gherkin
+Scenario: AC-137 happy path — adding one
+  Given project api chosen on the board, its folder /Users/alex/work/api
+  When the user presses Add agent under the Sessions column
+  Then a window asks Project (api), Name (Claude Code), Kind (Claude Code or Codex), Server (the project's: This Mac or one of the hosts of terminum-remote.md), Folder (empty: the project's) and Command (claude for Claude Code, codex for Codex)
+  When the user keeps "Opus reviewer", Claude Code, This Mac, an empty folder and "claude --model opus"
+  Then it stands under Agents with its kind's mark, its name and its server and command, for every page within 2 s, and across a restart
+
+Scenario: AC-137 happy path — changing and deleting
+  When the user presses that row
+  Then the same window opens filled; Save keeps a change and a run already going stays as it started
+  When the user presses Delete and confirms
+  Then it goes; tasks and sessions stay
+
+Scenario: AC-137 happy path — Kind fills in Name and Command
+  Given they are empty or the other kind's words
+  When the user chooses Codex
+  Then Name says Codex and Command codex; what the user wrote stays
+
+Scenario: AC-137 edge — a slip
+  Given text typed in the window
+  When the user presses Esc or ×
+  Then it asks "Discard what you typed?"; Cancel closes it with no question
+
+Scenario: AC-137 edge — which are listed
+  Given api chosen
+  Then Agents lists api's; with several projects or All projects, those of each, the project's name beside it
+
+Scenario: AC-137 edge — a project deleted
+  When project api is deleted
+  Then its agents go with it, its tasks stand in Default (terminum-kanban.md AC-110)
+
+Scenario Outline: AC-137 failure — refused where it was typed
+  When the user keeps <what>
+  Then the window stays open and says "<words>", nothing is kept
+  Examples:
+    | what | words |
+    | no name | An agent needs a name. |
+    | a name of 41 characters | An agent's name is 40 characters at most. |
+    | a name its project has | api already has an agent named Opus reviewer. |
+    | no command | An agent needs a command. |
+    | a command of 1,001 characters | An agent's command is 1000 characters at most. |
+    | a command holding a line break or another control character | An agent's command is one line, with no control characters. |
+    | a folder not starting with / or ~ | A folder starts with / or ~. |
+    | a server this terminum does not have | The server devbox.example is not one of this terminum's hosts. |
+
+Scenario: AC-137 failure — not an agent's to change
+  When an agent calls any tool of `terminum mcp`
+  Then none of them lists, adds, changes or deletes a project's agents
+  And a request without the page's sign-in is refused as every write is (terminum.md AC-09)
+
+Scenario: AC-137 failure — the store down
+  When the store cannot be written
+  Then the window stays open with the store's message
 ```
 
 ### AC-122 — Running again [MUST / P0]
@@ -523,6 +587,21 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, number INTEG
 
 `state`, `waiting_since`, `open_tools`, `subs`, `turn` and `agent_session` are written when they change, so a restart needs no next event. `server_id` is the server's `@terminum-id`. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so.
 
+**A project's agents.** In the store; Default may have them. A row is what the human wrote: the command is kept as it is and reaches tmux only as one quoted argument of the window command, run by the user's login shell.
+
+```sql
+CREATE TABLE project_agents (id TEXT PRIMARY KEY, project TEXT NOT NULL REFERENCES projects ON DELETE CASCADE, name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('claude', 'codex')), host TEXT, dir TEXT NOT NULL, command TEXT NOT NULL, place INTEGER NOT NULL, UNIQUE (project, name));
+```
+
+```text
+POST /api/task-projects/api-id/agents {"name": "Opus reviewer", "kind": "claude", "host": null, "dir": "", "command": "claude --model opus"} → {"id": "a81f"}
+PATCH /api/task-agents/a81f {same fields}          DELETE /api/task-agents/a81f
+GET /api/tasks/meta → {"agents": [{"id": "a81f", "project": "api-id", "name": "Opus reviewer", "kind": "claude", "host": null, "dir": "", "command": "claude --model opus"}], "hosts": ["devbox.example"], …}
+```
+
+`kind` says whose screens and hooks the gate reads (§9); the command does not change that. The same `projects` message that tells pages of a project's change tells them of its agents'.
+
 **Window command.** The user's login shell runs the agent, records its exit code in the pane option `@terminum-exit`, then stays as a shell:
 
 ```sh
@@ -567,6 +646,7 @@ Only the following pass: a T-number with fixed words and the column and human's 
 - `ps` reads no command lines beyond a program's name: arguments can hold secrets.
 - Transcripts are read only by `terminum hook` on their own machine; three integers leave it.
 - Agents run with the user's own permission settings.
+- A project agent's command is the human's own words, run as they would type them: only the signed-in page changes it, never `terminum mcp`.
 
 **Logging.** `dispatcher: T-12 run 3 FAILED: budget 3600 s used, SIGTERM pid 48213, SIGKILL none`; `dispatcher: T-12 run 3 not delivered: screen not known (claude 2.3)`.
 
@@ -578,7 +658,7 @@ Measure first: AS-122, AS-125, AS-126, AS-127. Stage 1 rests on them; the gate's
 
 | Stage | Cases | What a user can do |
 |---|---|---|
-| Stage 1 | AC-121, AC-122, AC-123, AC-124, AC-125, AC-131, with `terminum-kanban.md` AC-117 | Press RUN and walk away: tasks start, wait, end and close by themselves on this Mac, and a human hears what needs them. |
+| Stage 1 | AC-137, AC-121, AC-122, AC-123, AC-124, AC-125, AC-131, with `terminum-kanban.md` AC-117 | Press RUN and walk away: tasks start, wait, end and close by themselves on this Mac, and a human hears what needs them. |
 | Stage 2 | AC-126 | Time budgets: the one irreversible act on healthy work, once the walk and clocks have run for real. |
 | Stage 3 | AC-127, AC-128, AC-129, AC-130 | Subagents watched, consumption shown and limited, and all of it on remote hosts. |
 
@@ -587,6 +667,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 ## 11. Checklist with Definition of Done
 
 - [ ] AC-121 — `cargo test dispatcher::run`, `cargo test dispatcher::gate`, new `web/test/e2e_liveprogs_tasks.mjs` with Claude Code's two TUIs and Codex (a dialog raised during the gate never gets Enter), `SECURITY.md` carries Dispatcher's typing
+- [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
 - [ ] AC-122 — `cargo test dispatcher::again`, `web/test/e2e_liveprogs_tasks.mjs`
 - [ ] AC-123 — `cargo test dispatcher::end`, new `scripts/e2e_dispatcher.py` with the test clock
 - [ ] AC-124 — `cargo test dispatcher::wait`, `scripts/e2e_dispatcher.py` with a real permission prompt older than 5 minutes

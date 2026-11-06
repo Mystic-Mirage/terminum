@@ -169,3 +169,21 @@ fn ac119_foreign_keys_are_enforced() {
     });
     assert!(bad.is_err(), "{bad:?}");
 }
+
+#[test]
+fn ac137_a_store_of_the_first_schema_gains_the_agents_and_keeps_its_tasks() {
+    let path = fresh("tasks-mig2");
+    let conn = Connection::open(&path).unwrap();
+    conn.execute_batch(include_str!("schema1.sql")).unwrap();
+    conn.pragma_update(None, "user_version", 1).unwrap();
+    conn.execute("INSERT INTO tasks (id, number, project, status, severity, rank, owner, updated_at, title, body) VALUES ('T-1', 1, 'default', 'TODO', 'P2', 1.0, 'human', 1, 'kept', '')", []).unwrap();
+    drop(conn);
+    let s = Store::open(path.clone());
+    assert_eq!(s.problem(), None);
+    assert_eq!(number_of_tasks(&s).unwrap(), 1, "its tasks stay");
+    assert!(s.with(crate::tasks::agents::list).unwrap().is_empty(), "the table stands");
+    assert!(path.with_file_name("kanban.sqlite.bak-1").exists(), "a copy before the change");
+    drop(s);
+    let version: i64 = Connection::open(&path).unwrap().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+    assert_eq!(version, 2);
+}

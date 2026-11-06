@@ -36,6 +36,7 @@ import { liveNotes } from "./e2e_livenotes.mjs";
 import { liveBoard, liveBoardPhone } from "./e2e_liveboard.mjs";
 import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
+import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -147,6 +148,7 @@ async function wide(browser, name) {
     await liveBoard(page, { base: BASE, tmux, work: WORK, shots: process.env.TM_TEST_SHOTS });
     await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
     await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
+    await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
     return ctx;
   }
   check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/sessions/" && !new URL(page.url()).search);
@@ -212,6 +214,7 @@ async function wide(browser, name) {
   await liveBoard(page, { base: BASE, tmux, work: WORK });
   await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
   await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+  await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");

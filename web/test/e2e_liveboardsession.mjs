@@ -150,4 +150,9 @@ export async function liveBoardSessionsPhone(page, { base }) {
   check("AC-135 Sessions is a page of its own", await until(() => page.evaluate(() => { const r = document.querySelector("#sidecol").getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; })));
   const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   check("AC-135 no sideways scroll on a phone", wide <= 0, String(wide));
+  check("AC-137 a phone's Sessions page holds the agents", await page.isVisible(".agents .colhead"));
+  await page.click("#addagent");
+  const fits = await page.evaluate(() => { const r = document.querySelector("#agentbox").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && document.querySelector("#agentok").getBoundingClientRect().bottom <= innerHeight; });
+  check("AC-137 its window fits a phone, its keys in reach", fits);
+  await page.click('#agentbox button[value="cancel"]');
 }

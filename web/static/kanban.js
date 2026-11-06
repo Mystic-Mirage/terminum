@@ -14,10 +14,11 @@ import { projectInk } from "./listparts.js";
 import { seeFolders } from "./nav.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
 import { sessionStrip, sessionsColumn } from "./kanbanside.js";
+import { agentsSection } from "./kanbanagents.js";
 import { $, COLUMNS, api, button, el, iconButton, say } from "./kanbanutil.js";
 
 const PAGE = 200;
-let meta = { projects: [], users: [], sessions: [] };
+let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
 let cards = new Map(COLUMNS.map((c) => [c, []]));
 let counts = {};
 let shownColumn = "TODO";
@@ -223,6 +224,8 @@ const columns = new Map(COLUMNS.map((column) => {
 const SESSIONS = "Sessions";
 const sessionsTab = tabFor(SESSIONS);
 const side = sessionsColumn({ chosen: () => filters().project, openTask, onCount: (n) => { sessionsTab.textContent = `${SESSIONS} ${n}`; } });
+const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: () => loadMeta() });
+side.col.append(agents.box);
 const pages = new Map([...columns, [SESSIONS, { col: side.col, tab: sessionsTab }]]);
 $("board").replaceChildren(side.col, ...[...columns.values()].map((c) => c.col));
 $("colswitch").replaceChildren(...[...pages.values()].map((p) => p.tab));
@@ -309,6 +312,7 @@ async function loadMeta() {
     const gone = filters().project.filter((p) => !meta.projects.some((x) => x.id === p));
     if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); bar.setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
     bar.draw();
+    agents.draw();
   } catch (e) {
     banner(`The board is out of date: ${e.message}`);
   }
@@ -321,7 +325,7 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
-const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); }, newProject });
+const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, newProject });
 const windowed = taskWindow({ getMeta: () => meta });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden });
 

@@ -37,6 +37,16 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 .cards { display: flex; flex-direction: column; gap: var(--sp-2); padding: 0 var(--sp-2) var(--sp-2); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 /* the project's sessions: the session list's, a column that stays while the others scroll by (AC-135) */
 #sidecol { position: sticky; left: 0; z-index: 2; }
+#sidecol #sessions { min-height: 0; }
+/* a project's agents, under its sessions: what RUN can start (terminum-dispatcher.md AC-137) */
+.agents { flex: none; max-height: 40%; display: flex; flex-direction: column; min-height: 0; }
+.agents .colhead { display: flex; }
+.agents .colhead .icon { --ik: var(--icon-key-list); }
+.agentlist { overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); min-height: 0; }
+.agentlist .pbar { opacity: .75; }
+.agentlist .colempty { margin: 0 var(--sp-1); }
+.agentlist .item .s { padding-left: 20px; }
+#agentdrop { margin-right: auto; color: var(--danger-text); }
 @media (min-width: 861px) {
   #board.noside { grid-template-columns: repeat(5, minmax(220px, 1fr)); }
   #board.noside #sidecol { display: none; }
@@ -75,6 +85,7 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 .cdoing { display: block; padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* its windows */
+#agentbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
 #taskbox, #newbox { width: min(760px, calc(100vw - var(--sp-6) * 2)); max-height: calc(100dvh - var(--sp-6) * 2); }
 #taskbody { display: flex; flex-direction: column; gap: var(--sp-3); max-height: calc(100dvh - 130px); overflow-y: auto; }
 #taskbody > * { min-width: 0; }
@@ -126,6 +137,7 @@ dialog .markdown img { max-width: 100%; }
   .colhead { display: none; }
   #sidecol { position: static; order: 1; }
   #boardhead #sidetoggle { display: none; }
+  .agents { max-height: 50%; }
   #fproject summary { max-width: 120px; }
   .cards { padding: 0 var(--gutter) var(--gutter); }
   .card { padding: var(--sp-3); }

@@ -27,6 +27,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks/meta", get(meta))
         .route("/api/tasks/start-empty", post(start_empty))
         .route("/api/task-projects", post(new_project))
+        .merge(super::agents::routes())
         .route("/api/tasks/{id}", get(window).patch(change))
         .route("/api/tasks/{id}/comments", post(add_comment))
         .route("/api/tasks/{id}/comments/{event}", patch(edit_comment).delete(drop_comment))
@@ -36,12 +37,12 @@ pub fn routes() -> Router<Shared> {
 }
 
 /// Runs `f` in one transaction off the async workers.
-async fn store<T: Send + 'static>(app: &Shared, f: impl FnOnce(&Transaction) -> Result<T, String> + Send + 'static) -> Result<T, String> {
+pub(super) async fn store<T: Send + 'static>(app: &Shared, f: impl FnOnce(&Transaction) -> Result<T, String> + Send + 'static) -> Result<T, String> {
     let a = app.clone();
     off(move || a.tasks.with(f)).await
 }
 
-fn answer<T: Serialize>(done: Result<T, String>) -> Response {
+pub(super) fn answer<T: Serialize>(done: Result<T, String>) -> Response {
     match done {
         Ok(v) => Json(v).into_response(),
         Err(e) => refuse(StatusCode::BAD_REQUEST, e),
@@ -139,16 +140,18 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
 /// What the board's pickers offer, and the store's trouble if any.
 async fn meta(State(app): State<Shared>) -> Response {
     let projects: Vec<Value> = std::iter::once(json!({"id": DEFAULT_PROJECT, "name": "Default"}))
-        .chain(app.projects.lock().list().iter().map(|p| json!({"id": p.id, "name": p.name, "color": p.color}))).collect();
+        .chain(app.projects.lock().list().iter().map(|p| json!({"id": p.id, "name": p.name, "color": p.color, "dir": p.dir, "host": p.host}))).collect();
+    let hosts: Vec<String> = super::agents::known_hosts(&app);
     let sessions: Vec<Value> = crate::page::marks::layout_items(app.layout.read().as_array().map_or(&[], |a| a.as_slice()))
         .map(|it| json!({"key": it["id"], "title": it["title"]})).collect();
     // the store's lock waits out a running query: off the async workers, its state too
     let a = app.clone();
-    let (users, problem, set_aside) = tokio::task::spawn_blocking(move || {
+    let (users, agents, problem, set_aside) = tokio::task::spawn_blocking(move || {
         let users = a.tasks.with(|tx| ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))).unwrap_or_default();
-        (users, a.tasks.problem(), a.tasks.is_set_aside())
+        let agents = a.tasks.with(super::agents::list).unwrap_or_default();
+        (users, agents, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
-    Json(json!({"projects": projects, "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "hosts": hosts, "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {

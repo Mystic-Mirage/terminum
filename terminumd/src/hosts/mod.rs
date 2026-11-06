@@ -8,8 +8,10 @@
 pub mod agents;
 pub mod agentsinstall;
 pub mod bounded;
+mod hold;
 pub mod link;
 pub mod recipe;
+mod silent;
 pub mod tunnel;
 
 use std::collections::HashMap;
@@ -164,7 +166,7 @@ pub fn sync(app: &Shared) {
             continue;
         }
         let retry = Arc::new(Notify::new());
-        let task = tokio::spawn(hold(app.clone(), server, retry.clone()));
+        let task = tokio::spawn(hold::hold(app.clone(), server, retry.clone()));
         runs.insert(name.clone(), Run { retry, task });
     }
     for name in runs.keys().cloned().collect::<Vec<_>>() {
@@ -230,78 +232,6 @@ fn let_go(app: &Shared, old: Arc<Server>) {
         }
         old.disconnect();
     });
-}
-
-/// Holds a host's control client: connects, waits while it lives, reconnects with back-off.
-async fn hold(app: Shared, server: Arc<Server>, retry: Arc<Notify>) {
-    if let Link::Ssh { args, .. } = &server.link {
-        learn_timeout(args).await;
-    }
-    let mut backoff = 1u64;
-    loop {
-        *server.status.lock() = Status::Connecting;
-        app.dirty.notify_one();
-        let t0 = std::time::Instant::now();
-        let attached = match server.sync_clients(&[]) {
-            Ok(()) => wait_attached(&server).await,
-            Err(e) => Err(e),
-        };
-        match attached {
-            Ok(()) => {
-                tracing::info!(event = "host.attached", host = %server.name, ms = t0.elapsed().as_millis() as u64);
-                *server.status.lock() = Status::Attached;
-                backoff = 1;
-                app.dirty.notify_one();
-                tunnel::reconcile(&app, &server.name);
-                // judged by its `terminum` client alone: the user's session clients (AC-89)
-                // end and come back with it
-                while server.attached() {
-                    tokio::select! {
-                        _ = server.ended.notified() => {}
-                        _ = tokio::time::sleep(Duration::from_secs(5)) => {}
-                    }
-                }
-                server.disconnect();
-                let why = "connection lost".to_string();
-                tracing::warn!(event = "host.lost", host = %server.name, retry_s = backoff);
-                *server.status.lock() = Status::Reconnecting { why, retry_s: backoff };
-                if server.held.lock().is_some() {
-                    // it kept this link for a newer record: that record now, not this one again
-                    let app = app.clone();
-                    tokio::spawn(async move { sync(&app) });
-                }
-            }
-            Err(why) => {
-                tracing::warn!(event = "host.failed", host = %server.name, why, retry_s = backoff);
-                *server.status.lock() = Status::Failed { why };
-                server.disconnect();
-            }
-        }
-        app.dirty.notify_one();
-        tokio::select! {
-            _ = tokio::time::sleep(Duration::from_secs(backoff)) => {}
-            _ = retry.notified() => {}
-        }
-        backoff = (backoff * 2).min(BACKOFF_MAX);
-    }
-}
-
-/// Until tmux's first answer (attached) or the end of ssh (its last words).
-async fn wait_attached(server: &Server) -> Result<(), String> {
-    let deadline = tokio::time::Instant::now() + ATTACH_WAIT;
-    loop {
-        if server.attached() {
-            return Ok(());
-        }
-        if !server.connected() {
-            return Err(server.last_words().unwrap_or_else(|| "ssh ended".into()));
-        }
-        if tokio::time::Instant::now() > deadline {
-            server.disconnect();
-            return Err("no answer from tmux on the host within 20 s".into());
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 /// `hosts add <name> '<destination and options>'` or the page's "Add host": an empty name is
@@ -435,7 +365,7 @@ pub fn list(app: &Shared) -> Vec<Value> {
                 Status::Attached => ("attached".into(), s.held.lock().clone().unwrap_or_default()),
                 Status::Connecting => ("reconnecting".into(), "connecting".into()),
                 Status::Reconnecting { why, .. } => ("reconnecting".into(), why),
-                Status::Failed { why } => ("failed".into(), why),
+                Status::Failed { why } | Status::Stopped { why } => ("failed".into(), why),
                 Status::Off => ("off".into(), String::new()),
             },
             (None, None) => ("off".into(), String::new()),

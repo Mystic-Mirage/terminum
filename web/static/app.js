@@ -346,7 +346,7 @@ function drawNav() {
   renderNav($("sessions"), drawnGroups(), st.sid, $("filter").value, pick, st.collapsed, toggleGroup,
     bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true), tools.importTmux,
     { projects: st.projects, onClone: cloneRow, order: st.listOrder, onProjectNew: (p, last) => rowMenu.newInProject(p, last?.id),
-      onGroupNew: (g, last) => (last ? cloneRow(last) : send({ t: "new", group: g.wid })), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu });
+      onGroupNew: (g, last) => (last ? cloneRow(last) : send({ t: "new", group: g.wid })), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu, onReconnect: tools.reconnect });
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {
     const stay = st.sid && serverDown(st.groups, st.sid), next = stay ? null : place.next();   // its project's or group's first, else the list's (AC-92); while its server is away, the pane (AC-132)

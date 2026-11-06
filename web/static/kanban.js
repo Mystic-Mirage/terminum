@@ -97,7 +97,7 @@ const projectOf = (id) => meta.projects.find((p) => p.id === id);
 /** A project's color, the session list's; Default has none. */
 const projectHue = (p) => (p?.color >= 0 ? projectColor(p) : "var(--muted)");
 
-/** What a task's session does now (AC-132): an agent gone quiet with its task open is said. */
+/** What a task's session does now (AC-134): an agent gone quiet with its task open is said. */
 function sessionLine(t) {
   const s = t.session;
   if (!s) return null;

@@ -69,7 +69,7 @@ Open questions: none.
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
-| AC-132 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
+| AC-134 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
 | AC-133 | [MUST / P0] | The board's flow survives what people and machines do: the last drop stands, a move shows at once and a refused one goes back; a late answer never stands over a newer; what is typed is never lost by a slip, a refusal or a change by another. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
 
@@ -484,29 +484,29 @@ Scenario: AC-119 edge — backups
   Then the store and its files stay inside what Time Machine backs up (terminum-lifecycle.md AC-96 excludes only the last lines' folder)
 ```
 
-### AC-132 — What became of the agent [MUST / P0]
+### AC-134 — What became of the agent [MUST / P0]
 
 ```gherkin
-Scenario: AC-132 failure — out of limits
+Scenario: AC-134 failure — out of limits
   Given T-12 IN PROGRESS, linked to a session its human started
   When StopFailure comes with "rate_limit" (a subscription's limit, billing, an API error)
   Then its card says "failed: rate limit" at once
   And its history says "The agent stopped: rate_limit", by Dispatcher
   And T-12 stays IN PROGRESS: only what Dispatcher started moves by itself (terminum-dispatcher.md AC-123)
 
-Scenario: AC-132 failure — it stopped with the task open
+Scenario: AC-134 failure — it stopped with the task open
   When a Stop comes and the last message asks nothing, T-12 still IN PROGRESS
   Then its card says "stopped, task open" and its history "The agent stopped with this task open", once in a row
   When the agent works again
   Then its card says "working"
 
-Scenario: AC-132 failure — it died or left
+Scenario: AC-134 failure — it died or left
   When its session ends (not /clear), or its process is gone and only the shell remains
   Then its card says "no agent", its history "The agent's session ended with this task open"
   When the pane itself closes
   Then its card says "session closed" (AC-113)
 
-Scenario: AC-132 edge — no more than a move
+Scenario: AC-134 edge — no more than a move
   Given T-12 in TODO, or a subagent's Stop, or a question at a turn's end
   Then nothing is said on T-12
 ```
@@ -719,6 +719,6 @@ AC-117 and AC-114's typing ship with `terminum-dispatcher.md`'s Stage 1. Depends
 - [ ] AC-117 — to come
 - [ ] AC-118 — to come
 - [x] AC-119 — `cargo test tasks::store`
-- [x] AC-132 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`
+- [x] AC-134 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`
 - [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [ ] AC-120 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py` for what is built

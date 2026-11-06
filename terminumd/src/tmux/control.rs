@@ -28,6 +28,8 @@ const ANSWER_MOST: Duration = Duration::from_secs(60);
 /// A server whose oldest command waited this long is said to stall (AC-03), and nothing more is
 /// asked of it for the list while it does (AC-132).
 pub const STALL: Duration = Duration::from_millis(3000);
+/// What a control client over ssh says when nothing ever came from it.
+pub const SSH_NO_ANSWER: &str = "ssh: no answer from the host";
 const NOT_ANSWERED: &str = "tmux did not answer";
 const NOT_CONNECTED: &str = "tmux is not connected";
 const NOT_KEEPING_UP: &str = "tmux is not keeping up: too many commands wait for it";
@@ -220,7 +222,7 @@ impl Control {
             if exit_reason.is_none() {
                 let _ = tokio::time::timeout(STDERR_WAIT, stderr_done).await;
             }
-            let quiet = if via_ssh && !att.load(Ordering::Relaxed) { "ssh: no answer from the host" } else { "tmux exited" };
+            let quiet = if via_ssh && !att.load(Ordering::Relaxed) { SSH_NO_ANSWER } else { "tmux exited" };
             let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).unwrap_or_else(|| quiet.into());
             for w in p.lock().drain(..) {
                 let _ = w.reply.send(Err(why.clone()));

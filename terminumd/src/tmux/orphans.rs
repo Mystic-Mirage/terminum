@@ -12,7 +12,8 @@
 //! `tmux: client` (Linux names them so) with terminum's command line, also those stuck before
 //! tmux listed them. Never the server: its pid is skipped, and a server started by terminum's
 //! command keeps that command line (it is named `tmux: server`). The script tells what it
-//! ended through a user option of the server, read and removed by terminumd.
+//! ended through a user option of the server, read and removed by terminumd. Where no control
+//! client answers, the same script goes over a plain ssh (hosts/silent.rs).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,7 +32,7 @@ pub fn sweep_once(server: &Arc<Server>) {
 
 /// The control clients tmux lists with `ignore-size`, as terminum's are, from
 /// `list-clients -F '#{client_pid} #{client_control_mode} #{client_flags}'`.
-fn listed(lines: &[String]) -> Vec<u32> {
+pub(crate) fn listed(lines: &[String]) -> Vec<u32> {
     lines.iter().filter_map(|l| {
         let mut f = l.split(' ');
         let (pid, control, flags) = (f.next()?, f.next()?, f.next()?);
@@ -42,7 +43,7 @@ fn listed(lines: &[String]) -> Vec<u32> {
 /// The server's user option the script answers in: one per sweep, its name random (a pid and a
 /// connection's number repeat across Macs and across host names of one server), so no sweep reads
 /// another's and a late answer is never taken for a later sweep's.
-fn answer_option() -> String {
+pub(crate) fn answer_option() -> String {
     format!("@tm-orphans-{}", crate::auth::crypto::random_hex::<8>())
 }
 
@@ -92,7 +93,7 @@ const SHAPES: &str = "*\" -u -C new-session -A -f ignore-size -s terminum \"|*\"
 /// one (a socket path of other characters than [A-Za-z0-9/._-] leaves this rule out). Processes are
 /// read with `ps`, else (busybox: no -U, no -p) from /proc; every read that fails skips its
 /// process. No `#` (run-shell expands formats) and no `'` (it is quoted for the host's shell).
-fn script(server: u32, socket: &str, listed: &[u32], opt: &str) -> String {
+pub(crate) fn script(server: u32, socket: &str, listed: &[u32], opt: &str) -> String {
     let listed = match listed {
         [] => "\" - \"".to_string(),                                   // a pattern no pid matches
         l => l.iter().map(|p| format!("\" {p} \"")).collect::<Vec<_>>().join("|"),

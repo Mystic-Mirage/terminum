@@ -48,6 +48,20 @@ export async function webIsolation(browser, name) {
     check("AC-92 a host's list, read, without the pane: it closed, the page goes on", shown() === H2, shown());
     await listed(host("attached", rows()));
 
+    // no more tries by itself: the button says so, and asks for one
+    const silent = "tmux on devbox does not answer: its client is 3.8, its running server 3.4. Restart its server, or bring that version back.";
+    await listed(host("failed", rows({ offline: true, state: null }), silent));
+    check("AC-132 the stopped host's pane stays", shown() === H2, shown());
+    const said = await page.evaluate(() => { const g = document.querySelector("#sessions .hostgrp"); return { why: g.querySelector(".gstate")?.textContent, button: !!g.querySelector("button.reconnect") }; });
+    check("AC-81 a host with no answer from tmux says why, with no button until it stops trying", said.why === silent && !said.button, JSON.stringify(said));
+    await listed({ ...host("failed", rows({ offline: true, state: null }), silent), reconnect: true });
+    await page.evaluate(() => document.querySelector("#sessions .hostgrp button.reconnect").click());   // a phone's list is closed
+    await pause(page, 100);
+    const asked = sent.filter((m) => m.t === "hostaction").pop();
+    check("AC-81 Reconnect asks one try of that host", asked?.name === "devbox" && asked?.action === "retry", JSON.stringify(asked));
+    await listed(host("attached", rows()));
+    check("AC-81 attached again: no button", !await page.locator("#sessions button.reconnect").count());
+
     // a stall of the host, on a local pane: nothing said, nothing resized; its group says it
     await pick(L1);
     await pause(page, 200);

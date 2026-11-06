@@ -273,7 +273,7 @@ export function listParts(groups, projects, order = []) {
 }
 
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
-  { projects = [], order = [], onClone = null, onProjectNew = null, onGroupNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null } = {}) {
+  { projects = [], order = [], onClone = null, onProjectNew = null, onGroupNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null, onReconnect = null } = {}) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
@@ -402,6 +402,12 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     sec.append(h);
     const state = own ? hostState(g) : "";
     if (state) sec.append(el("p", "gstate", state));   // under the name, wrapped: ssh's words can be long
+    if (g.reconnect && onReconnect) {                  // no more tries by itself (AC-81)
+      const again = el("button", "reconnect", "Reconnect");
+      again.type = "button";
+      again.onclick = () => onReconnect(g);
+      sec.append(again);
+    }
     if (!closed) {
       const ul = el("ul");
       if (g.wid) ul.dataset.wid = g.wid;

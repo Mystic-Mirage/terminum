@@ -12,6 +12,7 @@
 :is(.grp .gstate, .cstate)::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; vertical-align: 1px;
   border-radius: var(--blob-b); background: var(--sev); }
 .grp.reconnecting .gstate { --sev: var(--waiting); }
+.grp .reconnect { margin: 0 var(--sp-2) var(--sp-1) 28px; }
 .grp.failed .gstate { --sev: var(--danger); color: var(--danger-text); }
 #hostmenu { position: fixed; z-index: 31; width: 180px; max-height: calc(100vh - 16px); overflow-y: auto; display: flex; flex-direction: column; padding: var(--sp-1); border-radius: var(--r-lg);
   --fill: var(--chrome-2); box-shadow: var(--shadow-far); }

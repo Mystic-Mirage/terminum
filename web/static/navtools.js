@@ -232,5 +232,5 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
 
   /** terminumd's answer to the host form or the agents dialog. */
   const hostAnswer = (m) => (m.t === "hostagents" ? agents.answered(m) : hostAdded(m.name));
-  return { showStall, sayStalls, formError, layoutCame, hostAdded, hostAnswer, tmuxAdded, tmuxChoices: tmux.choices, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu, endRename, renaming: () => !$("renamebox").hidden };
+  return { showStall, sayStalls, reconnect: (g) => send({ t: "hostaction", name: g.host, action: "retry" }), formError, layoutCame, hostAdded, hostAnswer, tmuxAdded, tmuxChoices: tmux.choices, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu, endRename, renaming: () => !$("renamebox").hidden };
 }

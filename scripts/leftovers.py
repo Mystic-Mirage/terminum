@@ -27,7 +27,7 @@ TEST_HELPER = re.compile(r"/\S*/terminumd/target/(?:debug|release)/deps/terminum
 BUILD_OUTPUT = re.compile(r"/\S*/terminumd/target/(?:debug|release)/(?:terminumd|deps/terminumd-[0-9a-f]{16})( |$)")
 # what tests name their folders: tempfile's prefix= and mkdtemp in scripts/, web/test, terminumd/src
 FOLDER_PREFIXES = ("tm-", "tma-", "tmb-", "tme-", "tmh-", "tml-", "tmln-", "tmlo-", "tmlp-", "tmlw-",
-                   "tmr-", "tmr9-", "tmrel-", "tmsq-", "tmv-", "tmw-", "tmz-", "tmc.")
+                   "tmr-", "tmr9-", "tmrel-", "tmsq-", "tmv-", "tmw-", "tmz-", "tmc.", "fssh-", ".fssh-")
 
 
 def age_s(etime):

@@ -33,7 +33,7 @@ export async function api(path, { method = "GET", body } = {}) {
 export const say = (text) => toast(text, 4000);
 
 export function button(cls, text, onClick) {
-  const b = el("button", cls, text);
+  const b = el("button", cls, text ?? undefined);
   b.type = "button";
   if (onClick) b.addEventListener("click", onClick);
   return b;

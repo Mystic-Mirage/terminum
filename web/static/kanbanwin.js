@@ -2,6 +2,7 @@
 // A task's window (AC-107, AC-108, AC-109, AC-113): its fields, text, files, and one list of comments
 // and history. A comment by a human closes with CLOSE; RUN comes with Dispatcher.
 import { askConfirm } from "./dialogs.js";
+import { icon } from "./icons.js";
 import { $, COLUMNS, SEVERITIES, api, button, choose, download, el, fileMarkdown, fillSelect, onFiles, renderInto, say, sessionOptions, upload } from "./kanbanutil.js";
 
 const time = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -87,7 +88,7 @@ export function taskWindow({ getMeta }) {
       wrap.replaceChildren(area, row(button(null, "Cancel", () => refresh(true)), save));
       area.focus();
     });
-    const purge = button("quiet", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
+    const purge = button(null, "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
       () => api(`/api/tasks/${t.id}/purge`, { method: "POST" })));
     wrap.append(shownText, row(edit, t.text ? purge : null));
     return wrap;
@@ -99,7 +100,8 @@ export function taskWindow({ getMeta }) {
     list.append(...t.files.map((f) => {
       const li = el("li");
       const open = button("linklike", f.name, () => download(f.id, f.name).catch((e) => say(e.message)));
-      const del = button("icon", "×", () => confirmed(`Delete ${f.name}? Its bytes leave the store for good.`, "Delete", () => api(`/api/task-files/${f.id}`, { method: "DELETE" })));
+      const del = button("icon", null, () => confirmed(`Delete ${f.name}? Its bytes leave the store for good.`, "Delete", () => api(`/api/task-files/${f.id}`, { method: "DELETE" })));
+      del.append(icon("x", 14));
       del.setAttribute("aria-label", `Delete ${f.name}`);
       li.append(open, el("small", null, `${Math.ceil(f.bytes / 1024)} KB`), del);
       return li;
@@ -107,10 +109,10 @@ export function taskWindow({ getMeta }) {
     return list;
   }
 
-  /** A human's own comment changes or goes (AC-108). */
+  /** A human's own comment changes or goes (AC-108): small keys on its head's line. */
   function commentActions(t, e, said) {
     const route = `/api/tasks/${t.id}/comments/${e.id}`;
-    const edit = button("quiet", "Edit", () => {
+    const edit = button("icon", null, () => {
       const area = editor(e.text ?? "");
       const save = button("primary", "Save", async () => {
         try {
@@ -121,7 +123,16 @@ export function taskWindow({ getMeta }) {
       said.replaceChildren(area, row(save));
       area.focus();
     });
-    return row(edit, button("quiet", "Delete", () => confirmed("Delete this comment?", "Delete", () => api(route, { method: "DELETE" }))));
+    const del = button("icon", null, () => confirmed("Delete this comment?", "Delete", () => api(route, { method: "DELETE" })));
+    edit.append(icon("pencil", 14));
+    edit.title = "Edit this comment";
+    edit.setAttribute("aria-label", "Edit");
+    del.append(icon("x", 14));
+    del.title = "Delete this comment";
+    del.setAttribute("aria-label", "Delete");
+    const keys = el("span", "evacts");
+    keys.append(edit, del);
+    return keys;
   }
 
   function eventRow(t, e) {
@@ -133,7 +144,7 @@ export function taskWindow({ getMeta }) {
       const said = el("div", "markdown");
       renderInto(said, e.text ?? "");
       li.append(said);
-      if (e.author_kind === "human") li.append(commentActions(t, e, said));
+      if (e.author_kind === "human") head.append(commentActions(t, e, said));
     } else if (e.kind === "deleted") {
       li.append(el("em", null, "Comment deleted"));
     } else {

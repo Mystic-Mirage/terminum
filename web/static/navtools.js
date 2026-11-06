@@ -15,11 +15,6 @@ export { askConfirm, askName } from "./dialogs.js";
 const $ = (id) => document.getElementById(id);
 
 // Every dialog's ×, as Esc: a dialog that refuses Esc (the bookmark's while it saves) refuses it too.
-// The bookmarks' windows close their own way (marks.js, markdoc.js).
-for (const x of document.querySelectorAll("dialog.dlg .dhead .x:not([id])")) {
-  x.onclick = () => { const d = x.closest("dialog"); if (d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel"); };
-}
-
 /** Close Session (the menu's, a row's): asked first, as the program in it ends; then sent. */
 export async function closeSession(item, send, tasks = []) {
   const prog = item.sub?.[0] || "a program";

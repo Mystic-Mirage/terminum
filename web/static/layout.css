@@ -95,3 +95,4 @@ body.wide #filewin .winhead { display: flex; padding: 6px 6px 6px 12px; }   /* o
 #buildinfo:empty { display: none; }
 /* the Kanban link: in the header where it fits, in the settings menu everywhere */
 body:not(.wide) #tokanban { display: none; }
+#sheetkanban { margin-left: auto; margin-right: var(--icon-gap); }

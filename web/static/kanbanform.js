@@ -98,6 +98,7 @@ export function taskForm({ getMeta, getFilter }) {
   box.querySelector("form").addEventListener("input", keep);
   $("newwrite").addEventListener("click", () => view(false));
   $("newpreview").addEventListener("click", () => view(true));
+  $("newadd").addEventListener("click", () => $("newpick").click());
   $("newpick").addEventListener("change", (e) => { add([...e.target.files]); e.target.value = ""; });
   onFiles($("newtext"), box, add, (on) => box.classList.toggle("dropping", on));
 

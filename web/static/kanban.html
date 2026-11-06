@@ -13,27 +13,33 @@
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="shapes.css">
+<link rel="stylesheet" href="tmux.css">
+<link rel="stylesheet" href="kanban.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="markdown.css">
-<link rel="stylesheet" href="kanban.css">
+<link rel="stylesheet" href="sheets.css">
+<link rel="stylesheet" href="motion.css">
+<link rel="stylesheet" href="grain.css">
+<style id="customcss"></style>
 </head>
 <body class="board-page">
-<header id="boardhead">
+<header id="boardhead" class="wavebar">
   <nav class="seg" aria-label="Pages">
     <a id="tosessions" href="/sessions/">Sessions</a>
-    <span class="here" aria-current="page">Kanban</span>
+    <a href="/kanban/" aria-current="page">Kanban</a>
   </nav>
   <div id="filters">
-    <input id="find" class="field" type="search" placeholder="Find" aria-label="Find tasks" autocomplete="off" spellcheck="false">
-    <details id="fproject" class="pick"><summary>Projects</summary><div class="box" role="group" aria-label="Projects"></div></details>
-    <details id="fseverity" class="pick"><summary>Severity</summary><div class="box" role="group" aria-label="Severity"></div></details>
-    <details id="fowner" class="pick"><summary>Owner</summary><div class="box" role="group" aria-label="Owner"></div></details>
-    <button id="clearfilters" type="button" hidden>Clear filters</button>
+    <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+      <input id="find" type="search" placeholder="Find tasks" aria-label="Find tasks" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <button id="filtersbtn" class="key" type="button" aria-expanded="false" aria-controls="picks">Filters</button>
+    <div id="picks">
+      <details id="fproject" class="pick"><summary class="key">Projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
+      <details id="fseverity" class="pick"><summary class="key">Severity</summary><div class="box menurows" role="group" aria-label="Severity"></div></details>
+      <details id="fowner" class="pick"><summary class="key">Owner</summary><div class="box menurows" role="group" aria-label="Owner"></div></details>
+      <button id="clearfilters" class="key" type="button" hidden>Clear filters</button>
+    </div>
   </div>
-  <div id="boardacts">
-    <button id="newproject" type="button">New project</button>
-    <button id="newtask" class="primary" type="button">New task</button>
-  </div>
+  <div id="boardacts"><button id="newtask" class="key primary" type="button">New task</button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
@@ -42,14 +48,14 @@
 
 <dialog id="taskbox" class="box dlg" aria-labelledby="tasktitle">
   <form method="dialog" id="taskform">
-    <div class="dhead"><h2 id="tasktitle"></h2><button id="taskclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
+    <div class="dhead"><h2 id="tasktitle"></h2><button id="taskclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="taskbody"></div>
   </form>
 </dialog>
 
 <dialog id="newbox" class="box dlg" aria-labelledby="newhead">
   <form method="dialog" id="newform">
-    <div class="dhead"><h2 id="newhead">New task</h2><button id="newclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
+    <div class="dhead"><h2 id="newhead">New task</h2><button id="newclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label class="fieldrow">Title <input id="newtitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
     <div class="edithead"><span>Text</span>
       <div class="seg" role="tablist" aria-label="Text view">
@@ -66,18 +72,21 @@
       <label class="fieldrow">Owner <select id="newowner" class="field"></select></label>
       <label class="fieldrow">Session <select id="newsession" class="field"></select></label>
     </div>
-    <label class="filebtn"><input id="newpick" type="file" multiple hidden>Add files…</label>
+    <input id="newpick" type="file" multiple hidden>
     <p id="newerror" class="formerror" role="alert" hidden></p>
     <div class="actions">
+      <button id="newadd" type="button">Add files…</button>
       <button id="newdiscard" type="button">Discard</button>
       <button id="newcreate" type="button" class="primary">Create</button>
     </div>
   </form>
 </dialog>
 
+<dialog id="movebox" class="box dlg menurows" aria-label="Move to"><form method="dialog" id="moverows" tabindex="-1"></form></dialog>
+
 <dialog id="confirmbox" class="box dlg" aria-labelledby="confirmtitle">
   <form method="dialog">
-    <div class="dhead"><h2 id="confirmtitle"></h2></div>
+    <div class="dhead"><h2 id="confirmtitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="confirmtext"></p>
     <div class="actions" id="confirmacts">
       <button value="cancel" type="submit">Cancel</button>
@@ -88,7 +97,7 @@
 
 <dialog id="namebox" class="box dlg" aria-labelledby="nametext">
   <form method="dialog">
-    <div class="dhead"><h2 id="nametext"></h2></div>
+    <div class="dhead"><h2 id="nametext"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" spellcheck="false">
     <p id="nameerror" class="formerror" role="alert" hidden></p>
     <div class="actions">
@@ -97,6 +106,7 @@
     </div>
   </form>
 </dialog>
+<script type="module" src="grain.js"></script>
 <script type="module" src="kanban.js"></script>
 </body>
 </html>

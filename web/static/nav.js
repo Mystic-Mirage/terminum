@@ -178,6 +178,12 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   const idx = el("span", "idx", child ? "" : item.index || "");
   if (item.index && !child) idx.title = item.host ?? "This machine";     // where the window runs
   head.append(idx, agentMark(item), el("span", "t", item.title));
+  for (const task of taskMarksOf(item.id)) {
+    const t = el("span", "taskmark", task);
+    t.title = `Open ${task} on the board`;
+    t.addEventListener("click", (e) => { e.stopPropagation(); location.href = taskUrl(task); });
+    head.append(t);
+  }
   if (item.plan) head.append(planPct(item, onPick));
   txt.append(head);
   if (item.plan) txt.append(planTrack(item.plan));
@@ -201,12 +207,6 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   }
   const bar = folderBar(item, item.id === current, item.state === "working", opts.project);
   b.append(bar, txt, st);
-  for (const task of taskMarksOf(item.id)) {
-    const t = el("span", "taskmark", task);
-    t.title = `Open ${task} on the board`;
-    t.addEventListener("click", (e) => { e.stopPropagation(); location.href = taskUrl(task); });
-    b.append(t);
-  }
   // its bookmarks and open reminders: a wavy orange and a wavy pink line at the row's right edge
   const has = marked.get(item.id);
   if (has) {

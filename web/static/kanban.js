@@ -3,8 +3,11 @@
 // by drag or Move to…; terminumd owns the cards and every page hears of a change, this one too.
 // signin.js comes first: every fetch then carries the sign-in.
 import * as signin from "./signin.js";
+import "./press.js";
+import "./pop.js";
 import { pageColors } from "./contrast.js";
 import { askConfirm, askName } from "./dialogs.js";
+import { icon } from "./icons.js";
 import { projectColor } from "./nav.js";
 import { takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
@@ -16,6 +19,7 @@ let meta = { projects: [], users: [], sessions: [] };
 let cards = new Map(COLUMNS.map((c) => [c, []]));
 let counts = {};
 let shownColumn = "TODO";
+const phone = () => matchMedia("(max-width: 860px)").matches;
 let dragging = null;
 
 const filters = () => {
@@ -98,7 +102,10 @@ function card(t) {
   c.tabIndex = 0;
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
-  const menu = button("cmove", "Move to…", (e) => { e.stopPropagation(); moveMenu(t, menu); });
+  const menu = button("icon cmove", null, (e) => { e.stopPropagation(); moveMenu(t, menu); });
+  menu.append(icon("ellipsis", 14));
+  menu.title = "Move to…";
+  menu.setAttribute("aria-label", "Move to…");
   menu.setAttribute("aria-haspopup", "true");
   head.append(menu);
   const foot = el("div", "cfoot");
@@ -118,21 +125,23 @@ function card(t) {
   return c;
 }
 
-/** Move to…: every drag also has a menu item (CLAUDE.md §1); the only way on a phone. */
+/** Move to…: every drag also has a menu item (CLAUDE.md §1); the only way on a phone. A window of
+ *  its own: nothing clips it, Esc and a press outside close it; beside its key, a sheet on a phone. */
 function moveMenu(t, anchor) {
-  document.querySelector(".movemenu")?.remove();
-  const m = el("div", "box movemenu");
-  m.setAttribute("role", "menu");
-  for (const c of COLUMNS.filter((x) => x !== t.status)) {
-    const b = button(null, c, (e) => { e.stopPropagation(); m.remove(); moveTo(t, c); });
+  const box = $("movebox"), rows = $("moverows");
+  rows.replaceChildren(el("p", "movehead", `Move ${t.id} to`), ...COLUMNS.filter((c) => c !== t.status).map((c) => {
+    const b = button(null, c, () => { box.close(); moveTo(t, c); });
     b.setAttribute("role", "menuitem");
-    m.append(b);
-  }
-  anchor.closest(".card").append(m);
-  m.querySelector("button")?.focus();
-  m.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); m.remove(); } });
-  setTimeout(() => addEventListener("click", () => m.remove(), { once: true }));
+    return b;
+  }));
+  box.setAttribute("aria-label", `Move ${t.id} to`);
+  box.showModal();
+  if (phone()) { rows.focus(); return; }   // a finger's: no row looks chosen before it presses one
+  const r = anchor.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
+  box.style.left = `${Math.max(8, Math.min(r.right - w, innerWidth - w - 8))}px`;
+  box.style.top = `${r.bottom + h + 4 < innerHeight ? r.bottom + 4 : Math.max(8, r.top - h - 4)}px`;
 }
+$("movebox").addEventListener("click", (e) => { if (e.target === $("movebox")) $("movebox").close(); });
 
 /** A change stands once terminumd said so, and every page hears of it; refused, the toast says why. */
 const change = (t, body) => api(`/api/tasks/${t.id}`, { method: "PATCH", body }).catch((e) => say(e.message));
@@ -150,32 +159,38 @@ function dropOn(column, before) {
   else change(t, before ? { before } : { order_end: true });
 }
 
+/** The columns stand once; a draw fills them, each keeping its scroll. */
+const columns = new Map(COLUMNS.map((column) => {
+  const col = el("section", "col"), head = el("h2", "colhead"), count = el("span", "count"), list = el("div", "cards");
+  col.dataset.status = column;
+  head.append(el("span", null, column), count);
+  col.append(head, list);
+  col.addEventListener("dragover", (e) => { if (dragging) { e.preventDefault(); col.classList.add("over"); } });
+  col.addEventListener("dragleave", (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove("over"); });
+  col.addEventListener("drop", (e) => {
+    e.preventDefault();
+    col.classList.remove("over");
+    const under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging?.id; });
+    dropOn(column, under?.dataset.id);
+  });
+  return [column, { col, count, list }];
+}));
+$("board").replaceChildren(...[...columns.values()].map((c) => c.col));
+
 function draw() {
-  const board = $("board");
-  board.replaceChildren(...COLUMNS.map((column) => {
-    const col = el("section", "col");
-    col.dataset.status = column;
-    col.classList.toggle("shown", column === shownColumn);
-    const head = el("h2", "colhead");
-    head.append(el("span", null, column), el("span", "colcount", String(counts[column] ?? 0)));
-    const list = el("div", "cards");
-    const have = cards.get(column);
-    list.append(...have.map(card));
+  const focused = document.activeElement?.closest?.(".card")?.dataset.id;
+  for (const [column, { count, list }] of columns) {
+    const have = cards.get(column), scroll = list.scrollTop, n = counts[column] ?? 0;
+    count.textContent = String(n);
+    list.replaceChildren(...have.map(card));
     if (!have.length) list.append(el("p", "colempty", hasFilter() ? "No tasks match" : "No tasks"));
-    if (have.length < (counts[column] ?? 0)) {
-      list.append(button("colmore", `Show ${Math.min(PAGE, counts[column] - have.length)} more`, () => more(column)));
+    if (have.length < n) {
+      const moreKey = button("key colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column));
+      list.append(moreKey);
     }
-    col.addEventListener("dragover", (e) => { if (dragging) { e.preventDefault(); col.classList.add("over"); } });
-    col.addEventListener("dragleave", (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove("over"); });
-    col.addEventListener("drop", (e) => {
-      e.preventDefault();
-      col.classList.remove("over");
-      const under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging?.id; });
-      dropOn(column, under?.dataset.id);
-    });
-    col.append(head, list);
-    return col;
-  }));
+    list.scrollTop = scroll;
+  }
+  if (focused) document.querySelector(`.card[data-id="${focused}"]`)?.focus({ preventScroll: true });
   $("colswitch").replaceChildren(...COLUMNS.map((c) => {
     const b = button(null, `${c} ${counts[c] ?? 0}`, () => showColumn(c));
     b.dataset.status = c;
@@ -185,12 +200,26 @@ function draw() {
   }));
 }
 
-/** A phone's one column: the cards stay as they are. */
+/** A phone's one column, by its tab or a swipe. */
 function showColumn(column) {
   shownColumn = column;
-  for (const col of $("board").children) col.classList.toggle("shown", col.dataset.status === column);
-  for (const b of $("colswitch").children) b.setAttribute("aria-selected", String(b.dataset.status === column));
+  columns.get(column).col.scrollIntoView({ inline: "start", block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  markTab();
 }
+
+function markTab() {
+  for (const b of $("colswitch").children) {
+    const on = b.dataset.status === shownColumn;
+    b.setAttribute("aria-selected", String(on));
+    if (on) b.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }
+}
+
+$("board").addEventListener("scroll", () => {
+  if (!phone()) return;
+  const b = $("board"), now = COLUMNS[Math.round(b.scrollLeft / Math.max(1, b.clientWidth))];
+  if (now && now !== shownColumn) { shownColumn = now; markTab(); }
+}, { passive: true });
 
 /** The session list changed: the pickers' sessions and the cards' states come with it, no task did. */
 function sessionsCame(groups) {
@@ -209,7 +238,7 @@ function sessionsCame(groups) {
 
 const hasFilter = () => { const f = filters(); return f.project.length || f.severity.length || f.owner || f.q; };
 
-function picks(box, options, chosen, onChange) {
+function picks(box, options, chosen, onChange, extra) {
   const inner = box.querySelector("div");
   inner.replaceChildren(...options.map(({ id, name }) => {
     const label = el("label", "pickrow");
@@ -220,17 +249,46 @@ function picks(box, options, chosen, onChange) {
     label.append(c, document.createTextNode(name));
     return label;
   }));
+  if (extra) inner.append(extra);
   box.classList.toggle("on", chosen.length > 0);
+  const summary = box.querySelector("summary");
+  summary.querySelector(".count")?.remove();
+  if (chosen.length) summary.append(el("span", "count", String(chosen.length)));
 }
+
+function newProject() {
+  const b = button(null, "New project…", () => {
+    $("fproject").open = false;
+    askName("New project", "", "Create", 40, async (name) => {
+      await api("/api/task-projects", { method: "POST", body: { name } });
+      await loadMeta();
+    });
+  });
+  b.id = "newproject";
+  return b;
+}
+
+/** One picker open at a time; a press elsewhere or Esc closes it. */
+const pickers = () => [...document.querySelectorAll(".pick")];
+for (const d of pickers()) d.addEventListener("toggle", () => { if (d.open) for (const o of pickers()) if (o !== d) o.open = false; });
+document.addEventListener("click", (e) => { if (!e.target.closest?.(".pick")) for (const d of pickers()) d.open = false; });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") for (const d of pickers()) d.open = false; });
+$("filtersbtn").addEventListener("click", () => {
+  const open = $("picks").classList.toggle("open");
+  $("filtersbtn").setAttribute("aria-expanded", String(open));
+});
 
 function drawFilters() {
   const f = filters();
   const toggled = (list, id, on) => (on ? [...list, id] : list.filter((x) => x !== id));
-  picks($("fproject"), meta.projects, f.project, (id, on) => setFilters({ project: toggled(filters().project, id, on) }));
+  picks($("fproject"), meta.projects, f.project, (id, on) => setFilters({ project: toggled(filters().project, id, on) }), newProject());
   picks($("fseverity"), SEVERITIES.map((s) => ({ id: s, name: s })), f.severity, (id, on) => setFilters({ severity: toggled(filters().severity, id, on) }));
   picks($("fowner"), [{ id: "humans", name: "People" }, { id: "agents", name: "Agents" }], f.owner ? [f.owner] : [], (id, on) => setFilters({ owner: on ? id : "" }));
   if ($("find").value !== f.q) $("find").value = f.q;
   $("clearfilters").hidden = !hasFilter();
+  const on = f.project.length + f.severity.length + (f.owner ? 1 : 0);
+  $("filtersbtn").textContent = on ? `Filters ${on}` : "Filters";
+  if (on) $("picks").classList.add("open");
 }
 
 async function loadMeta() {
@@ -257,11 +315,6 @@ $("taskbox").addEventListener("close", () => history.replaceState(null, "", `/ka
 $("newtask").addEventListener("click", () => form.open());
 $("find").addEventListener("input", () => { clearTimeout($("find").wait); $("find").wait = setTimeout(() => setFilters({ q: $("find").value }), 200); });
 $("clearfilters").addEventListener("click", () => setFilters({ project: [], severity: [], owner: "", q: "" }));
-$("newproject").addEventListener("click", () => askName("New project", "", "Create", 40, async (name) => {
-  await api("/api/task-projects", { method: "POST", body: { name } });
-  await loadMeta();
-}));
-
 /** Every page hears of a task's change: the columns are read again once a burst ends, an open
  *  window only when it shows a task that changed. */
 function listen() {
@@ -283,6 +336,7 @@ function listen() {
   });
 }
 
+fetch("/custom.css", { cache: "no-store" }).then((r) => (r.ok ? r.text() : "")).then((css) => { $("customcss").textContent = css; }).catch(() => {});   // the user's own stylesheet (terminum.md AC-19)
 await loadMeta();
 await load();
 listen();

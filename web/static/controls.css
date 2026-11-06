@@ -7,26 +7,26 @@
 
 /* ---- keys: a text button, matte and a little raised; a press sinks it (shapes.css: --m-*) ---- */
 :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
-  .pwacts button, .tipacts button, .tochat, #markbar button:not(.icon), #findbox .primary, #login button, #backterm) {
+  .pwacts button, .tipacts button, .tochat, .key, #markbar button:not(.icon), #findbox .primary, #login button, #backterm) {
   height: var(--key-h); padding: 0 var(--key-px); border-radius: var(--key-r); display: inline-flex; align-items: center;
   gap: var(--sp-2); white-space: nowrap; font-weight: var(--key-weight); color: var(--kc, var(--key-ink));
   background-color: var(--kf, var(--key-fill)); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
 @media (hover: hover) {
   :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
-    .pwacts button, .tipacts button, .tochat, #markbar button:not(.icon), #backterm):not(:disabled, .primary):hover {
+    .pwacts button, .tipacts button, .tochat, .key, #markbar button:not(.icon), #backterm):not(:disabled, .primary):hover {
     background-color: var(--key-fill-hover); }
 }
 /* a press sinks a key into the panel */
 :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
-  .pwacts button, .tipacts button, .tochat, #markbar button:not(.icon), #findbox .primary, #login button, #backterm):active:not(:disabled) {
+  .pwacts button, .tipacts button, .tochat, .key, #markbar button:not(.icon), #findbox .primary, #login button, #backterm):active:not(:disabled) {
   box-shadow: var(--m-well); }
 /* the keys at a pane's foot (Insert into chat and its neighbours): one size in every pane */
 :is(.tochat, .pwacts button, #markbar button:not(.icon)) { font-size: var(--fs-label); }
 /* the primary verb: its container's hue (--key-primary-fill: the accent, Ask's, the bookmark's, a reminder's, danger's);
    through --kf and --kc, so no selector's weight decides it */
-:is(dialog.dlg, .footform, #findbox) .primary, #login button {
+:is(dialog.dlg, .footform, #findbox) .primary, #login button, .key.primary {
   --kf: var(--key-primary-fill); --kc: var(--key-primary-ink); --focus: var(--key-primary-ink); }
-@media (hover: hover) { :is(dialog.dlg, .footform, #findbox) .primary:not(:disabled):hover { filter: brightness(1.08); } }
+@media (hover: hover) { :is(dialog.dlg, .footform, #findbox) .primary:not(:disabled):hover, .key.primary:not(:disabled):hover { filter: brightness(1.08); } }
 /* disabled: faded, flat, never pressed */
 :where(button):disabled { opacity: var(--key-disabled); cursor: default; filter: none; }
 :where(button):disabled:active { box-shadow: var(--m-edge-ctl); }
@@ -53,8 +53,8 @@
 
 /* ---- a segmented control: a shallow track, the chosen segment a key in it ---- */
 .seg { padding: var(--sp-0); gap: var(--sp-0); border-radius: var(--key-r); background: var(--field-fill); box-shadow: var(--m-groove); }
-.seg button { border-radius: var(--r-xs); }
-.seg button:is([aria-pressed="true"], [aria-selected="true"]) { color: var(--t-fg); background-color: var(--key-fill-hover);
+.seg :is(button, a) { border-radius: var(--r-xs); }
+.seg :is(button, a):is([aria-pressed="true"], [aria-selected="true"], [aria-current="page"]) { color: var(--t-fg); background-color: var(--key-fill-hover);
   background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
 
 /* ---- fields: a recess at rest; in focus edged in the accent, its fill as at rest (no gradient) ---- */
@@ -66,7 +66,7 @@
 :is(.field, .search) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) is lit for its input */
 
 /* ---- panes and dialogs: their edges and a shadow that shades what is around them ---- */
-:is(#menu, #hostmenu, #rowmenu, #updmenu, #findbox, #markbar, .footform) {   /* the floating buttons' windows: View's (panewin.css) */
+:is(#menu, #hostmenu, #rowmenu, #updmenu, #findbox, #markbar, .footform, .pick > .box) {   /* the floating buttons' windows: View's (panewin.css) */
   box-shadow: var(--pane-shadow); }
 dialog.dlg, #marksdlg { box-shadow: var(--dialog-shadow); }
 dialog::backdrop, #panescrim { background: var(--scrim); }
@@ -84,24 +84,30 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
 :is(dialog.dlg, .footform) .field { font: inherit; line-height: 1.3; min-width: 0; }
 :is(dialog.dlg, .footform) .field:not(.lead) { padding: var(--sp-2) var(--field-px); }
 :is(dialog.dlg, .footform) textarea.field { resize: vertical; }
+:is(dialog.dlg, .footform) label .field { color: var(--t-fg); }   /* its label's muted stays on the label */
+/* a choice: a field like the others on every engine, its chevron the theme's */
+:is(dialog.dlg, .footform) select.field { -webkit-appearance: none; appearance: none; padding-right: 28px; background-repeat: no-repeat; background-size: 5px 5px;
+  background-position: calc(100% - 17px) center, calc(100% - 12px) center;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); }
 :is(dialog.dlg, .footform) [role="alert"] { margin: 0; color: var(--danger-text); font-size: var(--fs-label); }
 #agentslines.bad { color: var(--danger-text); }   /* AC-99: why enabling or turning off failed */
 :is(dialog.dlg, .footform) .actions { display: flex; justify-content: flex-end; gap: var(--key-gap); margin-top: var(--sp-3); }
 
-/* popover menus: the host's ⋯, the update chip's: rows, not keys */
-:is(#hostmenu, #updmenu) button { height: 34px; padding: 0 10px; border-radius: var(--r-xs); text-align: left; }
-:is(#hostmenu, #updmenu) button:focus-visible { background: var(--surface-4); }
-@media (hover: hover) { :is(#hostmenu, #updmenu) button:hover { background: var(--surface-4); } }
+/* popover menus: the host's ⋯, the update chip's, the board's: rows, not keys */
+:is(#hostmenu, #updmenu, .menurows) :is(button, label) { display: flex; align-items: center; gap: var(--sp-2); width: 100%; box-sizing: border-box; height: 34px; padding: 0 10px; border-radius: var(--r-xs); text-align: left; color: var(--t-fg); cursor: pointer; }
+:is(#hostmenu, #updmenu, .menurows) button:focus-visible { background: var(--surface-4); }
+@media (hover: hover) { :is(#hostmenu, #updmenu, .menurows) :is(button, label):hover { background: var(--surface-4); } }
+.menurows { --fill: var(--chrome-2); padding: var(--sp-1); border-radius: var(--r-lg); }
 
 /* a phone, a tablet or a narrow window: every target a finger's size (the key sizes: tokens.css) */
 @media (max-width: 860px), (pointer: coarse) {
   .grp h2 .toggle { height: 40px; }
   :is(#quick .qbar .icon, #rename, .mkdel) { --ik: 40px; }
-  :is(#hostmenu, #updmenu) button { height: var(--key-h-touch); }
+  :is(#hostmenu, #updmenu, .menurows) :is(button, label) { height: var(--key-h-touch); }
   .dhead { margin: -10px -12px -4px 0; }   /* the larger × keeps the title where it was */
   :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { width: 44px; height: 44px; }   /* a selection's three stand where the column does, as large */
   #menu .row { min-height: 44px; }
-  .seg button { height: 34px; }   /* a segment in a full-width row */
+  .seg :is(button, a) { height: 34px; }   /* a segment in a full-width row */
   #planpane button { min-height: 44px; min-width: 44px; }   /* the Plan pane (planpane.css) */
   .item .plpct { padding: 12px 6px; margin: -12px 0; }   /* the row's percent: a finger's height, the row's own kept */
 }

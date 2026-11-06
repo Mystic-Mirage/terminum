@@ -214,8 +214,8 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 #tools .divider { width: 1px; height: 22px; background: var(--line); }
 .seg { display: inline-flex; }   /* its look: controls.css */
-.seg button { height: 26px; padding: 0 11px; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
-@media (hover: hover) { .seg button:hover { color: var(--t-fg); background-color: var(--surface-3); } }
+.seg :is(button, a) { height: 26px; padding: 0 11px; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; text-decoration: none; }
+@media (hover: hover) { .seg :is(button, a):hover { color: var(--t-fg); background-color: var(--surface-3); } }
 #views button:disabled { opacity: .35; cursor: default; }
 
 #status { background: var(--danger-fill); color: #fff; padding: 6px 12px; }

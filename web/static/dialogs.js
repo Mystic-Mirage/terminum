@@ -2,6 +2,11 @@
 // The page's two small questions, on the session page and the board: a yes or no, and a name.
 const $ = (id) => document.getElementById(id);
 
+// The bookmarks' windows close their own way (marks.js, markdoc.js).
+for (const x of document.querySelectorAll("dialog.dlg .dhead .x:not([id])")) {
+  x.onclick = () => { const d = x.closest("dialog"); if (d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel"); };
+}
+
 /** Asks `text` with a dialog: true when the user pressed `yes` (else Cancel, ×, Esc). Its question
  *  ("Close the session api?") is the title, what follows it the text. */
 export function askConfirm(text, yes) {

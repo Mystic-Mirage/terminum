@@ -252,7 +252,10 @@ where it is:
   TodoWrite, Codex's update_plan where it has one), and terminum's MCP server `terminum mcp`
   (update_session_plan, get_session_plan, add_notes_for_user, get_notes_for_user,
   update_notes_for_user, delete_notes_for_user; an agent reads, changes and deletes its own
-  session's records, also the bookmarks you made there, never another session's): the
+  session's records, also the bookmarks you made there; in a project it also reads what other
+  agents of the project on that host kept and may close it, a copy kept in
+  `~/.terminum/state/closed-records.jsonl`; a record already kept there is not kept again, your
+  own bookmarks of other sessions stay out of it): the
   current step, an ETA in minutes, the plan itself for an agent without a plan tool (Codex
   0.164 has none), and the records it keeps for you (Kept by the agent, above). A new agent
   session in the pane starts with no plan.

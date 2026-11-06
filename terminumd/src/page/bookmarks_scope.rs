@@ -6,9 +6,16 @@
 //! folder: its bookmarks take the project their session is in now, once.
 
 use std::collections::HashMap;
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
+
+use serde_json::json;
 
 use super::{Item, MarkError, Store};
 use crate::app::Shared;
+
+/// Past this `closed-records.jsonl` becomes `.1`, one older file kept.
+const JOURNAL_MOST: u64 = 1 << 20;
 
 impl Store {
     /// A file before version 3: each bookmark takes the project its session is in now
@@ -40,6 +47,21 @@ impl Store {
         self.save()?;
         self.unscoped = false;
         Ok(())
+    }
+
+    /// A copy of `items`, whole, added to `closed-records.jsonl` beside the file before they close
+    /// from another session (AC-98): nothing else keeps them. In memory: none.
+    pub fn journal(&self, items: &[Item], by: &str) -> Result<(), MarkError> {
+        let Some(dir) = self.path.as_deref().and_then(std::path::Path::parent).filter(|_| !items.is_empty()) else { return Ok(()) };
+        let path = dir.join("closed-records.jsonl");
+        let failed = |e: std::io::Error| MarkError(format!("The closed record's copy could not be written: {e}"));
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() > JOURNAL_MOST) {
+            std::fs::rename(&path, path.with_extension("jsonl.1")).map_err(failed)?;
+        }
+        let at = crate::auth::store::unix_now() as i64;
+        let lines: String = items.iter().map(|i| format!("{}\n", json!({"closed": at, "by": by, "record": i}))).collect();
+        let mut file = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(&path).map_err(failed)?;
+        file.write_all(lines.as_bytes()).map_err(failed)
     }
 
     /// Bookmarks `ids` orphaned now, saved; those it changed.

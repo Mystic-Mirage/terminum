@@ -94,7 +94,8 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
 fn place_of(app: &Shared, key: &str) -> Place {
     let item = crate::page::marks::find_item(&app.layout.read(), key).unwrap_or_default();
     let (host, dir) = crate::page::marks::project_of(&item);
-    Place { key: key.to_string(), project: app.projects.lock().of(key).map(|p| p.id.clone()), title: item["title"].as_str().unwrap_or("").to_string(), host, dir }
+    let (project, members) = app.projects.lock().of(key).map_or((None, Vec::new()), |p| (Some(p.id.clone()), p.members.clone()));
+    Place { key: key.to_string(), project, members, title: item["title"].as_str().unwrap_or("").to_string(), host, dir }
 }
 
 fn answer(text: &str, error: bool) -> Json<Value> {

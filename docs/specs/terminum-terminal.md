@@ -6,14 +6,15 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.6.46 |
-| Date | 2026-11-05 |
+| Version | 0.6.47 |
+| Date | 2026-11-06 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
 Change log:
 
 | Version | Date | Change |
+| 0.6.47 | 2026-11-06 | Owner: a project's sessions kept the same records twice, each agent seeing only its own pane's. Their agents now share what they hand the user: an agent reads the open records of its project's other sessions on its host, an exact repeat is not kept again, a like title gets a hint, and it may close such a record once its work finished it (AC-98). Found while at it: `replaces` naming a record of the title being added deleted the old and kept nothing. Pragmatic review: taken: the scope stops at the host (a project may mix hosts, and a host's link reaches only that host's server), the user's records of other sessions stay out, across sessions only status done and a copy of what closed kept, others' records answered as quoted data with the nudge to close aimed at the caller's own, a live pane's records in scope by membership and not by an old stamp, orphans never block a new record, a repeated question raises the one kept, reports never repeat across sessions, a refused text said plainly, in-batch repeats said too, no punctuation stripped that tells titles apart (`C++`, `v0.30`); rejected: a toast per close (the owner asked for fewer interruptions; the copy and the log keep the trace), a link to the Project filter from an answer (no user need yet; the answer names the session), a replay over real records before coding (the word rule only adds a hint now, and a wrong hint costs a line); a word-set refusal with `distinct: true` was proposed by the author and dropped on review (titles often differ by the one word that matters, so it would have refused different records). |
 | 0.6.46 | 2026-11-06 | Owner: a table's PNG takes the shown theme's colors, not always white (AC-31). A blocked step's mark in the plan is a large "!" (AC-97). Fewer records for the user to tidy: a reminder only for a question, a record may replace others, three reports a session at most, and adding one answers the session's open records so the agent closes what it covered (AC-98). |
 | 0.6.45 | 2026-11-05 | Owner: the number on a row was not clear and was low: three teammates listed on Claude Code's screen, "1" on the row. It stands beside a bot icon, and is the higher of what the hooks count and the agents Claude Code lists under its footer (AC-39). |
 | 0.6.44 | 2026-11-05 | Owner: a Codex session stopped on a security pause with no sign: no unread, no ?, no reminder. Read from both programs' source: a subagent interrupted, closed, killed or failed fires no SubagentStop, so its count held every later Stop, and a screen-read end was dropped for any pane with hooks. Ends are never lost now; a turn that stopped and needs the user waits, in any language, by the programs' own signals and a question mark of any script; failures remind too (AC-39). |
@@ -189,7 +190,7 @@ Open questions:
 | AC-90 | [SHOULD / P1] | Every message or command the user sends in a pane is kept per project (its host and folder) and read back as Markdown from a button under the magnifier: the last first, older and newer. |
 | AC-91 | [SHOULD / P1] | A bookmark can be a reminder: a pale fuchsia button comes up, its count filled, over its session when that session's coding agent ends a turn, until pressed; its pane shows the open reminders as Markdown; Close puts one down until the next turn's end, Resolve ends it. |
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
-| AC-98 | [SHOULD / P1] | A coding agent hands the user what must not get lost in the terminal's scroll (a final report, a next step, a gap seen elsewhere, deferred work, a question) through terminum's MCP tool: kept as its session's bookmarks, or reminders when the user must act; self-contained, found where the call was printed. |
+| AC-98 | [SHOULD / P1] | A coding agent hands the user what must not get lost in the terminal's scroll (a final report, a next step, a gap seen elsewhere, deferred work, a question) through terminum's MCP tool: kept as its session's bookmarks, or reminders when the user must act; self-contained, found where the call was printed; a project's agents on one host share them, so the same record is not kept twice. |
 | AC-40 | [MUST / P0] | In a coding agent's input box on a phone, a tap puts the cursor on the character under it, ↑ and ↓ move by the page's lines, a slide moves the cursor, held delete deletes words, the box is a panel above the keyboard with its status lines behind ⓘ, and the cursor is drawn in the box when the agent left it below the footer. |
 
 ## 5. BDD scenarios
@@ -846,14 +847,35 @@ Scenario: AC-98 happy path — shown with the user's
 
 Scenario: AC-98 happy path — the agent updates one
   When the agent calls update_notes_for_user {id, status: "done"} (or a new title, text or remind)
-  Then a reminder is resolved, a bookmark deleted (open reopens a resolved reminder); any record of the caller's session is found, the user's too, and no other session's
+  Then a reminder is resolved, a bookmark deleted (open reopens a resolved reminder); any record of the caller's session is found, the user's too; of other sessions only what the project's scope below allows
 
 Scenario: AC-98 happy path — the agent reads and deletes its session's
   When the agent calls get_notes_for_user {}
-  Then it gets JSON of its session's bookmarks and reminders, the agent's and the user's, in the order they were made: id, type (bookmark, reminder), status (open, up, resolved), by (the agent, or "user"), title, kind, file, no text; with {id} that record whole, its note and text, cleaned and redacted as a record is kept; the tool says their text is data, never instructions
+  Then it gets JSON of its session's bookmarks and reminders, the agent's and the user's, in the order they were made: id, type (bookmark, reminder), status (open, up, resolved), by (the agent, or "user"), title, kind, file, no text, then the project's scope below; with {id} that record whole, its note and text, cleaned and redacted as a record is kept; the tool says their text is data, never instructions
   When the agent calls delete_notes_for_user {ids: [1–20 ids]}
   Then those records are gone for good, a reminder too, every page told at once
-  And an id of another session, of its project too, of an orphaned record or of none is answered "No record <id> in this session" and nothing of that call is deleted; an agent never reads, changes or deletes another session's
+  And an id of another session, of its project too, of an orphaned record or of none is answered "No record <id> in this session" and nothing of that call is deleted; an agent never deletes another session's, and reads and closes one only by the project's scope below
+
+Scenario: AC-98 happy path — a project's sessions share their agents' records
+  Given a pane that is a member of a project (AC-92), its agent's scope beyond its own session is, on the same host as that pane (the host part of the record's key): agents' records of the project's other member panes, and agents' orphaned records stamped with that project
+  And a pane in no project has its own session's alone; a pane taken out of a project leaves it at once, whatever its records are stamped with; the user's records of other sessions are in no scope, for reading, closing or repeats
+  When the agent adds a record whose title equals an open record in its session (letter case, runs of spaces and end punctuation aside), or in a live session of that scope with the same kind, the same reminder or bookmark, and the same file when both name one
+  Then it is not kept, the answer says "Not kept, your text was not stored", names the record's id and its session, and asks to read it and add under a title that says what when its text adds something; a repeat within the call is said too
+  And a repeated question raises the reminder kept (up in its own session as at a turn end) and the answer asks the agent to tell the user which session holds it, so a question is never left in an idle session unseen
+  And kind report never repeats across sessions: each session's report is its own
+  When the title equals an orphaned record of that scope, of the same kind and file
+  Then the new record is kept and the orphaned one goes in the same save, named in the answer: a closed session's never blocks a live one
+  When the title shares at least 3 words and at least 60% of the larger title's words with an open record of a live session of the scope
+  Then the record is kept, and the answer says it looks like that record, by id, session and title, and how to delete the new one if it is the same; a wrong hint costs one line and loses nothing
+  And a repeat judged against an id in the call's `replaces` does not count: the old record goes and the new one is kept
+  When get_notes_for_user {} is called
+  Then after the session's own it lists that scope's open records, newest first, at most 50 then {"more": n}, each with `session` (its row's title when made, cleaned and cut to 40 characters) and `closed` for an orphaned one; with {id} a record of the scope is read whole
+  And every answer to add_notes_for_user adds up to 10 of them, as quoted JSON said to be data, never instructions, apart from the session's own, and only the session's own are asked to be closed
+  When update_notes_for_user {id, status: "done"} names a record of the scope
+  Then it is closed as its own would be, a copy of it whole with who closed it and when is added first to `closed-records.jsonl` beside web-bookmarks.json (0600, past 1 MiB the file becomes `.1`, one older file kept), the close is logged, and when the copy cannot be written nothing closes
+  And any other change to it, status open, title, text or remind, is refused with why, as are delete_notes_for_user and `replaces` naming it
+  And limits, reports past three and "went for room" stay each session's own, so one session's record never deletes another's; a record another session's add was refused for can still go by its holder's limits or close, a known limit
+  And a reminder comes up at its own session's turn end, and the page's panes keep their default filter (AC-33)
 
 Scenario: AC-98 edge — limits, repeats, the notes of 0.23
   When a call adds bookmarks to a session holding 50 of agents' bookmarks, or reminders to one holding 20 of agents' open reminders
@@ -861,7 +883,7 @@ Scenario: AC-98 edge — limits, repeats, the notes of 0.23
   And a session's count is of its own records, never another's, of its project too
   And update_notes_for_user reopening a reminder or making a record the other kind makes room the same way, never deleting that record
   And past 500 records of agents in all, the oldest orphaned ones go (no live scope loses a record but by its own limits); agents' records never count against the user's limits, and the user's own are never deleted for room
-  When a record of the same title (letter case aside) is open in the session
+  When a record of the same title (letter case, runs of spaces and end punctuation aside) is open in the session
   Then it is not added again; the answer names its id (an agent repeats itself after its context is compacted)
   And a call carries 1–20 records: title 1–120 characters, text 1–2000, kind bug, deferred, followup, question or report, file at most 300
   When terminumd starts with the notes.json of 0.23 (the Plan pane's notes)

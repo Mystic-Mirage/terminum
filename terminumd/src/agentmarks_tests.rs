@@ -37,7 +37,7 @@ fn a_repeat_is_not_kept_twice_and_its_text_is_cleaned() {
     let mut s = Store::memory();
     add(&mut s, &here(), "claude", vec![rec("Next step: paging", false)], &[]).unwrap();
     let (said, told) = add(&mut s, &here(), "claude", vec![rec("next STEP: paging", false), rec("Next step: paging", false)], &[]).unwrap();
-    assert!(told.is_empty() && s.all().len() == 1 && said.contains("already kept"), "{said}");
+    assert!(told.is_empty() && s.all().len() == 1 && said.contains("Not kept, your text was not stored"), "{said}");
     let mut r = rec("Key \u{202E}left", false);
     r.text = format!("token {}-api03-abcdefghijklmnopqrstuvwxyz0123456789 \u{7} here", ["sk", "ant"].join("-"));   // a key's shape, built: no key in the source
     add(&mut s, &here(), "claude", vec![r], &[]).unwrap();
@@ -47,16 +47,16 @@ fn a_repeat_is_not_kept_twice_and_its_text_is_cleaned() {
 }
 
 #[test]
-fn a_repeat_and_an_update_are_judged_in_the_pane_never_another_session_of_its_project() {
+fn a_repeat_and_an_update_are_judged_in_the_pane_outside_its_projects_members() {
     let mut s = Store::memory();
     let a = Place { project: Some("p1".into()), ..here() };
     let b = Place { key: "tmux:local:terminum:%2".into(), project: Some("p1".into()), ..here() };
     add(&mut s, &a, "claude", vec![rec("Final report", false)], &[]).unwrap();
     let (said, _) = add(&mut s, &b, "claude", vec![rec("Final report", false)], &[]).unwrap();
-    assert!(s.all().len() == 2 && !said.contains("already kept"), "the first shows only in its own session: this one must show in this one: {said}");
+    assert!(s.all().len() == 2 && !said.contains("Not kept"), "no member of the project: {said}");
     assert_eq!(s.all()[1].key.as_deref(), Some("tmux:local:terminum:%2"));
     let first = s.all()[0].id.clone();
-    assert!(update(&mut s, &b, &json!({"id": first, "status": "done"})).unwrap_err().contains("No record"), "another session's, of its project too");
+    assert!(update(&mut s, &b, &json!({"id": first, "status": "done"})).unwrap_err().contains("No record"), "another session's, not a member");
     assert!(update(&mut s, &a, &json!({"id": first, "status": "done"})).is_ok());
 }
 
@@ -87,7 +87,8 @@ fn a_pane_reads_and_deletes_every_record_of_its_own_and_none_of_another() {
     let orphaned = s.orphan(std::slice::from_ref(&ours)).unwrap();
     assert_eq!(orphaned.len(), 1);
     assert!(delete(&mut s, &a, &json!({"ids": [ours]})).unwrap_err().contains("No record"), "orphaned: no pane's");
-    assert!(read(&s, &a, &json!({})).unwrap() == "[]");
+    assert!(read(&s, &a, &json!({})).unwrap().contains("\"closed\":true"), "read as its project's closed session's");
+    assert!(read(&s, &Place { project: None, ..a }, &json!({})).unwrap() == "[]", "and by nobody outside a project");
 }
 
 #[test]

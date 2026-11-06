@@ -13,6 +13,7 @@ mod activation;
 mod agent;
 mod agentapi;
 mod agentmarks;
+mod agentmarks_scope;
 mod api_fs;
 mod app;
 mod attach;

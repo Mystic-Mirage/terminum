@@ -92,7 +92,8 @@ terminum hooks install
 
 That also gives an agent terminum's notes for the user (`terminum mcp`), its session's bookmarks
 and reminders, which the user sees beside that session. The agent of a session has full CRUD over
-that session's notes, and only that session's, whichever project it is in:
+that session's notes. In a project it also reads the open records other agents of the project keep
+on that host, closes them with `status: done`, and does not keep a record already kept there:
 
 | Do | Tool | Notes |
 | --- | --- | --- |

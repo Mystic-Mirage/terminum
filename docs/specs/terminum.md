@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.24.41 |
-| Date | 2026-11-05 |
+| Version | 0.24.42 |
+| Date | 2026-11-06 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.42 | 2026-11-06 | Owner: a project's sessions kept the same records twice. Grouping sessions into a project now lets their agents on one host share what they hand the user (AC-92; terminum-terminal.md AC-98, with the review). |
 | 0.24.41 | 2026-11-06 | Owner: what is pasted into Claude Code is seen, not folded: a paste it folds is pasted once more, as it asks (AC-03). |
 | 0.24.40 | 2026-11-05 | Owner: "Sized for another screen (129×68): tmux exited" stood over a local pane after a host's tmux stalled and went: a resize that failed named the pane shown by then, and the page took any answer for its pane; it names its own pane now, the page keeps only its pane's, and it reads "tmux did not resize this pane: <why>" (AC-13). The ⋯ button is a cog and its menu opens under it, not at the window's right edge (AC-07). (terminum-terminal.md 0.6.45: the subagents' count.) |
 | 0.24.39 | 2026-11-05 | Owner: a host's tmux session kept its >_ muted beside its blue name: the color stood on the label alone; the >_ takes it and a state's dimming too (AC-81, AC-92). |
@@ -939,6 +940,10 @@ Scenario: AC-88 edge — a host
 ### AC-92 — Projects [SHOULD / P1]
 
 ```gherkin
+Scenario: AC-92 happy path — a project lets its agents share records
+  Given sessions grouped into a project
+  Then their agents on one host read and close each other's records and do not keep one twice (terminum-terminal.md AC-98); ungrouping ends that at once, each keeping its own
+
 Scenario: AC-92 happy path — a project
   When the user picks Add to Project… → New project… in the menu of "api" (in ~/work/api)
   Then a dialog asks its name at once ("Group 1" suggested, Enter or Create takes it, Cancel makes none) and terminumd makes it (the lowest "Group N" free when no name comes), its color the first of ten pastel hues far apart no other project has, its folder ~/work/api; it keeps it in projects.json and tells every page

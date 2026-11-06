@@ -16,6 +16,7 @@ dist/
 # personal instructions for AI agents
 CLAUDE.local.md
 MEMORY.md
+/project-memory
 # the /retro skill's ledger and Claude Code's local settings (they name sessions and machines)
 .claude/retro/
 .claude/settings.local.json

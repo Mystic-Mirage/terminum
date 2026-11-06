@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_worktree import commit, Repo, SCRIPTS, sh, worktree  # noqa: E402
 import worktree_fresh  # noqa: E402
 
+HOOK_SCRIPTS = ("worktree.py", "worktree_fresh.py", "shell_writes.py")
+
 
 class Fresh(Repo):
     # the hooks' words
@@ -84,7 +86,7 @@ class Fresh(Repo):
         """Runs the real script's edit-check as this repository's copy: `ours` compares with the script's place."""
         script = self.primary / "scripts" / "worktree_fresh.py"
         script.parent.mkdir(exist_ok=True)
-        for name in ("worktree.py", "worktree_fresh.py", "shell_writes.py"):
+        for name in HOOK_SCRIPTS:
             (script.parent / name).write_text((SCRIPTS / name).read_text())
         given = json.dumps({"tool_name": "Edit", "tool_input": {"file_path": str(target)}})
         run = subprocess.run([sys.executable, str(script), "edit-check"], cwd=self.tmp.name, input=given, text=True,
@@ -127,13 +129,13 @@ class Fresh(Repo):
 
     def test_edit_check_lets_through_what_it_cannot_read(self):
         for words in ("", "not json", "[]", "{}", '{"tool_input": 3}', '{"tool_input": {}}'):
-            self.assertEqual(worktree_fresh.edit_check(io.StringIO(words)), [], words)
+            self.assertEqual(worktree_fresh.hook_answer(io.StringIO(words), worktree_fresh.edit_judge), [], words)
 
     # the PreToolUse hook on Bash (AC-104): a shell write in the primary checkout
     def shell_refused(self, command, cwd, env=None):
         script = self.primary / "scripts" / "worktree_fresh.py"
         script.parent.mkdir(exist_ok=True)
-        for name in ("worktree.py", "worktree_fresh.py", "shell_writes.py"):
+        for name in HOOK_SCRIPTS:
             (script.parent / name).write_text((SCRIPTS / name).read_text())
         given = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(cwd)})
         run = subprocess.run([sys.executable, str(script), "bash-check"], cwd=self.tmp.name, input=given, text=True,
@@ -171,7 +173,7 @@ class Fresh(Repo):
 
     def test_bash_check_lets_through_what_it_cannot_read(self):
         for words in ("", "not json", "[]", "{}", '{"tool_input": 3}', '{"tool_input": {}}'):
-            self.assertEqual(worktree_fresh.bash_check(io.StringIO(words)), [], words)
+            self.assertEqual(worktree_fresh.hook_answer(io.StringIO(words), worktree_fresh.bash_judge), [], words)
 
     def test_an_agents_commit_in_the_primary_checkout_is_refused_by_git_too(self):
         hook = SCRIPTS / "hooks" / "pre-commit"
@@ -251,7 +253,7 @@ class Fresh(Repo):
         (self.primary / "scripts").mkdir()
         run = lambda cmd, cwd, project=None: subprocess.run(["bash", "-c", cmd], cwd=cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL,
                                                              env={**os.environ, "CLAUDE_PROJECT_DIR": str(project or tree)})
-        for name in ("worktree.py", "worktree_fresh.py", "shell_writes.py"):
+        for name in HOOK_SCRIPTS:
             (self.primary / "scripts" / name).write_text((SCRIPTS / name).read_text())
         (self.primary / "ui").mkdir(exist_ok=True)
         tree, _ = worktree.add("hooked", cwd=self.primary)
@@ -274,19 +276,19 @@ class Fresh(Repo):
         foreign = Path(self.tmp.name) / "foreign"                 # the session moved to another project
         sh(self.tmp.name, "git", "init", "-q", "-b", "main", str(foreign))
         (foreign / "scripts").mkdir()
-        for name in ("worktree.py", "worktree_fresh.py", "shell_writes.py"):
+        for name in HOOK_SCRIPTS:
             (foreign / "scripts" / name).write_text("print('foreign code ran')\n")
         for event, each in commands.items():
             for cmd in each:
                 moved = run(cmd, foreign)
                 self.assertEqual((moved.returncode, moved.stdout), (0, ""), event)
-        for name in ("worktree.py", "worktree_fresh.py", "shell_writes.py"):
+        for name in HOOK_SCRIPTS:
             (self.primary / "scripts" / name).write_text("raise SystemExit(2)\n")     # Claude Code stops on a 2
         for event, each in commands.items():
             for cmd in each:
                 self.assertEqual(run(cmd, tree).returncode, 0, event)
                 self.assertEqual(run(cmd, self.tmp.name).returncode, 0, f"{event}, outside git")
-        for name in ("worktree.py", "worktree_fresh.py", "shell_writes.py"):
+        for name in HOOK_SCRIPTS:
             (self.primary / "scripts" / name).unlink()
         self.assertEqual(run(commands["Stop"][0], tree).returncode, 0, "no script")
 

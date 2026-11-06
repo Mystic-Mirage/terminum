@@ -22,8 +22,9 @@ import sys
 import time
 
 from shell_writes import writes
-from worktree import count, fetched, finished, git, has_ref, ours, primary_of, Refused, said_name, trees
+from worktree import count, fetched, finished, git, has_ref, ours, primary_of, Refused, releasing, said_name, trees
 
+REPO = Path(__file__).resolve().parents[1]
 FETCH_EVERY = 300      # seconds between the hooks' fetches, for the whole repository
 EDIT_REFUSED = ("terminum: the primary checkout is the maintainer's; make this change in a worktree: "
                 "python3 scripts/worktree.py add <slug> --kind <kind>, then edit the file there (CLAUDE.md §9). "
@@ -109,7 +110,6 @@ def freshen(cwd="."):
     behind = count("HEAD..origin/main", cwd)
     if not behind:
         return lines
-    from release_turn import releasing
     if releasing(cwd):   # it publishes the commit its checks saw
         return lines + [f"warning: a release is running: main stays {commits(behind)} behind origin/main"]
     if os.environ.get("TM_INSTALL_STALE"):
@@ -132,47 +132,36 @@ def edit_refused(target, own_place=False):
     project's files and the trees' own are none of this."""
     path = Path(target).expanduser()
     path = path.parent.resolve() / path.name if own_place else path.resolve()
+    if not path.is_relative_to(REPO) or path.is_relative_to(REPO / ".worktrees"):
+        return False                                # no git for what cannot be refused
     folder = next((parent for parent in path.parents if parent.is_dir()), None)
-    if folder is None or not ours(folder):
+    if folder is None or not holds_primary(path, folder):
+        return False
+    return git("check-ignore", "-q", str(path), cwd=REPO, check=False).returncode == 1  # 0 ignored, else git failed
+
+
+def holds_primary(path, folder):
+    """Whether `path` is in the primary checkout of this repository, not in one of its trees."""
+    if not ours(folder):
         return False
     primary, *others = trees(folder)
-    if not path.is_relative_to(primary) or any(path.is_relative_to(tree) for tree in others):
-        return False
-    return git("check-ignore", "-q", str(path), cwd=primary, check=False).returncode == 1  # 0 ignored, else git failed
-
-
-def refusal(why):
-    return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                              "permissionDecisionReason": why}})
-
-
-def edit_check(stdin):
-    """The hook's answer as JSON, or nothing: what cannot be read or judged is let through, as a hook
-    never stops the agent over its own failure."""
-    if os.environ.get("TM_EDIT_PRIMARY"):
-        return []
-    try:
-        given = json.load(stdin)["tool_input"]
-        target = given.get("file_path") or given.get("notebook_path")
-        if not target or not edit_refused(target):
-            return []
-    except (ValueError, KeyError, TypeError, AttributeError, OSError, Refused):
-        return []
-    return [refusal(EDIT_REFUSED)]
-
-
-def in_primary(folder):
-    """Whether `folder` is in the primary checkout of this repository, not in one of its trees."""
-    path = Path(folder).expanduser().resolve()
-    if not path.is_dir() or not ours(path):
-        return False
-    primary, *others = trees(path)
     return path.is_relative_to(primary) and not any(path.is_relative_to(tree) for tree in others)
 
 
-def bash_refused(command, cwd):
+def in_primary(folder):
+    path = Path(folder).expanduser().resolve()
+    return path.is_relative_to(REPO) and path.is_dir() and holds_primary(path, path)
+
+
+def edit_judge(given):
+    target = given["tool_input"].get("file_path") or given["tool_input"].get("notebook_path")
+    return EDIT_REFUSED if target and edit_refused(target) else ""
+
+
+def bash_judge(given):
     """Why this shell command is refused, or nothing (AC-104)."""
-    inline, paths, git_folders = writes(command, cwd)
+    cwd = given.get("cwd") or os.getcwd()
+    inline, paths, git_folders = writes(given["tool_input"]["command"], cwd)
     if inline and ours(cwd):
         return "terminum: TM_EDIT_PRIMARY is the maintainer's, set when they start the session (CLAUDE.md §9)."
     if any(edit_refused(path, own) for path, own in paths) or any(in_primary(folder) for folder in git_folders):
@@ -180,16 +169,17 @@ def bash_refused(command, cwd):
     return ""
 
 
-def bash_check(stdin):
-    """The hook's answer as JSON, or nothing: as for edit_check, what cannot be judged is let through."""
+def hook_answer(stdin, judge):
+    """The PreToolUse hook's answer as JSON, or nothing: what cannot be read or judged is let through, as a
+    hook never stops the agent over its own failure."""
     if os.environ.get("TM_EDIT_PRIMARY"):
         return []
     try:
-        given = json.load(stdin)
-        why = bash_refused(given["tool_input"]["command"], given.get("cwd") or os.getcwd())
+        why = judge(json.load(stdin))
     except (ValueError, KeyError, TypeError, AttributeError, OSError, Refused):
         return []
-    return [refusal(why)] if why else []
+    return [json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                               "permissionDecisionReason": why}})] if why else []
 
 
 def main(argv):
@@ -202,7 +192,7 @@ def main(argv):
     commands.add_parser("bash-check")
     args = parser.parse_args(argv)
     if args.command in ("edit-check", "bash-check"):
-        lines = (edit_check if args.command == "edit-check" else bash_check)(sys.stdin)
+        lines = hook_answer(sys.stdin, edit_judge if args.command == "edit-check" else bash_judge)
     else:
         lines = freshen() if args.command == "freshen" else fresh(args.start) if ours(".") else []
     if lines:

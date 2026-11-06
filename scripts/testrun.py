@@ -71,6 +71,11 @@ def remove_dead_sockets():
             time.sleep(0.05)
 
 
+def container_name(kind, pid=None):
+    """This run's Docker container (`pid`: another run's, to look for what it left)."""
+    return f"tm-{kind}-{pid or os.getpid()}"
+
+
 def own(name):
     """`name` for this run only: `<name>-<pid>` (short: a tmux socket path ends at 104 bytes)."""
     if not _sockets:

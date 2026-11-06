@@ -9,31 +9,28 @@ toolchain, image or package is a skip. A container its script left fails it (che
   check_docker.py --can-run     exit 0 if it could run now"""
 import os
 from pathlib import Path
-import platform
-import signal
 import subprocess
 import sys
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "scripts"))
 import agents  # noqa: E402
+from testrun import container_name  # noqa: E402
 
-COULD_NOT_RUN = 75   # e2e_remote_sshd.py's
 PLATFORMS = ("macos-aarch64", "linux-aarch64")
-RUNS = (("e2e_remote_sshd.py", (), "tm-test-sshd-{pid}"), ("e2e_remote_sshd_agents.py", ("alpine",), "tm-rr9-alpine-{pid}"),
-        ("e2e_remote_sshd_agents.py", ("debian",), "tm-rr9-debian-{pid}"))
+RUNS = (("e2e_remote_sshd.py", (), "test-sshd"), ("e2e_remote_sshd_agents.py", ("alpine",), "rr9-alpine"),
+        ("e2e_remote_sshd_agents.py", ("debian",), "rr9-debian"))
 
 
-def why_not(system=None, machine=None):
+def why_not():
     """Why this step cannot run on this machine now, or nothing."""
-    if (system or platform.system(), machine or platform.machine()) != ("Darwin", "arm64"):
+    if agents.this_platform() != "macos-aarch64":
         return "not a Mac with Apple's chips"
     if not (agents.TOOLCHAIN / "bin").is_dir():
         return "no pinned toolchain: make toolchain"
     try:   # a wedged daemon hangs, and a Mac has no `timeout`
-        if subprocess.run(["docker", "info"], capture_output=True, timeout=10).returncode:
-            return "Docker does not answer"
-    except (OSError, subprocess.TimeoutExpired):
+        subprocess.run(["docker", "info"], capture_output=True, timeout=10, check=True)
+    except (OSError, subprocess.SubprocessError):
         return "Docker does not answer"
     return ""
 
@@ -49,19 +46,20 @@ def container_left(name):
 def run_all(mac, linux):
     """(failed, why not all ran)."""
     failed, why = False, ""
-    for script, args, name in RUNS:
+    for script, args, kind in RUNS:
         run = subprocess.Popen([sys.executable, f"scripts/{script}", mac, linux, *args], cwd=REPO)
         try:
             status = run.wait()
         except BaseException:
-            os.kill(run.pid, signal.SIGTERM)
+            run.terminate()
             run.wait()
             raise
         print(f"{script} {' '.join(args)}: exit {status}", flush=True)
-        if container_left(name.format(pid=run.pid)):
-            print(f"LEFT container {name.format(pid=run.pid)}: removed")
+        name = container_name(kind, run.pid)
+        if container_left(name):
+            print(f"LEFT container {name}: removed")
             failed = True
-        if status == COULD_NOT_RUN:
+        if status == os.EX_TEMPFAIL:
             why = why or f"{script} could not start its host"
         elif status:
             failed = True
@@ -78,9 +76,9 @@ def main(argv):
     why = why_not()
     failed = False
     if not why:
-        subprocess.run([sys.executable, "scripts/agents.py", "build", *PLATFORMS], cwd=REPO, check=True)
-        built = subprocess.run([sys.executable, "scripts/agents.py", "id"], cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
-        mac, linux = (str(REPO / "dist/agents" / built / p / "terminumd") for p in PLATFORMS)
+        # named by the agent id, not this commit's TM_BUILD: a tree that keeps terminumd's sources keeps its builds
+        built = agents.build(PLATFORMS, build_id=f"agent-{agents.agent_id()}")
+        mac, linux = (str(built[p]) for p in PLATFORMS)
         failed, why = run_all(mac, linux)
     if why:
         print(f"SKIP docker: {why}")

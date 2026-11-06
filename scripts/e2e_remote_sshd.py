@@ -23,10 +23,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_remote import api, host_group  # noqa: E402
 from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
-from testrun import free_port, own, short_tmp  # noqa: E402
+from testrun import container_name, free_port, own, short_tmp  # noqa: E402
 
-PORT, SOCKET, NAME, SSH_PORT = free_port(), own("tm-test-rsshd"), f"tm-test-sshd-{os.getpid()}", free_port()
-COULD_NOT_RUN = 75   # no test ran: the image, its packages or Docker (scripts/check_docker.py)
+PORT, SOCKET, NAME, SSH_PORT = free_port(), own("tm-test-rsshd"), container_name("test-sshd"), free_port()
 HOME = "/home/alex"
 OLD = "0123456789ab"
 
@@ -74,6 +73,16 @@ def start_host(work):
     raise RuntimeError("the container's sshd did not answer: " + r.stderr)
 
 
+def host_or_skip(start, work):
+    """start(work)'s wrapper; if no host came up, no test ran: the image, its packages or Docker
+    (scripts/check_docker.py reads this exit)."""
+    try:
+        return start(work)
+    except (RuntimeError, OSError) as e:
+        print(f"could not run: {e}")
+        sys.exit(os.EX_TEMPFAIL)
+
+
 def stage(work, mac, linux):
     """A build folder as the package lays it out: terminumd and agents/<platform>/terminumd."""
     d = f"{work}/build"
@@ -100,11 +109,7 @@ def main():
     work = tempfile.mkdtemp(prefix="tmr-", dir=short_tmp())
     t = None
     try:
-        try:
-            wrapper = start_host(work)
-        except (RuntimeError, OSError) as e:
-            print(f"could not run: {e}")
-            sys.exit(COULD_NOT_RUN)
+        wrapper = host_or_skip(start_host, work)
         import e2e_ws
         e2e_ws.BIN = stage(work, sys.argv[1], sys.argv[2])
         t = Terminumd(PORT, SOCKET, env={"TM_SSH": wrapper})

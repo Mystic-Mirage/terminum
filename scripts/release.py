@@ -189,27 +189,20 @@ def build(tag):
             sys.exit(f"the package has no {platform} terminumd (run make toolchain): not released")
 
 
-def rehearse(tag):
-    """`make rehearse`: the release as far as nothing is public or signed; no key, no gh, no tag, no push."""
-    check_settings()
-    head = check_source(tag)
-    check_gate(head)
-    build(tag)
-    check_unmoved(head)
-    print(f"{tag}: rehearsal passed on {head[:9]}: not signed, not tagged, not pushed, not published")
-
-
 def main(argv):
     rehearsing = argv[:1] == ["--rehearse"]
     argv = argv[1:] if rehearsing else argv
     if len(argv) != 1 or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", argv[0]):
         sys.exit("usage: release.py [--rehearse] vX.Y.Z")
     tag = argv[0]
-    if rehearsing:
-        return rehearse(tag)
     check_settings()
     head = check_source(tag)
     check_gate(head)
+    if rehearsing:   # as far as nothing is public or signed: no key, no gh, no tag, no push
+        build(tag)
+        check_unmoved(head)
+        print(f"{tag}: rehearsal passed on {head[:9]}: not signed, not tagged, not pushed, not published")
+        return
     notes = release_notes(tag)
     draft = check_unpublished(tag)
     build(tag)

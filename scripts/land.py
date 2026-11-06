@@ -151,8 +151,8 @@ def after_push(primary):
     """The primary checkout on the fresh origin/main, and installed if the maintainer asked for that."""
     def run(files):
         sys.path.insert(0, str(primary / "scripts"))
-        import release_turn
-        if release_turn.releasing(primary):
+        from worktree import releasing
+        if releasing(primary):
             print("primary checkout stays where it is: a release is running")
             return
         stuck = update_primary(primary)

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """scripts/check_docker.py (spec AC-104), the scripts and Docker stubbed: only failing tests or a container left
 behind fail the step; what kept it from running is a skip that stays on record."""
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -14,21 +15,23 @@ import check_docker  # noqa: E402
 
 class WhyNot(unittest.TestCase):
     def test_another_machine_skips(self):
-        self.assertIn("Apple", check_docker.why_not("Linux", "x86_64"))
-        self.assertIn("Apple", check_docker.why_not("Darwin", "x86_64"))
+        with mock.patch.object(check_docker.agents, "this_platform", return_value="linux-x86_64"):
+            self.assertIn("Apple", check_docker.why_not())
 
     def test_no_toolchain_skips(self):
-        with mock.patch.object(check_docker.agents, "TOOLCHAIN", Path("/nonexistent")):
-            self.assertIn("make toolchain", check_docker.why_not("Darwin", "arm64"))
+        with mock.patch.object(check_docker.agents, "this_platform", return_value="macos-aarch64"), \
+                mock.patch.object(check_docker.agents, "TOOLCHAIN", Path("/nonexistent")):
+            self.assertIn("make toolchain", check_docker.why_not())
 
     def test_a_docker_that_hangs_or_fails_skips(self):
-        with tempfile.TemporaryDirectory() as home, mock.patch.object(check_docker.agents, "TOOLCHAIN", Path(home)):
+        with tempfile.TemporaryDirectory() as home, mock.patch.object(check_docker.agents, "TOOLCHAIN", Path(home)), \
+                mock.patch.object(check_docker.agents, "this_platform", return_value="macos-aarch64"):
             (Path(home) / "bin").mkdir()
-            for effect in (subprocess.TimeoutExpired("docker", 10), FileNotFoundError(), [subprocess.CompletedProcess([], 1)]):
+            for effect in (subprocess.TimeoutExpired("docker", 10), FileNotFoundError(), subprocess.CalledProcessError(1, "docker")):
                 with mock.patch.object(check_docker.subprocess, "run", side_effect=effect):
-                    self.assertIn("Docker", check_docker.why_not("Darwin", "arm64"))
+                    self.assertIn("Docker", check_docker.why_not())
             with mock.patch.object(check_docker.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
-                self.assertEqual(check_docker.why_not("Darwin", "arm64"), "")
+                self.assertEqual(check_docker.why_not(), "")
 
 
 class Runs(unittest.TestCase):
@@ -51,7 +54,7 @@ class Runs(unittest.TestCase):
         self.assertTrue(self.outcome([0, 1, 0])[0][0])
 
     def test_no_host_is_a_skip(self):
-        failed, why = self.outcome([75, 0, 0])[0]
+        failed, why = self.outcome([os.EX_TEMPFAIL, 0, 0])[0]
         self.assertFalse(failed)
         self.assertIn("could not start", why)
 
@@ -68,7 +71,8 @@ class Record(unittest.TestCase):
                 self.assertEqual(check_docker.main(["abc"]), 0)
             self.assertEqual(skip.read_text(), "Docker does not answer\n")
             with mock.patch.object(check_docker, "why_not", return_value=""), mock.patch.object(check_docker, "run_all", return_value=(False, "")), \
-                    mock.patch.object(check_docker.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "id\n", "")):
+                    mock.patch.object(check_docker.agents, "build", return_value=dict.fromkeys(check_docker.PLATFORMS, "x")), \
+                    mock.patch.object(check_docker.agents, "agent_id", return_value="id"):
                 self.assertEqual(check_docker.main(["abc"]), 0)
             self.assertFalse(skip.exists())
 

@@ -27,7 +27,7 @@ running=0
 stage=""
 trap '[ -z "$stage" ] || rm -rf "$stage"; [ $running = 1 ] || ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "rmdir ci/terminum.lock" \
     || echo "ci_mac: $host:~/ci/terminum.lock was left: remove it" >&2' EXIT
-stage=$(mktemp -d /tmp/tm-ci-src.XXXXXX)
+stage=$(mktemp -d /tmp/tm-ci-src.XXXXXX) || exit 2
 python3 "$repo/scripts/ci_source.py" "$repo" "$stage" || exit 2
 # Preserve the runner's existing caches and local configuration; selection of outbound files
 # has already happened in the source staging step above.

@@ -11,11 +11,12 @@ WORTH_READING = re.compile(r">|\b(?:tee|sed|perl|cp|mv|rm|touch|git)\b|TM_EDIT_P
 GIT_WRITES = {"add", "apply", "checkout", "cherry-pick", "clean", "commit", "merge", "pull", "rebase", "reset",
               "restore", "revert", "rm", "mv", "stash", "switch"}
 GIT_READS = {("stash", "list"), ("stash", "show")}
-OPERATORS = (">>", ">|", "&>>", "&>", ">&", ">", "<<<", "<<", "<&", "<", "&&", "||", ";;", ";", "|&", "|", "&", "(", ")", "\n")
 SEPARATORS = {"&&", "||", ";;", ";", "|&", "|", "&", "(", ")", "\n"}
 REDIRECTS = {">>", ">|", "&>>", "&>", ">&", ">"}
+INPUTS = {"<", "<<", "<<<", "<&"}
+OPERATORS = sorted(SEPARATORS | REDIRECTS | INPUTS, key=len, reverse=True)   # the longest first
 # what stands before a command without changing it
-PREFIXES = {"command", "exec", "time", "builtin", "nohup", "then", "do", "else", "if", "while", "until", "{", "!"}
+PREFIXES = {"env", "command", "exec", "time", "builtin", "nohup", "then", "do", "else", "if", "while", "until", "{", "!"}
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(?:.*?\n)??[ \t]*\2[ \t]*(?=\n|$)", re.S)
 ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 
@@ -87,7 +88,7 @@ def simple_commands(words):
                 if not (text == ">&" and (target.isdigit() or target == "-")):
                     targets.append(target)
             i += 1
-        elif not quoted and text in ("<", "<<", "<<<", "<&"):
+        elif not quoted and text in INPUTS:
             i += 1
         else:
             args.append(text)
@@ -105,6 +106,10 @@ def operands(args):
     return [a for a in args if not a.startswith("-")]
 
 
+def at(folder, path):
+    return path if path.startswith(("/", "~")) else f"{folder}/{path}"
+
+
 def writes(command, cwd):
     """(refuses inline, [(path, its own place)], [folder of a git verb]) for this command run in `cwd`.
     `its own place` is True for rm and mv: a link is judged where it lives, not where it points."""
@@ -112,8 +117,8 @@ def writes(command, cwd):
         return False, [], []
     inline, paths, git_folders, folder = False, [], [], cwd
     for args, targets in simple_commands(tokens(strip_heredocs(command))):
-        paths += [(f"{folder}/{t}" if not t.startswith(("/", "~")) else t, False) for t in targets if readable(t)]
-        while args and (ASSIGNMENT.match(args[0]) or args[0] in PREFIXES or args[0] == "env"):
+        paths += [(at(folder, t), False) for t in targets if readable(t)]
+        while args and (ASSIGNMENT.match(args[0]) or args[0] in PREFIXES):
             inline = inline or args[0].startswith("TM_EDIT_PRIMARY=")
             args = args[1:]
         if not args:
@@ -124,15 +129,13 @@ def writes(command, cwd):
         if program == "cd":
             where = operands(rest)
             if where and readable(where[0]):
-                folder = where[0] if where[0].startswith(("/", "~")) else f"{folder}/{where[0]}"
+                folder = at(folder, where[0])
             continue
-        if program == "tee" or program == "touch":
-            named = operands(rest)
-        elif program in ("rm", "mv"):
-            named, own = operands(rest), True
+        if program in ("tee", "touch", "rm", "mv"):
+            named, own = operands(rest), program in ("rm", "mv")
         elif program == "cp":
             named = operands(rest)[-1:]
-        elif program == "sed" and any(a == "-i" or a.startswith("-i") for a in rest):
+        elif program == "sed" and any(a.startswith("-i") for a in rest):
             named = operands(rest)[0 if any(a in ("-e", "-f") for a in rest) else 1:]
         elif program == "perl" and any(re.match(r"-\w*i", a) for a in rest):
             named = operands(rest)[0 if any(re.match(r"-\w*e", a) for a in rest) else 1:]
@@ -140,7 +143,7 @@ def writes(command, cwd):
             where, i = folder, 0
             while i < len(rest) and rest[i].startswith("-"):
                 if rest[i] == "-C" and i + 1 < len(rest):
-                    where = rest[i + 1] if rest[i + 1].startswith(("/", "~")) else f"{folder}/{rest[i + 1]}"
+                    where = at(folder, rest[i + 1])
                     i += 1
                 elif rest[i] == "-c":
                     i += 1
@@ -148,5 +151,5 @@ def writes(command, cwd):
             verb = rest[i:i + 2]
             if verb and verb[0] in GIT_WRITES and tuple(verb) not in GIT_READS and readable(where):
                 git_folders.append(where)
-        paths += [(n if n.startswith(("/", "~")) else f"{folder}/{n}", own) for n in named if readable(n)]
+        paths += [(at(folder, n), own) for n in named if readable(n)]
     return inline, paths, git_folders

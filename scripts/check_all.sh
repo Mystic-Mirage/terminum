@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-# The checks of CLAUDE.md §8 on this tree, once: each step's output in .checks/<id>.<step>.log,
+# The full run of CLAUDE.md §8 on this tree, once, the release's gate: each step's output in .checks/<id>.<step>.log,
 # and on a full pass .checks/<id>.ok, where <id> names the content of every tracked and new
 # file (not the commit: committing a checked tree keeps its pass). Started again on the same
 # tree it says when it passed and runs nothing (--force runs again), so a follow-up never pays
@@ -45,6 +45,9 @@ step test make test
 step clippy bash -c 'cd terminumd && cargo clippy --locked --all-targets -- -D warnings'
 step panel bash -c 'cd ui && node test/e2e_panel.mjs'
 step live bash -c 'cd terminumd && cargo build --locked && cd .. && node web/test/e2e_live.mjs'
+# every e2e script but Docker's, which take built binaries as arguments and are run by hand
+step e2e bash -c 'for f in scripts/e2e_*.py; do case $f in *remote_sshd*) ;; *) python3 "$f" || exit 1 ;; esac; done'
+step install env TERMINUMD_BIN=terminumd/target/debug/terminumd bash scripts/e2e_install.sh
 if [ "$(uname -s)" = Darwin ]; then step page node web/test/e2e_all.mjs
 else echo "SKIP page (web/test/e2e_all.mjs measures a Mac's browsers: make test-mac)"; fi
 step security env -u TM_PORT -u TM_APP_DIR bash scripts/security_check.sh

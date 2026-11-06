@@ -7,7 +7,7 @@ import "./press.js";                                // a pressed blob's pulse (m
 import "./pop.js";                                  // where a window flies out of (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
-import { findItem, listParts, renderNav, seeWaits } from "./nav.js";
+import { findItem, listParts, renderNav, seeWaits, setTaskMarks } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
 import { sessionDrawer } from "./drawer.js";
@@ -298,7 +298,7 @@ function onMessage(m) {
     case "trace": trace.onMessage(m); break;
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
-    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; st.listOrder = Array.isArray(m.order) ? m.order : []; place.note(); bookmarks.changed(); break;   // the list, and the projects the list below it names
+    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; st.listOrder = Array.isArray(m.order) ? m.order : []; setTaskMarks(m.taskmarks); place.note(); bookmarks.changed(); break;   // the list, and the projects the list below it names
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }

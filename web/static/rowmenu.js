@@ -11,7 +11,8 @@ import { askConfirm, askName, closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
 import { inside, placeModal } from "./fabpane.js";
 import { floats } from "./fold.js";
-import { groupKey, groupRows, projectColor } from "./nav.js";
+import { groupKey, groupRows, projectColor, taskMarksOf } from "./nav.js";
+import { newTaskUrl } from "./tasklink.js";
 import { lastLinesView } from "./lastlines.js";
 import { diagnostics } from "./diag.js";
 
@@ -116,10 +117,11 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     fill(it.title,
       button("Close Session", "close", () => {
         hide();
-        closeSession(it, send);
+        closeSession(it, send, taskMarksOf(it.id));
       }),
       document.createElement("hr"),
       button("Clone", "clone", () => { hide(); clone(it); }),
+      button("New Task…", "newtask", () => { hide(); location.href = newTaskUrl(id, mine?.id); }),
       button("Add to Project…", "project", () => projectMenu(it, mine, x, y)),
       ...(mine ? [button(`Remove from ${mine.name}`, "unproject", () => { hide(); send({ t: "project", action: "remove", id }); })] : []),
       // as if nobody had opened it since its agent finished, on every page, until it is shown again (AC-93)

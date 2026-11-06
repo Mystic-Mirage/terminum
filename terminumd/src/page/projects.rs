@@ -71,6 +71,8 @@ pub struct Projects {
     order: Vec<String>,
     /// open tasks by project, for the dialog of Delete Project
     tasks: HashMap<String, i64>,
+    /// open tasks by session, for their rows' marks (AC-113)
+    marks: BTreeMap<String, Vec<String>>,
 }
 
 /// A project's name as typed (trimmed): a short name (settings::is_short_name), and not Default's.
@@ -92,7 +94,7 @@ impl Projects {
             tracing::warn!(event = "projects.unread", error = %e);
             Saved::default()
         });
-        let mut ps = Projects { store: Some(store), list: saved.list, servers: saved.servers, fresh: HashMap::new(), recheck: None, untold: false, order: saved.order, tasks: HashMap::new() };
+        let mut ps = Projects { store: Some(store), list: saved.list, servers: saved.servers, fresh: HashMap::new(), recheck: None, untold: false, order: saved.order, tasks: HashMap::new(), marks: BTreeMap::new() };
         ps.refresh_counts();
         ps
     }
@@ -100,13 +102,21 @@ impl Projects {
     /// Reads the tasks by project again: whether they changed. Off the async workers.
     pub fn refresh_counts(&mut self) -> bool {
         let Some(store) = &self.store else { return false };
-        let counts = store.with(|tx| {
-            let mut st = tx.prepare("SELECT project, count(*) FROM tasks WHERE archived_at IS NULL GROUP BY project").map_err(crate::tasks::ops::sql)?;
-            let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(crate::tasks::ops::sql)?;
-            rows.collect::<Result<HashMap<_, _>, _>>().map_err(crate::tasks::ops::sql)
+        use crate::tasks::ops::sql;
+        let (counts, marks) = store.with(|tx| {
+            let mut st = tx.prepare("SELECT project, count(*) FROM tasks WHERE archived_at IS NULL GROUP BY project").map_err(sql)?;
+            let counts = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(sql)?.collect::<Result<HashMap<_, _>, _>>().map_err(sql)?;
+            let mut st = tx.prepare("SELECT session_key, 'T-' || number FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number").map_err(sql)?;
+            let mut marks: BTreeMap<String, Vec<String>> = BTreeMap::new();
+            for row in st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(sql)? {
+                let (key, id) = row.map_err(sql)?;
+                marks.entry(key).or_default().push(id);
+            }
+            Ok((counts, marks))
         }).unwrap_or_default();
-        let changed = counts != self.tasks;
+        let changed = counts != self.tasks || marks != self.marks;
         self.tasks = counts;
+        self.marks = marks;
         changed
     }
 
@@ -318,7 +328,7 @@ impl Projects {
 
 fn message(app: &Shared) -> String {
     let projects = app.projects.lock();
-    json!({"t": "projects", "items": projects.told(), "order": projects.list_order()}).to_string()
+    json!({"t": "projects", "items": projects.told(), "order": projects.list_order(), "taskmarks": projects.marks}).to_string()
 }
 
 /// A page that connects learns the projects.

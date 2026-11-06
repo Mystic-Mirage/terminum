@@ -158,6 +158,11 @@ function iconButton(cls, name, label, title, onClick) {
   return b;
 }
 
+/** Open tasks by session (terminumd's): a row shows them, each opening its window on the board (AC-113). */
+let taskMarks = {};
+export function setTaskMarks(marks) { taskMarks = marks ?? {}; }
+export const taskMarksOf = (id) => taskMarks[id] ?? [];
+
 function row(item, current, onPick, movable, child = false, marked = new Map(), opts = {}) {
   const li = document.createElement("li");
   if (movable) li.dataset.drag = "row";           // dragged by its body (reorder.js); not while a filter shows a subset
@@ -193,6 +198,12 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   }
   const bar = folderBar(item, item.id === current, item.state === "working", opts.project);
   b.append(bar, txt, st);
+  for (const task of taskMarksOf(item.id)) {
+    const t = el("span", "taskmark", task);
+    t.title = `Open ${task} on the board`;
+    t.addEventListener("click", (e) => { e.stopPropagation(); location.href = `/kanban/${task}`; });
+    b.append(t);
+  }
   // its bookmarks and open reminders: a wavy orange and a wavy pink line at the row's right edge
   const has = marked.get(item.id);
   if (has) {

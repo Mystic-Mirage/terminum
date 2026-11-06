@@ -6,6 +6,7 @@
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
+import { newTaskUrl } from "./tasklink.js";
 import { placeModal, placePane } from "./fabpane.js";
 import { sendOnModEnter } from "./modenter.js";
 import { Find } from "./find.js";
@@ -79,6 +80,7 @@ export class Marks {
     this.picker = markPicker({ term, main: $("main"), button: $("markadd"), copyButton: $("markcopy"), askButton: $("askfab"), view,
       onPick: (sel) => this.edit(null, sel), onCopy: copy, onAsk: (text, line) => this.onAsk?.(text, line) });
     $("markbox").querySelector("form").addEventListener("submit", (e) => this.submit(e));
+    $("marktask").addEventListener("click", () => this.toTask());
     sendOnModEnter($("markbox"));                                // ⌘Enter: Save
     $("markbox").addEventListener("close", () => { this.editing = null; });
     for (const b of $("markkind").querySelectorAll("button")) b.onclick = () => this.setKind(b.dataset.kind);
@@ -184,6 +186,13 @@ export class Marks {
     $("markbox").style.setProperty("--term-w", `${$("term").clientWidth}px`);   // its width: 80% of the terminal's (marks.css)
     $("markbox").showModal();
     $("marknote").focus();
+  }
+
+  /** The selection goes to the board's new-task window, quoted; nothing is kept until Create (AC-106). */
+  toTask() {
+    const quoted = (this.editing?.text ?? "").split("\n").map((l) => `> ${l}`).join("\n");
+    try { localStorage.setItem("tm.taskselection", JSON.stringify(quoted)); } catch { /* private mode: the window opens empty */ }
+    location.href = newTaskUrl(this.sid(), this.projectOf()?.id);
   }
 
   /** The dialog's kind: a bookmark, or a reminder (AC-91). */

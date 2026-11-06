@@ -269,7 +269,7 @@ const wanted = /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
 if (wanted) openTask(wanted);
 const asked = new URLSearchParams(location.search);
 if (asked.get("new") === "1") {
-  form.open({ session: asked.get("session"), project: asked.get("for"), text: signin.held() ? form.takeSelection() : "" });
+  form.open({ session: asked.get("session"), project: asked.get("for"), text: form.takeSelection() });
   for (const k of ["new", "session", "for"]) asked.delete(k);
   history.replaceState(null, "", `/kanban/${asked.size ? `?${asked}` : ""}`);
 }

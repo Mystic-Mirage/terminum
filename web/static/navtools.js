@@ -32,9 +32,10 @@ export function askConfirm(text, yes) {
 }
 
 /** Close Session (the menu's, a row's): asked first, as the program in it ends; then sent. */
-export async function closeSession(item, send) {
+export async function closeSession(item, send, tasks = []) {
   const prog = item.sub?.[0] || "a program";
-  if (await askConfirm(`Close the session ${item.title}? The program running in it (${prog}) ends.`, "Close Session")) send({ t: "kill", id: item.id });
+  const open = tasks.length ? ` ${tasks.join(", ")} ${tasks.length === 1 ? "is" : "are"} open in it.` : "";
+  if (await askConfirm(`Close the session ${item.title}? The program running in it (${prog}) ends.${open}`, "Close Session")) send({ t: "kill", id: item.id });
 }
 
 /** Asks for a name with a dialog: the text typed (trimmed), or null for Cancel and Esc; `yes`

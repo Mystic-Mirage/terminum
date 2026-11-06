@@ -71,4 +71,6 @@
 #rowmenu button:focus-visible { background: var(--surface-4); }
 @media (hover: none) { #rowmenu button { height: 44px; } }
 #sessions .item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
-
+/* a row's open task: opens its window on the board (terminum-kanban.md AC-113) */
+.item .taskmark { flex: none; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: 10.5px; font-variant-numeric: tabular-nums; color: var(--muted); background: var(--surface-3); }
+@media (hover: hover) { .item .taskmark:hover { color: var(--t-fg); } }

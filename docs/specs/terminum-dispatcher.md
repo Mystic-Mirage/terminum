@@ -6,7 +6,7 @@ Sibling of `terminum-kanban.md` (tasks and the board). This spec holds Dispatche
 
 | Field | Value |
 |---|---|
-| Status | approved; Stages 1 and 2 built |
+| Status | approved; built, with the gaps of §7 |
 
 A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
@@ -104,7 +104,7 @@ Scenario: AC-121 edge — a project with no agents
 
 Scenario: AC-121 edge — where it opens
   Given a project with no session left
-  Then the window opens in a new tmux session named after the project, on the project's host
+  Then the window opens in a new tmux session named after the project; on a host, in the session terminumd holds there, the only one its list shows (terminum-remote.md)
   Given Default, which has no folder
   Then the dialog asks the folder for this run and keeps it on the task alone
 
@@ -433,7 +433,7 @@ Scenario: AC-128 happy path — limits
   Then it is ended as at AC-126's limit and T-12 is FAILED with "Memory limit of 8 GiB exceeded: 9.2 GiB"
 
 Scenario: AC-128 happy path — where they are set
-  When the user sets "dispatcher": {"memoryWarnGiB": 6, "memoryEndGiB": 12} in settings, or picks Limits… in a project's menu
+  When the user sets "dispatcher": {"memoryWarnGiB": 6, "memoryEndGiB": 12} in settings, or presses the limits' key beside a project's Agents
   Then the project's limits hold where set, else the global ones; 0 turns that limit off; a change holds at the next walk
 
 Scenario: AC-128 edge — only its sessions
@@ -561,7 +561,8 @@ sequenceDiagram
 | AC-131 | §9's walk budget has no bench yet (`scripts/bench_board.py`). | `terminumd/src/dispatcher/walk.rs` |
 | AC-121 | A real Codex's hooks need its own trust (AS-124), not checked here beyond its failure's words. | `terminumd/src/dispatcher/start.rs` |
 | AC-126 | A subagent in a pane of its own is not ended with its agent: its pane is not tied to its hook ID (AS-126); a host's agent is not ended from here (AC-130). | `terminumd/src/dispatcher/walk.rs` |
-| AC-127, AC-128, AC-129, AC-130 | Not built. | `terminumd/src/dispatcher/plan.rs` |
+| AC-127 | A subagent is never ended alone, as none is tied to a process or pane yet (OQ-122, AS-126): it is said. | `terminumd/src/dispatcher/walk.rs` |
+| AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -645,7 +646,7 @@ Only the following pass: a T-number with fixed words and the column and human's 
 
 **Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
 
-**Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store; 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
+**Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store (`project_limits`, `PUT /api/task-projects/<id>/limits` `{"warn": 6, "end": 12}`, nulls go back to the global ones); 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
 
 **Security** (`SECURITY.md` carries these with the code).
 - A task's text reaches an agent as a prompt only through a human's RUN, whose dialog shows the text and marks what an agent or host wrote. A task's text in get_task is assignment for its run alone; comments and other tasks stay data.
@@ -655,6 +656,8 @@ Only the following pass: a T-number with fixed words and the column and human's 
 - Transcripts are read only by `terminum hook` on their own machine; three integers leave it.
 - Agents run with the user's own permission settings.
 - A project agent's command is the human's own words, run as they would type them: the board is the only way terminum offers to change it, no boundary against a process of the user's (`SECURITY.md`); RUN's dialog shows it in full.
+
+**What a card shows.** Every walk's `taskusage {items: {"T-12": {"cpu": 12, "gib": 1.2, "minutes": 14, "tokens": {"input": 1200, "output": 34, "cached": 5}, "idle_subs": [{"id": "sub-1", "kind": "reviewer"}]}}}` to every page, when it changed; `"tokens": null`: not known; `"not_measured": "Host out of reach"`. A host's `ps` and `kill` go over one ssh command each with its recipe, 12 s at most.
 
 **Logging.** `dispatcher: T-12 run 3 FAILED: budget 3600 s used, SIGTERM pid 48213, SIGKILL none`; `dispatcher: T-12 run 3 not delivered: screen not known (claude 2.3)`.
 
@@ -681,8 +684,8 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-126 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
-- [ ] AC-127 — `cargo test dispatcher::subagents`, `web/test/e2e_livedispatcher.mjs`
-- [ ] AC-128 — `cargo test dispatcher::limits`, `web/test/e2e_livedispatcher.mjs`
-- [ ] AC-129 — `cargo test cli::hook` with fixtures of both agents' files
-- [ ] AC-130 — `scripts/e2e_remote_tasks.py`, Docker's `scripts/e2e_remote_sshd.py`
+- [x] AC-127 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-130 — `scripts/e2e_remote_tasks.py`
 - [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `web/test/e2e_livedispatcher.mjs`

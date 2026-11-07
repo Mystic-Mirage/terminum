@@ -3,7 +3,7 @@
 """A coding agent as Dispatcher sees it, for web/test/e2e_livedispatcher.mjs: the measured input box of
 Claude Code or Codex (terminum-dispatcher.md AS-125), hooks by `terminum hook`, finish_task by `terminum
 mcp`; no model. What it does with a prompt is in the prompt's words:
-FINISHES, WORKS, ASKS, LIMIT, DIES, CLEAN, SILENT; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
+FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, LIMIT, DIES, CLEAN, SILENT; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
 none`: never a box; `--start fast`: exits at once with 7."""
 import json
 import os
@@ -96,6 +96,13 @@ def main():
                 sys.exit(0)
             elif "ASKS" in prompt:
                 hook("Notification", notification_type="permission_prompt", message="Approve Bash")
+            elif "SUBAGENT" in prompt:
+                hook("SubagentStart", agent_id="sub-1", agent_type="reviewer")
+            elif "TOKENS" in prompt:
+                path = os.path.join(os.getcwd(), f"transcript-{os.getpid()}.jsonl")
+                with open(path, "w", encoding="utf8") as f:
+                    f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "usage": {"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5}}}) + "\n")
+                hook("Stop", last_assistant_message="done", transcript_path=path)
             elif "WORKS" in prompt:
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop
             elif "FINISHES" in prompt:

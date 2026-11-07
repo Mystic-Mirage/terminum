@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use rusqlite::{Connection, ErrorCode, Transaction};
 
 /// The schema's versions, oldest first: `PRAGMA user_version` says how many have run.
-const MIGRATIONS: [&str; 3] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql")];
+const MIGRATIONS: [&str; 4] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql")];
 
 /// The default project's and Dispatcher's fixed IDs, seeded by schema1.sql.
 pub const DEFAULT_PROJECT: &str = "default";

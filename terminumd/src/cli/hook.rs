@@ -148,6 +148,9 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
     if name == "Stop" && input.get("last_assistant_message").and_then(Value::as_str).is_some_and(ends_asking) {
         out.insert("asks".into(), json!(true));
     }
+    if matches!(name.as_str(), "Stop" | "SessionEnd") && let Some(tokens) = super::hooktokens::of_event(agent, input) {
+        out.insert("tokens".into(), tokens);
+    }
     if let Some(p) = super::hookplan::plan(input) {
         out.insert("plan".into(), p);
     }

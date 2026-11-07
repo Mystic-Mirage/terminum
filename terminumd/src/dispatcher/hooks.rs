@@ -75,6 +75,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
 
 /// Pane `key`'s agent spoke: its run, if Dispatcher started it. A pane with none costs a set's lookup.
 pub fn heard(app: &Shared, key: &str, ev: &Value) {
+    app.dispatcher.heard_facts(key, ev);
     if !app.dispatcher.has_run(key) {
         return;
     }

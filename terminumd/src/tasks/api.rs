@@ -163,14 +163,15 @@ async fn meta(State(app): State<Shared>) -> Response {
         .map(|it| json!({"key": it["id"], "title": it["title"]})).collect();
     // the store's lock waits out a running query: off the async workers, its state too
     let a = app.clone();
-    let (users, agents, problem, set_aside) = tokio::task::spawn_blocking(move || {
-        let (users, agents) = a.tasks.with(|tx| Ok((
+    let (users, agents, limits, problem, set_aside) = tokio::task::spawn_blocking(move || {
+        let (users, agents, limits) = a.tasks.with(|tx| Ok((
             ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
             super::agents::list(tx)?,
+            super::agents::limits(tx)?,
         ))).unwrap_or_default();
-        (users, agents, a.tasks.problem(), a.tasks.is_set_aside())
+        (users, agents, limits, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
-    Json(json!({"projects": projects, "agents": agents, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "limits": limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {

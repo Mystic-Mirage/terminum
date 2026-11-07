@@ -101,3 +101,16 @@ fn ac137_a_project_deleted_takes_its_agents() {
     assert_eq!(left.len(), 1);
     assert_eq!(left[0].project, "default");
 }
+
+#[test]
+fn ac128_a_project_s_limits_are_checked_and_go_with_it() {
+    let s = open("agents-limits");
+    s.with(|tx| { project(tx, "p1", None)?; keep_limits(tx, "p1", Some((6.0, 12.0))) }).unwrap();
+    assert_eq!(s.with(limits).unwrap()[0]["end"], 12.0);
+    assert_eq!(s.with(|tx| keep_limits(tx, "p1", Some((9.0, 3.0)))).unwrap_err(), "The warning is above the end.");
+    assert_eq!(s.with(|tx| keep_limits(tx, "p1", Some((-1.0, 3.0)))).unwrap_err(), "A limit is a number of GiB, 0 for off.");
+    s.with(|tx| keep_limits(tx, "p1", Some((9.0, 0.0)))).unwrap();
+    s.with(|tx| keep_limits(tx, "p1", None)).unwrap();
+    assert!(s.with(limits).unwrap().is_empty(), "back to the global ones");
+    assert_eq!(s.with(|tx| keep_limits(tx, "gone", None)).unwrap_err(), "That project is gone.");
+}

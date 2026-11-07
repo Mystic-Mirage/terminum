@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use super::gate::{self, Miss};
 use super::runs::{self, Run};
 use super::screen::Screen;
-use super::{move_task, say, start, store, walk};
+use super::{move_task, procs, say, start, store, walk};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
@@ -203,17 +203,14 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
 }
 
 /// What runs in `pane` other than its shell: in front, or stopped or left behind it (AC-122).
-async fn what_runs(server: &Server, pane: &str) -> Result<Option<String>, String> {
+async fn what_runs(app: &Shared, server: &Server, pane: &str) -> Result<Option<String>, String> {
     let said = server.run(format!("display -p -t {pane} '#{{pane_current_command}}\t#{{pane_pid}}'")).await.map_err(|e| format!("tmux does not answer: {e}"))?;
     let (name, pid) = said.first().and_then(|l| l.split_once('\t')).unwrap_or(("", ""));
     if !walk::is_shell(name) {
         return Ok(Some(name.to_string()));
     }
-    if !server.is_local() {
-        return Ok(None);
-    }
-    let tree = walk::local_tree().await.ok_or("ps did not answer")?;
-    Ok(walk::below(&tree, pid).0.then(|| "a job of its shell".to_string()))
+    let tree = procs::read(app, server).await.ok_or("ps did not answer")?;
+    Ok(procs::under(&tree, pid).any.then(|| "a job of its shell".to_string()))
 }
 
 /// Only its shell remains: the agent starts there anew, by the resume when a conversation is known;
@@ -221,7 +218,7 @@ async fn what_runs(server: &Server, pane: &str) -> Result<Option<String>, String
 async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, again: String) -> Result<Value, String> {
     let queue = server.typing(pane);
     let _held = queue.lock().await;
-    if let Some(program) = what_runs(server, pane).await? {
+    if let Some(program) = what_runs(app, server, pane).await? {
         return Err(format!("{program} runs in its pane."));
     }
     let line = start::resume_command(r).unwrap_or_else(|_| r.command.clone());
@@ -289,7 +286,11 @@ async fn first_run(app: &Shared, t: &Task, body: Press) -> Result<Value, String>
     let Some(chosen) = chosen else { return Err("This run needs a folder.".to_string()) };
     agents::check_folder(&chosen)?;
     let server = server_of(app, a.host.as_deref())?;
-    if server.is_local() {
+    if let Some(host) = &a.host {
+        if !crate::hosts::link::agents_state(app, host).starts_with("up") {
+            return Err(format!("Run terminum hooks install on {host} first"));
+        }
+    } else {
         if !folder_there(&chosen).await {
             return Err(format!("The folder {chosen} does not exist on this Mac"));
         }

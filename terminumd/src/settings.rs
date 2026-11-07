@@ -61,6 +61,9 @@ pub struct Settings {
     pub hosts: Map<String, Value>,
     /// Sessions of the user's own tmux servers on this Mac, by socket (AC-89).
     pub attach: BTreeMap<String, Vec<String>>,
+    /// Dispatcher's memory limits in GiB (AC-128), a project's over them; 0: off.
+    pub memory_warn_gib: f64,
+    pub memory_end_gib: f64,
     /// The General MIDI SoundFont MIDI files are rendered with (AC-64); None: ~/.terminum/soundfont.sf2.
     pub midi_soundfont: Option<String>,
     /// The messages of the last parse, for the page (`page_json`).
@@ -83,6 +86,8 @@ impl Default for Settings {
             page: PageSettings { text_size: 13, markdown_size: 14, widgets: true, folds: true, color_scheme: None, follow_agent: true },
             hosts: Map::new(),
             attach: BTreeMap::new(),
+            memory_warn_gib: 4.0,
+            memory_end_gib: 8.0,
             midi_soundfont: None,
             messages: Vec::new(),
         }
@@ -224,6 +229,22 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
         }
         "size" => m.bad(NO_LONGER),
         "restore" => boolean(v, "restore", &mut s.restore, m),
+        "dispatcher" => {
+            let (mut warn, mut end) = (s.memory_warn_gib, s.memory_end_gib);
+            for (k, v) in members(v, "dispatcher", m) {
+                match (k, v.as_f64().filter(|n| *n >= 0.0)) {
+                    ("memoryWarnGiB", Some(n)) => warn = n,
+                    ("memoryEndGiB", Some(n)) => end = n,
+                    ("memoryWarnGiB" | "memoryEndGiB", None) => m.bad(format!("dispatcher.{k} must be a number of GiB, 0 for off")),
+                    _ => m.bad(format!("unknown key dispatcher.{k}")),
+                }
+            }
+            if end > 0.0 && warn > end {
+                m.bad("dispatcher.memoryWarnGiB is above memoryEndGiB");
+            } else {
+                (s.memory_warn_gib, s.memory_end_gib) = (warn, end);
+            }
+        }
         "lastLines" => match v.as_u64() {
             Some(n @ 0..=2000) => s.last_lines = n as u32,
             _ => m.bad("lastLines must be 0–2000"),

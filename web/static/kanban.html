@@ -129,6 +129,23 @@
   </form>
 </dialog>
 
+<dialog id="limitsbox" class="box dlg" aria-labelledby="limitshead">
+  <form method="dialog">
+    <div class="dhead"><h2 id="limitshead">Memory limits</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <p id="limitstext"></p>
+    <div class="fieldgrid">
+      <label class="fieldrow">Warn the agent, GiB <input id="limitwarn" class="field" type="number" min="0" step="0.5"></label>
+      <label class="fieldrow">End the session, GiB <input id="limitend" class="field" type="number" min="0" step="0.5"></label>
+    </div>
+    <p id="limitserror" role="alert" hidden></p>
+    <div class="actions">
+      <button id="limitsglobal" type="button">Use the global ones</button>
+      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="limitsok" type="button" class="primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="confirmbox" class="box dlg" aria-labelledby="confirmtitle">
   <form method="dialog">
     <div class="dhead"><h2 id="confirmtitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>

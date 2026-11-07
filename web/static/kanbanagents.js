@@ -13,7 +13,11 @@ export function agentsSection({ getMeta, chosen, reload }) {
   const box = el("section", "agents"), head = el("h2", "colhead"), list = el("div", "agentlist");
   const add = iconButton("icon", "plus", "Add agent", "Add an agent to a project", () => open());
   add.id = "addagent";
-  head.append(el("span", null, "Agents"), add);
+  const limits = iconButton("icon", "gauge", "Memory limits", "This project's memory limits", () => openLimits());
+  limits.id = "projectlimits";
+  const keys = el("span", "agentkeys");
+  keys.append(limits, add);
+  head.append(el("span", null, "Agents"), keys);
   box.append(head, list);
   const field = { project: $("agentproject"), name: $("agentname"), kind: $("agentkind"), host: $("agenthost"), dir: $("agentdir"), command: $("agentcommand") };
   const dialog = $("agentbox"), error = $("agenterror");
@@ -41,6 +45,7 @@ export function agentsSection({ getMeta, chosen, reload }) {
     const agents = getMeta().agents.filter((a) => !picked.length || picked.includes(a.project));
     list.replaceChildren(...agents.map((a) => row(a, picked.length !== 1)));
     if (!agents.length) list.append(el("p", "colempty", "No agents yet: add one to run tasks."));
+    limits.hidden = picked.length !== 1;
   }
 
   const values = () => Object.fromEntries(Object.entries(field).map(([k, e]) => [k, e.value]));
@@ -102,6 +107,26 @@ export function agentsSection({ getMeta, chosen, reload }) {
     e.preventDefault();
     if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
   });
+
+  /** A project's memory limits (terminum-dispatcher.md AC-128): empty goes by the global ones; 0 turns one off. */
+  function openLimits() {
+    const project = chosen()[0], box = $("limitsbox"), { projects, limits: all = [] } = getMeta();
+    const now = all.find((l) => l.project === project);
+    $("limitstext").textContent = `For ${projects.find((p) => p.id === project)?.name ?? project}; 0 turns one off.`;
+    $("limitwarn").value = now?.warn ?? "";
+    $("limitend").value = now?.end ?? "";
+    $("limitserror").hidden = true;
+    const keep = async (body) => {
+      try {
+        await api(`/api/task-projects/${project}/limits`, { method: "PUT", body });
+        box.close();
+        await reload();
+      } catch (e) { $("limitserror").textContent = e.message; $("limitserror").hidden = false; }
+    };
+    $("limitsok").onclick = () => keep({ warn: $("limitwarn").value === "" ? null : Number($("limitwarn").value), end: $("limitend").value === "" ? null : Number($("limitend").value) });
+    $("limitsglobal").onclick = () => keep({ warn: null, end: null });
+    box.showModal();
+  }
 
   /** A new one in `project`; once its window closes. */
   const addTo = (project) => {

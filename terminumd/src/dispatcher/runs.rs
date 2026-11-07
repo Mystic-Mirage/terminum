@@ -41,6 +41,7 @@ pub struct Run {
     pub result: bool,
     pub again_said: bool,
     pub close_tried: bool,
+    pub memory_warned: bool,
     pub last_walk: i64,
 }
 
@@ -68,11 +69,12 @@ impl Run {
         self.closing_for = 0;
         self.budget_used = 0;                          // AC-122: the budget starts anew
         self.warned = false;
+        self.memory_warned = false;
     }
 }
 
 const SELECT: &str = "SELECT r.id, r.task, 'T-' || t.number, t.status, t.project, t.budget_seconds, r.agent_id, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
-    r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.held, r.wait_moved, r.no_result_wait, r.result, r.again_said, r.close_tried, r.last_walk
+    r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.held, r.wait_moved, r.no_result_wait, r.result, r.again_said, r.close_tried, r.last_walk, r.memory_warned
     FROM runs r JOIN tasks t ON t.id = r.task";
 const STILL: &str = "r.state NOT IN ('closed', 'left')";
 
@@ -80,7 +82,7 @@ fn of_row(r: &Row) -> rusqlite::Result<Run> {
     Ok(Run {
         id: r.get(0)?, task: r.get(1)?, task_id: r.get(2)?, status: r.get(3)?, project: r.get(4)?, budget: r.get(5)?, agent_id: r.get(6)?, kind: r.get(7)?, command: r.get(8)?, host: r.get(9)?, folder: r.get(10)?,
         pane_key: r.get(11)?, agent_session: r.get(12)?, state: r.get(13)?, prompt: r.get(14)?, turn_ended: r.get(15)?, open_tools: r.get(16)?, idle_for: r.get(17)?, waited_for: r.get(18)?,
-        closing_for: r.get(19)?, budget_used: r.get(20)?, nudged: r.get(21)?, nudge_turn: r.get(22)?, warned: r.get(23)?, held: r.get(24)?, wait_moved: r.get(25)?, no_result_wait: r.get(26)?, result: r.get(27)?, again_said: r.get(28)?, close_tried: r.get(29)?, last_walk: r.get(30)?,
+        closing_for: r.get(19)?, budget_used: r.get(20)?, nudged: r.get(21)?, nudge_turn: r.get(22)?, warned: r.get(23)?, held: r.get(24)?, wait_moved: r.get(25)?, no_result_wait: r.get(26)?, result: r.get(27)?, again_said: r.get(28)?, close_tried: r.get(29)?, last_walk: r.get(30)?, memory_warned: r.get(31)?,
     })
 }
 
@@ -122,9 +124,9 @@ pub fn add(tx: &Transaction, like: &Run, at: i64) -> Result<String, String> {
 /// Writes what changes as a run goes on.
 pub fn save(tx: &Transaction, r: &Run) -> Result<(), String> {
     tx.execute("UPDATE runs SET pane_key = ?2, agent_session = ?3, state = ?4, prompt = ?5, turn_ended = ?6, open_tools = ?7, idle_for = ?8, waited_for = ?9, closing_for = ?10, budget_used = ?11,
-                nudged = ?12, nudge_turn = ?13, warned = ?14, held = ?15, wait_moved = ?16, no_result_wait = ?17, result = ?18, again_said = ?19, close_tried = ?20, last_walk = ?21 WHERE id = ?1",
+                nudged = ?12, nudge_turn = ?13, warned = ?14, held = ?15, wait_moved = ?16, no_result_wait = ?17, result = ?18, again_said = ?19, close_tried = ?20, last_walk = ?21, memory_warned = ?22 WHERE id = ?1",
                rusqlite::params![r.id, r.pane_key, r.agent_session, r.state, r.prompt, r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used,
-                                 r.nudged, r.nudge_turn, r.warned, r.held, r.wait_moved, r.no_result_wait, r.result, r.again_said, r.close_tried, r.last_walk]).map(|_| ()).map_err(sql)
+                                 r.nudged, r.nudge_turn, r.warned, r.held, r.wait_moved, r.no_result_wait, r.result, r.again_said, r.close_tried, r.last_walk, r.memory_warned]).map(|_| ()).map_err(sql)
 }
 
 /// A human moved `task`: terminum's own signals leave it there until RUN or a prompt they type (AC-124).

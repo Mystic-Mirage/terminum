@@ -7,6 +7,7 @@ pub mod api;
 mod gate;
 mod hooks;
 pub mod plan;
+mod procs;
 pub mod runs;
 pub mod screen;
 mod start;
@@ -45,6 +46,23 @@ pub struct Dispatcher {
     cpu: Mutex<HashMap<String, f64>>,
     /// a walk is due now (a session ended)
     soon: Notify,
+    /// each pane's subagents, as its hooks said (AC-127)
+    subs: Mutex<HashMap<String, HashMap<String, Sub>>>,
+    /// each pane's tokens as its last turn's end said; null: not known (AC-129)
+    tokens: Mutex<HashMap<String, serde_json::Value>>,
+    /// walks in a row over a memory limit, by run (AC-128)
+    over: Mutex<HashMap<String, (u32, u32)>>,
+    /// what pages were last told of tasks' sessions (`taskusage`), and each pane's CPU seconds then
+    usage: Mutex<String>,
+    usage_cpu: Mutex<HashMap<String, f64>>,
+}
+
+/// A subagent as its hooks said.
+#[derive(Clone, Debug)]
+struct Sub {
+    kind: String,
+    last: Instant,
+    told: u8,
 }
 
 impl Dispatcher {
@@ -61,6 +79,22 @@ impl Dispatcher {
 
     fn has_run(&self, key: &str) -> bool {
         self.panes.lock().contains(key)
+    }
+
+    /// A hook's facts of any pane: its subagents and tokens, for its card (AC-127, AC-129).
+    pub fn heard_facts(&self, key: &str, ev: &serde_json::Value) {
+        if let Some(tokens) = ev.get("tokens") {
+            self.tokens.lock().insert(key.to_string(), tokens.clone());
+        }
+        let Some(id) = ev["sub"].as_str() else { return };
+        let mut subs = self.subs.lock();
+        let of_pane = subs.entry(key.to_string()).or_default();
+        if ev["event"] == "SubagentStop" {
+            of_pane.remove(id);
+        } else {
+            let sub = of_pane.entry(id.to_string()).or_insert_with(|| Sub { kind: ev["subtype"].as_str().unwrap_or("").to_string(), last: Instant::now(), told: 0 });
+            sub.last = Instant::now();
+        }
     }
 
     fn remember_typed(&self, key: &str, text: &str) {

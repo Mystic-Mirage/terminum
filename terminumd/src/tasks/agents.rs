@@ -4,7 +4,7 @@
 
 use axum::extract::{Path, State};
 use axum::response::Response;
-use axum::routing::{patch, post};
+use axum::routing::{patch, post, put};
 use axum::{Json, Router};
 use rusqlite::{OptionalExtension, Transaction};
 use serde::Serialize;
@@ -140,6 +140,7 @@ pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/api/task-projects/{id}/agents", post(new_agent))
         .route("/api/task-agents/{id}", patch(change_agent).delete(drop_agent))
+        .route("/api/task-projects/{id}/limits", put(set_limits))
 }
 
 /// The body as kept, or what is wrong with it.
@@ -169,6 +170,42 @@ async fn change_agent(State(app): State<Shared>, Path(id): Path<String>, Json(bo
 
 async fn drop_agent(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     let done = store(&app, move |tx| remove(tx, &id).map(|()| json!({"ok": true}))).await;
+    told_projects(&app, done)
+}
+
+/// A project's memory limits, or none to go by the global ones (terminum-dispatcher.md AC-128); 0: off.
+fn keep_limits(tx: &Transaction, project: &str, limits: Option<(f64, f64)>) -> Result<(), String> {
+    check_project(tx, project)?;
+    match limits {
+        None => tx.execute("DELETE FROM project_limits WHERE project = ?1", [project]).map_err(sql)?,
+        Some((warn, end)) => {
+            if !warn.is_finite() || !end.is_finite() || warn < 0.0 || end < 0.0 {
+                return Err("A limit is a number of GiB, 0 for off.".to_string());
+            }
+            if end > 0.0 && warn > end {
+                return Err("The warning is above the end.".to_string());
+            }
+            tx.execute("INSERT INTO project_limits (project, warn_gib, end_gib) VALUES (?1, ?2, ?3) ON CONFLICT (project) DO UPDATE SET warn_gib = ?2, end_gib = ?3", (project, warn, end)).map_err(sql)?
+        }
+    };
+    Ok(())
+}
+
+/// Every project's limits, for the board's window.
+pub fn limits(tx: &Transaction) -> Result<Vec<Value>, String> {
+    rows(tx, "SELECT project, warn_gib, end_gib FROM project_limits", [], |r| Ok(json!({"project": r.get::<_, String>(0)?, "warn": r.get::<_, f64>(1)?, "end": r.get::<_, f64>(2)?})))
+}
+
+async fn set_limits(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
+    let wanted = match (body["warn"].as_f64(), body["end"].as_f64(), body["warn"].is_null() && body["end"].is_null()) {
+        (Some(w), Some(e), _) => Ok(Some((w, e))),
+        (_, _, true) => Ok(None),
+        _ => Err("A limit is a number of GiB, 0 for off.".to_string()),
+    };
+    let done = match wanted {
+        Ok(limits) => store(&app, move |tx| keep_limits(tx, &project, limits).map(|()| json!({"ok": true}))).await,
+        Err(e) => Err(e),
+    };
     told_projects(&app, done)
 }
 

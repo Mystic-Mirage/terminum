@@ -223,6 +223,40 @@ export async function liveDispatcher(page, opts) {
   await page.waitForSelector('.col[data-status="TODO"]');
   check("AC-126 the card shows the time used and the budget", await until(async () => /\d+ of 60 min/.test(await page.textContent(card(changing)).catch(() => "")), 6000), await page.textContent(card(changing)).catch(() => ""));
 
+  // AC-127 a subagent silent and idle: one request to the main agent, then it is said
+  const silentSub = await task("has a subagent SUBAGENT");
+  await run(silentSub);
+  check("AC-127 a silent subagent gets the main agent one request", await said(silentSub, "The request about a silent subagent", 15000), await history(silentSub));
+  check("AC-127 one that runs inside the agent cannot be ended alone: said", await said(silentSub, "Subagent sub-1 cannot be ended alone", 15000), await history(silentSub));
+  await page.goto(`${base}/kanban/?project=${project}`);
+  await page.waitForSelector(card(silentSub));
+  check("AC-127 the card shows its kind and ID, as idle", await until(async () => /idle: reviewer sub-1/.test(await page.textContent(card(silentSub))), 8000), await page.textContent(card(silentSub)));
+
+  // AC-128 what it consumes: shown on its card; limits by project; a limit of 0 is off
+  const badLimits = await j(`/api/task-projects/${project}/limits`, "PUT", { warn: 9, end: 3 });
+  check("AC-128 a warning above the end is refused", /above the end/.test(badLimits.error), JSON.stringify(badLimits));
+  await j(`/api/task-projects/${project}/limits`, "PUT", { warn: 0.001, end: 0 });
+  const heavy = await task("uses memory WORKS");
+  await run(heavy);
+  await hasStatus(heavy, "IN PROGRESS", 15000);
+  await page.goto(`${base}/kanban/?project=${project}`);
+  await page.waitForSelector(card(heavy));
+  check("AC-128 the card shows CPU, memory and running time", await until(async () => /CPU \d+% · [\d.]+ GiB · \d+ min/.test(await page.textContent(`${card(heavy)} .cusage`).catch(() => "")), 8000), await page.textContent(card(heavy)));
+  check("AC-128 over the warning for 2 walks the agent is told", await said(heavy, "The memory warning", 10000), await history(heavy));
+  check("AC-128 an end limit of 0 is off", await status(heavy) === "IN PROGRESS", await status(heavy));
+  await j(`/api/task-projects/${project}/limits`, "PUT", { warn: 0, end: 0.001 });
+  check("AC-128 over the end for 2 walks: FAILED, and it says how much", await hasStatus(heavy, "FAILED", 10000) && await said(heavy, "Memory limit of 0.001 GiB exceeded:"), await history(heavy));
+  await j(`/api/task-projects/${project}/limits`, "PUT", { warn: null, end: null });
+  check("AC-128 the global ones are back", !(await j("/api/tasks/meta")).limits.some((l) => l.project === project));
+
+  // AC-129 tokens: three integers from its turn's end
+  const tokens = await task("counts TOKENS");
+  await run(tokens);
+  await hasStatus(tokens, "IN PROGRESS", 15000);
+  await page.goto(`${base}/kanban/?project=${project}`);
+  await page.waitForSelector(card(tokens));
+  check("AC-129 the card shows the tokens its session used", await until(async () => /1,239 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), await page.textContent(card(tokens)));
+
   // AC-125 closing, with the screen kept when there is no result
   const closes = await task("closes CLEAN");
   await run(closes);

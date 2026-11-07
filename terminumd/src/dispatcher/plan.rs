@@ -14,6 +14,21 @@ pub const NOTHING: i64 = 3600;
 /// A session closes this long after DONE or FAILED.
 pub const CLOSE: i64 = 7200;
 
+/// A subagent silent and idle this long gets the main agent one request, then what can be done (AC-127).
+pub const SUB_TELL: i64 = 600;
+pub const SUB_END: i64 = 1200;
+
+/// What a walk's reading of a session's memory says, by two walks in a row (AC-128).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Memory {
+    pub gib: f64,
+    pub warn_gib: f64,
+    pub end_gib: f64,
+    /// walks in a row over the warning, and over the end
+    pub over_warn: u32,
+    pub over_end: u32,
+}
+
 /// What this walk read of the run's pane.
 #[derive(Clone, Debug, Default)]
 pub struct Facts {
@@ -34,6 +49,8 @@ pub struct Facts {
     pub program: Option<String>,
     /// another of the session's tasks is not DONE or FAILED
     pub others_open: bool,
+    /// its tree's memory, if `ps` said
+    pub memory: Option<Memory>,
     /// seconds to add to the clocks: none over a gap (AC-131)
     pub dt: i64,
 }
@@ -50,6 +67,8 @@ pub enum Act {
     Warn(i64),
     /// Ends the agent: the task was moved first, so its end counts for nothing (AC-123).
     End,
+    /// Tells the agent how much memory its session uses, once (AC-128).
+    MemoryWarn(f64),
     /// Closes the pane; `keep` keeps the screen's last rows on the task first. The run is closed when tmux did it.
     Close { words: String, keep: bool },
 }
@@ -164,6 +183,19 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             acts.push(Act::Warn(left));
         }
     }
+    // what it consumes: two walks in a row, as summed memory counts shared pages many times (AC-128)
+    if let Some(m) = f.memory.as_ref().filter(|_| alive && !finished(&run.status)) {
+        if m.end_gib > 0.0 && m.over_end >= 2 && free {
+            run.state = "gone".into();
+            acts.push(Act::Move { to: "FAILED", words: format!("Memory limit of {} GiB exceeded: {:.1} GiB", m.end_gib, m.gib) });
+            acts.push(Act::End);
+            return acts;
+        }
+        if m.warn_gib > 0.0 && m.over_warn >= 2 && !run.memory_warned {
+            run.memory_warned = true;
+            acts.push(Act::MemoryWarn(m.gib));
+        }
+    }
     // closing after DONE or FAILED (AC-125): any activity starts the 2 hours again, a human's at its
     // shell too; only an agent ended, or its turn over, is closed under no one
     if finished(&run.status) {
@@ -187,6 +219,26 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         }
     }
     acts
+}
+
+/// What becomes of a subagent silent for `silent` seconds, as far as it was told.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SubStep {
+    Nothing,
+    Tell,
+    CannotEnd,
+}
+
+/// `told`: how far this subagent has got: 0, 1 asked, 2 said it cannot be ended. A busy tree, or an
+/// open tool, runs neither clock: the caller does not ask (AC-127).
+pub fn subagent_step(silent: i64, told: u8) -> SubStep {
+    if silent >= SUB_END && told < 2 {
+        SubStep::CannotEnd
+    } else if silent >= SUB_TELL && told < 1 {
+        SubStep::Tell
+    } else {
+        SubStep::Nothing
+    }
 }
 
 #[cfg(test)]

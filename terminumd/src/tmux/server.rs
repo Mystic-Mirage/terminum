@@ -181,6 +181,11 @@ impl Server {
         inner.bulk.clone().filter(|c| c.alive()).or_else(|| inner.sessions.values().find(|c| c.alive()).cloned())
     }
 
+    /// A pane this server was just told to make: known before its next list, so its first hook counts.
+    pub fn note_pane(&self, pane: &str, session: &str) {
+        self.inner.lock().panes.insert(pane.to_string(), session.to_string());
+    }
+
     /// Pane `pane`'s typing queue; those nobody holds go, so a closed pane's does not stay.
     pub fn typing(&self, pane: &str) -> Arc<tokio::sync::Mutex<()>> {
         let mut all = self.typing.lock();

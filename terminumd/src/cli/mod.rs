@@ -9,6 +9,7 @@ pub mod agentsetup;
 mod commands;
 pub mod hook;
 mod hookplan;
+mod hooktokens;
 pub(crate) mod hostmode;
 mod ctx;
 mod direct;

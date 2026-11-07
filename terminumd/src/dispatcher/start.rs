@@ -11,7 +11,7 @@ use super::{gate, hooks, move_task, say, store};
 use crate::app::Shared;
 use crate::tasks::ops;
 use crate::tasks::store::DISPATCHER;
-use crate::tmux::server::Link;
+use crate::tmux::server::{Link, HOST_SESSION};
 use crate::tmux::{args, Server};
 
 const BOX_WITHIN: Duration = Duration::from_secs(60);
@@ -55,6 +55,9 @@ async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, 
     };
     let line = if let Some(w) = window {
         format!("new-window -d -a -t {w} {fmt} {cmd}")
+    } else if !server.is_local() {
+        // a host shows only the session terminumd holds there (terminum-remote.md OQ-81)
+        format!("new-window -d -t {} {fmt} {cmd}", args::quote(&format!("={HOST_SESSION}:")))
     } else {
         let wanted = args::check_session_name(&project.map_or("tasks".to_string(), |(_, name)| name.replace([':', '.'], "-")))?;
         let sessions = server.run("list-sessions -F '#{session_name}'").await.unwrap_or_default();
@@ -97,6 +100,9 @@ pub struct Opening<'a> {
 pub async fn open(app: &Shared, o: Opening<'_>) -> Result<(), String> {
     let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command).await?;
     mark(o.server, &pane, o.run).await?;
+    if let Some((session, _)) = place.rsplit_once(':') {
+        o.server.note_pane(&pane, session);            // its agent's first hook may come before the next list
+    }
     let key = o.server.key(&pane);
     app.dispatcher.panes.lock().insert(key.clone());
     if let Some((project, _)) = o.project {

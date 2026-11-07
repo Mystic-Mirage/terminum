@@ -180,6 +180,10 @@ async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words:
             }
         }
     }
+    let wanted = run.id.clone();
+    if !store(app, move |tx| runs::by_id(tx, &wanted).map(|now| plan::still_closes(&now))).await? {
+        return Ok(());
+    }
     let (id, words) = (run.id.clone(), words.to_string());
     match server.run(format!("kill-pane -t {pane}")).await {
         Ok(_) => store(app, move |tx| {
@@ -240,7 +244,7 @@ pub(super) async fn tell(app: &Shared, run: &Run, server: &Arc<Server>, pane: &s
 }
 
 /// A line every open page shows for a moment.
-fn note(app: &Shared, msg: String) {
+pub(super) fn note(app: &Shared, msg: String) {
     app.pages.tell(&serde_json::json!({"t": "note", "msg": msg}).to_string());
 }
 
@@ -381,12 +385,12 @@ fn usage_line(app: &Shared, key: &str, seen: &Seen, pane: &str) -> serde_json::V
 
 /// One beat.
 async fn walk(app: &Shared) {
-    let Ok((all, linked, limits)) = store(app, |tx| Ok((
-        runs::live(tx)?,
+    let a = app.clone();
+    let Ok((all, linked, limits)) = store(app, move |tx| Ok((
+        a.dispatcher.read_runs(tx)?,
         ops::rows(tx, "SELECT 'T-' || number, session_key FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?,
         crate::tasks::agents::limits(tx)?,
     ))).await else { return };
-    *app.dispatcher.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
     if all.is_empty() && linked.is_empty() {
         return;
     }

@@ -104,19 +104,19 @@ pub async fn open(app: &Shared, o: Opening<'_>) -> Result<(), String> {
         o.server.note_pane(&pane, session);            // its agent's first hook may come before the next list
     }
     let key = o.server.key(&pane);
-    app.dispatcher.panes.lock().insert(key.clone());
+    app.dispatcher.panes.lock().insert(key.clone());    // its agent's first hooks
     if let Some((project, _)) = o.project {
         let (a, k, p, host) = (app.clone(), key.clone(), project.to_string(), (!o.server.is_local()).then(|| o.server.name.clone()));
         let _ = crate::http::off(move || a.projects.lock().add(&k, Some(&p), None, host, String::new(), None)).await;
         crate::page::projects::tell(app);
     }
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };
-    let (run, tasks, words) = (o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program));
+    let (a, run, tasks, words) = (app.clone(), o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program));
     store(app, move |tx| {
         for task in &tasks {
             ops::link(tx, DISPATCHER, task, Some(&key), ops::now())?;
         }
-        let r = runs::change(tx, &run, |r| r.pane_key = Some(key.clone()))?;
+        let r = a.dispatcher.pane_opened(tx, &run, &key)?;
         say(tx, &r, &words)
     }).await
 }

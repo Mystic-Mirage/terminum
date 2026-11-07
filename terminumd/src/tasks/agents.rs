@@ -159,6 +159,9 @@ fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
 }
 
 fn remove(tx: &Transaction, id: &str) -> Result<(), String> {
+    if let Some(run) = crate::dispatcher::runs::busy_with(tx, id, None)? {
+        return Err(format!("{} is busy with {}: it can go when they end, or after Give up.", run.agent_name, run.names()));
+    }
     match tx.execute("DELETE FROM project_agents WHERE id = ?1", [id]).map_err(sql)? {
         0 => Err("That agent is gone.".into()),
         _ => Ok(()),

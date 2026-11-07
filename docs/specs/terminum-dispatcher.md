@@ -383,6 +383,7 @@ Scenario: AC-126 happy path — the limit
 Scenario: AC-126 edge — changed in flight
   When the human changes the budget on a running task
   Then it holds at once and the agent is told as the last warning is
+  And with several tasks it is told what the session has now: "T-12: its time budget is off. The session's limit is now 30 minutes."
 
 Scenario: AC-126 edge — a hand-linked session
   Given a budget on a task whose session Dispatcher did not start
@@ -495,7 +496,8 @@ Scenario: AC-138 happy path — several
   When the user drags either onto a free agent, or presses one
   Then the window opens for both, each one's text shown with what an agent wrote said so, and Run starts one session
   And the prompt names T-12 and T-13 by number with the human's message: no text of theirs: an agent can write those, and this reaches an agent as the user's words
-  And finish_task on T-12 leaves T-13 IN PROGRESS and the session working on it; the walk's waits, budget and limits go by what is open
+  And finish_task on T-12 leaves T-13 IN PROGRESS and the session working on it; the walk's waits and limits go by what is open
+  And their budget is the sum of those they have, finished ones too: a task without one adds nothing and lifts no limit, in the prompt and at the walk alike
 
 Scenario: AC-138 happy path — free again
   When T-12 and T-13 are DONE or FAILED and the agent's turn is over
@@ -538,6 +540,9 @@ Scenario: AC-138 edge — an agent deleted
   Given T-12 DONE on Opus reviewer
   When the agent is deleted
   Then the card keeps the name and color its run knew
+  Given Opus reviewer busy with T-13
+  When the user deletes it
+  Then its window says "Opus reviewer is busy with T-13: it can go when they end, or after Give up." and it stays
 
 Scenario: AC-138 failure — effort
   When an agent's effort is not one of its kind's, or its command holds ; | & or #
@@ -552,7 +557,7 @@ Scenario: AC-131 happy path — one name
 
 Scenario: AC-131 happy path — the walk
   Every 30 s it reads its runs, tmux's panes and, per host with a running task, one ps of pids, parents, CPU time, memory and start times, never command lines beyond the program's name
-  And it checks agent, subagents, budget, closing and limits; hooks' events are acted on at once
+  And it checks agent, subagents, budget, closing and limits; hooks' events are acted on at once, one at a time in the order they came: a Stop never overtakes the prompt before it, nor a PostToolUse its PreToolUse
   And it runs off the async workers under a supervised task: a walk still running makes the next wait, and a panic is said on the board and takes no terminal down
 
 Scenario: AC-131 edge — a sleeping Mac
@@ -560,6 +565,16 @@ Scenario: AC-131 edge — a sleeping Mac
   When it wakes
   Then no clock gained those hours: a gap between walks over 2 minutes adds nothing to budget, idle or closing clocks, nothing fires, and T-12 says once "Clocks paused 480 minutes: no walk saw them pass"
   And the same holds for a stopped terminumd and a lost link
+
+Scenario: AC-131 edge — a walk and a window opening
+  Given a walk that read its runs before T-12's window opened
+  When it updates the panes it follows
+  Then T-12's pane stays among them: its agent's first hooks are heard, and the prompt it takes does not read as "not taken in 30 s"
+
+Scenario: AC-131 edge — what it decided meanwhile
+  Given a walk that decided to close T-12's session after 2 hours
+  When RUN or a human's prompt reaches that session before the pane goes
+  Then the run is read again just before kill-pane: the session stays and the new work goes on (AC-125)
 
 Scenario: AC-131 edge — terminumd restarts
   When terminumd restarts or upgrades during T-12's work

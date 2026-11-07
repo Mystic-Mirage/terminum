@@ -137,15 +137,28 @@ fn ac138_marks_and_agents_are_each_task_s() {
 }
 
 #[test]
-fn ac138_its_budget_is_theirs_together_or_none() {
+fn ac138_its_budget_is_what_they_have_together() {
     store("runs-budget").with(|tx| {
         let (r, t) = working(tx, "a", &["one", "two"]);
+        assert_eq!(by_id(tx, &r.id)?.budget, None, "none has one");
         ops::set_budget(tx, HUMAN, &t[0].id, Some(30), 3)?;
-        assert_eq!(by_id(tx, &r.id)?.budget, None, "one has none");
+        assert_eq!(by_id(tx, &r.id)?.budget, Some(30 * 60), "one without lifts no limit");
         ops::set_budget(tx, HUMAN, &t[1].id, Some(10), 3)?;
         assert_eq!(by_id(tx, &r.id)?.budget, Some(40 * 60));
+        ops::set_budget(tx, HUMAN, &t[0].id, None, 4)?;
+        assert_eq!(by_id(tx, &r.id)?.budget, Some(10 * 60), "taken off one, the other's holds");
+        ops::set_budget(tx, HUMAN, &t[1].id, None, 4)?;
+        assert_eq!(by_id(tx, &r.id)?.budget, None);
         Ok(())
     }).unwrap();
+}
+
+#[test]
+fn ac122_a_stop_heard_while_its_words_were_typed_stands() {
+    let mut r = Run { turn_ended: true, budget_used: 60, idle_for: 9, ..Default::default() };
+    r.new_work();
+    assert!(r.turn_ended, "reserving took it before the typing: what is set now came after");
+    assert_eq!((r.budget_used, r.idle_for), (0, 0), "every clock starts anew");
 }
 
 #[test]

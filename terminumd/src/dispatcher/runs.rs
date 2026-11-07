@@ -101,7 +101,7 @@ pub fn last_of(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
     tx.query_row(&format!("{SELECT} WHERE r.task = ?1 ORDER BY r.rowid DESC LIMIT 1"), [task], of_row).optional().map_err(sql)
 }
 
-fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
+pub(super) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
     tx.query_row(&format!("{SELECT} WHERE r.id = ?1"), [id], of_row).map_err(sql)
 }
 

@@ -197,7 +197,7 @@ async fn watching(app: &Shared, id: &str) {
     let box_within = |miss: &Option<String>| match miss { Some(m) => format!("its input box did not come in 60 s: {m}"), None => "its input box did not come in 60 s".to_string() };
     loop {
         let wanted = id.to_string();
-        let Ok(r) = store(app, move |tx| runs::change(tx, &wanted, |_| {})).await else { return };
+        let Ok(r) = store(app, move |tx| runs::by_id(tx, &wanted)).await else { return };
         if !r.is_starting() {
             return;
         }

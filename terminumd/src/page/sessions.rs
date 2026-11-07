@@ -316,9 +316,9 @@ async fn kill(app: &Shared, id: &str) -> Result<(), String> {
 }
 
 /// Host, attach and restore actions, from either listener's page (§9 "What each listener allows").
-pub async fn admin(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
+pub async fn admin(app: &Shared, page: &Arc<Page>, msg: &Value) {
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
-    let result = match t {
+    let result = match msg["t"].as_str().unwrap_or("") {
         "addhost" => crate::hosts::add(app, &s("name"), &s("recipe"), msg["files"].as_bool().unwrap_or(false)).await.map(|name| {
             page.send_json(&json!({"t": "hostadded", "name": name}));
         }),

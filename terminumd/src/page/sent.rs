@@ -40,7 +40,8 @@ fn title_of(app: &Shared, key: &str) -> String {
 }
 
 /// `at`: the pane shown when the page sent it: what was typed there stays that pane's (AC-132).
-pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value, at: super::client::At) {
+pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::client::At) {
+    let t = msg["t"].as_str().unwrap_or("");
     let agent = msg["agent"].as_str().filter(|a| !a.is_empty());
     let shown_key = at.as_ref().map(|(k, ..)| k.clone());
     let hooked = shown_key.as_ref().is_some_and(|k| app.hooks.has(k));

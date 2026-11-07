@@ -102,19 +102,19 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
             action(app, page, msg, |a, p, m, at| async move { super::sessions::handle(&a, &p, &m, at).await }),
         "plan" => super::plans::handle(app, page, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
-        "quick" | "quickside" => action(app, page, msg, |a, p, m, _| async move { super::quick::handle(&a, &p, m["t"].as_str().unwrap_or(""), &m).await }),
+        "quick" | "quickside" => action(app, page, msg, |a, p, m, _| async move { super::quick::handle(&a, &p, &m).await }),
         // a host's ssh, helper copy and install take up to minutes: the page's loop goes on (it waits for the answer)
         "addhost" | "hostaction" | "hostagents" => {
             let (app, page) = (app.clone(), page.clone());
-            tokio::spawn(async move { super::sessions::admin(&app, &page, msg["t"].as_str().unwrap_or(""), &msg).await });
+            tokio::spawn(async move { super::sessions::admin(&app, &page, &msg).await });
         }
-        "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => action(app, page, msg, |a, p, m, _| async move { super::sessions::admin(&a, &p, m["t"].as_str().unwrap_or(""), &m).await }),
+        "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => action(app, page, msg, |a, p, m, _| async move { super::sessions::admin(&a, &p, &m).await }),
         "updatechoice" if !page.web => {
             if let Err(e) = crate::release::choose(app, &s("action"), msg["tag"].as_str()) {
                 error(page, e, None);
             }
         }
-        "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => action(app, page, msg, |a, p, m, at| async move { super::sent::handle(&a, &p, m["t"].as_str().unwrap_or(""), &m, at).await }),
+        "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => action(app, page, msg, |a, p, m, at| async move { super::sent::handle(&a, &p, &m, at).await }),
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),

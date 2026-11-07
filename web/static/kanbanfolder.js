@@ -32,7 +32,7 @@ export function folderPicker() {
     at = path;
     $("folderpath").textContent = path;
     say("");
-    const q = new URLSearchParams({ path, limit: String(PAGE), hidden: "0" });
+    const q = new URLSearchParams({ path, limit: String(PAGE), hidden: "false" });
     if (host) q.set("host", host);
     let why = "";
     const page = await settled(() => api(`/fb/api/ls?${q}`).catch((e) => { why = e.message; return null; }));

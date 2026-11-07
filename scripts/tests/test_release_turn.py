@@ -26,11 +26,15 @@ class Chain(unittest.TestCase):
         self.check_status = 0
         self.mac = (False, "")
         self.marked_during = None
+        self.released = []
+
+    def fake_release(self, tag, gate_head, said="", rehearsing=False):
+        self.released.append((tag, gate_head, said, rehearsing))
+        self.marked_during = self.mark.exists()
 
     def run_chain(self, argv):
         def fake_run(cmd, **kwargs):
-            self.calls.append((cmd, kwargs.get("env")))
-            self.marked_during = self.mark.exists()
+            self.calls.append(cmd)
             if cmd[:2] == ["bash", "scripts/check_all.sh"]:
                 return done(self.check_status)
             return done()
@@ -40,18 +44,14 @@ class Chain(unittest.TestCase):
                 mock.patch.object(release_turn.release, "check_source"), \
                 mock.patch.object(release_turn, "primary_of", return_value=Path("/elsewhere")), \
                 mock.patch.object(release_turn.release, "release_notes") as notes, \
-                mock.patch.object(release_turn, "mac_checks", return_value=self.mac):
+                mock.patch.object(release_turn, "mac_checks", return_value=self.mac), \
+                mock.patch.object(release_turn.release, "main", self.fake_release):
             self.notes = notes
             return release_turn.main(argv)
 
-    def released(self):
-        return [c for c, _ in self.calls if "scripts/release.py" in c]
-
     def test_a_release_passes_the_checked_commit_on_and_holds_its_mark(self):
         self.assertEqual(self.run_chain(["v1.0.0"]), 0)
-        self.assertEqual(self.released()[0][-1], "v1.0.0")
-        self.assertNotIn("--rehearse", self.released()[0])
-        self.assertEqual(self.calls[-1][1]["TM_GATE_HEAD"], "abc")
+        self.assertEqual(self.released, [("v1.0.0", "abc", "", False)])
         self.assertTrue(self.marked_during)
         self.assertFalse(self.mark.exists())
         self.notes.assert_called_once()
@@ -59,22 +59,22 @@ class Chain(unittest.TestCase):
     def test_failing_tests_here_or_on_the_mac_stop_it(self):
         self.check_status = 1
         self.assertEqual(self.run_chain(["v1.0.0"]), 1)
-        self.assertEqual(self.released(), [])
+        self.assertEqual(self.released, [])
         self.check_status, self.mac = 0, (True, "")
         self.assertEqual(self.run_chain(["v1.0.0"]), 1)
-        self.assertEqual(self.released(), [])
+        self.assertEqual(self.released, [])
 
     def test_a_runner_that_could_not_run_them_is_said_and_stops_nothing(self):
         self.mac = (False, "the runner could not run them")
         with mock.patch("builtins.print") as said:
             self.assertEqual(self.run_chain(["v1.0.0"]), 0)
-        self.assertEqual(len(self.released()), 1)
+        self.assertEqual(len(self.released), 1)
         self.assertIn("did not run: the runner could not run them", said.call_args_list[-1].args[0])
-        self.assertIn("did not run: the runner could not run them", self.calls[-1][1]["TM_GATE_SAID"], "for the release's notes")
+        self.assertIn("did not run: the runner could not run them", self.released[0][2], "for the release's notes")
 
     def test_a_rehearsal_holds_no_mark_and_needs_no_notes(self):
         self.assertEqual(self.run_chain(["--rehearse", "v1.0.0"]), 0)
-        self.assertIn("--rehearse", self.released()[0])
+        self.assertTrue(self.released[0][3])
         self.assertFalse(self.marked_during)
         self.notes.assert_not_called()
 
@@ -87,6 +87,26 @@ class Chain(unittest.TestCase):
         with mock.patch.object(release_turn, "primary_of", return_value=Path(release_turn.__file__).resolve().parent.parent), \
                 self.assertRaisesRegex(SystemExit, "runs in a worktree"):
             release_turn.main(["--rehearse", "v1.0.0"])
+
+    def test_a_refused_release_still_says_what_did_not_run_and_clears_its_mark(self):
+        self.mac = (False, "the runner could not run them")
+        self.fake_release = mock.Mock(side_effect=SystemExit("HEAD moved"))
+        with mock.patch("builtins.print") as said, self.assertRaisesRegex(SystemExit, "HEAD moved"):
+            self.run_chain(["v1.0.0"])
+        self.assertIn("did not run", said.call_args_list[-1].args[0])
+        self.assertFalse(self.mark.exists())
+
+    def test_settings_are_looked_at_before_anything_runs(self):
+        with mock.patch.object(release_turn.release, "check_settings", side_effect=SystemExit("no identity")), \
+                mock.patch.object(release_turn.release, "check_source") as source, mock.patch.object(release_turn.subprocess, "run") as run, \
+                self.assertRaisesRegex(SystemExit, "no identity"):
+            release_turn.main(["v1.0.0"])
+        source.assert_not_called()
+        run.assert_not_called()
+
+    def test_a_bad_version_is_refused_at_once(self):
+        with self.assertRaisesRegex(SystemExit, "usage"):
+            release_turn.main(["1.0"])
 
     def test_a_tree_that_cannot_release_is_refused_before_the_long_run(self):
         with mock.patch.object(release_turn.release, "check_settings"), mock.patch.object(release_turn.release, "check_source", side_effect=SystemExit("the tree has changes")), \

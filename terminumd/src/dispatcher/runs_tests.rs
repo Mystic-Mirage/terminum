@@ -189,3 +189,21 @@ fn ac113_a_session_s_other_task_is_refused_unless_one_run_gave_both() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac142_a_run_with_no_task_stands_in_its_project_and_can_be_let_go() {
+    store("runs-ad-hoc").with(|tx| {
+        tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 0, '/srv/api', 0)", []).map_err(ops::sql)?;
+        let id = add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "api".into(), ..Default::default() }, &[], 1)?;
+        let r = by_id(tx, &id)?;
+        assert!(r.ad_hoc() && r.ids.is_empty() && r.status.is_empty(), "{r:?}");
+        assert_eq!(r.project, "api");
+        assert_eq!(live(tx)?.len(), 1, "a run with no task never stops the walk's read");
+        assert!(holding_agent(tx, "a")?.is_some(), "it holds its slot");
+        assert_eq!(let_go(tx, &id)?.state, "left");
+        assert!(holding_agent(tx, "a")?.is_none());
+        assert_eq!(let_go(tx, &id).unwrap_err(), "Dispatcher holds that session no more.");
+        assert_eq!(last_agent(tx, "api")?.as_deref(), Some("a"), "the last agent of a project, by the run's own");
+        Ok(())
+    }).unwrap();
+}

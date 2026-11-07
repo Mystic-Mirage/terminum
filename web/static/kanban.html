@@ -126,7 +126,7 @@
       <button id="clearfilters" class="textkey" type="button" hidden>Clear filters</button>
     </div>
   </div>
-  <div id="boardacts"><button id="newtask" class="textkey primary" type="button">New task</button></div>
+  <div id="boardacts"><button id="adhocsession" class="textkey" type="button" title="A session of an agent in this project, no task" hidden>+ Session</button><button id="newtask" class="textkey primary" type="button">New task</button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
@@ -210,6 +210,7 @@
       <label class="fieldrow">At once <input id="agentatonce" class="field" type="number" min="1" max="100" step="1"></label>
     </div>
     <label class="fieldrow">Command <input id="agentcommand" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <ul id="agentsessions" class="filelist" aria-label="Its sessions" hidden></ul>
     <p id="agenterror" role="alert" hidden></p>
     <div class="actions">
       <button id="agentdrop" type="button" hidden>Delete</button>

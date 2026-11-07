@@ -41,8 +41,9 @@ export function query(extra = {}) {
   return p.toString();
 }
 
-/** The filters' keys over `getMeta()`'s projects; `changed` after any change, `editProject(p)` from a project's pencil. */
-export function filterBar({ getMeta, changed, editProject }) {
+/** The filters' keys over `getMeta()`'s projects; `changed` after any change, `editProject(p)` from a project's pencil,
+ *  `newSession(p)` from its + Session (terminum-dispatcher.md AC-142). */
+export function filterBar({ getMeta, changed, editProject, newSession }) {
   function setFilters(next) {
     address(next);
     if ("project" in next) write(CHOSEN, next.project.join(",") || null);
@@ -84,7 +85,8 @@ export function filterBar({ getMeta, changed, editProject }) {
       name.append(dot(p), el("span", "pname", p.name));
       if (!p.dir) name.append(el("small", "projnofolder", "no folder"));   // no agent can start there (terminum-dispatcher.md AC-140)
       const edit = iconButton("projedit", "pencil", `Edit ${p.name}`, `Edit ${p.name}: its folder and limits`, () => { box.open = false; editProject(p); });
-      line.append(also, name, edit);
+      const session = iconButton("projsession", "terminal", `Session in ${p.name}`, `A session of an agent in ${p.name}, no task`, () => { box.open = false; newSession(p); });
+      line.append(also, name, edit, session);
       return line;
     });
     box.querySelector("div").replaceChildren(button(null, "All projects", () => only([])), ...rows);
@@ -103,6 +105,7 @@ export function filterBar({ getMeta, changed, editProject }) {
     $("farchived").setAttribute("aria-pressed", String(!!f.archived));
     $("fsubtasks").setAttribute("aria-pressed", String(!!f.subtasks));
     $("clearfilters").hidden = !narrowed();
+    $("adhocsession").hidden = f.project.length !== 1;
     $("filtersbtn").textContent = on ? `Filters ${on}` : "Filters";
     if (on) $("picks").classList.add("open");
   }

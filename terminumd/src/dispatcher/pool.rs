@@ -102,7 +102,7 @@ pub fn board(tx: &Transaction) -> Result<Value, String> {
     let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
     let mut in_project: HashMap<&str, i64> = HashMap::new();
     for r in &holding {
-        of_agent.entry(&r.agent_id).or_default().push(json!({"tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy()}));
+        of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc()}));
         *in_project.entry(&r.project).or_default() += 1;
     }
     let full: Vec<String> = agents::list(tx)?.into_iter().filter(|a| of_agent.get(a.id.as_str()).map_or(0, Vec::len) as i64 >= a.at_once).map(|a| a.id).collect();

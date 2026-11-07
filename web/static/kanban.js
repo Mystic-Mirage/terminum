@@ -21,7 +21,7 @@ import { projectWindow } from "./kanbanproject.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
-import { $, COLUMNS, agentChip, api, button, el, iconButton, say } from "./kanbanutil.js";
+import { choose, $, COLUMNS, agentChip, api, button, el, iconButton, say } from "./kanbanutil.js";
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -350,7 +350,7 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
-const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, editProject: (p) => project.open(p) });
+const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, editProject: (p) => project.open(p), newSession });
 const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
 $("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
@@ -369,6 +369,22 @@ async function runMade(t, agent) {
     runs.open([t], { why: e.message }).catch((no) => say(no.message));
   }
 }
+
+/** + Session (terminum-dispatcher.md AC-142): a project's agent with no task, its session shown once it opens; the
+ *  agent last used there first, the only one at once. */
+async function newSession(p) {
+  if (!p.dir) return askFolder(p.id, `${p.name} has no folder: set it in its window.`);
+  const all = meta.agents, last = meta.last_agents?.[p.id];
+  if (!all.length) return agents.add();
+  const ordered = [...all.filter((a) => a.id === last), ...all.filter((a) => a.id !== last)];
+  const agent = ordered.length === 1 ? ordered[0].id : await choose(`A session in ${p.name}`, "Which agent? Nothing is typed in it: it is yours.", ordered.map((a) => [a.id, a.name]));
+  if (!agent) return;
+  try {
+    const { key } = await api(`/api/task-projects/${p.id}/session`, { method: "POST", body: { agent } });
+    location.href = sessionUrl(key);
+  } catch (e) { say(e.message); }
+}
+$("adhocsession").addEventListener("click", () => newSession(projectOf(filters().project[0])));
 
 /** A project with no folder starts nothing: said, and its window opens at the folder (terminum-dispatcher.md AC-140). */
 function askFolder(id, words) {

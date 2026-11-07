@@ -96,8 +96,8 @@ pub struct Opening<'a> {
     pub program: &'a str,
 }
 
-/// Opens the window, links it and says so.
-pub async fn open(app: &Shared, o: Opening<'_>) -> Result<(), String> {
+/// Opens the window, links it and says so: its key.
+pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
     let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command).await?;
     mark(o.server, &pane, o.run).await?;
     if let Some((session, _)) = place.rsplit_once(':') {
@@ -111,14 +111,15 @@ pub async fn open(app: &Shared, o: Opening<'_>) -> Result<(), String> {
         crate::page::projects::tell(app);
     }
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };
-    let (a, run, tasks, words) = (app.clone(), o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program));
+    let (a, run, tasks, words, k) = (app.clone(), o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program), key.clone());
     store(app, move |tx| {
         for task in &tasks {
-            ops::link(tx, DISPATCHER, task, Some(&key), ops::now())?;
+            ops::link(tx, DISPATCHER, task, Some(&k), ops::now())?;
         }
-        let r = a.dispatcher.pane_opened(tx, &run, &key)?;
+        let r = a.dispatcher.pane_opened(tx, &run, &k)?;
         say(tx, &r, &words)
-    }).await
+    }).await?;
+    Ok(key)
 }
 
 /// A run's start goes wrong: FAILED, with the screen's last rows, redacted; the window stays (AC-121).
@@ -130,6 +131,9 @@ async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, why: 
     let tail: Vec<&str> = rows.iter().map(String::as_str).rev().skip_while(|l| l.trim().is_empty()).take(20).collect::<Vec<_>>().into_iter().rev().collect();
     let shown = crate::sent::redact(&tail.join("\n"));
     let words = if shown.is_empty() { format!("Session did not start: {why}") } else { format!("Session did not start: {why}\n\n```\n{shown}\n```") };
+    if r.ad_hoc() {                                    // no task to say it on: the pages say it (AC-142)
+        super::walk::note(app, format!("{} did not start: {why}", r.kind));
+    }
     let id = r.id.clone();
     let done = store(app, move |tx| {
         let now = runs::change(tx, &id, |r| { r.state = "gone".into(); r.prompt = None; })?;
@@ -220,6 +224,12 @@ async fn watching(app: &Shared, id: &str) {
             match gate::read(&server, &pane, &r.kind).await.unwrap_or(Screen::Unknown) {
                 Screen::Asks if r.state != "asking" => now_asking(app, &r).await,
                 Screen::Asks => {}
+                Screen::Empty if r.prompt.is_none() => {
+                    // + Session's: its box stands, nothing is typed: the human's from here (AC-142)
+                    let id = r.id.clone();
+                    let _ = store(app, move |tx| runs::change(tx, &id, |now| if now.is_starting() { now.state = "working".into(); }).map(drop)).await;
+                    return;
+                }
                 Screen::Empty => {
                     // Claude Code's SessionStart comes after its box; one that stands this long has
                     // started, should the hook have gone unheard: its prompt's hook is what proves them (AS-127)

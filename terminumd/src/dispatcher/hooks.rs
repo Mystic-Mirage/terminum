@@ -38,8 +38,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.new_work();
             r.turn_ended = false;
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
-            let project = ops::project_place(tx, &r.project)?.0;
-            let agent = ops::agent_user(tx, &r.kind, &project)?;
+            let agent = ops::pool_user(tx, &r.agent_id, &r.agent_name)?;
             for id in &r.ids {
                 ops::set_owner(tx, &ops::key_of(tx, id)?, &agent, ops::now())?;
             }

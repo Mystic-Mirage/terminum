@@ -182,3 +182,18 @@ fn ac145_what_is_left_to_do_says_its_kind_and_severity() {
         assert!(call(&s, &dir, &w, "create_task", json!({"title": title, "severity": "P2"})).unwrap().starts_with("Kept as"), "{title}");
     }
 }
+
+#[test]
+fn ac142_a_session_with_no_task_takes_one_and_writes_as_its_agent_of_the_pool() {
+    let ((s, dir), w) = (fresh("tools-ad-hoc"), who(Some("api")));
+    let free = task(&s, "api", None);
+    s.with(|tx| {
+        let like = crate::dispatcher::runs::Run { agent_id: "a1".into(), agent_name: "Opus reviewer".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
+        let id = crate::dispatcher::runs::add(tx, &like, &[], 1)?;
+        crate::dispatcher::runs::change(tx, &id, |r| { r.state = "working".into(); r.pane_key = Some(KEY.into()); }).map(drop)
+    }).unwrap();
+    assert!(call(&s, &dir, &w, "take_task", json!({"id": free})).is_ok(), "+ Session's agent may take a task: it was given none");
+    call(&s, &dir, &w, "add_comment", json!({"id": free, "text": "on it"})).unwrap();
+    let author: String = s.with(|tx| tx.query_row("SELECT u.name FROM events e JOIN users u ON u.id = e.author WHERE e.kind = 'comment' ORDER BY e.rowid DESC LIMIT 1", [], |r| r.get(0)).map_err(|e| e.to_string())).unwrap();
+    assert_eq!(author, "Opus reviewer", "one agent, one name: the pool's");
+}

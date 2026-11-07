@@ -240,3 +240,19 @@ fn ac119_a_writer_from_outside_waits_for_a_transaction_that_has_read() {
         tx.execute("INSERT INTO meta (key, value) VALUES ('inside', '1')", []).map(drop).map_err(|e| e.to_string())
     }).unwrap();
 }
+
+#[test]
+fn ac144_a_run_keeps_its_project_and_order_and_a_new_one_may_have_no_task() {
+    let path = crate::testutil::fresh_dir("store-schema7").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..6]).unwrap();
+    conn.execute_batch("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 0, '/srv/api', 0);
+        INSERT INTO tasks (id, number, project, status, severity, rank, owner, updated_at, title, body) VALUES ('k1', 1, 'api', 'DONE', 'P2', 1, 'human', 1, 't', '');
+        INSERT INTO runs (id, task, agent_id, kind, command, folder, state) VALUES ('r2', 'k1', 'a', 'claude', 'claude', '/w', 'closed'), ('r1', 'k1', 'a', 'claude', 'claude', '/w', 'working');
+        INSERT INTO run_tasks (run, task) VALUES ('r1', 'k1');").unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    let rows: Vec<(String, String, String)> = conn.prepare("SELECT id, task, project FROM runs ORDER BY rowid").unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(rows, [("r2".into(), "k1".into(), "api".into()), ("r1".into(), "k1".into(), "api".into())], "each keeps its place and learns its project");
+    conn.execute("INSERT INTO runs (id, agent_id, kind, command, folder, state, project) VALUES ('r3', 'a', 'claude', 'claude', '/w', 'starting', 'api')", []).unwrap();
+    assert!(conn.execute("INSERT INTO run_tasks (run, task) VALUES ('r3', 'gone')", []).is_err(), "run_tasks' foreign key still holds");
+}

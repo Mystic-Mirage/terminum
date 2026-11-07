@@ -97,7 +97,7 @@ Scenario: AC-121 happy path — first run
   When the gate (§9) reads an empty input box, within 60 s
   Then it pastes the prompt and sends it with Enter, through the gate
   When the agent's hook says that prompt was taken (UserPromptSubmit), within 30 s
-  Then T-12 is IN PROGRESS, its owner the agent "claude · api"
+  Then T-12 is IN PROGRESS, its owner the pool's agent that runs it, "Opus reviewer"
 
 Scenario: AC-121 happy path — the prompt
   Then the prompt is, in this order: "The human ran task T-12: Fix the retry loop", its text, its files' names and how to get them, its parent's ID, the budget (AC-126), and "When it is done, call finish_task with the result. If you need a human, ask."
@@ -835,10 +835,8 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 
 | AC-137, AC-138 | No Week's or Month's limit in an agent's window, nor its week and month on its rectangle. | `web/static/kanbanagents.js` |
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
-| AC-142 | No session starts without a task: a run's row needs one, and its project comes from it. | `terminumd/src/dispatcher/runs.rs` |
 | AC-129, AC-143 | Tokens stay in memory, three integers with no model; no price; no week or month. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/mod.rs` |
 | AC-128 | The window says neither what it measures nor the global values. | `web/static/kanbanagents.js` |
-| AC-144 | A deleted project's runs are not moved with its tasks. | `terminumd/src/tasks/projects.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -992,6 +990,6 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
-- [ ] AC-142 — to come: `cargo test dispatcher::runs`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
 - [ ] AC-143 — to come: `cargo test dispatcher::usage`, `web/test/e2e_liveboardagents.mjs`
-- [ ] AC-144 — to come: `cargo test tasks::store`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-144 — `cargo test tasks::store`, `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

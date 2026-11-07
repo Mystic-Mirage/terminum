@@ -299,6 +299,32 @@ async function agentPool(page, opts) {
   check("AC-141 giving up frees its slot", await dotted((d) => d.length === 0), JSON.stringify(await dots()));
   tmux("kill-pane", "-t", heldPane);
 
+  // + Session: the agent in the project's place, nothing typed, a dot of its own, let go by the human (AC-142)
+  await shown();
+  check("AC-142 one project shown: + Session in the head", await page.isVisible("#adhocsession"));
+  await page.click("#adhocsession");
+  check("AC-142 with several agents it asks which, the last used first", await until(() => page.$("#confirmbox[open]")) && /Fast fixer/.test(await page.textContent("#confirmacts")), await page.textContent("#confirmacts").catch(() => ""));
+  await pressAt(page, '#confirmacts button:has-text("Fast fixer")');
+  check("AC-142 it opens the session, of no task", await until(() => /\/sessions\//.test(page.url()), 15000), page.url());
+  let adhoc;
+  check("AC-142 its agent shows a dot for it, the pool's slot taken", await until(async () => (adhoc = (await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.find((s) => !s.tasks)), 15000), JSON.stringify(adhoc));
+  check("AC-142 nothing is typed: it stands working, the human's", await until(async () => (await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.find((s) => !s.tasks)?.state === "working", 15000));
+  const adPane = adhoc?.key?.split(":").pop();
+  check("AC-140 it opened in the project's folder", adPane && tmux("display", "-p", "-t", adPane, "#{pane_current_path}").trim().endsWith(path.basename(work)), adPane);
+  await shown();
+  await page.click(pool, { position: { x: 60, y: 8 } });
+  await page.waitForSelector("#agentbox[open]");
+  check("AC-142 its agent's window lists it, with Let go", await until(() => page.isVisible('#agentsessions button:has-text("Let go")')));
+  await page.click('#agentsessions button:has-text("Let go")');
+  await pressAt(page, "#confirmok");
+  check("AC-142 Let go frees its slot", await until(async () => !(await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.length, 15000));
+  check("AC-142 and leaves its window", adPane && paneAlive(tmux, adPane));
+  await page.click('#agentbox button[value="cancel"]');
+  if (adPane) tmux("kill-pane", "-t", adPane);
+  const noPlace = (await j("/api/task-projects", "POST", { name: "NoPlace" })).id;
+  const homeless = await j(`/api/task-projects/${noPlace}/session`, "POST", { agent: fixer });
+  check("AC-142 a project with no folder refuses it, said", /NoPlace has no folder/.test(homeless.error ?? ""), JSON.stringify(homeless));
+
   // two at once, and a project's own limit, whichever agent runs
   const line = (await j("/api/tasks/meta")).agents.find((x) => x.id === fixer);
   await j(`/api/task-agents/${fixer}`, "PATCH", { name: line.name, kind: line.kind, command: line.command, effort: line.effort, at_once: 2 });

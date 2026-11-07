@@ -139,6 +139,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     const v = a ?? { kind: "claude", name: freeName("claude"), command: "claude", effort: "", at_once: 1 };
     for (const k of ["kind", "name", "command", "at_once"]) field[k].value = v[k];
     fillEfforts(v.effort);
+    showSessions(a);
     $("agenthead").textContent = a ? a.name : "Add agent";
     $("agentok").textContent = a ? "Save" : "Add";
     $("agentdrop").hidden = !a;
@@ -175,6 +176,23 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     e.preventDefault();
     if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
   });
+
+  /** Its sessions in its window, each with Let go: a + Session's, or one on a host out of reach (AC-142). */
+  function showSessions(a) {
+    const list = $("agentsessions"), mine = a ? slots(a) : [];
+    list.replaceChildren(...mine.map((s) => {
+      const li = el("li");
+      const go = el("button", null, "Let go");
+      go.type = "button";
+      go.addEventListener("click", async () => {
+        if (!await askConfirm(`Let go of ${s.tasks || "this session"}? Its open tasks fail; the window stays.`, "Let go")) return;
+        try { await api(`/api/runs/${s.run}/let-go`, { method: "POST" }); await reload(); showSessions(a); } catch (e) { say(e.message); }
+      });
+      li.append(el("span", null, [s.tasks || "+ Session", getMeta().projects.find((p) => p.id === s.project)?.name].filter(Boolean).join(" · ")), go);
+      return li;
+    }));
+    list.hidden = !mine.length;
+  }
 
   /** A new one; once its window closes. */
   const add = () => {

@@ -51,6 +51,14 @@ fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     }
 }
 
+/// Who writes: the run's agent of the pool, else the agent and the session's title.
+fn author(tx: &Transaction, who: &Who) -> Result<String, String> {
+    match crate::dispatcher::runs::in_pane(tx, &who.key)? {
+        Some(r) => ops::pool_user(tx, &r.agent_id, &r.agent_name),
+        None => ops::agent_user(tx, &who.agent, &who.title),
+    }
+}
+
 /// Runs one tool in one transaction: its answer and the tasks it changed.
 pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value) -> Result<(String, Vec<String>), String> {
     if tool == "attach_file" {
@@ -58,8 +66,8 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
     }
     let at = ops::now();
     store.with(|tx| {
-        // only what writes makes the agent's user: reading leaves no row
-        let me = || ops::agent_user(tx, &who.agent, &who.title);
+        // only what writes makes the agent's user: reading leaves no row; a run's is its agent of the pool
+        let me = || author(tx, who);
         match tool {
             "list_tasks" => {
                 let q = Query {
@@ -120,7 +128,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                     return Err(format!("{id} has a session already."));
                 }
                 // what a human ran here is what this session does (terminum-dispatcher.md AC-138)
-                if crate::dispatcher::runs::in_pane(tx, &who.key)?.is_some_and(|r| r.busy()) {
+                if crate::dispatcher::runs::in_pane(tx, &who.key)?.is_some_and(|r| r.busy() && !r.ad_hoc()) {
                     return Err(format!("This session runs what the human gave it: finish that first. {id} can be commented on."));
                 }
                 let me = me()?;
@@ -175,7 +183,7 @@ fn attach_file(store: &Store, state_dir: &Path, who: &Who, args: &Value) -> Resu
     let at = ops::now();
     let file = files::keep(store, state_dir, &name, &data, at)?;
     store.with(|tx| {
-        let me = ops::agent_user(tx, &who.agent, &who.title)?;
+        let me = author(tx, who)?;
         let event = ops::comment(tx, &me, id, &format!("Attached {}", file.name), at)?;
         files::attach(tx, std::slice::from_ref(&file.id), id, Some(&event))
     }).inspect_err(|_| files::forget(store, state_dir, &file.id))?;

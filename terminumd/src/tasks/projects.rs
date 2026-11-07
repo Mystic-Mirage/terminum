@@ -84,6 +84,7 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
         log(tx, task, HUMAN, "project", &format!("Project {name} was deleted: moved to Default"), None, now)?;
     }
     tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE project = ?3", (DEFAULT_PROJECT, now, project)).map_err(sql)?;
+    tx.execute("UPDATE runs SET project = ?1 WHERE project = ?2", (DEFAULT_PROJECT, project)).map_err(sql)?;   // they go with their tasks
     Ok(tasks.len())
 }
 

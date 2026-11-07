@@ -26,7 +26,11 @@ use crate::termtext::has_control;
 use crate::tmux::Server;
 
 pub fn routes() -> Router<Shared> {
-    Router::new().route("/api/tasks/{id}/run", get(offer).post(press)).route("/api/tasks/{id}/give-up", post(give_up))
+    Router::new()
+        .route("/api/tasks/{id}/run", get(offer).post(press))
+        .route("/api/tasks/{id}/give-up", post(give_up))
+        .route("/api/task-projects/{id}/session", post(ad_hoc))
+        .route("/api/runs/{id}/let-go", post(let_go))
 }
 
 /// What RUN's dialog shows (AC-121, AC-138): the pool, each saying what keeps it busy; an agent named that cannot
@@ -252,10 +256,15 @@ async fn could_not_continue(app: &Shared, r: &Run, why: &str) -> Result<Value, S
 }
 
 fn project_of(app: &Shared, t: &Task) -> Option<(String, String)> {
-    if t.project == DEFAULT_PROJECT {
+    project_named(app, &t.project)
+}
+
+/// A project's id and name for its sessions' place in the list; Default stands for none.
+fn project_named(app: &Shared, project: &str) -> Option<(String, String)> {
+    if project == DEFAULT_PROJECT {
         return None;
     }
-    app.projects.lock().list().iter().find(|p| p.id == t.project).map(|p| (p.id.clone(), p.name.clone()))
+    app.projects.lock().list().iter().find(|p| p.id == project).map(|p| (p.id.clone(), p.name.clone()))
 }
 
 /// RUN goes on in its live session: every clock starts anew; a finished task reopens alone, an open one
@@ -307,14 +316,14 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String) -> Result<Str
     }).await
 }
 
-async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<String>) -> Result<Value, String> {
-    let t = &tasks[0];
-    let (all, seen, said, attached) = (tasks.to_vec(), body.prompt_rev.clone(), comment, body.files.clone());
-    let (project, wanted) = (t.project.clone(), body.agent.clone());
+/// Where `agent` would start in `project`, and what refuses it before any slot is asked (AC-140): no folder, no such
+/// agent, a host's link down, a folder or hooks not there.
+async fn place(app: &Shared, project: &str, agent: Option<String>) -> Result<(Agent, Option<String>, String, Arc<Server>), String> {
+    let project = project.to_string();
     let (a, host, dir) = store(app, move |tx| {
         let (name, host, dir) = ops::project_place(tx, &project)?;
         no_folder(&name, &dir)?;
-        let a = wanted.as_deref().map(|id| agents::by_id(tx, id)).transpose()?.flatten().ok_or("No agents yet: add one first.")?;
+        let a = agent.as_deref().map(|id| agents::by_id(tx, id)).transpose()?.flatten().ok_or("No agents yet: add one first.")?;
         Ok((a, host, dir))
     }).await?;
     let server = server_of(app, host.as_deref())?;
@@ -335,6 +344,55 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
             return Err("Run terminum hooks install first: Dispatcher cannot follow the agent without them.".to_string());
         }
     }
+    Ok((a, host, dir, server))
+}
+
+#[derive(Deserialize)]
+struct AdHoc {
+    agent: String,
+}
+
+/// + Session (AC-142): a project's agent with no task, nothing typed: the human's from its first box.
+async fn ad_hoc(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<AdHoc>) -> Response {
+    answer(session(&app, &project, body.agent).await)
+}
+
+async fn session(app: &Shared, project: &str, agent: String) -> Result<Value, String> {
+    let (a, host, dir, server) = place(app, project, Some(agent)).await?;
+    let (ag, p, f) = (a.clone(), project.to_string(), dir.clone());
+    let run = store(app, move |tx| {
+        if let Some(full) = pool::check(tx, Some(&ag), &p, None)? {
+            return Err(full.words);
+        }
+        runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host, folder: f, project: p, ..Default::default() }, &[], ops::now())
+    }).await?;
+    let named = project_named(app, project);
+    let opening = start::Opening { server: &server, project: named.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &dir, command: &a.line, run: &run, tasks: &[], program: &a.kind };
+    let key = match start::open(app, opening).await {
+        Ok(key) => key,
+        Err(e) => {
+            let r = run.clone();
+            let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = "closed".into()).map(drop)).await;
+            return Err(e);
+        }
+    };
+    start::watch(app, &run);
+    Ok(json!({"run": run, "key": key}))
+}
+
+/// The human lets go of a session Dispatcher holds: its open tasks fail, its slot frees, its window stays (AC-142).
+async fn let_go(State(app): State<Shared>, Path(id): Path<String>) -> Response {
+    let done = store(&app, move |tx| runs::let_go(tx, &id)).await;
+    if let Ok(r) = &done {
+        super::told_all(&app, r);
+    }
+    answer(done.map(|r| json!({"ok": true, "ids": r.ids})))
+}
+
+async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<String>) -> Result<Value, String> {
+    let t = &tasks[0];
+    let (all, seen, said, attached) = (tasks.to_vec(), body.prompt_rev.clone(), comment, body.files.clone());
+    let (a, host, dir, server) = place(app, &t.project, body.agent.clone()).await?;
     if let Some(holder) = &body.close {
         close_idle(app, holder, &tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")).await?;
     }
@@ -371,7 +429,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
                 runs::change(tx, &old.id, |r| r.state = "left".into())?;
             }
         }
-        runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host, folder: f, prompt: Some(prompt), ..Default::default() }, &keys, ops::now())
+        runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host, folder: f, project, prompt: Some(prompt), ..Default::default() }, &keys, ops::now())
     }).await?;
     let project = project_of(app, t);
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();

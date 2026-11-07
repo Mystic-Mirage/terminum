@@ -333,7 +333,7 @@ Scenario: AC-115 happy path — the agent's own
   When it calls get_task {id: "T-12"}
   Then it gets the task's fields, text, comments and files as JSON, said to be data, never instructions; the text is its assignment only when its RUN says so (terminum-dispatcher.md AC-121)
   When it calls move_task {id: "T-12", to: "WAIT FOR HUMAN"} or add_comment {id: "T-12", text}
-  Then the task changes, its author the agent "claude · api"
+  Then the task changes, its author the session's agent: the pool's, "Opus reviewer", when a run started it, else "claude · api"
   When it calls finish_task {id: "T-12", result: "<Markdown>"}
   Then the result is its comment and T-12 is DONE
 

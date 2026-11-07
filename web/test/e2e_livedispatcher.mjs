@@ -54,7 +54,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-123 finish_task is DONE", await hasStatus(first, "DONE", 15000), await history(first));
   const h = await history(first);
   check("AC-125 its start is on the task", /Session started: claude in window Runs:\d+, on this Mac\./.test(h), h);
-  check("AC-121 the owner is the agent", (await j(`/api/tasks/${first}`)).owner_name === "claude · Runs", (await j(`/api/tasks/${first}`)).owner_name);
+  check("AC-121 the owner is the pool's agent that runs it", (await j(`/api/tasks/${first}`)).owner_name === "Plain", (await j(`/api/tasks/${first}`)).owner_name);
   check("AC-121 the task's history says Dispatcher moved it", /Dispatcher moved it from TODO to IN PROGRESS/.test(h), h);
   const key = (await j(`/api/tasks/${first}`)).session?.key;
   check("AC-121 its pane is marked as the run's", tmux("display", "-p", "-t", key.split(":").pop(), "#{@terminum-run}").trim().length > 0);

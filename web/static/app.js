@@ -89,7 +89,9 @@ const conn = connection({ parse: (data) => trace.parse(data), onMessage: (m) => 
 // Nothing typed waits for a connection: it would arrive late, all at once (AC-14).
 function send(m) {
   trace.sent(m);
-  if (!conn.send(m) && (m.t === "in" || m.t === "paste" || m.t === "mouse")) toast("Not connected");
+  const sent = conn.send(m);
+  if (!sent && (m.t === "in" || m.t === "paste" || m.t === "mouse")) toast("Not connected");
+  return sent;
 }
 function status(text) { banner("status", text); }
 
@@ -394,7 +396,7 @@ const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focu
 let shownTheme = "", shownFont = "", themeSent = null;
 const prefs = menuPrefs({ store, send, toast, redraw: drawNav });       // Markdown size, history lines (AC-19)
 // a color scheme picked in the menu goes over the session's theme at once (AC-12)
-const schemes = colorSchemes({ box: $("schemes"), send, onPick: () => { if (themeSent) applyTheme(schemes.over(themeSent)); } });
+const schemes = colorSchemes({ box: $("schemes"), send, onPick: () => { if (themeSent) applyTheme(schemes.over(themeSent)); }, say: toast });
 function applyTheme(theme) {
   // sent with every subscribe and resume; the same one changes nothing (and rebuilds no line)
   const key = JSON.stringify(theme);

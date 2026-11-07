@@ -40,8 +40,8 @@ export function withScheme(theme, name) {
 
 /** The swatches in `box` (the menu's Colors row): a press applies a scheme at once, "Theme" the
  *  session's own, and sends the choice to terminumd; settings.json's choice comes with `page(p)`.
- *  onPick(): the colors changed. */
-export function colorSchemes({ box, send, onPick }) {
+ *  onPick(): the colors changed; say(text): the press was not sent, so nothing changed. */
+export function colorSchemes({ box, send, onPick, say }) {
   let chosen = null;
   try { localStorage.removeItem("colorScheme"); } catch { /* where a page before 0.9 kept its own: gone */ }
   const known = (name) => (SCHEMES.some((s) => s.name === name) ? name : null);
@@ -73,8 +73,8 @@ export function colorSchemes({ box, send, onPick }) {
     onPick();
   }
   function pick(name) {
-    show(name);
-    send({ t: "scheme", name });
+    if (send({ t: "scheme", name })) show(name);
+    else say("Not connected: the colors stay as they were");
   }
   mark();
   return {

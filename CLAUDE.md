@@ -118,6 +118,7 @@ plans: order, dependencies, exit criteria; !effort estimates
 
 ### 8. Definition of done
 task: its worktree passes **targeted checks** (`python3 scripts/check_changed.py`, AC-104): build, tests of what changed, tests citing the cases it touches, critical functions
+**finished only when landed** (§9): work in `origin/main`, tree deleted (a process holding it: the sweep's, say so); red: still open, fix the cause, land again; blocked on a decision or access: say so, !"done"
 new behavior: tests written from its acceptance cases, citing their `AC-nn`
 iterating: only the changed area's checks (`cargo test <module>`, `node web/test/e2e_all.mjs <check…>`)
 **full run = the release's gate, separate from any task:** `make check` (once per tree: `make test`, clippy `-D warnings`, `e2e_panel.mjs`, `e2e_live.mjs`, every `scripts/e2e_*.py` but Docker's, `scripts/check_docker.py` (Docker's, on Apple's chips when Docker answers), `scripts/e2e_install.sh`, on a Mac `e2e_all.mjs`, `security_check.sh`), then `make test-mac` when `TM_MAC_RUNNER` is set, from `make release`

@@ -35,14 +35,8 @@ pub struct Agent {
     pub line: String,
 }
 
-impl Agent {
-    pub fn line(&self) -> String {
-        command_line(&self.kind, &self.command, &self.effort)
-    }
-}
-
 /// The effort a kind takes, as its command line names it; empty goes by the agent's own setting.
-const EFFORTS: [(&str, &[&str]); 2] = [("claude", &["low", "medium", "high", "xhigh", "max"]), ("codex", &["low", "medium", "high", "xhigh"])];
+pub const EFFORTS: [(&str, &[&str]); 2] = [("claude", &["low", "medium", "high", "xhigh", "max"]), ("codex", &["low", "medium", "high", "xhigh"])];
 
 fn command_line(kind: &str, command: &str, effort: &str) -> String {
     match (kind, effort) {
@@ -96,8 +90,8 @@ impl Given {
                 return Err(format!("{} has no effort {}.", self.kind, self.effort));
             }
             // the flag goes after the command: after a `;` it would go to another program
-            if self.command.contains([';', '|', '&']) {
-                return Err("An effort goes on one program's command: this one has ; | or &. Write it in the command.".into());
+            if self.command.contains([';', '|', '&', '#']) {
+                return Err("An effort goes on one program's command: this one has ; | & or #. Write it in the command.".into());
             }
         }
         check_folder(&self.dir)?;

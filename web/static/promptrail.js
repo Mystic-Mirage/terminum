@@ -5,7 +5,7 @@
 // of its agent ended (pale blue; answers.rs), each bookmark of the session (orange) and each open
 // reminder (pink); marks that meet are one, pink over orange over white over pale blue. A press brings it into view: a message as a bookmark's text is, a bookmark with
 // its bar. (A narrow window has the bookmarks' own marks there, marks.js.)
-import { openReminder } from "./marks.js";
+import { openReminder } from "./listparts.js";
 import { railBox, railSlots } from "./marktext.js";
 
 const $ = (id) => document.getElementById(id);

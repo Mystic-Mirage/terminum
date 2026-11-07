@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A human's move reaches the task's session (AC-114): fixed words with a T-number, a column and
-//! a user name, never a title, text or comment, as an agent or a host can write those and this
-//! reaches an agent as the user's words. It rides the next hook that carries context; what types
-//! into an idle session is Dispatcher's (`terminum-dispatcher.md` §9).
+//! What waits for a pane's next hook that carries context: Dispatcher's words its agent could not take at once
+//! (`terminum-dispatcher.md` §9): fixed words with a T-number, never a title, text or comment.
 
 use std::collections::HashMap;
 
@@ -131,9 +129,9 @@ mod tests {
         let said = |w: &str| s.with(|tx| say_stopped(tx, key, w, 2)).unwrap();
         assert!(said("The agent stopped with this task open").is_empty(), "in TODO: nothing to say");
         s.with(|tx| move_to(tx, HUMAN, &t.id, "IN PROGRESS", 2)).unwrap();
-        assert_eq!(said("The agent stopped with this task open"), [t.id.clone()]);
+        assert_eq!(said("The agent stopped with this task open"), std::slice::from_ref(&t.id));
         assert!(said("The agent stopped with this task open").is_empty(), "once in a row");
-        assert_eq!(said("The agent stopped: rate_limit"), [t.id.clone()], "another word is said");
+        assert_eq!(said("The agent stopped: rate_limit"), std::slice::from_ref(&t.id), "another word is said");
         assert_eq!(s.with(|tx| ops::get(tx, &t.id)).unwrap().status, "IN PROGRESS", "nothing moved");
     }
 

@@ -8,6 +8,7 @@
 // wait hidden beside it with their tabs and unsaved edits (moving an iframe would reload it).
 // Docked Files is open or closed for each session, in this browser (AC-70).
 
+import { frameTo } from "./listparts.js";
 import { blobUrl } from "./signin.js";
 import { following, onFollow } from "./follow.js";
 import { openZoom } from "./zoom.js";
@@ -222,7 +223,7 @@ export class Views {
       const q = new URLSearchParams({ key: m.key, cwd: cwd ?? "" });
       if (m.host) q.set("host", m.host);
       const src = `/fb/?${q}`;
-      if (src !== this.filesSrc) $("files").src = this.filesSrc = src;   // reloaded only when it moved
+      if (src !== this.filesSrc) frameTo($("files"), this.filesSrc = src);   // reloaded only when it moved
     } else $("files").classList.remove("moving");
     this.layout();
   }
@@ -235,7 +236,7 @@ export class Views {
     } else {
       const q = new URLSearchParams({ view: path });
       if (host) q.set("host", host);
-      frame.src = `/fb/?${q}`;
+      frameTo(frame, `/fb/?${q}`);
       this.fileHost = host ?? null;
     }
     document.querySelector('button[data-view="file"]').disabled = false;

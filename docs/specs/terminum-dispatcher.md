@@ -85,7 +85,7 @@ Open questions:
 Scenario: AC-121 happy path — first run
   Given T-12 in TODO of project api, folder ~/work/api, with no session
   When the user presses Run on its card or in its window, or drops it on an agent (AC-138)
-  Then a dialog offers the project's agents (AC-137), the last one chosen for that project already picked, and shows its folder, its server, its command in full and the text that will be sent, a part written by an agent or a host marked so
+  Then a dialog offers the project's agents (AC-137), the last one chosen for that project already picked, and a press away shows its folder, its server, its command in full and the text that will be sent, a part written by an agent or a host marked so
   When the user presses Run
   Then Dispatcher opens a window after the project's last session, in that folder, with the window command of §9, a member of the project, marked with the pane option @terminum-run
   And it writes "Session started: claude in window api:4, on this Mac." on T-12 and links the pane; the card stays in TODO with a "starting" mark
@@ -522,7 +522,7 @@ Scenario: AC-138 edge — run again
 
 Scenario: AC-138 edge — several tasks of two projects
   When the user drops T-12 of Billing and T-20 of Web on an agent
-  Then a toast says "T-20 is in another project than Opus reviewer." and nothing starts
+  Then a toast says "T-12 and T-20 are in different projects." and nothing starts
 
 Scenario: AC-138 edge — its run holds it
   Given T-12 in a run with an agent busy
@@ -540,8 +540,8 @@ Scenario: AC-138 edge — an agent deleted
   Then the card keeps the name and color its run knew
 
 Scenario: AC-138 failure — effort
-  When an agent's effort is not one of its kind's, or its command holds ; | or &
-  Then its window says "codex has no effort max." or "An effort goes on one program's command: this one has ; | or &. Write it in the command."
+  When an agent's effort is not one of its kind's, or its command holds ; | & or #
+  Then its window says "codex has no effort max." or "An effort goes on one program's command: this one has ; | & or #. Write it in the command."
 ```
 
 ### AC-131 — Dispatcher itself [MUST / P0]
@@ -635,7 +635,8 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-122 | New work on an archived task does not return it: there is no archive yet (`terminum-kanban.md` AC-118). | `terminumd/src/dispatcher/hooks.rs` |
+| AC-122 | A human's own prompt in the session of an archived task does not return it; Run does. | `terminumd/src/dispatcher/hooks.rs` |
+| AC-138 | Several tasks are chosen with a pointer's ⌘ or Ctrl: a phone or the keyboard runs one at a time. Clearing one task's budget takes the limit off the run. | `web/static/kanban.js`, `terminumd/src/dispatcher/runs.rs` |
 | AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |
 | AC-131 | A restored tmux server's new pane is not followed: its run says its window was closed. | `terminumd/src/dispatcher/plan.rs` |
 | AC-131 | §9's walk budget has no bench yet (`scripts/bench_board.py`). | `terminumd/src/dispatcher/walk.rs` |

@@ -2,7 +2,7 @@
 // RUN's window (terminum-dispatcher.md AC-121, AC-122, AC-138): which of the project's free agents starts
 // the tasks, where, by what command and with what message; the agent dropped on, or the last chosen, already
 // picked: one press. Several tasks go by their numbers; what each says shows here first.
-import { $, THIS_MAC, api, fillSelect, onSend } from "./kanbanutil.js";
+import { $, THIS_MAC, api, fillAgents, onSend } from "./kanbanutil.js";
 
 /** `addAgent(project)` opens the agents' window; `done()` after a run started. */
 export function runWindow({ addAgent, done }) {
@@ -26,31 +26,29 @@ export function runWindow({ addAgent, done }) {
     const first = fresh || offer.first, none = first && !offer.agents.length, allBusy = first && !none && !free().length;
     const names = tasks.map((t) => t.id).join(", "), on = offer.agents.find((a) => a.id === dropped);
     $("runhead").textContent = !first ? `Run ${names} again` : on ? `Run ${names} on ${on.name}` : `Run ${names}`;
-    $("runnone").hidden = !none && !allBusy && first;
-    $("runnone").textContent = none ? `No agents in ${offer.project_name} yet.` : allBusy ? `All of ${offer.project_name}'s agents are busy: one takes more when its session closes or its tasks end.` : first ? "" : "It goes on in its session, with what you write.";
+    const words = none ? `No agents in ${offer.project_name} yet.` : allBusy ? `All of ${offer.project_name}'s agents are busy: one takes more when its session closes or its tasks end.` : first ? "" : "It goes on in its session, with what you write.";
+    $("runnone").textContent = words;
+    $("runnone").hidden = !words;
     // the agent it was dropped on is said by the title; what a person checks only sometimes stays folded
     $("runagentrow").hidden = !first || none || !!on;
     $("runhow").hidden = !first || none;
     $("runwhat").hidden = !first;
-    $("runwhat").open = first && (offer.by_agent || tasks.length > 1);   // several, or an agent's words: read before they go (AC-121)
-    $("runmarked").hidden = !first || !offer.by_agent;
+    $("runwhat").open = offer.by_agent || tasks.length > 1;   // several, or an agent's words: read before they go (AC-121)
+    $("runmarked").hidden = !offer.by_agent;
     $("runadd").hidden = !none;
     $("runfresh").hidden = first;
     $("rungo").disabled = none || allBusy;
     if (first) {
-      const options = offer.agents.map((a) => [a.id, a.busy ? `${a.name} (busy with ${a.busy})` : a.name]);
-      const pick = [dropped, offer.last, free()[0]?.id].find((id) => free().some((a) => a.id === id));
-      fillSelect($("runagent"), options, pick);
-      for (const o of $("runagent").options) o.disabled = !free().some((a) => a.id === o.value);
+      fillAgents($("runagent"), offer.agents, (a) => a.busy, [dropped, offer.last]);
       $("runprompt").textContent = offer.prompt;
       delete $("runfolder").dataset.typed;
       showAgent();
     }
   }
 
+  const others = () => tasks.slice(1).map((t) => t.id);
   const read = async () => {
-    const also = tasks.slice(1).map((t) => t.id).join(",");
-    const q = new URLSearchParams({ ...(also ? { also } : {}), ...(dropped ? { agent: dropped } : {}) });
+    const q = new URLSearchParams({ also: others().join(","), ...(dropped ? { agent: dropped } : {}) });
     offer = await api(`/api/tasks/${tasks[0].id}/run?${q}`);
   };
 
@@ -74,7 +72,7 @@ export function runWindow({ addAgent, done }) {
     say("");
     $("rungo").disabled = true;
     try {
-      await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: $("runagent").value || dropped, folder: $("runfolder").value, comment: $("runmessage").value, files: attached, fresh, also: tasks.slice(1).map((t) => t.id), prompt_rev: offer.prompt_rev } });
+      await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: fresh || offer.first ? $("runagent").value : null, folder: $("runfolder").value, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });   // going on, it is its session's agent
       box.close("run");
       done();
     } catch (e) { say(e.message); }

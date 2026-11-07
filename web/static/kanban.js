@@ -20,7 +20,7 @@ import { projectWindow } from "./kanbanproject.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
-import { $, COLUMNS, agentColor, api, button, el, iconButton, say } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, el, iconButton, say } from "./kanbanutil.js";
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -137,14 +137,6 @@ function showSession(c, t) {
   if (item) c.append(sessionStrip(item, p));
 }
 
-/** The agent a task is on, in its color: as long as it stays there, DONE or FAILED too (AC-138). */
-function agentChip(t) {
-  const a = el("span", "cagent", t.agent.name);
-  a.style.setProperty("--ag", agentColor(t.agent));
-  a.title = `${t.agent.name} did this`;
-  return a;
-}
-
 function card(t) {
   const c = el("article", `card sev-${t.severity}${picked.has(t.id) ? " picked" : ""}`);
   c.dataset.id = t.id;
@@ -153,8 +145,9 @@ function card(t) {
   c.rowDrawn = "";
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
-  if (t.agent) head.append(agentChip(t));
-  if (t.status !== "IN PROGRESS") head.append(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])));
+  if (t.agent) head.append(agentChip(t.agent));
+  // on an open session its run has it; with none it can always start: nothing else takes it out of IN PROGRESS
+  if (t.status !== "IN PROGRESS" || !t.session || t.session.closed) head.append(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])));
   const foot = el("div", "cfoot"), one = filters().project.length === 1;
   const p = projectOf(t.project);
   if (!one) {                                      // its project is said once: by the head when one is shown
@@ -183,8 +176,8 @@ function card(t) {
     document.querySelectorAll(".card.lifted").forEach((x) => x.classList.remove("lifted"));
     document.body.classList.remove("dragtask");
     for (const { col } of columns.values()) col.classList.remove("over");
-    agents.dragEnded();
     draw();
+    agents.draw();
   });
   return c;
 }
@@ -263,7 +256,7 @@ const openSession = (key) => { location.href = sessionUrl(key); };
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
 const runs = runWindow({ addAgent: (project) => agents.addTo(project), done: () => readSoon() });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, busy: () => busy, liveRow: (key) => liveRows.get(key),
-  given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
+  dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
 $("agentbar").append(agents.box);
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
 $("colswitch").replaceChildren(...[...columns.values()].map((p) => p.tab));
@@ -360,7 +353,7 @@ const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, d
 $("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
 const windowed = taskWindow({ getMeta: () => meta, runs });
-const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, busy: () => busy });
+const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, agentsBusy: () => busy });
 
 /** Run in the new-task window: at once on its agent; what stands in the way opens RUN's window, saying it. */
 async function runMade(t, agent) {
@@ -368,6 +361,7 @@ async function runMade(t, agent) {
   if (!agent) return runThem([t]);
   try {
     await api(`/api/tasks/${t.id}/run`, { method: "POST", body: { agent } });
+    (meta.last_agents ??= {})[t.project] = agent;
     readSoon();
   } catch (e) {
     runs.open([t], { why: e.message }).catch((no) => say(no.message));

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What breaks a board's flow, against a real private terminumd and tmux (e2e_live.mjs; terminum-kanban.md
-// AC-136, AC-133): an agent that stops, runs out of limits or dies with its task open; a card dragged
+// AC-136, AC-133): an agent that stops, runs out of limits or dies with its task open; a card ordered
 // and straight back, answers out of order, a drag under another's change, the network or terminumd
-// gone in a move, an edit over another's, a file dropped beside, odd text. Each probe stands alone.
+// gone in an order, an edit over another's, a file dropped beside, odd text. Each probe stands alone.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -21,50 +21,61 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
   const colOf = (id) => page.evaluate((s) => document.querySelector(s)?.closest(".col")?.dataset.status ?? null, card(id));
   const isOpen = (sel) => page.evaluate((s) => document.querySelector(s).open, sel);
   const drag = (id, column) => page.dragAndDrop(card(id), `.col[data-status="${column}"]`);
+  /** Within its column: `id` dropped just over `other`; a read of the column may be rebuilding it. */
+  const before = async (id, other) => { await nap(300); await page.dragAndDrop(card(id), card(other), { targetPosition: { x: 20, y: 3 } }); };
+  const colIds = () => page.evaluate(() => [...document.querySelectorAll('.col[data-status="TODO"] .card')].map((c) => c.dataset.id).join());
+  const above = async (a, b) => { const ids = (await colIds()).split(","); return ids.includes(a) && ids.includes(b) && ids.indexOf(a) < ids.indexOf(b); };
   const probes = {
-    async rapid_drag_and_back() {
-      const id = await make("drag and back"); await open();
+    async rapid_order_and_back() {
+      const a = await make("drag and back"), b = await make("the other one"); await open();   // new on top: b over a
       let first = true;
       await page.route("**/api/tasks/*", async (r) => { if (r.request().method() === "PATCH" && first) { first = false; await nap(700); } await r.continue(); });
-      await drag(id, "DONE"); await drag(id, "TODO");
+      await before(a, b); await before(b, a);
       await nap(1600); await page.unroute("**/api/tasks/*");
-      check("user drags to DONE and straight back: the last drop stands", await st(id) === "TODO", await st(id));
-      check("  and the card stands where the last drop put it", await until(async () => await colOf(id) === "TODO"), await colOf(id));
+      check("user orders a card and straight back: the last drop stands", await until(async () => await above(b, a)), await colIds());
+      await open();
+      check("  and terminumd has it so", await above(b, a), await colIds());
     },
-    async optimistic_move() {
-      const id = await make("seen at once"); await open();
+    async optimistic_order() {
+      const a = await make("seen at once"), b = await make("over it"); await open();
       await page.route("**/api/tasks/*", async (r) => { if (r.request().method() === "PATCH") await nap(900); await r.continue(); });
-      await drag(id, "DONE");
-      check("a dropped card stands in its new column at once, not after terminumd answers", await until(async () => await colOf(id) === "DONE", 300), await colOf(id));
+      await before(a, b);
+      check("a dropped card stands in its new place at once, not after terminumd answers", await until(() => above(a, b), 300), await colIds());
       await nap(1300); await page.unroute("**/api/tasks/*");
+    },
+    async no_move_by_a_drag() {
+      const id = await make("dropped on another column"); await open();
+      await drag(id, "DONE"); await nap(300);
+      check("a drop on another column moves nothing", await st(id) === "TODO" && await colOf(id) === "TODO", `${await st(id)} ${await colOf(id)}`);
+      check("  and nothing is said or left lit", !(await page.isVisible("#toast")) && await page.evaluate(() => !document.querySelector(".col.over") && !document.querySelector(".card.lifted")));
     },
     async drag_survives_a_change() {
       // the drag's own events: Playwright's WebKit carries no drag through a pause of the mouse
-      const id = await make("held while others change"), other = await make("another"); await open();
+      const id = await make("held while others change"), stay = await make("stays under it"), other = await make("another"); await open();
       await page.evaluate((s) => { window.dt = new DataTransfer(); window.held = document.querySelector(s); window.held.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: window.dt })); }, card(id));
       await j(`/api/tasks/${other}`, "PATCH", { status: "FAILED" }); await nap(500);
       check("another's change during a drag leaves the card held", await page.evaluate(() => window.held.isConnected && window.held.classList.contains("lifted")));
-      await page.evaluate(() => {
-        const col = document.querySelector('.col[data-status="DONE"]'), r = col.getBoundingClientRect(), at = { bubbles: true, cancelable: true, dataTransfer: window.dt, clientX: r.left + 40, clientY: r.top + 80 };
+      await page.evaluate((s) => {
+        const col = document.querySelector('.col[data-status="TODO"]'), r = document.querySelector(s).getBoundingClientRect(), at = { bubbles: true, cancelable: true, dataTransfer: window.dt, clientX: r.left + 40, clientY: r.top + 2 };
         col.dispatchEvent(new DragEvent("dragover", at)); col.dispatchEvent(new DragEvent("drop", at)); window.held.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: window.dt }));
-      });
-      check("  and the drag goes on to its drop", await until(async () => await st(id) === "DONE"), await st(id));
+      }, card(stay));
+      check("  and the drag goes on to its drop", await until(() => above(id, stay)), await colIds());
       check("  and what changed meanwhile shows after it", await until(async () => await colOf(other) === "FAILED"), await colOf(other));
     },
-    async refused_move_comes_back() {
-      const pane = newPane("busy"), key = await keyOf(pane);
-      const a = await make("holds the session", { session: key }), b = await make("wants it too", { session: key });
-      await j(`/api/tasks/${a}`, "PATCH", { status: "IN PROGRESS" }); await open();
-      await drag(b, "IN PROGRESS");
-      check("a refused move says why", await until(async () => /already works on/.test(await page.textContent("#toast"))), await page.textContent("#toast"));
-      check("  and the card is back in its column", await until(async () => await colOf(b) === "TODO"), await colOf(b));
+    async refused_order_comes_back() {
+      const a = await make("refused its place"), b = await make("stands over it"); await open();
+      await page.route("**/api/tasks/*", (r) => (r.request().method() === "PATCH" ? r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Refused for this check." }) }) : r.continue()));
+      await before(a, b);
+      check("a refused order says why", await until(async () => /Refused for this check/.test(await page.textContent("#toast"))), await page.textContent("#toast"));
+      check("  and the card is back in its place", await until(() => above(b, a)), await colIds());
+      await page.unroute("**/api/tasks/*");
     },
-    async network_drop_on_move() {
-      const id = await make("net drop"); await open();
+    async network_drop_on_order() {
+      const a = await make("net drop"), b = await make("over the net drop"); await open();
       await page.route("**/api/tasks/*", (r) => (r.request().method() === "PATCH" ? r.abort() : r.continue()));
-      await drag(id, "DONE");
-      check("a move lost to the network is said", await until(async () => (await page.isVisible("#toast")) && (await page.textContent("#toast")).length > 0), "no toast");
-      check("  and the card is back", await until(async () => await colOf(id) === "TODO"), await colOf(id));
+      await before(a, b);
+      check("an order lost to the network is said", await until(async () => (await page.isVisible("#toast")) && (await page.textContent("#toast")).length > 0), "no toast");
+      check("  and the card is back", await until(() => above(b, a)), await colIds());
       await page.unroute("**/api/tasks/*");
     },
     async server_restart() {
@@ -72,8 +83,6 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       await stop();
       await nap(600);
       check("terminumd gone: the board says so", await until(async () => (await page.isVisible("#boardbanner")) && /terminum|out of date|not running/i.test(await page.textContent("#boardbanner")), 8000), await page.textContent("#boardbanner"));
-      await page.dragAndDrop(card(id), '.col[data-status="DONE"]').catch(() => {});
-      await nap(400);
       await start();
       check("  back: the board recovers by itself, the banner goes", await until(async () => !(await page.isVisible("#boardbanner")), 15000), await page.textContent("#boardbanner"));
       await j(`/api/tasks/${id}`, "PATCH", { status: "FAILED" });
@@ -153,16 +162,16 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
     async toast_over_window() {
       const id = await make("a refusal in a window"); await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(300);
       await page.route(`**/api/tasks/${id}`, (r) => (r.request().method() === "PATCH" ? r.abort() : r.continue()));
-      await page.selectOption("#taskbody select >> nth=1", "P0"); await nap(400); await page.unroute(`**/api/tasks/${id}`);
+      await page.selectOption('#taskbody .fieldgrid label:has-text("Severity") select', "P0"); await nap(400); await page.unroute(`**/api/tasks/${id}`);
       const seen = await page.evaluate(() => { const t = document.querySelector("#toast"); return { pop: t.matches(":popover-open"), text: t.textContent, hidden: t.hidden }; });
       check("a refusal in a window is said over it, and says what is wrong", seen.pop && !seen.hidden && /does not answer/.test(seen.text), JSON.stringify(seen));
       await page.click("#taskclose"); await nap(200);
     },
-    async enter_on_the_menu_key() {
+    async enter_on_the_run_key() {
       const id = await make("Enter on its key"); await open();
-      await page.focus(`${card(id)} .cmove`); await page.keyboard.press("Enter"); await nap(400);
-      const seen = await page.evaluate(() => ({ move: document.querySelector("#movebox").open, win: document.querySelector("#taskbox").open }));
-      check("Enter on a card's menu key opens the menu alone", seen.move && !seen.win, JSON.stringify(seen));
+      await page.focus(`${card(id)} .crun`); await page.keyboard.press("Enter"); await nap(400);
+      const seen = await page.evaluate(() => ({ run: document.querySelector("#runbox").open, win: document.querySelector("#taskbox").open }));
+      check("Enter on a card's run key opens the run window alone", seen.run && !seen.win, JSON.stringify(seen));
       await page.keyboard.press("Escape"); await nap(200); await page.evaluate(() => document.querySelector("#taskbox").close());
     },
     async file_dropped_beside() {
@@ -273,7 +282,7 @@ ${"z".repeat(400)}
       const id = await make("comment kept"); await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(300);
       await page.fill(".newcomment textarea", "long thought");
       await page.route(`**/api/tasks/${id}/comments`, (r) => r.abort());
-      await page.click(".newcomment .primary"); await nap(400); await page.unroute(`**/api/tasks/${id}/comments`);
+      await page.click('.newcomment button:has-text("Close")'); await nap(400); await page.unroute(`**/api/tasks/${id}/comments`);
       check("a comment lost to the network stays typed, the window open", await isOpen("#taskbox") && await page.inputValue(".newcomment textarea") === "long thought");
       await page.reload(); await page.waitForSelector("#taskbox[open]"); await nap(300);
       check("  and survives a reload", await page.inputValue(".newcomment textarea") === "long thought");
@@ -296,7 +305,7 @@ ${"z".repeat(400)}
       hook(pane, "StopFailure", { error: "rate_limit" });
       check("an agent out of limits is said on the card, with why", await until(async () => /rate|limit/i.test(await page.textContent(card(id))), 5000), await page.textContent(card(id)));
       check("  and in its history", await until(async () => (await j(`/api/tasks/${id}`)).history.some((e) => /rate|limit/i.test(e.text ?? ""))), "");
-      check("  and a session Dispatcher did not start keeps its status: a human or its agent moves it", await st(id) === "IN PROGRESS", await st(id));
+      check("  and a session Dispatcher did not start keeps its status", await st(id) === "IN PROGRESS", await st(id));
     },
     async agent_process_dies() {
       const pane = newPane("agentdies"), key = await keyOf(pane);
@@ -310,13 +319,12 @@ ${"z".repeat(400)}
       const id = await make("its pane closes", { session: key }); await j(`/api/tasks/${id}`, "PATCH", { status: "IN PROGRESS" }); await open();
       tmux("kill-pane", "-t", pane);
       check("a closed pane is said, the status stands", await until(async () => /session closed/.test(await page.textContent(card(id))), 8000) && await st(id) === "IN PROGRESS", await page.textContent(card(id)));
-      check("  and a move of it no longer tells a session", (await j(`/api/tasks/${id}`, "PATCH", { status: "DONE" })).code === 200);
     },
     async two_tabs_same_card() {
       const id = await make("two tabs"); await open();
       const p2 = await page.context().newPage(); await p2.goto(`${base}/kanban/`); await p2.waitForSelector(card(id));
-      await p2.dragAndDrop(card(id), '.col[data-status="FAILED"]');
-      check("a move on one page shows on the other", await until(async () => await colOf(id) === "FAILED"), await colOf(id));
+      await p2.evaluate((t) => fetch(`/api/tasks/${t}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "FAILED" }) }), id);
+      check("a change on one page shows on the other", await until(async () => await colOf(id) === "FAILED"), await colOf(id));
       await p2.close();
     },
     async dragleave_cleaned() {

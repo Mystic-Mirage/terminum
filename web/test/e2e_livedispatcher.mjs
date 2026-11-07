@@ -27,17 +27,19 @@ export async function liveDispatcher(page, opts) {
   const agent = async (name, more = "", kind = "claude") => (await j(`/api/task-projects/${project}/agents`, "POST", { name, kind, command: `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}` })).id;
   const plain = await agent("Plain");
   const task = async (title, text = "") => (await j("/api/tasks", "POST", { title, text, project })).id;
-  const run = (id, body = { agent: plain }) => j(`/api/tasks/${id}/run`, "POST", body);
+  // an agent takes more only when free (AC-138): a run here has its own, so one left open stands in no other's way
+  let runs = 0;
+  const run = async (id, body) => j(`/api/tasks/${id}/run`, "POST", body ?? { agent: await agent(`Run ${++runs}`) });
   const { status, history, paneOf, hasStatus } = taskKit(j);
   const said = (id, words, ms = 8000) => until(async () => (await history(id)).includes(words), ms);
 
-  // AC-121 happy path, through the page: a drag asks which agent, the last chosen picked, one press
+  // AC-121 happy path, through the page: its play key asks which agent, the last chosen picked, one press
   const first = await task("Fix the retry loop FINISHES", "Its text.");
   await open();
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(card(first));
-  await page.dragAndDrop(card(first), '.col[data-status="IN PROGRESS"]');
-  check("AC-121 a drag to IN PROGRESS asks which agent", await until(() => page.$("#runbox[open]")));
+  await page.click(`${card(first)} .crun`);
+  check("AC-121 a card's play key asks which agent", await until(() => page.$("#runbox[open]")));
   check("AC-121 it stays where it was until one takes it", await status(first) === "TODO");
   check("AC-121 the dialog offers the project's agents", await page.inputValue("#runagent") === plain);
   check("AC-121 it shows the command in full", (await page.textContent("#runcommand")).includes("fake_agent.py"), await page.textContent("#runcommand"));
@@ -62,14 +64,10 @@ export async function liveDispatcher(page, opts) {
   const lonely = (await j("/api/tasks", "POST", { title: "no agent to run it", project: alone })).id;
   await page.goto(`${base}/kanban/?project=${alone}`);
   await page.waitForSelector(card(lonely));
-  await page.dragAndDrop(card(lonely), '.col[data-status="IN PROGRESS"]');
+  await page.click(`${card(lonely)} .crun`);
   check("AC-121 a project with no agents says so and offers one", await until(async () => /No agents in NoAgents yet/.test(await page.textContent("#runnone"))) && await page.isVisible("#runadd") && await page.isDisabled("#rungo"));
   await page.click('#runbox button[value="cancel"]');
   check("AC-121 Cancel moves nothing", await status(lonely) === "TODO");
-  await page.dragAndDrop(card(lonely), '.col[data-status="IN PROGRESS"]');
-  await until(() => page.$("#runbox[open]"));
-  await page.click("#runjust");
-  check("AC-121 Only move it moves it", await hasStatus(lonely, "IN PROGRESS"));
   check("AC-121 no agent: the route says so", /No agents in/.test((await run((await j("/api/tasks", "POST", { title: "x", project: alone })).id, { agent: "nope" })).error));
 
   // refused before starting
@@ -137,19 +135,12 @@ export async function liveDispatcher(page, opts) {
   await page.waitForSelector(card(clean));
   check("AC-123 its card says DONE, no result", await until(async () => /DONE, no result/.test(await page.textContent(card(clean))), 4000), await page.textContent(card(clean)));
 
-  // AC-124 waits, and a human's move
+  // AC-124 waits
   const waits = await task("asks ASKS");
   await run(waits);
   check("AC-124 a question for 2 minutes: WAIT FOR HUMAN, with what it asks", await hasStatus(waits, "WAIT FOR HUMAN", 15000) && await said(waits, "Approve Bash"), await history(waits));
-  check("AC-124 and a line says so on the page, counted on Kanban", await until(async () => /T-\d+ waits for you/.test(await page.textContent("#asks")) && await page.textContent('#boardhead a[href="/kanban/"] .taskneed').catch(() => "") !== ""), await page.textContent("#asks"));
+  check("AC-124 and a line says so on the page", await until(async () => /T-\d+ waits for you/.test(await page.textContent("#asks"))), await page.textContent("#asks"));
   if (shots) await page.screenshot({ path: path.join(shots, "needs-line.png") });
-  const held = await task("held by hand STOPS");
-  await run(held);
-  await hasStatus(held, "IN PROGRESS", 15000);
-  await j(`/api/tasks/${held}`, "PATCH", { status: "TODO" });
-  await nap(4000);
-  check("AC-124 a human's move stands against the walk", await status(held) === "TODO", await status(held));
-  check("AC-117 a human's move makes no line", !(await page.textContent("#asks")).includes(held));
 
   // AC-122 running again: a live agent, a shell, a closed session
   const again = await task("again STOPS");
@@ -203,7 +194,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-126 what is no number is refused, never read as no budget", oddBudget.error === "Budget: 5 minutes to 7 days", JSON.stringify(oddBudget));
   const timed = await task("timed WORKS");
   await j(`/api/tasks/${timed}`, "PATCH", { budget_minutes: 62 });   // its last 2 minutes: one tick of this clock
-  check("AC-126 the prompt says the budget", /You have 62 minutes for this task/.test((await j(`/api/tasks/${timed}/run`)).prompt));
+  check("AC-126 the prompt says the budget", /You have 62 minutes for this\./.test((await j(`/api/tasks/${timed}/run`)).prompt));
   await run(timed);
   check("AC-126 at the limit the task is FAILED", await hasStatus(timed, "FAILED", 25000) && await said(timed, "Time budget of 62 minutes used: the agent was ended."), await history(timed));
   check("AC-126 the last warning went first", /last warning/.test(await history(timed)), await history(timed));

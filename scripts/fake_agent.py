@@ -86,8 +86,7 @@ def main():
                 hook("SessionStart", source="startup")
             hook("UserPromptSubmit", prompt=prompt)
             several = re.search(r"tasks: ((?:T-\d+(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
-            named = re.search(r"T-\d+", prompt)
-            tasks = re.findall(r"T-\d+", several[1]) if several else [named[0]] if named else [""]
+            tasks = re.findall(r"T-\d+", several[1]) if several else re.findall(r"T-\d+", prompt)[:1] or [""]
             if "LIMIT" in prompt:
                 hook("StopFailure", error="rate_limit")
             elif "DIES" in prompt:

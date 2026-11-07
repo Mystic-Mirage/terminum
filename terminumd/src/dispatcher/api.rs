@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, Run};
-use super::press::{also_of, members, prompt_of, refused_busy, rev_of, shown_of, starts_anew, way, Asked, Way};
+use super::press::{also_of, prompt_of, refused_busy, rev_of, shown_of, way, ways, Asked, Way};
 use super::{move_one, move_task, procs, say, start, store, walk};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
@@ -27,22 +27,24 @@ pub fn routes() -> Router<Shared> {
     Router::new().route("/api/tasks/{id}/run", get(offer).post(press)).route("/api/tasks/{id}/give-up", post(give_up))
 }
 
-/// What RUN's dialog shows (AC-121, AC-138): each agent says what keeps it busy.
+/// What RUN's dialog shows (AC-121, AC-138): each agent says what keeps it busy; an agent named that cannot
+/// take them is refused here, so the window never offers another under its name.
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
     answer(store(&app, move |tx| {
-        let tasks = members(tx, &id, &also_of(&asked.also))?;
+        let (tasks, w) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
+        let w = w?;
         let t = &tasks[0];
-        let last_run = runs::last_of(tx, &t.key)?;
-        let anew = starts_anew(&tasks, last_run.as_ref(), asked.agent.as_deref(), false);
-        let w = way(t, last_run, anew)?;
-        for other in &tasks[1..] {
-            way(other, runs::last_of(tx, &other.key)?, true)?;
-        }
         let of_project: Vec<Agent> = agents::of_project(tx, &t.project)?;
-        let live = runs::live(tx)?;
+        if let (Some(named), Way::First) = (&asked.agent, &w) {
+            let a = of_project.iter().find(|a| a.id == *named).ok_or_else(|| format!("{} is in another project than this agent.", t.id))?;
+            if let Some(other) = runs::busy_with(tx, &a.id, None)? {
+                return Err(refused_busy(&a.name, &other));
+            }
+        }
+        let busy = runs::busy_agents(&runs::live(tx)?);
         let offered: Vec<Value> = of_project.iter().map(|a| {
             let mut v = json!(a);
-            v["busy"] = json!(live.iter().find(|r| r.agent_id == a.id && r.busy()).map(Run::names));
+            v["busy"] = busy[&a.id]["tasks"].clone();
             v
         }).collect();
         let last = runs::last_agent(tx, &t.project)?.filter(|l| of_project.iter().any(|a| a.id == *l));
@@ -55,7 +57,7 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
 
 /// Whether terminum's hooks are in place for `kind` on this Mac (AC-121).
 fn hooks_there(kind: &str) -> bool {
-    if std::env::var("TM_TEST_HOOKS").is_ok() && std::env::var("TM_APP_DIR").is_ok() {
+    if crate::config::test_store() {
         return true;
     }
     crate::cli::Ctx::from_env("terminumd").is_ok_and(|ctx| crate::cli::agentsetup::installed(&ctx, kind))
@@ -113,12 +115,9 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
     let (tasks, w, who) = store(app, move |tx| {
-        let tasks = members(tx, &wanted, &also)?;
-        let last = runs::last_of(tx, &tasks[0].key)?;
-        let anew = starts_anew(&tasks, last.as_ref(), agent.as_deref(), fresh);
-        let w = way(&tasks[0], last, anew);
-        // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays
-        if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = &said {
+        let (tasks, w) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
+        // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
+        if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = said.as_ref().filter(|c| !ops::last_comment_is(tx, &wanted, c).unwrap_or(false)) {
             let event = ops::comment(tx, HUMAN, &wanted, c, ops::now())?;
             files::attach(tx, &attached, &wanted, Some(&event))?;
         }
@@ -179,7 +178,7 @@ pub(super) fn has_stray(text: &str) -> bool {
 async fn reserve(app: &Shared, r: &Run) -> Result<(), String> {
     let (id, agent, name) = (r.id.clone(), r.agent_id.clone(), r.agent_name.clone());
     store(app, move |tx| {
-        if let Some(other) = runs::busy_with(tx, &agent, &id)? {
+        if let Some(other) = runs::busy_with(tx, &agent, Some(&id))? {
             return Err(refused_busy(&name, &other));
         }
         runs::change(tx, &id, |now| now.turn_ended = false).map(drop)
@@ -245,6 +244,7 @@ async fn went_on(app: &Shared, r: &Run, t: &Task) -> Result<Value, String> {
     let (id, task, key, status, words) = (r.id.clone(), t.id.clone(), t.key.clone(), t.status.clone(), "The human ran it again.");
     let done = store(app, move |tx| {
         let now = runs::change(tx, &id, |now| { now.state = "working".into(); now.new_work(); })?;
+        bring_back(tx, &task)?;
         if super::plan::finished(&status) {
             move_one(tx, &task, "IN PROGRESS", words)?;
             runs::reopened(tx, &key)?;
@@ -257,29 +257,40 @@ async fn went_on(app: &Shared, r: &Run, t: &Task) -> Result<Value, String> {
     Ok(json!({"run": done}))
 }
 
-/// A new run of `t` going on from `r`, which is over: its agent, unless another run took it meanwhile.
+/// New work on an archived task returns it to the board (AC-122).
+fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<(), String> {
+    if ops::get(tx, id)?.archived_at.is_some() {
+        ops::archive(tx, HUMAN, id, false, ops::now())?;
+    }
+    Ok(())
+}
+
+/// A new run of `t` going on from `r`, which is over: its agent, unless another run took it meanwhile. What
+/// else was in `r` lets go of its session: it stays open to its own Run, and no agent there holds it.
 async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String) -> Result<String, String> {
-    let (old, key) = (r.clone(), t.key.clone());
+    let (old, key, id) = (r.clone(), t.key.clone(), t.id.clone());
     store(app, move |tx| {
-        if let Some(other) = runs::busy_with(tx, &old.agent_id, &old.id)? {
+        if let Some(other) = runs::busy_with(tx, &old.agent_id, Some(&old.id))? {
             return Err(refused_busy(&old.agent_name, &other));
         }
         runs::change(tx, &old.id, |was| { was.state = "closed".into(); was.pane_key = None; })?;
+        for other in old.ids.iter().filter(|other| **other != id) {
+            ops::link(tx, super::DISPATCHER, other, None, ops::now())?;
+        }
+        bring_back(tx, &id)?;
         runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], ops::now())
     }).await
 }
 
 async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<String>) -> Result<Value, String> {
     let t = &tasks[0];
-    let (all, wanted, seen, said, attached) = (tasks.to_vec(), body.agent.clone(), body.prompt_rev.clone(), comment, body.files.clone());
-    let (a, dir) = {
-        let (project, wanted) = (t.project.clone(), wanted.clone());
-        store(app, move |tx| {
-            let (name, dir) = ops::project_row(tx, &project)?;
-            let a = agents::of_project(tx, &project)?.into_iter().find(|a| Some(&a.id) == wanted.as_ref()).ok_or_else(|| format!("No agents in {name} yet: add one first."))?;
-            Ok((a, dir))
-        }).await?
-    };
+    let (all, seen, said, attached) = (tasks.to_vec(), body.prompt_rev.clone(), comment, body.files.clone());
+    let (project, wanted) = (t.project.clone(), body.agent.clone());
+    let (a, dir) = store(app, move |tx| {
+        let (name, dir) = ops::project_row(tx, &project)?;
+        let a = agents::of_project(tx, &project)?.into_iter().find(|a| Some(&a.id) == wanted.as_ref()).ok_or_else(|| format!("No agents in {name} yet: add one first."))?;
+        Ok((a, dir))
+    }).await?;
     let given = body.folder.as_deref().map(str::trim).filter(|d| !d.is_empty()).map(str::to_string);
     let chosen = given.or_else(|| Some(a.dir.clone()).filter(|d| !d.is_empty())).or_else(|| Some(dir.clone()).filter(|d| !d.is_empty()));
     let Some(chosen) = chosen else { return Err("This run needs a folder.".to_string()) };
@@ -310,7 +321,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
     let (ag, f) = (a.clone(), chosen.clone());
     let run = store(app, move |tx| {
         // the one check that counts: in the transaction that takes the agent, each task as it stands now
-        if let Some(other) = runs::busy_with(tx, &ag.id, "")? {
+        if let Some(other) = runs::busy_with(tx, &ag.id, None)? {
             return Err(refused_busy(&ag.name, &other));
         }
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
@@ -330,6 +341,9 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
                 }
             }
         }
+        for t in &now {
+            bring_back(tx, &t.id)?;
+        }
         // one live run a task: an older one's window stays the human's, untouched (Run from scratch)
         let keys: Vec<String> = now.iter().map(|t| t.key.clone()).collect();
         for t in &now {
@@ -337,13 +351,11 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
                 runs::change(tx, &old.id, |r| r.state = "left".into())?;
             }
         }
-        let line = ag.line();
-        runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: line, host: ag.host, folder: f, prompt: Some(prompt), ..Default::default() }, &keys, ops::now())
+        runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host: ag.host, folder: f, prompt: Some(prompt), ..Default::default() }, &keys, ops::now())
     }).await?;
     let project = project_of(app, t);
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
-    let line = a.line();
-    let opening = start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &chosen, command: &line, run: &run, tasks: &ids, program: &a.kind };
+    let opening = start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &chosen, command: &a.line, run: &run, tasks: &ids, program: &a.kind };
     if let Err(e) = start::open(app, opening).await {
         let r = run.clone();
         let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = "closed".into()).map(drop)).await;

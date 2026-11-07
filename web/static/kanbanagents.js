@@ -5,14 +5,14 @@
 import { askConfirm } from "./dialogs.js";
 import { projectInk } from "./listparts.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
-import { $, DEFAULT, THIS_MAC, agentColor, api, el, fillSelect, hostOptions, iconButton, say as toast } from "./kanbanutil.js";
+import { $, DEFAULT, THIS_MAC, agentColor, api, el, fillSelect, hostOptions, iconButton } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
-const EFFORTS = { claude: ["low", "medium", "high", "xhigh", "max"], codex: ["low", "medium", "high", "xhigh"] };   // as terminumd takes them
 
 /** `chosen()`: the projects shown, none for all; `getMeta()`: terminumd's projects, agents and hosts; `busy()`: what
- *  each busy agent does; `liveRow(key)`: a session's row; `given()`: the tasks a press or a drop would run on an agent; `run(tasks, agent)`. */
-export function agentsSection({ getMeta, chosen, reload, busy, liveRow, given, run, openSession }) {
+ *  each busy agent does; `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop
+ *  would run on an agent; `run(tasks, agent)`. */
+export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging, given, run, openSession }) {
   const box = el("section", "agents"), list = el("div", "agentlist");
   const add = iconButton("icon", "plus", "Add agent", "Add an agent to a project", () => open());
   add.id = "addagent";
@@ -31,17 +31,9 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, given, r
     return `${state}: ${now.tasks}`;
   }
 
-  /** Whether `tasks` can go to `a`: free, and of its project; else why not. */
-  function refusal(a, tasks) {
-    const now = busy()[a.id];
-    if (now) return `${a.name} is busy with ${now.tasks}: it takes more when its session closes or they end.`;
-    const away = tasks.find((t) => t.project !== a.project);
-    return away ? `${away.id} is in another project than ${a.name}.` : null;
-  }
-
-  function row(a, several, isTarget) {
-    const { projects } = getMeta();
-    const p = projects.find((x) => x.id === a.project), now = busy()[a.id];
+  /** Its rectangle: its color, name, kind, effort and what it does now. */
+  function row(a, several) {
+    const p = getMeta().projects.find((x) => x.id === a.project), now = busy()[a.id];
     const b = el("button", `item agentcard${now ? " busy" : ""}`);
     b.type = "button";
     b.dataset.agent = a.id;
@@ -51,54 +43,62 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, given, r
     const txt = el("span", "txt"), line = el("span", "head"), words = doing(now);
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
     if (several) line.append(el("span", "agproj", p?.name ?? a.project));
-    const status = el("span", "agstatus", words);
-    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), status);
+    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), el("span", "agstatus", words));
     b.append(bar, txt);
-    if (isTarget) b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
     b.title = [a.name, words, a.host ?? THIS_MAC, a.dir || "the project's folder", a.line].join(" · ");
+    return b;
+  }
+
+  /** Over the columns it takes tasks: dropped or pressed, terminumd says if it cannot; else a press opens what it does, or it. */
+  function target(a, several) {
+    const b = row(a, several), now = busy()[a.id];
+    b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
     b.addEventListener("click", () => {
-      const tasks = isTarget ? given() : null;
-      if (tasks) {
-        const no = refusal(a, tasks);
-        return no ? toast(no) : run(tasks, a.id);
-      }
-      if (isTarget && now?.key) openSession(now.key);   // busy: what it does is there
+      const tasks = given();
+      if (tasks) run(tasks, a.id);
+      else if (now?.key) openSession(now.key);
       else open(a);
     });
-    if (!isTarget) return b;
     b.addEventListener("dragover", (e) => {
-      const tasks = given();
-      if (!tasks || refusal(a, tasks)) return;
+      if (!dragging()) return;
       e.preventDefault();
-      b.classList.add("over");
+      if (!now && dragging().every((t) => t.project === a.project)) b.classList.add("over");
     });
     b.addEventListener("dragleave", () => b.classList.remove("over"));
     b.addEventListener("drop", (e) => {
+      const tasks = dragging();
+      if (!tasks) return;                          // a file: the page's
       e.preventDefault();
-      b.classList.remove("over");
-      run(given(), a.id);
+      run(tasks, a.id);
     });
     return b;
   }
 
+  let drawn = "";
+  /** Anew only when what it shows changed, and not under a drag: a press spanning a read keeps its key. */
   function draw() {
-    if (list.querySelector(".over")) return;       // a drag over it: the next read draws it
-    const picked = chosen();
+    const picked = chosen(), tasks = given();
     const agents = getMeta().agents.filter((a) => !picked.length || picked.includes(a.project));
-    list.replaceChildren(...agents.map((a) => row(a, picked.length !== 1, true)));
+    const now = JSON.stringify([agents, picked.length !== 1, agents.map((a) => [busy()[a.id], doing(busy()[a.id])]), getMeta().projects, tasks?.length]);
+    if (dragging() || now === drawn) return;
+    drawn = now;
+    list.replaceChildren(...agents.map((a) => target(a, picked.length !== 1)));
     if (!agents.length) list.append(el("p", "colempty", "No agents yet: add one to run tasks."));
-    const tasks = !document.body.classList.contains("dragtask") && given();
     hint.hidden = !tasks;
     if (tasks) hint.textContent = `${tasks.length} chosen: press an agent or drop them on it. Esc lets them go.`;
   }
 
-  /** The rows of `project`'s agents, for its own window. */
-  const rowsOf = (project) => getMeta().agents.filter((a) => a.project === project).map((a) => row(a, false, false));
-  const dragEnded = () => list.querySelectorAll(".over").forEach((x) => x.classList.remove("over"));
+  /** The rows of `project`'s agents, for its own window: a press opens one. */
+  const rowsOf = (project) => getMeta().agents.filter((a) => a.project === project).map((a) => {
+    const b = row(a, false);
+    b.addEventListener("click", () => open(a));
+    return b;
+  });
 
   /** The efforts of the kind chosen; one it does not take goes by the agent's own setting. */
   function fillEfforts(value) {
-    fillSelect(field.effort, [["", "Its own setting"], ...EFFORTS[field.kind.value].map((e) => [e, e])], EFFORTS[field.kind.value].includes(value) ? value : "");
+    const levels = getMeta().efforts?.[field.kind.value] ?? [];
+    fillSelect(field.effort, [["", "Its own setting"], ...levels.map((e) => [e, e])], levels.includes(value) ? value : "");
   }
 
   const values = () => Object.fromEntries(Object.entries(field).map(([k, e]) => [k, e.value]));
@@ -200,5 +200,5 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, given, r
     open(null, project);
     return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
   };
-  return { box, draw, addTo, rowsOf, openLimits, dragEnded };
+  return { box, draw, addTo, rowsOf, openLimits };
 }

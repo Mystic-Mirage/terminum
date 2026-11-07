@@ -6,6 +6,7 @@
 // side in this browser; ⇄ moves it, × closes it (asked first when a program runs in it). ⌘D
 // splits the view as iTerm2 does, a terminal on the right; ⌘⇧D and the button under the
 // magnifier, one below.
+import { frameTo } from "./listparts.js";
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT = 1 / 3, LEAST = 0.12, MOST = 0.8;
@@ -48,7 +49,7 @@ export function quickShell({ send, store, current, item, pick, askConfirm, narro
     if (want !== key) {
       key = want;
       loaded = false;
-      frame.src = key ? `/?embed=${encodeURIComponent(key)}` : "about:blank";
+      frameTo(frame, key ? `/?embed=${encodeURIComponent(key)}` : "about:blank");
     }
   }
 

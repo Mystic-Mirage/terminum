@@ -34,7 +34,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
   -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; }
 .pick[open] summary::after { transform: rotate(180deg); }
 :is(.pick summary, .colhead) .count { font-size: var(--fs-micro); font-weight: var(--fw-body); font-variant-numeric: tabular-nums; }
-#newproject { display: inline-flex; align-items: center; gap: var(--sp-1); flex: none; }
+#newproject { display: inline-flex; align-items: center; gap: var(--sp-1); }
 /* the project: its key says which, with its color's dot; its menu's name chooses it alone, its tick adds it, its pencil edits it */
 #fproject { flex: none; }
 #fproject summary { max-width: 200px; }
@@ -62,7 +62,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agentkeys { display: flex; flex: none; align-items: center; gap: var(--icon-gap); }
 .agentlist { display: flex; gap: var(--sp-2); min-width: 0; }
 .agentlist .colempty { margin: 0; align-self: center; white-space: nowrap; }
-.agentlist .item { flex: none; width: 240px; background: var(--surface-1); border-radius: var(--r-sm); }
+.agentlist .item { position: relative; flex: none; width: 240px; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
 .agproj { margin-left: auto; padding-left: var(--sp-2); flex: none; font-size: var(--fs-meta); font-weight: var(--fw-body); color: var(--muted); }
 .agentcard:hover .agproj { visibility: hidden; }   /* its pencil stands there */
@@ -71,7 +71,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agstatus::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--surface-4); }
 .agentcard.busy .agstatus { color: var(--t-fg); }
 .agentcard.busy .agstatus::before { background: var(--ag); box-shadow: 0 0 7px var(--ag); }
-.agentlist .item { position: relative; }
 .agedit { position: absolute; top: var(--sp-1); right: var(--sp-1); display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-xs); color: var(--muted); }
 .agedit:hover { color: var(--t-fg); background: var(--surface-3); }
 @media (hover: hover) { .agentcard:not(:hover, :focus-within) .agedit { opacity: 0; } }
@@ -131,8 +130,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .runmarked { margin: 0; font-size: var(--fs-label); color: var(--waiting); }
 #runadd, #runfresh { margin-right: auto; }
 #runmessage { width: 100%; box-sizing: border-box; }
-#runform { display: flex; flex-direction: column; gap: var(--sp-3); }
-#runfields { margin-bottom: var(--sp-2); }
+#runform { gap: var(--sp-3); }
+#runhow .runfacts { margin-top: var(--sp-2); }
 #runbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
 
 /* a project's window */
@@ -192,7 +191,7 @@ dialog .markdown img { max-width: 100%; }
   #app:not(.nav-hidden) #barsessions { display: grid; }
   #newproject span { display: none; }
   #filters { order: 3; flex: 1 1 100%; flex-wrap: wrap; }
-  #filters .search { flex: 1 1 0; }
+  #filters .search { flex: 1 1 0; min-width: 80px; }
   #picks { flex-wrap: wrap; }
   .pick > .box { position: fixed; top: auto; left: var(--gutter); right: var(--gutter); max-height: 60dvh; }
   #colswitch { display: flex; flex: none; overflow-x: auto; scrollbar-width: none; margin: var(--sp-2) var(--gutter) 0; }
@@ -203,7 +202,7 @@ dialog .markdown img { max-width: 100%; }
   .col { flex: 0 0 100%; box-sizing: border-box; scroll-snap-align: start; scroll-snap-stop: always; background: none; border-radius: 0; }
   .colhead { display: none; }
   .csession .item { min-height: var(--key-h-touch); box-sizing: border-box; align-items: center; }
-  #fproject summary { max-width: 120px; }
+  #fproject summary { max-width: 104px; }
   .cards { padding: 0 var(--gutter) var(--gutter); }
   .card { padding: var(--sp-3); }
   .chead { min-height: var(--icon-key-list); }

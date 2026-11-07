@@ -15,6 +15,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::files;
+use crate::dispatcher::runs;
 use super::ops::{self, Edit, NewTask, ProjectMove, Task};
 use super::query::{self, Query};
 use super::store::{DEFAULT_PROJECT, HUMAN};
@@ -137,9 +138,15 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
     };
     let with_counts = q.get("counts").is_some_and(|c| c == "1");
-    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }, crate::dispatcher::runs::card_marks(tx)?, crate::dispatcher::runs::card_agents(tx)?, crate::dispatcher::runs::live(tx)?))).await;
+    let done = store(&app, move |tx| {
+        let tasks = query::list(tx, &filter)?;
+        let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
+        let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
+        let counts = if with_counts { Some((query::counts(tx, &filter)?, runs::busy_agents(&runs::live(tx)?))) } else { None };
+        Ok((tasks, counts, run_marks, on_agents))
+    }).await;
     match done {
-        Ok((tasks, counts, run_marks, on_agents, live)) => {
+        Ok((tasks, counts, run_marks, on_agents)) => {
             let layout = app.layout.read();
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
             let shown: Vec<Value> = tasks.iter().map(|t| {
@@ -152,7 +159,8 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                 }
                 v
             }).collect();
-            Json(json!({"tasks": shown, "counts": counts, "busy": crate::dispatcher::runs::busy_agents(&live)})).into_response()
+            let (counts, busy) = counts.unzip();
+            Json(json!({"tasks": shown, "counts": counts, "busy": busy})).into_response()
         }
         Err(e) => refuse(StatusCode::SERVICE_UNAVAILABLE, e),
     }
@@ -166,15 +174,16 @@ async fn meta(State(app): State<Shared>) -> Response {
         .map(|it| json!({"key": it["id"], "title": it["title"]})).collect();
     // the store's lock waits out a running query: off the async workers, its state too
     let a = app.clone();
-    let (users, agents, limits, problem, set_aside) = tokio::task::spawn_blocking(move || {
-        let (users, agents, limits) = a.tasks.with(|tx| Ok((
+    let (users, agents, limits, last_agents, problem, set_aside) = tokio::task::spawn_blocking(move || {
+        let (users, agents, limits, last_agents) = a.tasks.with(|tx| Ok((
             ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
             super::agents::list(tx)?,
             super::agents::limits(tx)?,
+            runs::last_agents(tx)?,
         ))).unwrap_or_default();
-        (users, agents, limits, a.tasks.problem(), a.tasks.is_set_aside())
+        (users, agents, limits, last_agents, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
-    Json(json!({"projects": projects, "agents": agents, "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {
@@ -250,23 +259,22 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     let wanted = id.clone();
     let done = store(&app, move |tx| {
         let t = ops::get(tx, &wanted)?;
-        let held = crate::dispatcher::runs::holding(tx, &t.key)?.is_some();
-        Ok((ops::text_of(tx, &wanted)?, ops::history(tx, &wanted)?, files::of_task(tx, &wanted)?, held, t))
+        let held = runs::holding(tx, &t.key)?.map(|r| r.names());
+        let agent = runs::card_agents(tx, &[&t.key])?.remove(&t.key);
+        Ok((ops::text_of(tx, &wanted)?, ops::history(tx, &wanted)?, files::of_task(tx, &wanted)?, held, agent, t))
     }).await;
-    answer(done.map(|(body, history, attached, held, t)| {
+    answer(done.map(|(body, history, attached, held, agent, t)| {
         let mut v = card(&app, &t);
         v["text_rev"] = json!(text_rev(&body));
         v["text"] = json!(body);
         v["history"] = history;
         v["files"] = json!(attached);
         v["run_holds"] = json!(held);
+        if let Some(agent) = agent {
+            v["agent"] = agent;
+        }
         v
     }))
-}
-
-/// The live tests place cards by this; nothing a person can reach does (as `hooks_there`, a private store only).
-fn human_may_move() -> bool {
-    std::env::var("TM_TEST_HOOKS").is_ok() && std::env::var("TM_APP_DIR").is_ok()
 }
 
 /// What a human changes on a card.
@@ -277,7 +285,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     let began_from = text(&body, "text_rev");
     // a task moves when it runs and when its run ends: a human runs it (terminum-dispatcher.md AC-138)
     let to_status = text(&body, "status");
-    if to_status.is_some() && !human_may_move() {
+    if to_status.is_some() && !crate::config::test_store() {   // the live tests place cards by it
         return refuse(StatusCode::BAD_REQUEST, "A task moves by running it: drop it on an agent, or press Run.");
     }
     let wanted = id.clone();
@@ -306,7 +314,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
             return Ok(Err((StatusCode::PRECONDITION_FAILED, "The text changed meanwhile.")));
         }
         // its run holds it and its session until it ends, or the human gives up (AC-138)
-        if (to_project.is_some() || session.is_some()) && crate::dispatcher::runs::holding(tx, &was.key)?.is_some() {
+        if (to_project.is_some() || session.is_some()) && runs::holding(tx, &was.key)?.is_some() {
             return Ok(Err((StatusCode::BAD_REQUEST, "Its run holds it: give up on the run first.")));
         }
         let mut follow = None;
@@ -402,7 +410,7 @@ async fn archive(State(app): State<Shared>, Path(id): Path<String>, Json(body): 
     let (wanted, on) = (id.clone(), body["on"].as_bool().unwrap_or(true));
     let done = store(&app, move |tx| {
         let key = ops::key_of(tx, &wanted)?;
-        if crate::dispatcher::runs::holding(tx, &key)?.is_some() {
+        if runs::holding(tx, &key)?.is_some() {
             return Err("Its run holds it: give up on the run first.".to_string());
         }
         ops::archive(tx, HUMAN, &wanted, on, ops::now())

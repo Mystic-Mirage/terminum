@@ -2,13 +2,13 @@
 // The new-task window (AC-106): a title, Markdown with Preview, files dropped or pasted into the
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm } from "./dialogs.js";
-import { $, api, el, fileMarkdown, fillSelect, iconButton, onFiles, onSend, read, renderInto, sessionOptions, upload, write } from "./kanbanutil.js";
+import { $, DEFAULT, api, el, fileMarkdown, fillAgents, fillSelect, iconButton, onFiles, onSend, read, renderInto, sessionOptions, upload, write } from "./kanbanutil.js";
 
-const DRAFT = "tm.taskdraft", LAST_AGENT = "board.lastAgent.";
+const DRAFT = "tm.taskdraft";
 
 /** `onRun(task, agent)`: a task made by Run starts at once on the agent chosen (terminum-dispatcher.md AC-138);
- *  `busy()`: what each busy agent does. */
-export function taskForm({ getMeta, getFilter, onMade, onRun, busy }) {
+ *  `agentsBusy()`: what each busy agent does. */
+export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
   const box = $("newbox");
   let files = [], uploads = 0, offered = "";
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
@@ -64,20 +64,18 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, busy }) {
     if (preview) renderInto($("newshown"), $("newtext").value);
   }
 
-  /** The project's agents, the busy ones not to be chosen; the one Run last started in it picked, else the first free. */
-  function fillAgents() {
-    const project = $("newproj").value, all = getMeta().agents.filter((a) => a.project === project), now = busy();
-    const free = all.filter((a) => !now[a.id]);
-    const last = read(`${LAST_AGENT}${project}`);
-    fillSelect($("newagent"), [["", all.length ? (free.length ? "Choose when it runs" : "All busy") : "No agents yet"], ...all.map((a) => [a.id, now[a.id] ? `${a.name} (busy)` : a.name])], free.some((a) => a.id === last) ? last : free[0]?.id ?? "");
-    for (const o of $("newagent").options) o.disabled = !!now[o.value];
+  /** The project's agents: the one its last run had, else the first free. */
+  function showAgents() {
+    const meta = getMeta(), project = $("newproj").value, all = meta.agents.filter((a) => a.project === project), now = agentsBusy();
+    const busy = (a) => now[a.id]?.tasks;
+    fillAgents($("newagent"), all, busy, [meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
   }
 
   function open(given = {}) {
     const meta = getMeta(), saved = read(DRAFT) ?? {};
-    const filter = getFilter().project;
-    fillSelect($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? saved.project ?? (filter.length === 1 ? filter[0] : "default"));
-    fillAgents();
+    const filter = getFilter().project;   // a draft with nothing typed says nothing of where it goes
+    fillSelect($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? (saved.title || saved.text ? saved.project : null) ?? (filter.length === 1 ? filter[0] : DEFAULT));
+    showAgents();
     fillSelect($("newsession"), sessionOptions(meta), given.session ?? saved.session ?? "");
     $("newsev").value = saved.severity ?? "P2";
     fillSelect($("newowner"), meta.users.map((u) => [u.id, u.name]), saved.owner ?? "human");
@@ -101,7 +99,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, busy }) {
       write(DRAFT, null);
       files = [];
       box.close();
-      if (run) { if (agent) write(`${LAST_AGENT}${d.project}`, agent); onRun(made, agent); } else onMade(made);
+      if (run) onRun(made, agent); else onMade(made);
     } catch (e) { error(e.message); $("newtitle").focus(); } finally { canCreate(); }
   }
 
@@ -120,7 +118,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, busy }) {
   $("newclose").addEventListener("click", () => { keep(); box.close(); });
   box.addEventListener("cancel", keep);
   box.querySelector("form").addEventListener("input", keep);
-  $("newproj").addEventListener("change", fillAgents);
+  $("newproj").addEventListener("change", showAgents);
   $("newwrite").addEventListener("click", () => view(false));
   $("newpreview").addEventListener("click", () => view(true));
   $("newadd").addEventListener("click", () => $("newpick").click());
@@ -131,6 +129,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, busy }) {
   function refresh() {
     if (!box.open) return;
     const meta = getMeta(), projects = meta.projects.map((p) => [p.id, p.name]), sessions = sessionOptions(meta), now = JSON.stringify([projects, sessions]);
+    showAgents();
     if (now === offered) return;
     offered = now;
     const project = $("newproj").value, session = $("newsession").value;

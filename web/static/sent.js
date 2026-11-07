@@ -9,7 +9,7 @@
 // chat pastes it into the shown pane's input.
 import { typedEnd } from "./cursor.js";
 import { fabPane } from "./fabpane.js";
-import { when } from "./marks.js";
+import { when } from "./listparts.js";
 import { agentName } from "./nav.js";
 import { markdownInto } from "./widgetui.js";
 

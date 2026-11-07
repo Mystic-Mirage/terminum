@@ -235,12 +235,7 @@ impl Projects {
     }
 
     pub fn rename(&mut self, id: &str, name: &str) -> Result<(), String> {
-        let name = name_ok(name)?;
-        self.name_free(&name, Some(id))?;
-        self.kept(|ps| {
-            ps.find(id)?.name = name;
-            Ok(())
-        })
+        self.edit(id, Some(name), None)
     }
 
     /// The project goes in one transaction: its sessions are back in their tmux groups, its tasks

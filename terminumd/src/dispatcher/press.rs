@@ -4,7 +4,7 @@
 
 use serde::Deserialize;
 
-use super::runs::Run;
+use super::runs::{self, Run};
 use crate::tasks::files;
 use crate::tasks::ops::{self, Task};
 
@@ -83,8 +83,9 @@ pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool) -> Result<Way, Strin
             return Err(format!("{} is starting.", t.id));
         }
         // what is done of a run still working runs again when that run ends: one run, one agent, one session
-        if !r.is_over() && !r.open.is_empty() && (fresh || !r.open.contains(&t.id)) {
-            return Err(format!("{} shares its session with {}: it can run again when they end.", t.id, r.open.join(", ")));
+        let others: Vec<&str> = r.open.iter().map(String::as_str).filter(|o| *o != t.id).collect();
+        if !r.is_over() && !others.is_empty() && (fresh || !r.open.contains(&t.id)) {
+            return Err(format!("{} shares its session with {}: it can run again when they end.", t.id, others.join(", ")));
         }
     }
     if t.session.is_some() && last.as_ref().is_none_or(|r| r.pane_key != t.session) {
@@ -123,6 +124,18 @@ pub(super) fn starts_anew(tasks: &[Task], last: Option<&Run>, agent: Option<&str
 
 pub(super) fn refused_busy(agent: &str, run: &Run) -> String {
     format!("{agent} is busy with {}: it takes more when its session closes or they end.", run.names())
+}
+
+/// How a press on `id` and `also` goes on: each task as it stands now may go, the first says how.
+pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool) -> Result<(Vec<Task>, Result<Way, String>), String> {
+    let tasks = members(tx, id, also)?;
+    let last = runs::last_of(tx, &tasks[0].key)?;
+    let anew = starts_anew(&tasks, last.as_ref(), agent, fresh);
+    let lead = way(&tasks[0], last, anew);
+    for other in &tasks[1..] {
+        way(other, runs::last_of(tx, &other.key)?, true)?;
+    }
+    Ok((tasks, lead))
 }
 
 #[derive(Deserialize)]

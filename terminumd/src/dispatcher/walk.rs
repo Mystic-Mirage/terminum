@@ -78,30 +78,45 @@ struct Later {
 type Walked = (Vec<Later>, Vec<String>, HashMap<String, (i64, i64)>);
 
 /// In one transaction: every run as it stands now, its clocks, what `plan` says. Moves and words are
-/// done here; what is not written is not done (AC-131). A run that cannot be written costs only itself.
+/// done here; what is not written is not done (AC-131). A run that cannot be written costs only itself, and says so.
 fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     let live: HashMap<String, Run> = runs::live(tx)?.into_iter().map(|r| (r.id.clone(), r)).collect();
     for read in reads {
         let Some(r) = live.get(&read.id).cloned() else { continue };
         tx.execute_batch("SAVEPOINT one_run").map_err(ops::sql)?;
-        let (from_later, from_changed) = (later.len(), changed.len());
-        match walk_one(tx, r, read, now, &mut later, &mut changed, &mut used) {
-            Ok(()) => tx.execute_batch("RELEASE one_run").map_err(ops::sql)?,
+        let walked = walk_one(tx, r.clone(), read, now);
+        tx.execute_batch(if walked.is_ok() { "RELEASE one_run" } else { "ROLLBACK TO one_run; RELEASE one_run" }).map_err(ops::sql)?;
+        match walked {
+            Ok((l, c, u)) => {
+                later.extend(l);
+                changed.extend(c);
+                used.extend(u);
+            }
             Err(e) => {
                 tracing::warn!(event = "dispatcher.walk", error = %e);
-                later.truncate(from_later);
-                changed.truncate(from_changed);
-                tx.execute_batch("ROLLBACK TO one_run; RELEASE one_run").map_err(ops::sql)?;
+                if said_once(tx, &r, &format!("Dispatcher could not go on with this run: {e}"))? {
+                    changed.extend(r.ids.iter().cloned());
+                }
             }
         }
     }
     Ok((later, changed, used))
 }
 
-fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64, later: &mut Vec<Later>, changed: &mut Vec<String>, used: &mut HashMap<String, (i64, i64)>) -> Result<(), String> {
+/// Says `words` unless the last thing said on its first task says them.
+fn said_once(tx: &rusqlite::Transaction, r: &Run, words: &str) -> Result<bool, String> {
+    let last: Option<String> = tx.query_row("SELECT text FROM events WHERE task = ?1 ORDER BY at DESC, rowid DESC LIMIT 1", [&r.task], |x| x.get(0)).ok();
+    if last.as_deref() == Some(words) {
+        return Ok(false);
+    }
+    say(tx, r, words).map(|()| true)
+}
+
+fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Result<Walked, String> {
+    let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     if r.is_starting() {
-        return Ok(());
+        return Ok((later, changed, used));
     }
     let seen = now - r.last_walk;
     if seen > GAP {
@@ -144,7 +159,7 @@ fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64, later:
             act => later.push(Later { run: r.clone(), act }),
         }
     }
-    Ok(())
+    Ok((later, changed, used))
 }
 
 /// Closes the pane: its mark checked just before; with no result the screen's last 200 rows stay on
@@ -300,7 +315,7 @@ async fn watch_subagents(app: &Shared, run: &Run, server: &Arc<Server>, pane: &s
             note(app, format!("{}: {words}", run.names()));
             let _ = store(app, move |tx| say(tx, &r, &words)).await;
         }
-        crate::tasks::api::told(app, &run.names());
+        super::told_all(app, run);
     }
 }
 
@@ -471,7 +486,7 @@ async fn walk(app: &Shared) {
     // what no walk watches any more goes with it
     let kept: HashSet<&str> = wanted.iter().map(String::as_str).collect();
     app.dispatcher.watch.lock().retain(|k, _| kept.contains(k.as_str()));
-    let busy = store(app, |tx| runs::live(tx)).await.map_or(serde_json::Value::Null, |live| runs::busy_agents(&live));
+    let busy = store(app, runs::live).await.map_or(serde_json::Value::Null, |live| runs::busy_agents(&live));
     let message = serde_json::json!({"t": "taskusage", "items": items, "busy": busy}).to_string();
     let mut told = app.dispatcher.usage.lock();
     if *told != message {

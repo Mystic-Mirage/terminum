@@ -2,7 +2,8 @@
 // Many bookmarks or reminders at once (AC-91): the list's "Open all" shows them as one Markdown
 // document, full screen, as View shows a file: each its note as a heading's text, its text
 // quoted, its session, host and time; Esc or × closes it.
-import { quote, when } from "./marks.js";
+import { when } from "./listparts.js";
+import { quote } from "./marks.js";
 import { markdownInto } from "./widgetui.js";
 
 const $ = (id) => document.getElementById(id);

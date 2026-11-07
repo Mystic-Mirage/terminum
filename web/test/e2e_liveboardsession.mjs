@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A card's session and the project's sessions beside the columns, against a real private terminumd and
-// tmux (e2e_live.mjs; terminum-kanban.md AC-134, AC-135): the session list's own row, following the
-// session with no task read; a press opens the session; the project chosen in the head, remembered.
+// A card's session and the session list beside the columns, against a real private terminumd and tmux
+// (e2e_live.mjs; terminum-kanban.md AC-134, AC-135): the list's own row, following the session with no
+// task read; a press opens the session at its own address; the project chosen in the head, remembered.
 import path from "node:path";
-import { boardKit } from "./boardkit.mjs";
+import { boardKit, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
+
+/** A session's address on its page: `:` stays readable (AC-134). */
+const hashOf = (key) => `#/${encodeURIComponent(key).replaceAll("%3A", ":")}/`;
 
 export async function liveBoardSessions(page, opts) {
   const { base, shots } = opts;
@@ -46,40 +49,57 @@ export async function liveBoardSessions(page, opts) {
   await j(`/api/tasks/${made}`, "PATCH", { status: "IN PROGRESS" });
   await until(() => page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`), 4000);
 
-  // a drag by its row moves the card, opens nothing
+  // a drag by its row to another column moves nothing and opens nothing (AC-138)
   await page.dragAndDrop(row, '.col[data-status="FAILED"]', { force: true });
-  check("AC-134 a drag by the row moves the card", await until(() => page.isVisible(`.col[data-status="FAILED"] ${row}`), 4000));
+  await nap(300);
+  check("AC-134 a drag by the row moves no card", await page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`) && (await j(`/api/tasks/${made}`)).status === "IN PROGRESS");
   check("AC-134 and opens no session", new URL(page.url()).pathname === "/kanban/", page.url());
 
   // a press opens the session, not the task's window
   await page.click(row);
   await page.waitForURL("**/sessions/**", { timeout: 8000 });
   check("AC-134 a press shows that session", await until(() => page.evaluate((k) => document.querySelector(`#sessions .item.on`)?.dataset.id === k, key), 8000), key);
-  check("AC-134 the address goes back to the page's", await until(() => new URL(page.url()).pathname + new URL(page.url()).search === "/sessions/"), page.url());
-  await page.goBack();
+  check("AC-134 the address names it", await until(() => { const u = new URL(page.url()); return u.pathname + u.search === "/sessions/" && u.hash === hashOf(key); }), page.url());
+  await page.waitForSelector(`#sessions .item[data-id="${other}"]`, { timeout: 8000 });
+  await page.click(`#sessions .item[data-id="${other}"]`);
+  check("AC-134 a press on a row changes the address", await until(() => new URL(page.url()).hash === hashOf(other)), page.url());
+  check("AC-134 and shows that session", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, other)));
+  check("AC-134 Kanban stays in the head", await page.isVisible("#tokanban"));
+  await page.evaluate(() => history.back());       // within the page: Playwright's goBack waits for a load that never comes
+  check("AC-134 Back returns to the session before", await until(() => new URL(page.url()).hash === hashOf(key)), page.url());
+  check("AC-134 and shows it", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, key)));
+  check("AC-134 Kanban still in the head", await page.isVisible("#tokanban"));
+  await page.evaluate(() => history.back());
+  const home = await until(() => new URL(page.url()).pathname === "/kanban/", 3000);
+  check("AC-134 Back again returns to the board", home, page.url());
+  if (!home) await open();                         // what follows stands on the board either way
   await page.waitForSelector(row, { timeout: 8000 });
-  check("AC-134 Back returns to the board, no window open", !(await page.evaluate(() => document.querySelector("#taskbox").open)));
+  check("AC-134 no window open there", !(await page.evaluate(() => document.querySelector("#taskbox").open)));
 
   // gone by the time it opens
-  await page.goto(`${base}/sessions/?open=${encodeURIComponent("tmux:local:nobody:%999")}`);
+  await page.goto(`${base}/sessions/${hashOf("tmux:local:nobody:%999")}`);
   check("AC-134 a session gone by then is said", await until(async () => /has ended/.test(await page.textContent("#toast")), 8000), await page.textContent("#toast"));
   await page.waitForSelector("#sessions .item.on", { timeout: 8000 });
 
-  // AC-135: the project in the head, its sessions beside the columns
+  // AC-135: the project in the head, the session page's own list beside the columns
   await open();
   check("AC-135 with no project chosen the key says All projects", /All projects/.test(await page.textContent("#fproject summary")), await page.textContent("#fproject summary"));
-  await inProjects('.projrow button:has-text("Billing")');
+  await page.click("#fproject summary");
+  const names = await page.evaluate(() => [...document.querySelectorAll("#fproject .projrow .pname")].map((n) => [n.textContent, n.getBoundingClientRect().width]));
+  check("AC-135 a project's name in the menu has its width", names.length >= 3 && names.every(([, w]) => w > 0), JSON.stringify(names));
+  check("AC-139 a project's row has a tick, its name and a pencil", await page.isVisible('#fproject .projrow:has-text("Billing") .projtick input') && await page.isVisible('#fproject .projrow:has-text("Billing") .projedit'));
+  await page.click('#fproject .projrow button:has-text("Billing")');
   check("AC-135 a name chooses that project, in the URL", await until(() => new URL(page.url()).searchParams.get("project") === project), page.url());
   check("AC-135 the key says it", /Billing/.test(await page.textContent("#fproject summary")) && await page.isVisible("#fproject summary .pdot"));
   check("AC-135 its menu closes", !(await page.evaluate(() => document.querySelector("#fproject").open)));
   check("AC-135 the columns hold its tasks", await until(() => page.isVisible(card(made))));
-  check("AC-135 and the Sessions column stands first", await page.evaluate(() => { const s = document.querySelector("#sidecol").getBoundingClientRect(), t = document.querySelector('.col[data-status="TODO"]').getBoundingClientRect(); return s.right <= t.left && s.width >= 240; }));
-  const listed = () => page.evaluate(() => [...document.querySelectorAll("#sidecol .item")].map((e) => e.dataset.id));
+  check("AC-135 and the session list stands first", await page.evaluate(() => { const s = document.querySelector("#nav").getBoundingClientRect(), t = document.querySelector('.col[data-status="TODO"]').getBoundingClientRect(); return s.right <= t.left && s.width >= 240; }));
+  const listed = () => page.evaluate(() => [...document.querySelectorAll("#sessions .item")].map((e) => e.dataset.id));
   check("AC-135 Billing's session stands beside Billing", await until(async () => (await listed()).includes(key)), (await listed()).join());
-  check("AC-135 in the list's own group, in its color", await page.isVisible(`#sidecol section.project[data-pid="${project}"] .item[data-id="${key}"]`));
+  check("AC-135 in the list's own group, in its color", await page.isVisible(`#sessions section.project[data-pid="${project}"] .item[data-id="${key}"]`));
   check("AC-135 a session in no project does not", !(await listed()).includes(other), (await listed()).join());
   await page.goto(`${base}/kanban/?project=${empty}`);
-  check("AC-135 a project with no session says so", await until(async () => /No sessions here/.test(await page.textContent("#sidecol")), 4000), await page.textContent("#sidecol"));
+  check("AC-135 a project with no session says so", await until(async () => /No sessions here/.test(await page.textContent("#sessions")), 4000), await page.textContent("#sessions"));
   await inProjects('.projrow button:has-text("Default")');
   check("AC-135 Default holds the sessions in no project", await until(async () => (await listed()).includes(other)), (await listed()).join());
   await inProjects('.projrow:has-text("Billing") input');
@@ -98,24 +118,45 @@ export async function liveBoardSessions(page, opts) {
 
   // a press on a row opens it; a task's mark stays on the board
   await until(async () => (await listed()).includes(other));
-  await page.click(`#sidecol .item[data-id="${other}"]`);
+  await page.click(`#sessions .item[data-id="${other}"]`);
   await page.waitForURL("**/sessions/**", { timeout: 8000 });
   check("AC-135 a press opens the session", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, other), 8000));
   await open();
-  await page.click(`#sidecol .item[data-id="${key}"] .taskmark`, { timeout: 4000 });
+  await page.click(`#sessions .item[data-id="${key}"] .taskmark`, { timeout: 4000 });
   check("AC-135 a task's mark opens its window, no page loading", await until(() => page.evaluate(() => document.querySelector("#taskbox").open)));
   await page.click("#taskclose");
 
+  // the list's own row menu
+  await page.click(`#sessions .item[data-id="${key}"]`, { button: "right" });
+  check("AC-135 the list's row menu opens on the board, with Clone", await until(() => page.isVisible('#rowmenu button[data-action="clone"]')));
+  await page.keyboard.press("Escape");
+  await until(async () => !(await page.isVisible("#rowmenu")));
+
+  // one width on both pages
+  const widthOf = () => page.evaluate(() => Math.round(document.querySelector("#nav").getBoundingClientRect().width));
+  const before = await widthOf(), grip = await (await page.$("#navgrip")).boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 60, grip.y + grip.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const dragged = await widthOf();
+  check("AC-135 a drag of the grip widens the list", dragged >= before + 40, `${before} → ${dragged}`);
+  await page.goto(`${base}/sessions/`);
+  await page.waitForSelector("#sessions .item");
+  check("AC-135 the session page has the same width", await until(async () => await widthOf() === dragged, 3000), `${await widthOf()} and ${dragged}`);
+  await open();
+  check("AC-135 and so has the board when opened again", await widthOf() === dragged, `${await widthOf()} and ${dragged}`);
+
   // it can be hidden, and it stays so
-  await page.click("#sidetoggle");
-  check("AC-135 the key hides the column", !(await page.isVisible("#sidecol")));
-  const roomy = await page.evaluate(() => document.querySelector('.col[data-status="TODO"]').getBoundingClientRect().left < 40);
-  check("AC-135 the columns take its room", roomy);
+  await page.click("#navclose");
+  check("AC-135 its key hides the list", !(await page.isVisible("#nav")));
+  check("AC-135 the columns take its room", await page.evaluate(() => document.querySelector('.col[data-status="TODO"]').getBoundingClientRect().left < 40));
   await page.reload();
   await page.waitForSelector('.col[data-status="TODO"]');
-  check("AC-135 and this browser remembers it", !(await page.isVisible("#sidecol")));
-  await page.click("#sidetoggle");
-  check("AC-135 the key brings it back", await page.isVisible("#sidecol"));
+  check("AC-135 and this browser remembers it", !(await page.isVisible("#nav")));
+  check("AC-135 a way to the session page stays in the head", await page.isVisible("#barsessions"));
+  await page.click("#navbtn");
+  check("AC-135 the head's key brings it back", await until(() => page.isVisible("#nav")));
 
   // a project that is gone
   await page.goto(`${base}/kanban/?project=gone-project`);
@@ -136,19 +177,26 @@ export async function liveBoardSessions(page, opts) {
   await backToSessions();
 }
 
-/** A phone: Sessions the last page of the swipe, the row's press a finger's (AC-134, AC-135). */
+/** A phone: the list a drawer, the columns' switch has only the columns, the row's press a finger's (AC-134, AC-135). */
 export async function liveBoardSessionsPhone(page, { base }) {
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector("#colswitch button");
   const tabs = await page.evaluate(() => [...document.querySelectorAll("#colswitch button")].map((t) => t.dataset.status));
-  check("AC-135 a phone's switch ends with Sessions, TODO first", tabs[0] === "TODO" && tabs.at(-1) === "Sessions", tabs.join());
+  check("AC-135 a phone's switch has the five columns, no Sessions", tabs.join() === "TODO,IN PROGRESS,WAIT FOR HUMAN,FAILED,DONE", tabs.join());
   check("AC-135 the project key stands left of Find", await page.evaluate(() => { const p = document.querySelector("#fproject").getBoundingClientRect(), f = document.querySelector("#filters .search").getBoundingClientRect(); return p.right <= f.left && Math.abs(p.top - f.top) < 8; }));
-  await page.click('#colswitch button[data-status="Sessions"]');
-  check("AC-135 Sessions is a page of its own", await until(() => page.evaluate(() => { const r = document.querySelector("#sidecol").getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; })));
+  const onScreen = () => page.evaluate(() => { const r = document.querySelector("#nav").getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; });
+  check("AC-135 the list is closed at first", !(await onScreen()));
+  check("AC-135 the head leads to the session page", await page.isVisible("#barsessions"));
+  await page.click("#navbtn");
+  check("AC-135 the head's key opens it as a drawer", await until(onScreen));
   const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   check("AC-135 no sideways scroll on a phone", wide <= 0, String(wide));
-  check("AC-137 a phone's Sessions page holds the agents", await page.isVisible(".agents .colhead"));
-  await page.click("#addagent");
+  await page.click("#drawerclose");
+  check("AC-135 its key closes it", await until(async () => !(await onScreen())));
+  check("AC-137 a phone holds the agents over the columns", await page.isVisible("#agentbar .agents"));
+  check("AC-137 its add key can be reached", await page.evaluate(() => { const r = document.querySelector("#addagent").getBoundingClientRect(); return r.width > 0 && r.height > 0; }));
+  await page.evaluate(() => document.querySelector("#addagent").click());
+  await page.waitForSelector("#agentbox[open]", { timeout: 5000 });
   const fits = await page.evaluate(() => { const r = document.querySelector("#agentbox").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && document.querySelector("#agentok").getBoundingClientRect().bottom <= innerHeight; });
   check("AC-137 its window fits a phone, its keys in reach", fits);
   await page.click('#agentbox button[value="cancel"]');

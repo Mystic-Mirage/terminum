@@ -2,7 +2,7 @@
 // A task's window (AC-107, AC-108, AC-109, AC-113): its fields, text, files, and one list of comments
 // and history. A comment by a human closes with CLOSE; RUN comes with Dispatcher.
 import { askConfirm } from "./dialogs.js";
-import { $, SEVERITIES, agentColor, api, button, choose, download, el, fileMarkdown, fillSelect, iconButton, onFiles, onSend, read, renderInto, say, sessionOptions, upload, write } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, api, button, choose, download, el, fileMarkdown, fillSelect, iconButton, onFiles, onSend, read, renderInto, say, sessionOptions, upload, write } from "./kanbanutil.js";
 
 const time = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 const EDITS = ".tasktext textarea, .markdown textarea";   // a text or a comment being edited
@@ -84,11 +84,7 @@ export function taskWindow({ getMeta, runs }) {
     if (!owners.some(([u]) => u === t.owner)) owners.push([t.owner, t.owner_name]);
     const stands = el("div", "fieldrow", "Status");
     const value = el("span", "fieldvalue", t.archived_at ? "Archived" : t.status);
-    if (t.agent) {
-      const on = el("span", "cagent", t.agent.name);
-      on.style.setProperty("--ag", agentColor(t.agent));
-      value.append(on);
-    }
+    if (t.agent) value.append(agentChip(t.agent));
     stands.append(value);
     grid.append(
       stands,
@@ -131,7 +127,10 @@ export function taskWindow({ getMeta, runs }) {
     const shownText = el("div", "markdown");
     renderInto(shownText, t.text);
     /** Its editor, with files already dropped on the text shown. */
+    let editing = false;
     const startEdit = (files = []) => {
+      editing = true;
+      wrap.classList.remove("droparea", "dropping");
       const area = editor(t.text, "Text, Markdown");
       area.rows = 10;
       area.placeholder = "Markdown. Drop or paste files here.";
@@ -144,7 +143,7 @@ export function taskWindow({ getMeta, runs }) {
     };
     const edit = button(null, "Edit", () => startEdit());
     wrap.classList.add("droparea");
-    onFiles(wrap, wrap, (list) => { if (wrap.classList.contains("droparea")) { wrap.classList.remove("droparea", "dropping"); startEdit(list); } }, (on) => wrap.classList.toggle("dropping", on));
+    onFiles(wrap, wrap, (list) => { if (!editing) startEdit(list); }, (on) => wrap.classList.toggle("dropping", on && !editing));
     const purge = button(null, "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
       () => api(`/api/tasks/${t.id}/purge`, { method: "POST" })));
     wrap.append(shownText, row(edit, t.text ? purge : null));
@@ -234,12 +233,12 @@ export function taskWindow({ getMeta, runs }) {
     onSend(area, () => close.click());
     close.title = "Keep the comment and close: nothing moves, the session hears nothing";
     // its run cannot be reached or is no longer wanted: its tasks fail, the window stays (terminum-dispatcher.md AC-138)
-    const giveUp = t.run_holds ? button(null, "Give up", () => confirmed(`Give up on ${t.id}'s run? Its open tasks go to FAILED and Dispatcher lets go of its window, which stays open.`, "Give up",
+    const giveUp = t.run_holds ? button(null, "Give up", () => confirmed(`Give up on this run? ${t.run_holds} go to FAILED. Dispatcher lets go of its window, which stays open, and an agent in it may go on.`, "Give up",
       () => api(`/api/tasks/${t.id}/give-up`, { method: "POST" }))) : null;
     // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
     shelve.classList.add("evenleft");
-    wrap.append(area, row(t.run_holds ? null : shelve, giveUp, close, t.status === "IN PROGRESS" ? null : run));
+    wrap.append(area, row(t.run_holds ? null : shelve, giveUp, close, t.run_holds ? null : run));
     return wrap;
   }
 
@@ -276,8 +275,12 @@ export function taskWindow({ getMeta, runs }) {
   /** Reads it again; a text being edited holds until it is saved (`saved`). */
   async function refresh(saved = false) {
     if (!box.open || !shown) return;
-    if (!saved && body.querySelector(EDITS)) return;
-    try { draw(await api(`/api/tasks/${shown.id}`)); } catch (e) { say(e.message); }
+    const editing = () => !saved && body.querySelector(EDITS);
+    if (editing()) return;
+    try {
+      const t = await api(`/api/tasks/${shown.id}`);
+      if (!editing()) draw(t);                     // an editor opened while it was read stays
+    } catch (e) { say(e.message); }
   }
 
   $("taskclose").addEventListener("click", tryClose);

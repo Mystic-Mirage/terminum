@@ -8,7 +8,7 @@
 // closes when another is shown. Reminders up are said at the terminal's top for 4 s, once each in a
 // page: the shown session's when they come up, another's when it is shown next.
 import { fabPane } from "./fabpane.js";
-import { openReminder } from "./marks.js";
+import { openReminder } from "./listparts.js";
 import { MarkNav } from "./marknav.js";
 
 const $ = (id) => document.getElementById(id);

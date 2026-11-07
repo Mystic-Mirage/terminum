@@ -9,6 +9,8 @@ CREATE TABLE run_tasks (
 );
 CREATE INDEX run_tasks_task ON run_tasks (task);
 INSERT INTO run_tasks (run, task, result) SELECT id, task, result FROM runs;
+-- what a human's move held stays theirs: no walk takes it up again
+UPDATE runs SET state = 'left' WHERE held = 1 AND state NOT IN ('closed', 'left');
 ALTER TABLE runs DROP COLUMN result;
 ALTER TABLE runs DROP COLUMN held;
 ALTER TABLE project_agents ADD COLUMN effort TEXT NOT NULL DEFAULT '';

@@ -67,9 +67,14 @@ impl Run {
         !self.is_over() && (self.is_starting() || !self.open.is_empty() || (self.state == "working" && !self.turn_ended))
     }
 
-    /// What words to its agent name: its tasks still open, else all.
+    /// What it is about now: its tasks still open, else all.
+    pub fn targets(&self) -> &[String] {
+        if self.open.is_empty() { &self.ids } else { &self.open }
+    }
+
+    /// Those, in words to its agent or a person.
     pub fn names(&self) -> String {
-        if self.open.is_empty() { self.ids.join(", ") } else { self.open.join(", ") }
+        self.targets().join(", ")
     }
 
     /// RUN or a human's own prompt: every clock starts anew (AC-122).
@@ -98,12 +103,13 @@ const SELECT: &str = "SELECT r.id, r.task,
     r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.no_result_wait,
     NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = r.id AND m.result = 0), r.again_said, r.close_tried, r.last_walk, r.memory_warned
     FROM runs r JOIN tasks t ON t.id = r.task";
-const STILL: &str = "r.state NOT IN ('closed', 'left')";
+/// A run Dispatcher still holds, over `runs r`.
+pub(crate) const STILL: &str = "r.state NOT IN ('closed', 'left')";
 
 /// `group_concat`'s list, its order by number.
 fn listed(text: Option<String>) -> Vec<String> {
     let mut ids: Vec<String> = text.unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(str::to_string).collect();
-    ids.sort_by_key(|id| id.trim_start_matches("T-").parse::<i64>().unwrap_or(0));
+    ids.sort_by_key(|id| crate::tasks::ops::number_of(id).unwrap_or(0));
     ids
 }
 
@@ -132,8 +138,8 @@ pub fn last_of(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
 
 /// What keeps agent `agent` busy but run `but`, if anything (AC-138): read in the transaction that adds
 /// or goes on with a run, so two presses never both find it free.
-pub fn busy_with(tx: &Transaction, agent: &str, but: &str) -> Result<Option<Run>, String> {
-    Ok(live(tx)?.into_iter().find(|r| r.agent_id == agent && r.id != but && r.busy()))
+pub fn busy_with(tx: &Transaction, agent: &str, but: Option<&str>) -> Result<Option<Run>, String> {
+    Ok(live(tx)?.into_iter().find(|r| r.agent_id == agent && Some(r.id.as_str()) != but && r.busy()))
 }
 
 /// What each busy agent does: its tasks, its run's state and its session (AC-138).
@@ -183,7 +189,7 @@ pub fn reopened(tx: &Transaction, task: &str) -> Result<(), String> {
 }
 
 fn set_result(tx: &Transaction, task: &str, given: bool) -> Result<(), String> {
-    tx.execute("UPDATE run_tasks SET result = ?2 WHERE task = ?1 AND run IN (SELECT id FROM runs WHERE state NOT IN ('closed', 'left'))", (task, given)).map(|_| ()).map_err(sql)
+    tx.execute(&format!("UPDATE run_tasks SET result = ?2 WHERE task = ?1 AND run IN (SELECT r.id FROM runs r WHERE {STILL})"), (task, given)).map(|_| ()).map_err(sql)
 }
 
 /// The agent last chosen for a project's run, if any.
@@ -191,15 +197,27 @@ pub fn last_agent(tx: &Transaction, project: &str) -> Result<Option<String>, Str
     tx.query_row("SELECT r.agent_id FROM runs r JOIN tasks t ON t.id = r.task WHERE t.project = ?1 ORDER BY r.rowid DESC LIMIT 1", [project], |r| r.get(0)).optional().map_err(sql)
 }
 
-/// What a card says of its task's run: starting, asking, or `no_result`: DONE with no result from the agent (AC-123).
-pub fn card_marks(tx: &Transaction) -> Result<HashMap<String, String>, String> {
-    Ok(rows(tx, "SELECT m.task, CASE WHEN r.state IN ('starting', 'asking', 'typed') THEN r.state ELSE 'no_result' END FROM run_tasks m JOIN runs r ON r.id = m.run JOIN tasks t ON t.id = m.task
-              WHERE r.state IN ('starting', 'asking', 'typed') OR (t.status = 'DONE' AND m.result = 0 AND t.archived_at IS NULL AND m.rowid = (SELECT MAX(rowid) FROM run_tasks WHERE task = m.task))", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+/// That of every project: a task made now starts on it.
+pub fn last_agents(tx: &Transaction) -> Result<HashMap<String, String>, String> {
+    Ok(rows(tx, "SELECT t.project, r.agent_id FROM runs r JOIN tasks t ON t.id = r.task ORDER BY r.rowid", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
-/// The agent each task stays on: its newest run's, as that run knew it (AC-138).
-pub fn card_agents(tx: &Transaction) -> Result<HashMap<String, serde_json::Value>, String> {
-    Ok(rows(tx, "SELECT m.task, r.agent_id, r.agent_name, r.agent_color FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.rowid = (SELECT MAX(rowid) FROM run_tasks WHERE task = m.task)", [],
+/// `keys` as one SQL argument: a page's tasks, however many.
+fn listed_keys(keys: &[&str]) -> String {
+    serde_json::to_string(keys).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// What a card says of its task's run: starting, asking, or `no_result`: DONE with no result from the agent (AC-123).
+pub fn card_marks(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, String>, String> {
+    Ok(rows(tx, "SELECT m.task, CASE WHEN r.state IN ('starting', 'asking', 'typed') THEN r.state ELSE 'no_result' END FROM run_tasks m JOIN runs r ON r.id = m.run JOIN tasks t ON t.id = m.task
+              WHERE m.task IN (SELECT value FROM json_each(?1)) AND m.rowid = (SELECT MAX(rowid) FROM run_tasks WHERE task = m.task)
+                AND (r.state IN ('starting', 'asking', 'typed') OR (t.status = 'DONE' AND m.result = 0 AND t.archived_at IS NULL))", [listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+}
+
+/// The agent each of `keys` stays on: its newest run's, as that run knew it (AC-138).
+pub fn card_agents(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, serde_json::Value>, String> {
+    Ok(rows(tx, "SELECT m.task, r.agent_id, r.agent_name, r.agent_color FROM run_tasks m JOIN runs r ON r.id = m.run
+              WHERE m.task IN (SELECT value FROM json_each(?1)) AND m.rowid = (SELECT MAX(rowid) FROM run_tasks WHERE task = m.task)", [listed_keys(keys)],
             |r| Ok((r.get(0)?, serde_json::json!({"id": r.get::<_, String>(1)?, "name": r.get::<_, String>(2)?, "color": r.get::<_, i64>(3)?}))))?.into_iter().collect())
 }
 
@@ -212,7 +230,7 @@ pub fn give_up(tx: &Transaction, task: &str) -> Result<Run, String> {
 
 /// A run that still holds `task` open: its session stays until it ends, or the human gives up (AC-138).
 pub fn holding(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
-    Ok(last_of(tx, task)?.filter(|r| !r.is_over() && r.busy()))
+    Ok(last_of(tx, task)?.filter(Run::busy))
 }
 
 #[cfg(test)]

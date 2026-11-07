@@ -31,10 +31,7 @@ export const el = (tag, cls, text) => {
   if (text !== undefined) e.textContent = text;
   return e;
 };
-export { when };
 
-/** A reminder not resolved (AC-91). */
-export { openReminder };
 
 /** The selected text as a Markdown quote, its lines kept. */
 export const quote = (text) => text.split("\n").map((l) => `> ${l}`).join("\n");

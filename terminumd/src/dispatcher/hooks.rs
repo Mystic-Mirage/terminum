@@ -6,7 +6,7 @@
 use serde_json::Value;
 
 use super::runs::{self, Run};
-use super::{move_all, move_task, store};
+use super::{move_all, move_one, move_task, store};
 use crate::app::Shared;
 use crate::plans::rules;
 use crate::tasks::ops;
@@ -47,7 +47,9 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             active = true;
             r.new_work();
             if r.status != "IN PROGRESS" && (r.ids.len() == 1 || !r.open.is_empty()) {
-                if r.open.is_empty() { move_all(tx, r, "IN PROGRESS", "Dispatcher moved it: new work in its session")?; } else { move_task(tx, r, "IN PROGRESS", "Dispatcher moved it: new work in its session")?; }
+                for id in r.targets() {
+                    move_one(tx, id, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
+                }
                 moved = true;
             }
         }

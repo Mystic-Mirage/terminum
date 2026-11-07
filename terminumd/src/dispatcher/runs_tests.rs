@@ -71,19 +71,19 @@ fn ac138_its_result_is_all_of_theirs() {
 #[test]
 fn ac138_an_agent_is_busy_until_its_tasks_end_and_its_turn_is_over() {
     store("runs-busy").with(|tx| {
-        assert!(busy_with(tx, "a", "")?.is_none());
+        assert!(busy_with(tx, "a", None)?.is_none());
         let (r, t) = working(tx, "a", &["one", "two"]);
-        assert_eq!(busy_with(tx, "a", "")?.map(|b| b.id).as_deref(), Some(r.id.as_str()));
-        assert!(busy_with(tx, "a", &r.id)?.is_none(), "its own run is no other");
-        assert!(busy_with(tx, "b", "")?.is_none(), "another agent is free");
+        assert_eq!(busy_with(tx, "a", None)?.map(|b| b.id).as_deref(), Some(r.id.as_str()));
+        assert!(busy_with(tx, "a", Some(&r.id))?.is_none(), "its own run is no other");
+        assert!(busy_with(tx, "b", None)?.is_none(), "another agent is free");
         ops::move_to(tx, HUMAN, &t[0].id, "DONE", 3)?;
         ops::move_to(tx, HUMAN, &t[1].id, "FAILED", 3)?;
-        assert!(busy_with(tx, "a", "")?.is_some(), "still in its turn");
+        assert!(busy_with(tx, "a", None)?.is_some(), "still in its turn");
         change(tx, &r.id, |r| r.turn_ended = true)?;
-        assert!(busy_with(tx, "a", "")?.is_none(), "free, its idle session waiting to close");
+        assert!(busy_with(tx, "a", None)?.is_none(), "free, its idle session waiting to close");
         // a human's own prompt there: working again, whatever the tasks say
         change(tx, &r.id, |r| r.turn_ended = false)?;
-        assert!(busy_with(tx, "a", "")?.is_some());
+        assert!(busy_with(tx, "a", None)?.is_some());
         Ok(())
     }).unwrap();
 }
@@ -93,7 +93,7 @@ fn ac138_closing_its_session_frees_its_agent() {
     store("runs-closed").with(|tx| {
         let (r, _) = working(tx, "a", &["one"]);
         change(tx, &r.id, |r| r.state = "closed".into())?;
-        assert!(busy_with(tx, "a", "")?.is_none());
+        assert!(busy_with(tx, "a", None)?.is_none());
         assert!(holding(tx, &r.task)?.is_none());
         Ok(())
     }).unwrap();
@@ -109,7 +109,7 @@ fn ac138_giving_up_fails_what_is_open_and_lets_the_window_be() {
         assert_eq!(after.pane_key, r.pane_key, "its window stays");
         assert_eq!(ops::get(tx, &t[0].id)?.status, "DONE", "what is done stays");
         assert_eq!(ops::get(tx, &t[1].id)?.status, "FAILED");
-        assert!(busy_with(tx, "a", "")?.is_none());
+        assert!(busy_with(tx, "a", None)?.is_none());
         assert_eq!(give_up(tx, &t[1].key).unwrap_err(), "It has no run to give up.");
         Ok(())
     }).unwrap();
@@ -119,15 +119,17 @@ fn ac138_giving_up_fails_what_is_open_and_lets_the_window_be() {
 fn ac138_marks_and_agents_are_each_task_s() {
     store("runs-marks").with(|tx| {
         let (r, t) = working(tx, "a", &["one", "two"]);
-        let agents = card_agents(tx)?;
+        let keys: Vec<&str> = t.iter().map(|x| x.key.as_str()).collect();
+        let agents = card_agents(tx, &keys)?;
         assert_eq!(agents[&t[1].key]["name"], "A", "the card stays on it, as the run knew it");
         change(tx, &r.id, |r| r.state = "starting".into())?;
-        assert_eq!(card_marks(tx)?[&t[1].key], "starting");
+        assert_eq!(card_marks(tx, &keys)?[&t[1].key], "starting");
+        assert!(card_marks(tx, &[])?.is_empty(), "only the page's");
         change(tx, &r.id, |r| r.state = "working".into())?;
         ops::move_to(tx, HUMAN, &t[0].id, "DONE", 3)?;
         finished(tx, &t[0].key)?;
         ops::move_to(tx, HUMAN, &t[1].id, "DONE", 3)?;
-        let marks = card_marks(tx)?;
+        let marks = card_marks(tx, &keys)?;
         assert!(!marks.contains_key(&t[0].key), "it gave its result");
         assert_eq!(marks[&t[1].key], "no_result");
         Ok(())

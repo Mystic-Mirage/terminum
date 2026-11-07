@@ -176,10 +176,9 @@ fn move_all(tx: &rusqlite::Transaction, run: &runs::Run, to: &str, words: &str) 
     run.ids.iter().try_for_each(|id| move_one(tx, id, to, words))
 }
 
-/// Says `words` on `run`'s open tasks, else on all, as Dispatcher.
+/// Says `words` on what `run` is about now, as Dispatcher.
 fn say(tx: &rusqlite::Transaction, run: &runs::Run, words: &str) -> Result<(), String> {
-    let on = if run.open.is_empty() { &run.ids } else { &run.open };
-    on.iter().try_for_each(|id| ops::log(tx, &ops::key_of(tx, id)?, DISPATCHER, "told", words, None, ops::now()).map(|_| ()))
+    run.targets().iter().try_for_each(|id| ops::log(tx, &ops::key_of(tx, id)?, DISPATCHER, "told", words, None, ops::now()).map(|_| ()))
 }
 
 /// Every page hears of `run`'s tasks.

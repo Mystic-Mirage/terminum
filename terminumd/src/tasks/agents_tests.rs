@@ -124,7 +124,7 @@ fn ac138_an_effort_goes_on_its_kind_s_command_line() {
     assert!(with("claude", "claude", "max").is_ok());
     assert_eq!(with("codex", "codex", "max").unwrap_err(), "codex has no effort max.");
     assert_eq!(with("claude", "claude", "$(rm -rf)").unwrap_err(), "claude has no effort $(rm -rf).", "a word of a fixed list, never free text");
-    assert!(with("claude", "claude; notify", "high").unwrap_err().contains("; | or &"), "the flag would go to the other program");
+    assert!(with("claude", "claude; notify", "high").unwrap_err().contains("; | & or #"), "the flag would go to the other program");
     assert!(with("claude", "claude; notify", "").is_ok(), "a command is the human's own words");
 }
 

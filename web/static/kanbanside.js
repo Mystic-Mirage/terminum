@@ -8,21 +8,15 @@ import { colored, markedSessions } from "./listparts.js";
 import { findItem, renderNav, row, setTaskMarks } from "./nav.js";
 import { arranged, bindReorder, listOrderer, ordered } from "./reorder.js";
 import { rowMenus, saveOrder } from "./rowmenu.js";
-import { copyPreview, hiddenNote, unhidden } from "./seltext.js";
 import { sessionUrl } from "./tasklink.js";
-import { copyByCommand } from "./touchcopy.js";
+import { copyText } from "./touchcopy.js";
 import { $, DEFAULT, el, read, say, write } from "./kanbanutil.js";
 
 let opened = null;                                 // the session a press last opened
 const openSession = (key) => { opened = key; location.href = sessionUrl(key); };
 const store = { get: (k, d) => read(k) ?? d, set: write };
 
-/** What the session page's copy does: what hides what a line runs is left out; the toast says what went. */
-async function copy(got) {
-  const { text, left } = unhidden(got), said = `Copied ${copyPreview(text)}${hiddenNote(left)}`;
-  const ok = window.isSecureContext && navigator.clipboard?.writeText ? await navigator.clipboard.writeText(text).then(() => true, () => false) : copyByCommand(text);
-  say(ok ? said : "Copying is blocked here; use the system Copy menu.");
-}
+const copy = async (got) => say((await copyText(got)).said);
 
 /** `chosen()`: the projects shown; a task's mark opens its window by `openTask`; `send(m)`: to terminumd. */
 export function boardSessions({ chosen, openTask, send, narrow }) {

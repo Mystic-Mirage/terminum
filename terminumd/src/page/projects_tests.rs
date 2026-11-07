@@ -38,6 +38,16 @@ fn ac110_projects_json_is_copied_once_and_left_in_place() {
 }
 
 #[test]
+fn ac110_a_key_an_older_projects_json_lacks_reads_as_empty() {
+    let (store, json) = stored("projects-partial");
+    std::fs::write(&json, json!({"order": ["g:local/main"], "newer": 1}).to_string()).unwrap();
+    let ps = reloaded(&store, &json);
+    assert!(ps.list().is_empty() && ps.servers.is_empty());
+    assert_eq!(ps.list_order(), ["g:local/main"]);
+    assert!(!json.with_extension("json.bak").exists(), "nothing wrong with it: not set aside");
+}
+
+#[test]
 fn ac110_an_unreadable_projects_json_is_set_aside_and_the_store_starts_empty() {
     for malformed in [json!({"projects": {}}), json!({"projects": [], "servers": []}), json!([])] {
         let (store, json) = stored("projects-schema");

@@ -77,7 +77,7 @@ fn ac138_several_tasks_stand_in_one_project() {
         let a = made(tx, "one", "");
         let b = ops::create(tx, HUMAN, NewTask { title: "two".into(), project: Some("web".into()), ..Default::default() }, 1)?;
         assert!(members(tx, &a.id, std::slice::from_ref(&b.id)).unwrap_err().contains("different projects"));
-        assert_eq!(members(tx, &a.id, &[a.id.clone()])?.len(), 1, "each once");
+        assert_eq!(members(tx, &a.id, std::slice::from_ref(&a.id))?.len(), 1, "each once");
         Ok(())
     }).unwrap();
 }

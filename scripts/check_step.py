@@ -63,10 +63,12 @@ def main(command):
     try:
         status, group = run(command, folder)
         end = time.monotonic() + SETTLE_S
-        while (files_in(folder) or own_processes(folder, group)) and time.monotonic() < end:
-            time.sleep(0.2)
+        processes = own_processes(folder, group)   # it reads every process's environment: once for a clean step
+        while (files_in(folder) or processes) and time.monotonic() < end:
+            time.sleep(1)
+            processes = own_processes(folder, group)
         left = 0
-        for pid, name in own_processes(folder, group):
+        for pid, name in processes:
             left += 1
             print(f"LEFT process {pid}: {name}", file=sys.stderr)
             os.kill(pid, signal.SIGTERM)

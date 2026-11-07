@@ -32,7 +32,8 @@ def regular(path):
 def due(memory, today):
     """Why consolidation is due, if it is."""
     reasons = []
-    stamp = re.search(r"^Last consolidated: (\d{4}-\d{2}-\d{2})", (memory / "INDEX.md").read_text(), re.M)
+    index = (memory / "INDEX.md").read_text()
+    stamp = re.search(r"^Last consolidated: (\d{4}-\d{2}-\d{2})", index, re.M)
     try:
         days = (today - date.fromisoformat(stamp[1])).days if stamp else None
     except ValueError:
@@ -41,7 +42,6 @@ def due(memory, today):
         reasons.append("INDEX.md has no valid 'Last consolidated: YYYY-MM-DD'")
     elif days > DUE_DAYS:
         reasons.append(f"last consolidated {stamp[1]}, over {DUE_DAYS} days ago")
-    index = (memory / "INDEX.md").read_text()
     for path in sorted(memory.glob("*.md")):
         if not regular(path):
             reasons.append(f"{path.name} is not a regular file, not read")

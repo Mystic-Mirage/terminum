@@ -72,7 +72,7 @@ export function waitingCards(box, onOpen) {
       put(c.querySelector(".more"), "textContent", more > 0 ? `+${more} more` : "");
       put(c, "hidden", i >= room);
     });
-    put(box, "hidden", !cards.size);
+    put(box, "hidden", !box.childElementCount);   // tasks' lines share it (tasklines.js)
   }
   PHONE.addEventListener("change", draw);
 

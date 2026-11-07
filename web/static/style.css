@@ -234,6 +234,10 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
    its words cut by an ellipsis where they would not fit */
 #asks { display: flex; flex-direction: column; }
 #asks[hidden] { display: none; }
+/* how many tasks need a human, on Kanban in the page's head (terminum-kanban.md AC-117) */
+.taskneed { margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); font-variant-numeric: tabular-nums; line-height: 16px; color: var(--danger-ink); background: var(--danger-fill); }
+a.icon { position: relative; }
+a.icon .taskneed { position: absolute; top: -4px; right: -4px; margin: 0; }
 #asks .ask { display: flex; align-items: center; min-width: 0; color: var(--t-fg);
   background: color-mix(in srgb, var(--waiting) 9%, var(--t-bg)); border-bottom: 1px solid color-mix(in srgb, var(--waiting) 24%, var(--t-bg)); }
 #asks .go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 16px; text-align: left; font-size: 13px; }   /* #term's 16 px */

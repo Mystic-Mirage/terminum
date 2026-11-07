@@ -19,7 +19,7 @@ use crate::tmux::hookstate::AGENTS;
 const MOST_NAME: usize = 40;
 const MOST_LINE: usize = 1000;
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Agent {
     pub id: String,
     pub project: String,

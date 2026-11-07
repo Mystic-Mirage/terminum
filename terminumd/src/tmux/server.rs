@@ -62,6 +62,8 @@ pub struct Server {
     /// the socket part of a pane key: the -L name locally, "default" on a host
     pub socket: String,
     pub link: Link,
+    /// A human's keys wait behind the typing gate (terminum-dispatcher.md §9).
+    pub typing: tokio::sync::Mutex<()>,
     inner: Mutex<Inner>,
     wakes: Mutex<HashMap<String, watch::Sender<()>>>,
     printed: Mutex<HashMap<String, u64>>,
@@ -102,6 +104,7 @@ impl Server {
             name: name.to_string(),
             socket: socket.to_string(),
             link,
+            typing: tokio::sync::Mutex::new(()),
             inner: Mutex::default(),
             wakes: Mutex::default(),
             printed: Mutex::default(),

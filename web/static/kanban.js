@@ -15,6 +15,8 @@ import { seeFolders } from "./nav.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
 import { sessionStrip, sessionsColumn } from "./kanbanside.js";
 import { agentsSection } from "./kanbanagents.js";
+import { runWindow } from "./kanbanrun.js";
+import { taskLines } from "./tasklines.js";
 import { $, COLUMNS, api, button, el, iconButton, say } from "./kanbanutil.js";
 
 const PAGE = 200;
@@ -80,9 +82,11 @@ const projectOf = (id) => meta.projects.find((p) => p.id === id);
 /** What a session's row cannot say (AC-136): an agent gone quiet with its task open, why it failed, a closed one. */
 function sessionLine(t) {
   const s = t.session;
-  if (!s) return null;
+  if (!s && !t.run) return null;
   const open = t.status === "IN PROGRESS";
   const line = (cls, words, why) => { const e = el("span", `cstate ${cls}`, words); if (why) e.title = why; return e; };
+  if (t.run === "no_result") return line("stopped", "DONE, no result");
+  if (t.run) return line("waiting", t.run === "asking" ? "answer in its window" : "starting");
   if (s.closed) return line("closed", "session closed");
   if (s.state === "failed") return line("failed", `failed: ${(s.why || "an error").replaceAll("_", " ")}`);
   if (s.state === "waiting") return line("waiting", "waits for you", s.why);
@@ -179,9 +183,14 @@ function placeCard(t, column) {
   draw();
 }
 
+/** IN PROGRESS with no session asks which agent starts it; the card moves when one takes it (terminum-dispatcher.md AC-121). */
 async function moveTo(t, status) {
-  if (status === "IN PROGRESS" && !t.session
-    && !await askConfirm(`${t.id} has no session. Move it to IN PROGRESS? Link a session in its window to have an agent work on it.`, "Move")) return;
+  if (status === "IN PROGRESS" && !t.session) {
+    try {
+      const how = await runs.open(t, { canMove: true });
+      if (how !== "move") return;
+    } catch (e) { return say(e.message); }
+  }
   placeCard(t, status);
   change(t, { status });
 }
@@ -224,6 +233,7 @@ const columns = new Map(COLUMNS.map((column) => {
 const SESSIONS = "Sessions";
 const sessionsTab = tabFor(SESSIONS);
 const side = sessionsColumn({ chosen: () => filters().project, openTask, onCount: (n) => { sessionsTab.textContent = `${SESSIONS} ${n}`; } });
+const runs = runWindow({ addAgent: (project) => agents.addTo(project), done: () => readSoon() });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta });
 side.col.append(agents.box);
 const pages = new Map([...columns, [SESSIONS, { col: side.col, tab: sessionsTab }]]);
@@ -326,7 +336,8 @@ async function madeHidden(t) {
 }
 
 const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, newProject });
-const windowed = taskWindow({ getMeta: () => meta });
+const needs = taskLines($("asks"), (id) => openTask(id));
+const windowed = taskWindow({ getMeta: () => meta, runs });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden });
 
 const addressed = () => /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
@@ -335,6 +346,7 @@ const addressed = () => /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
 function openTask(id, push = true) {
   // one step of Back for the window, whichever tasks it showed
   if (push) history[addressed() ? "replaceState" : "pushState"]({ win: true }, "", `/kanban/${id}${location.search}`);
+  needs.opened(id);
   windowed.open(id).catch((e) => {
     say(e.message);
     history.replaceState(null, "", `/kanban/${location.search}`);
@@ -408,7 +420,7 @@ function listen() {
       if (m.t === "taskchange") again(m.id);
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
       else if (m.t === "build") buildCame(m.id);
-      else if (m.t === "taskmarks") side.marks(m);
+      else if (m.t === "taskmarks") { side.marks(m); needs.came(m); }
       else if (m.t === "projects") { side.projects(m.items ?? [], m.order ?? []); clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);

@@ -54,12 +54,12 @@ export function agentsSection({ getMeta, chosen, reload }) {
     if (!field.command.value.trim() || KINDS.includes(field.command.value)) field.command.value = kind;
   });
 
-  /** Its window: a new one in the project shown, or `a` to change. */
-  function open(a = null) {
+  /** Its window: a new one in the project shown, or `a` to change; `given`: a new one in that project. */
+  function open(a = null, given = null) {
     const { projects, hosts } = getMeta();
     editing = a;
     const picked = chosen();
-    const project = a?.project ?? (picked.length === 1 ? picked[0] : "default");
+    const project = a?.project ?? given ?? (picked.length === 1 ? picked[0] : "default");
     const of = projects.find((p) => p.id === project);
     const v = a ?? { host: of?.host, dir: "", kind: "claude", name: agentName("claude"), command: "claude" };
     fillSelect(field.project, projects.map((p) => [p.id, p.name]), project);
@@ -104,5 +104,10 @@ export function agentsSection({ getMeta, chosen, reload }) {
     if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
   });
 
-  return { box, draw };
+  /** A new one in `project`; once its window closes. */
+  const addTo = (project) => {
+    open(null, project);
+    return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
+  };
+  return { box, draw, addTo };
 }

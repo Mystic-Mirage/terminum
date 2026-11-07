@@ -44,6 +44,7 @@
   <div id="boardacts"><button id="newtask" class="textkey primary" type="button">New task</button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
+<div id="asks" aria-live="polite" hidden></div>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
 <main id="board" aria-label="Tasks"></main>
 <p id="toast" class="box" role="status" popover="manual" hidden></p>
@@ -102,6 +103,28 @@
       <button id="agentdrop" type="button" hidden>Delete</button>
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="agentok" type="button" class="primary">Add</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="runbox" class="box dlg" aria-labelledby="runhead">
+  <form method="dialog" id="runform">
+    <div class="dhead"><h2 id="runhead">Run</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <p id="runnone" hidden></p>
+    <div id="runfields" class="fieldgrid">
+      <label class="fieldrow">Agent <select id="runagent" class="field"></select></label>
+      <label class="fieldrow">Folder <input id="runfolder" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    </div>
+    <dl id="runfacts" class="runfacts"><dt>Server</dt><dd id="runserver"></dd><dt>Command</dt><dd id="runcommand"></dd></dl>
+    <p id="runmarked" class="runmarked" hidden>An agent wrote this text.</p>
+    <pre id="runprompt" class="runprompt" tabindex="0" aria-label="What will be sent"></pre>
+    <p id="runerror" role="alert" hidden></p>
+    <div class="actions">
+      <button id="runadd" type="button" hidden>Add agent</button>
+      <button id="runjust" type="button" hidden>Only move it</button>
+      <button id="runfresh" type="button" hidden>Run from scratch</button>
+      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="rungo" type="button" class="primary">Run</button>
     </div>
   </form>
 </dialog>

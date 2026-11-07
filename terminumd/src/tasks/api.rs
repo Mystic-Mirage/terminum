@@ -28,6 +28,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks/start-empty", post(start_empty))
         .route("/api/task-projects", post(new_project))
         .merge(super::agents::routes())
+        .merge(crate::dispatcher::api::routes())
         .route("/api/tasks/{id}", get(window).patch(change))
         .route("/api/tasks/{id}/comments", post(add_comment))
         .route("/api/tasks/{id}/comments/{event}", patch(edit_comment).delete(drop_comment))
@@ -133,12 +134,19 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
     };
     let with_counts = q.get("counts").is_some_and(|c| c == "1");
-    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }))).await;
+    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }, crate::dispatcher::runs::marks(tx)?))).await;
     match done {
-        Ok((tasks, counts)) => {
+        Ok((tasks, counts, starting)) => {
             let layout = app.layout.read();
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
-            let shown: Vec<Value> = tasks.iter().map(|t| with_session(t, t.session.as_deref().and_then(|k| rows.get(k).copied()))).collect();
+            let starting: HashMap<String, String> = starting.into_iter().collect();
+            let shown: Vec<Value> = tasks.iter().map(|t| {
+                let mut v = with_session(t, t.session.as_deref().and_then(|k| rows.get(k).copied()));
+                if let Some(state) = starting.get(&t.key) {
+                    v["run"] = json!(state);
+                }
+                v
+            }).collect();
             Json(json!({"tasks": shown, "counts": counts})).into_response()
         }
         Err(e) => refuse(StatusCode::SERVICE_UNAVAILABLE, e),
@@ -272,6 +280,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         ops::edit(tx, HUMAN, &wanted, edit, at)?;
         if let Some(status) = &to_status {
             ops::move_to(tx, HUMAN, &wanted, status, at)?;
+            crate::dispatcher::runs::hold(tx, &was.key)?;   // it stands until RUN or their own prompt (AC-124)
         }
         if reorder {
             ops::reorder(tx, &wanted, before.as_deref(), at)?;
@@ -289,6 +298,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     };
     if moved_to.is_some() && was.status != task.status {
         super::tell::human_moved(&app, &task).await;
+        crate::dispatcher::api::human_moved(&app, &task).await;
     }
     told(&app, &task.id);
     let mut answered = card(&app, &task);

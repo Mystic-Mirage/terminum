@@ -7,7 +7,7 @@ import "./press.js";                                // a pressed blob's pulse (m
 import "./pop.js";                                  // where a window flies out of (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
-import { askedSession } from "./tasklink.js";
+import { pageTasks } from "./pagetasks.js";
 import { findItem, listParts, renderNav, seeWaits, serverDown, setTaskMarks, taskMarksOf } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
@@ -65,9 +65,9 @@ const store = {
 if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
-let opening = askedSession();                      // a session asked for by the address (terminum-kanban.md AC-134)
+const tasks = pageTasks({ box: $("asks"), embedded, say: (...a) => toast(...a), isThere: (g, id) => !!findItem(g, id), down: (g, id) => serverDown(g, id) });
 const st = {
-  groups: [], sid: embedded ?? opening ?? store.get("sid", null), projects: [], listOrder: [],
+  groups: [], sid: embedded ?? tasks.asked ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
   appCursor: false, bracketed: store.get("bracketed", true), insertClipboard: store.get("insertClipboard", true), atMac: false,
@@ -271,7 +271,7 @@ function onMessage(m) {
   rail?.seen(m);
   ask.seen(m); asked.seen(m); rowMenu.seen(m);
   switch (m.t) {
-    case "layout": st.groups = m.groups; sayAskedGone(); place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
+    case "layout": st.groups = m.groups; tasks.layout(m.groups); place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
     case "hist":                                    // a reset: another pane, or its scrollback cleared
       if (m.mode === "reset") widgets.folds.reset();
@@ -299,7 +299,7 @@ function onMessage(m) {
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
     case "projects": st.projects = Array.isArray(m.items) ? m.items : []; st.listOrder = Array.isArray(m.order) ? m.order : []; place.note(); bookmarks.changed(); break;   // the list, and the projects the list below it names
-    case "taskmarks": setTaskMarks(m); bookmarks.changed(); break;   // the rows' marks, the Plan button (terminum-kanban.md AC-113)
+    case "taskmarks": setTaskMarks(m); bookmarks.changed(); tasks.marks(m); break;   // the rows' marks, the Plan button (terminum-kanban.md AC-113)
     case "created": if (!m.stay) pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }
@@ -322,13 +322,6 @@ const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
   if (kind === "part") orderList(ids);
   else saveOrder(send, parent, ids);
 }, () => drawNav(), rowMenu.held);                  // a layout may have come while dragging
-
-/** The first list says whether the address's session is there; `drawNav` then goes on as after any closing. */
-function sayAskedGone() {
-  if (!opening || !st.groups.length) return;
-  if (!findItem(st.groups, opening) && !serverDown(st.groups, opening)) toast("That session has ended.", 4000);
-  opening = null;
-}
 
 function pick(id) {
   const of = !narrow.matches && findItem(st.groups, id)?.item.quickOf;   // a quick shell's row: its pane, with it

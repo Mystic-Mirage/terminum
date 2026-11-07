@@ -51,6 +51,7 @@ mod screen;
 mod sent;
 mod settings;
 mod sock;
+mod dispatcher;
 mod tasks;
 mod termtext;
 #[cfg(test)]
@@ -126,6 +127,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         projects: Mutex::new(projects),
         tasks,
         task_lines: Default::default(),
+        dispatcher: Default::default(),
         task_marks,
         unread: Mutex::new(page::unread::Marks::load(&dir)),
         turns: Default::default(),
@@ -255,6 +257,7 @@ async fn serve() {
     attach::sync(&app);
     webaccess::apply(&app);
     tokio::spawn(manager::run(app.clone()));
+    tokio::spawn(dispatcher::walking(app.clone()));
     tokio::spawn(looks::follow(app.clone()));
     tokio::spawn(restore::follow(app.clone()));
     tokio::spawn(lastlines::follow(app.clone()));

@@ -706,9 +706,7 @@ Comments and history are one table, `events`: a window lists them in one order. 
 | AC | Gap | Evidence |
 |---|---|---|
 | AC-112 | Subtasks are kept and counted; no window makes one and Show subtasks is not there. | `terminumd/src/tasks/ops.rs`, `web/static/kanbanwin.js` |
-| AC-114 | A line reaches a session by its next hook; typing into an idle session comes with Dispatcher's gate. | `terminumd/src/tasks/tell.rs` |
 | AC-116 | No record offers Make a task. | `web/static/marks.js` |
-| AC-117 | No banner or count on the Kanban link. | `web/static/kanban.js` |
 | AC-118 | No archive: nothing leaves the board by itself. | `terminumd/src/tasks/query.rs` |
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
@@ -787,7 +785,7 @@ Pages hear over the page's WebSocket: `taskchange {id}` (`""` for several: a ser
 |---|---|---|
 | Stage 2 | AC-112, AC-116, AC-118, AC-120 | Subtasks, records into tasks, archive, agents on hosts in full. |
 
-AC-117 and AC-114's typing ship with `terminum-dispatcher.md`'s Stage 1. Depends on: nothing more.
+Depends on: nothing more.
 
 ## 11. Checklist with Definition of Done
 
@@ -800,10 +798,10 @@ AC-117 and AC-114's typing ship with `terminum-dispatcher.md`'s Stage 1. Depends
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [ ] AC-112 — `cargo test tasks::ops` for the rules; the window to come
 - [x] AC-113 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
-- [x] AC-114 — `cargo test tasks::tell`, `web/test/e2e_livenotes.mjs`; typing with `terminum-dispatcher.md`
+- [x] AC-114 — `cargo test tasks::tell`, `web/test/e2e_livenotes.mjs`, `terminumd/src/dispatcher/api.rs` `human_moved` through the gate
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
 - [ ] AC-116 — to come
-- [ ] AC-117 — to come
+- [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-118 — to come
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`

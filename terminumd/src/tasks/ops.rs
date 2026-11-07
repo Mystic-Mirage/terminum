@@ -25,7 +25,7 @@ pub fn sql(e: rusqlite::Error) -> String {
 }
 
 /// Every row `query` finds.
-pub(super) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: impl FnMut(&Row) -> rusqlite::Result<T>) -> Result<Vec<T>, String> {
+pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: impl FnMut(&Row) -> rusqlite::Result<T>) -> Result<Vec<T>, String> {
     tx.prepare(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)
 }
 
@@ -52,7 +52,7 @@ pub struct Task {
     pub subtasks: i64,
     /// the row's key and place in its column: the rules', never shown
     #[serde(skip)]
-    pub(super) key: String,
+    pub(crate) key: String,
     #[serde(skip)]
     rank: f64,
 }
@@ -96,7 +96,7 @@ fn of_task<T>(tx: &Transaction, id: &str, query: &str, f: impl FnOnce(&Row) -> r
 }
 
 /// The row's key of task `id`.
-pub(super) fn key_of(tx: &Transaction, id: &str) -> Result<String, String> {
+pub(crate) fn key_of(tx: &Transaction, id: &str) -> Result<String, String> {
     of_task(tx, id, "SELECT id FROM tasks WHERE number = ?1", |r| r.get(0))
 }
 
@@ -108,7 +108,7 @@ pub fn text_of(tx: &Transaction, id: &str) -> Result<String, String> {
     of_task(tx, id, "SELECT body FROM tasks WHERE number = ?1", |r| r.get(0))
 }
 
-pub(super) fn user_name(tx: &Transaction, user: &str) -> Result<String, String> {
+pub(crate) fn user_name(tx: &Transaction, user: &str) -> Result<String, String> {
     tx.query_row("SELECT name FROM users WHERE id = ?1", [user], |r| r.get(0)).optional().map_err(sql)?.ok_or_else(|| format!("No user {user}"))
 }
 

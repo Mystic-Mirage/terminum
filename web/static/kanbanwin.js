@@ -16,7 +16,7 @@ function editor(text, label) {
   return area;
 }
 
-export function taskWindow({ getMeta }) {
+export function taskWindow({ getMeta, runs }) {
   const box = $("taskbox"), body = $("taskbody");
   let shown = null, opening = 0;
 
@@ -181,9 +181,19 @@ export function taskWindow({ getMeta }) {
       }
       tryClose();
     });
+    // RUN: the comment goes with it, and on in its session or a new one (terminum-dispatcher.md AC-122)
+    const run = button(null, "RUN", async () => {
+      try {
+        if (await runs.open(t, { words: area.value, files: dropped() }) !== true) return;
+      } catch (e) { say(e.message); return; }
+      write(draft, null);
+      write(filesKey, null);
+      tryClose();
+    });
+    run.dataset.run = t.id;
     onSend(area, () => close.click());
     close.title = "Keep the comment and close: nothing moves, the session hears nothing";
-    wrap.append(area, row(close));
+    wrap.append(area, row(run, close));
     return wrap;
   }
 

@@ -213,6 +213,8 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
             server.arm_copy(&pane, copied_to(&page, &key));
         }
         let mut result = Ok(());
+        let held = server.typing.lock().await;
+        app.dispatcher.human_key(&key);
         for run in runs(&batch) {
             result = match run {
                 Run::Keys(data) => send(&app, &client, &server, &pane, &data).await,
@@ -222,6 +224,7 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
                 break;
             }
         }
+        drop(held);
         super::timing::typed(&page, ks, "keys");
         if let Err(e) = result {
             error(&page, e, Some(&key));
@@ -309,7 +312,7 @@ async fn send(app: &Shared, client: &crate::tmux::control::Control, server: &Ser
 
 /// A paste through a tmux buffer: a 0600 file and `load-buffer` on this Mac, `set-buffer`
 /// in parts on a host; then `paste-buffer -p` (bracketed, the buffer deleted).
-async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Control, server: &Server, pane: &str, text: &str) -> Result<(), String> {
+pub(crate) async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Control, server: &Server, pane: &str, text: &str) -> Result<(), String> {
     if text.is_empty() {
         return Ok(());                                 // tmux makes no buffer of nothing ("no buffer tm-…")
     }

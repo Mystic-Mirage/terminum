@@ -16,6 +16,8 @@ use crate::page::Page;
 struct Held {
     counts: HashMap<String, i64>,
     sessions: BTreeMap<String, Vec<String>>,
+    /// WAIT FOR HUMAN and FAILED, each with what moved it and why (AC-117)
+    attention: Vec<(String, String, bool, String)>,
 }
 
 #[derive(Default)]
@@ -35,7 +37,11 @@ impl Marks {
             for (key, id) in rows(tx, "SELECT session_key, 'T-' || number FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number", [], |r| Ok((r.get(0)?, r.get(1)?)))? {
                 sessions.entry(key).or_default().push(id);
             }
-            Ok(Held { counts, sessions })
+            let attention = rows(tx, "SELECT 'T-' || t.number, t.status,
+                    COALESCE((SELECT author != 'human' FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1), 0),
+                    COALESCE((SELECT text FROM events e WHERE e.task = t.id AND e.kind = 'why' ORDER BY e.at DESC, e.rowid DESC LIMIT 1), '')
+                FROM tasks t WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL ORDER BY t.number DESC", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+            Ok(Held { counts, sessions, attention })
         });
         // a passing failure says nothing about the tasks: the last numbers stand
         let Ok(read) = read else { return false };
@@ -47,7 +53,11 @@ impl Marks {
 
     fn message(&self) -> String {
         let held = self.held.lock();
-        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts}).to_string()
+        let lines: Vec<_> = held.attention.iter().filter(|a| a.2).map(|(id, status, _, why)| {
+            let first = why.lines().next().unwrap_or("");
+            json!({"id": id, "words": if status == "FAILED" { format!("{id} failed: {first}") } else { format!("{id} waits for you") }})
+        }).collect();
+        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "need": held.attention.len(), "lines": lines}).to_string()
     }
 }
 
@@ -77,11 +87,11 @@ mod tests {
         assert!(marks.refresh(&store));
         assert!(!marks.refresh(&store), "the same again is no change");
         let told: serde_json::Value = serde_json::from_str(&marks.message()).unwrap();
-        assert_eq!(told, json!({"t": "taskmarks", "marks": {key: [t.id]}, "counts": {"default": 1}}));
+        assert_eq!(told, json!({"t": "taskmarks", "marks": {key: [t.id]}, "counts": {"default": 1}, "need": 0, "lines": []}));
         store.with(|tx| move_to(tx, HUMAN, &t.id, "DONE", 2)).unwrap();
         assert!(marks.refresh(&store));
         let told: serde_json::Value = serde_json::from_str(&marks.message()).unwrap();
-        assert_eq!(told, json!({"t": "taskmarks", "marks": {}, "counts": {"default": 1}}), "DONE leaves its row, and still counts in its project");
+        assert_eq!(told, json!({"t": "taskmarks", "marks": {}, "counts": {"default": 1}, "need": 0, "lines": []}), "DONE leaves its row, and still counts in its project");
     }
 
     #[test]

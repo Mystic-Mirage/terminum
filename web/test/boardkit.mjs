@@ -43,5 +43,5 @@ export function boardKit(page, { base, tmux, work, bin, home, app }) {
     await page.click("#sessions .item");
     await page.waitForSelector("#term", { state: "visible", timeout: 5000 });
   };
-  return { j, newPane, keyOf, hook, tool, endPanes, card, open, backToSessions };
+  return { j, newPane, keyOf, hook, tool, endPanes, card, open, backToSessions, cli };
 }

@@ -6,7 +6,7 @@ Sibling of `terminum-kanban.md` (tasks and the board). This spec holds Dispatche
 
 | Field | Value |
 |---|---|
-| Status | approved, not built |
+| Status | approved; Stage 1 built |
 
 A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
@@ -38,12 +38,12 @@ Assumptions (each "to be measured" is measured on the real programs before the c
 
 | ID | Assumption | Owner | Status |
 |---|---|---|---|
-| AS-122 | `claude --resume <id>` and `codex resume <id>`, run in the folder the conversation began in, continue it by the ID hooks give. | Claude | to be measured |
+| AS-122 | `claude --resume <id>` and `codex resume <id>`, run in the folder the conversation began in, continue it by the ID hooks give; an unknown ID is said and Claude Code exits 1; another folder may first ask its trust. | Claude | measured on Claude Code 2.1 and Codex 0.166 |
 | AS-123 | Claude Code's transcript and Codex's session log hold token counts that `terminum hook` can sum within its 3 s. | Claude | to be measured |
 | AS-124 | Hooks are installed and trusted (Codex's /hooks). AS-73 stands: a subagent ended abnormally fires no SubagentStop. | Owner | installed checked by RUN; untrusted seen as AC-121's failure |
-| AS-125 | The gate's screen reading (§9) tells an empty input box from a draft, ghost text and any dialog, for Claude Code's two TUIs and Codex; an unknown screen reads as not empty. | Claude | to be measured, version bump included |
+| AS-125 | The gate's screen reading (§9) tells an empty input box from a draft, ghost text and any dialog, for Claude Code's two TUIs and Codex, by `capture-pane -e`: Claude Code's `❯` between two rules with nothing at full strength after it (its cursor's reverse cell or a suggestion in dim), Codex's `›` then its placeholder in dim; an unknown screen reads as not empty. | Claude | measured on Claude Code 2.1 and Codex 0.166; again at a version bump |
 | AS-126 | A subagent may run inside the agent's process or as its own process in a tmux pane of its own, a child of the tmux server and outside the agent's process tree. | Claude | measured once: a Claude Code 2.1 teammate ran in its own pane; other kinds and Codex to be measured |
-| AS-127 | SessionEnd, on SIGTERM and on /clear (its reason); when each agent fires SessionStart, as the gate's second step needs it before the first prompt; pane options through `respawn-pane`; an idle agent's CPU use with its MCP servers. | Claude | to be measured |
+| AS-127 | SessionEnd says `clear` on /clear, a new ID coming in the next SessionStart, and `other` on SIGTERM as on a clean end, so only the exit code tells them; Claude Code's SessionStart comes after its box shows, so the gate waits for it; an idle agent's tree uses 0.72 s (Claude Code) and 0.11 s (Codex) of CPU a minute. | Claude | measured on Claude Code 2.1 and Codex 0.166; Codex's SessionStart before its first prompt is not known, so the gate's first prompt there rests on the screen read twice |
 
 Dependencies:
 
@@ -280,8 +280,10 @@ Scenario: AC-123 edge — a running tool is activity
   Then no idle clock runs, bounded by the budget when one is set
 
 Scenario: AC-123 happy path — the session ends cleanly
-  When SessionEnd comes with a reason other than /clear, T-12 open, or the window command records exit 0
+  When the window command records exit 0, T-12 open
   Then T-12 is DONE with the comment "The session ended without finish_task." and the "no result" mark
+  When SessionEnd comes with another reason
+  Then the exit code decides at the next read: a signal's says `other` too (AS-127)
   When SessionEnd comes from /clear
   Then nothing ends; the run keeps the newest session ID of that pane's SessionStart
 
@@ -490,7 +492,7 @@ Scenario: AC-131 happy path — the walk
 Scenario: AC-131 edge — a sleeping Mac
   Given T-12 with 30 of 60 budget minutes used and a Mac asleep for 8 hours
   When it wakes
-  Then no clock gained those hours: a gap between walks over 2 minutes adds nothing to budget, idle or closing clocks, nothing fires, and T-12 says once "Clocks paused 480 minutes: this Mac slept"
+  Then no clock gained those hours: a gap between walks over 2 minutes adds nothing to budget, idle or closing clocks, nothing fires, and T-12 says once "Clocks paused 480 minutes: no walk saw them pass"
   And the same holds for a stopped terminumd and a lost link
 
 Scenario: AC-131 edge — terminumd restarts
@@ -552,13 +554,11 @@ sequenceDiagram
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-121…AC-131 | Not built. Hooks give states, the session's ID, subagents, errors and the prompt; a paste goes through a tmux buffer; `ps` runs on a host. | `terminumd/src/tmux/hookstate.rs:214`, `terminumd/src/cli/hook.rs:127`, `terminumd/src/page/typing.rs:294`, `terminumd/src/tmux/orphans.rs:112` |
-| AC-121, AC-122, AC-123, AC-126 | No signal reads an empty input box; `claude_box` only locates Claude's box; Codex's states are the screen's. | `terminumd/src/tmux/agentstate.rs:239`, `terminumd/src/tmux/hookstate.rs:12` |
-| AC-123, AC-125 | The hook record keeps the last tool after its end, so it does not say a tool is open. | `terminumd/src/tmux/hookstate.rs:191` |
-| AC-124 | A wait's hook state has a 120 s lease, the same as the rule's 2 minutes, then gives way to the screen. | `terminumd/src/tmux/hookstate.rs:26` |
-| AC-131 | Hook records live in memory only. | `terminumd/src/tmux/hookstate.rs:11` |
-| AC-127 | A subagent's process or pane is not tied to its hook ID (OQ-122). | to be measured |
-| AC-121 | Typing is queued per page, not per pane; the gate needs a queue of the pane's that a human's keys go through too. | `terminumd/src/page/typing.rs:69` |
+| AC-122 | New work on an archived task does not return it: there is no archive yet (`terminum-kanban.md` AC-118). | `terminumd/src/dispatcher/hooks.rs` |
+| AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |
+| AC-131 | A restored tmux server's new pane is not followed: its run says its window was closed. | `terminumd/src/dispatcher/plan.rs` |
+| AC-121 | A real Codex's hooks need its own trust (AS-124), not checked here beyond its failure's words. | `terminumd/src/dispatcher/start.rs` |
+| AC-126, AC-127, AC-128, AC-129, AC-130 | Not built. | `terminumd/src/dispatcher/plan.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -572,7 +572,7 @@ One task inside terminumd, fed by hooks' events and a 30 s walk, its clocks in t
 
 | Part | Owner |
 |---|---|
-| RUN, walk, clocks, gate, ending | terminumd (`dispatcher/`) |
+| RUN, walk, clocks, gate, ending | terminumd (`dispatcher/`); the board's RUN window (`web/static/kanbanrun.js`) |
 | Agents' signals | Hooks and MCP |
 | What the card shows | Page |
 
@@ -581,12 +581,15 @@ One task inside terminumd, fed by hooks' events and a 30 s walk, its clocks in t
 **Runs.** One row per RUN, in the store of `terminum-kanban.md`:
 
 ```sql
-CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, number INTEGER NOT NULL, pane_key TEXT, server_id TEXT, agent TEXT NOT NULL,
-  agent_session TEXT, folder TEXT NOT NULL, state TEXT NOT NULL, waiting_since INTEGER, open_tools INTEGER, subs TEXT, turn TEXT,
-  budget_used INTEGER NOT NULL DEFAULT 0, idle_since INTEGER, nudged INTEGER NOT NULL DEFAULT 0, warned INTEGER NOT NULL DEFAULT 0, closing_at INTEGER, last_walk INTEGER);
+CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, number INTEGER NOT NULL, agent_id TEXT NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL,
+  host TEXT, folder TEXT NOT NULL, pane_key TEXT, agent_session TEXT, state TEXT NOT NULL, prompt TEXT,
+  hooked INTEGER NOT NULL DEFAULT 0, turn_ended INTEGER NOT NULL DEFAULT 0, open_tools INTEGER NOT NULL DEFAULT 0,
+  idle_for INTEGER NOT NULL DEFAULT 0, waited_for INTEGER NOT NULL DEFAULT 0, closing_for INTEGER NOT NULL DEFAULT 0, budget_used INTEGER NOT NULL DEFAULT 0,
+  nudged INTEGER NOT NULL DEFAULT 0, nudge_turn INTEGER NOT NULL DEFAULT 0, warned INTEGER NOT NULL DEFAULT 0, held INTEGER NOT NULL DEFAULT 0,
+  wait_moved INTEGER NOT NULL DEFAULT 0, no_result_wait INTEGER NOT NULL DEFAULT 0, result INTEGER NOT NULL DEFAULT 0, ended_said INTEGER NOT NULL DEFAULT 0, last_walk INTEGER NOT NULL DEFAULT 0, started_at INTEGER NOT NULL);
 ```
 
-`state`, `waiting_since`, `open_tools`, `subs`, `turn` and `agent_session` are written when they change, so a restart needs no next event. `server_id` is the server's `@terminum-id`. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so.
+`state`: `starting`, `asking` (its own question before the box), `typed` (the prompt is in, not yet taken), `working`, `gone` (only the shell remains), `left` (a human's program runs there), `closed`. Its clocks are seconds seen to pass, added walk by walk, so a gap adds nothing (AC-131). A restart reads them, and every other fact here, from the store. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so; a restarted server's pane has none. A run keeps the command it started with, so an agent's later change holds for its next run.
 
 **A project's agents.** In the store; Default may have them. A row is what the human wrote: the command is kept as it is and reaches tmux only as one quoted argument of the window command, run by the user's login shell.
 
@@ -603,19 +606,21 @@ GET /api/tasks/meta → {"agents": [{"id": "a81f", "project": "api-id", "name": 
 
 `kind` says whose screens and hooks the gate reads (§9); the command does not change that. The same `projects` message that tells pages of a project's change tells them of its agents'.
 
-**Window command.** The user's login shell runs the agent, records its exit code in the pane option `@terminum-exit`, then stays as a shell:
+**Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, whatever the user's shell is: `/bin/sh` goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, then stays as that shell. tmux gets each word apart and runs no shell of its own:
 
 ```sh
-new-window -c '/Users/alex/work/api' -P -F '#{pane_id}' "$SHELL -lic 'claude; tmux set -p @terminum-exit $?; exec $SHELL -l'"
+new-window -d -a -t @7 -P -F '#{pane_id} #{session_name}:#{window_index}' /bin/sh -c 'd=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd "$d"; then "$s" -lic "$c"; e=$?; else e=126; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; exec "$s" -l' sh '/Users/alex/work/api' 'claude --model opus' tmux
 ```
 
-**Resume.** `claude --resume <id>` or `codex resume <id>` in the run's first folder; `<id>` must match `[A-Za-z0-9-]{1,100}` and is shell-quoted as well: a hook's field can be posted by any process of the user or a broken host.
+Exit 126 is the folder's. The target names the pane: `tmux set -p` without `-t` writes to the session's current pane.
+
+**Resume.** The run's own command then `--resume <id>` (Claude Code) or `resume <id>` (Codex), in the run's first folder; `<id>` must match `[A-Za-z0-9-]{1,100}` and is shell-quoted as well: a hook's field can be posted by any process of the user or a broken host.
 
 **The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>":
 
 1. The pane's `@terminum-run` is this run's.
-2. The hooks say the turn ended (for the first prompt: SessionStart), with no newer event; `pane_current_command` is the agent; the pane is in no tmux mode.
-3. The screen reads as a known, empty input box of that agent and TUI (AS-125). Anything else, a new version's changed screen included, is not empty.
+2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart; Codex's box read empty twice), with no newer event; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
+3. The screen reads as a known, empty input box of that kind (AS-125). Anything else, a new version's changed screen included, is not empty.
 4. Paste with `paste-buffer -p`, no Enter.
 5. Read the screen again: the text or Claude's fold marker stands in the box, with no dialog.
 6. Enter.
@@ -636,7 +641,7 @@ Only the following pass: a T-number with fixed words and the column and human's 
 | Budget | 5 min to 7 days; last warning max(3%, 2 min); SIGTERM, 10 s, SIGKILL |
 | Subagent silent and idle | 10 min request; 20 min end |
 
-**Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold comes from a measured idle agent with its MCP servers (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
+**Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
 
 **Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store; 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
 
@@ -667,15 +672,15 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 
 ## 11. Checklist with Definition of Done
 
-- [ ] AC-121 — `cargo test dispatcher::run`, `cargo test dispatcher::gate`, new `web/test/e2e_liveprogs_tasks.mjs` with Claude Code's two TUIs and Codex (a dialog raised during the gate never gets Enter), `SECURITY.md` carries Dispatcher's typing
+- [x] AC-121 — `cargo test dispatcher::screen`, `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
-- [ ] AC-122 — `cargo test dispatcher::again`, `web/test/e2e_liveprogs_tasks.mjs`
-- [ ] AC-123 — `cargo test dispatcher::end`, new `scripts/e2e_dispatcher.py` with the test clock
-- [ ] AC-124 — `cargo test dispatcher::wait`, `scripts/e2e_dispatcher.py` with a real permission prompt older than 5 minutes
-- [ ] AC-125 — `cargo test dispatcher::close`, `scripts/e2e_dispatcher.py`
-- [ ] AC-126 — `cargo test dispatcher::budget`, `scripts/e2e_dispatcher.py`, `web/test/e2e_liveprogs_tasks.mjs`, `SECURITY.md` carries Dispatcher's signals
-- [ ] AC-127 — `cargo test dispatcher::subagents`, `scripts/e2e_dispatcher.py`
-- [ ] AC-128 — `cargo test dispatcher::limits`, `scripts/e2e_dispatcher.py`
+- [x] AC-122 — `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
+- [x] AC-123 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs` with the test clock
+- [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-125 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
+- [ ] AC-126 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
+- [ ] AC-127 — `cargo test dispatcher::subagents`, `web/test/e2e_livedispatcher.mjs`
+- [ ] AC-128 — `cargo test dispatcher::limits`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-129 — `cargo test cli::hook` with fixtures of both agents' files
 - [ ] AC-130 — `scripts/e2e_remote_tasks.py`, Docker's `scripts/e2e_remote_sshd.py`
-- [ ] AC-131 — `cargo test dispatcher::walk` with a clock jump, `scripts/e2e_dispatcher.py`
+- [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `web/test/e2e_livedispatcher.mjs`

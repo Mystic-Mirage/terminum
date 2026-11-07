@@ -133,6 +133,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let me = me()?;
                 ops::comment(tx, &me, id, &rules::clean(arg(args, "result")?), at)?;
                 ops::move_to(tx, &me, id, "DONE", at)?;
+                crate::dispatcher::runs::finished(tx, &ops::key_of(tx, id)?)?;
                 Ok((format!("{id} is DONE, with your result."), vec![id.to_string()]))
             }
             "get_file" => {

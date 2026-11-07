@@ -37,6 +37,7 @@ import { liveBoard, liveBoardPhone } from "./e2e_liveboard.mjs";
 import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
 import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
+import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -91,7 +92,7 @@ let ended = false;
 async function start() {
   if (ended) throw new Error("the run was ended");   // a signal ended it while a browser ran
   // as the build the Files panel was bundled for: another one makes the panel reload itself (AC-34)
-  const env = { ...process.env, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
+  const env = { ...process.env, TM_TEST_CLOCK_SCALE: process.env.TM_TEST_CLOCK_SCALE ?? "300", TM_TEST_HOOKS: "1", TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
   delete env.TMUX;
   proc = spawn(BIN, [], { env, stdio: ["ignore", "ignore", "inherit"] });
   for (let i = 0; i < 100; i++) {
@@ -143,12 +144,17 @@ async function wide(browser, name) {
     else errors.push(said);
   });
   await signIn(page);
+  if (process.env.TM_TEST_REAL_AGENTS) {
+    await liveDispatcherReal(page, { base: BASE, tmux, work: process.env.TM_TEST_REAL_DIR ?? WORK, bin: BIN, home: HOME, app: APP });
+    return ctx;
+  }
   if (BOARD_ALONE) {
     await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
     await liveBoard(page, { base: BASE, tmux, work: WORK, shots: process.env.TM_TEST_SHOTS });
     await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
     await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
     await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
+    await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS });
     return ctx;
   }
   check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/sessions/" && !new URL(page.url()).search);
@@ -215,6 +221,7 @@ async function wide(browser, name) {
   await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
   await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
   await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+  await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");

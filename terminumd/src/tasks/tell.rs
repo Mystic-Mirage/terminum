@@ -31,7 +31,7 @@ impl Lines {
         }
     }
 
-    fn take(&self, key: &str) -> Vec<(String, String)> {
+    pub(crate) fn take(&self, key: &str) -> Vec<(String, String)> {
         self.0.lock().remove(key).unwrap_or_default()
     }
 }

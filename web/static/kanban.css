@@ -84,6 +84,15 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 .csession .pbar.busy { opacity: 1; }
 .cdoing { display: block; padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* RUN's window: what will start, where, with what words */
+.runfacts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); margin: 0; font-size: var(--fs-label); }
+.runfacts dt { color: var(--muted); }
+.runfacts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono, ui-monospace, Menlo, monospace); }
+.runprompt { margin: 0; max-height: 240px; overflow: auto; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-label); white-space: pre-wrap; overflow-wrap: anywhere; }
+.runmarked { margin: 0; font-size: var(--fs-label); color: var(--waiting); }
+#runadd, #runjust, #runfresh { margin-right: auto; }
+#runbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
+
 /* its windows */
 #agentbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
 #taskbox, #newbox { width: min(760px, calc(100vw - var(--sp-6) * 2)); max-height: calc(100dvh - var(--sp-6) * 2); }
@@ -137,6 +146,7 @@ dialog .markdown img { max-width: 100%; }
   .colhead { display: none; }
   #sidecol { position: static; order: 1; }
   #boardhead #sidetoggle { display: none; }
+  .csession .item { min-height: var(--key-h-touch); box-sizing: border-box; align-items: center; }
   .agents { max-height: 50%; }
   #fproject summary { max-width: 120px; }
   .cards { padding: 0 var(--gutter) var(--gutter); }

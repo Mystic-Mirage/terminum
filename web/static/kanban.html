@@ -249,10 +249,13 @@
   <form method="dialog" id="projectform">
     <div class="dhead"><h2 id="projecthead">New project</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="projectfields">
-      <label class="fieldrow">Name <input id="projectname" class="field" type="text" maxlength="40" autocomplete="off" spellcheck="false"></label>
       <div class="fieldgrid">
+        <label class="fieldrow">Name <input id="projectname" class="field" type="text" maxlength="40" autocomplete="off" spellcheck="false"></label>
         <label class="fieldrow">Server <select id="projecthost" class="field"></select></label>
-        <label class="fieldrow">Folder <input id="projectdir" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Asked at its first session"></label>
+      </div>
+      <div class="fieldrow"><label for="projectdir">Folder</label>
+        <div class="dirline"><textarea id="projectdir" class="field" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/Users/alex/code/billing"></textarea><button id="projectpick" class="textkey" type="button">Choose…</button></div>
+        <p id="projectnodir" class="colempty" hidden>No agent can start here until it has a folder.</p>
       </div>
     </div>
     <label class="fieldrow">Agents at once <input id="projectatonce" class="field" type="number" min="1" max="100" step="1" placeholder="No limit"></label>
@@ -265,6 +268,19 @@
       <button id="projectdelete" type="button" hidden>Delete project</button>
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="projectok" type="button" class="primary">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="folderbox" class="box dlg" aria-labelledby="folderhead">
+  <form method="dialog">
+    <div class="dhead"><h2 id="folderhead">A folder</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <p id="folderpath"></p>
+    <ul id="folderlist" aria-label="Folders"></ul>
+    <p id="foldererror" role="alert" hidden></p>
+    <div class="actions">
+      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="folderok" type="button" class="primary">Choose</button>
     </div>
   </form>
 </dialog>
@@ -285,7 +301,8 @@
 <dialog id="limitsbox" class="box dlg" aria-labelledby="limitshead">
   <form method="dialog">
     <div class="dhead"><h2 id="limitshead">Memory limits</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <p id="limitstext"></p>
+    <p id="limitstext">terminum adds up the memory of the agent's processes every 30 s. Two readings in a row over Warn tell the agent; over End its tasks fail and it is ended. Nothing stops a process between readings: this is a watch, not a limit the system holds.</p>
+    <p id="limitsfor" class="colempty"></p>
     <div class="fieldgrid">
       <label class="fieldrow">Warn the agent, GiB <input id="limitwarn" class="field" type="number" min="0" step="0.5"></label>
       <label class="fieldrow">End the session, GiB <input id="limitend" class="field" type="number" min="0" step="0.5"></label>

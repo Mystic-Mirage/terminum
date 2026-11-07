@@ -31,6 +31,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/task-projects/{id}", patch(edit_project))
         .merge(super::agents::routes())
         .merge(super::limits::routes())
+        .merge(super::folder::routes())
         .merge(crate::dispatcher::api::routes())
         .route("/api/tasks/{id}", get(window).patch(change))
         .route("/api/tasks/{id}/comments", post(add_comment))
@@ -143,7 +144,9 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         let tasks = query::list(tx, &filter)?;
         let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
         let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
-        let spent = crate::dispatcher::usage::of_tasks(tx, &keys)?;
+        // only a finished task says what it spent (AC-129)
+        let finished: Vec<&str> = tasks.iter().filter(|t| matches!(t.status.as_str(), "DONE" | "FAILED")).map(|t| t.key.as_str()).collect();
+        let spent = crate::dispatcher::usage::of_tasks(tx, &finished)?;
         let counts = if with_counts { Some((query::counts(tx, &filter)?, crate::dispatcher::pool::board(tx)?)) } else { None };
         Ok((tasks, counts, run_marks, on_agents, spent))
     }).await;
@@ -189,12 +192,13 @@ async fn meta(State(app): State<Shared>) -> Response {
         ))).unwrap_or_default();
         (users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
+    let global_limits = { let s = app.looks.settings.read(); json!({"warn": s.memory_warn_gib, "end": s.memory_end_gib}) };
     for p in &mut projects {
         if let Some(limit) = p["id"].as_str().and_then(|id| at_once.get(id)) {
             p["agent_limit"] = json!(limit);
         }
     }
-    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "global_limits": global_limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {

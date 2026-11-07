@@ -40,11 +40,11 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #fproject summary { max-width: 200px; }
 .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--proj); }
-#fproject .box { min-width: 240px; }
+#fproject .box { min-width: min(320px, calc(100vw - var(--sp-6) * 2)); }
 .projrow { display: flex; align-items: center; }
 #fproject .projrow .projtick { flex: none; width: auto; padding-right: 0; }
 #fproject .projrow .projname { flex: 1 1 auto; width: auto; min-width: 0; }
-#fproject .projrow .projedit { flex: none; width: var(--icon-key-list); height: var(--icon-key-list); padding: 0; justify-content: center; color: var(--muted); }
+#fproject .projrow :is(.projedit, .projsession) { flex: none; width: var(--icon-key-list); height: var(--icon-key-list); padding: 0; justify-content: center; color: var(--muted); }
 .pick > .box { position: absolute; z-index: 20; top: calc(100% + var(--sp-1)); left: 0; min-width: 190px; max-height: 50dvh; overflow: auto; box-shadow: var(--shadow-far); }
 
 /* the columns: a surface each, their cards a step over it */
@@ -95,7 +95,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .chead { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
 .cid { font-variant-numeric: tabular-nums; }
 .cparent { font-size: var(--fs-small); color: var(--muted); }
-.projnofolder { margin-left: auto; font-size: var(--fs-small); color: var(--danger-text); }
+.projnofolder { flex: none; margin-left: auto; font-size: var(--fs-small); color: var(--danger-text); }
 .csev { padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); line-height: 16px; font-variant-numeric: tabular-nums; background: var(--surface-1); }
 .csev.P0 { color: var(--danger-ink); background: var(--danger-fill); }
 .csev.P1 { color: var(--danger-ink); background: var(--warn-fill); }
@@ -140,7 +140,18 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #runbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
 
 /* a project's window */
-#projectbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
+/* a folder of 200 characters reads whole, on its own lines (terminum-kanban.md AC-139) */
+#projectbox { width: min(960px, calc(100vw - var(--sp-6) * 2)); }
+.dirline { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.dirline #projectdir { flex: 1; min-width: 0; resize: none; overflow-wrap: anywhere; }
+.dirline .textkey { flex: none; }
+#folderbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
+#folderpath { margin: 0; font-family: var(--term-font, monospace); font-size: var(--fs-label); overflow-wrap: anywhere; }
+#folderlist { margin: 0; padding: 0; list-style: none; height: min(50vh, 420px); overflow: auto; border-radius: var(--key-r); box-shadow: var(--field-edge); }
+.folderrow { display: flex; align-items: center; gap: var(--sp-2); width: 100%; padding: 3px var(--sp-2); border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.folderrow:hover, .folderrow:focus-visible { background: var(--bg-hover, color-mix(in srgb, var(--fg) 8%, transparent)); outline: none; }
+.folderrow .lu { color: var(--accent); flex: none; }
+.folderrow .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #projectform, #projectfields { display: flex; flex-direction: column; gap: var(--sp-3); }
 #projectagents { display: flex; flex-direction: column; gap: var(--sp-2); }
 #projectagents .agentlist { flex-direction: column; }

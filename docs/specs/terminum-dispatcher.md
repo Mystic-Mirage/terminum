@@ -834,8 +834,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
-| AC-129 | Codex's model is not read, so its sessions show tokens only; Claude Code's 1-hour cache writes are priced as 5-minute ones. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
-| AC-128 | The window says neither what it measures nor the global values. | `web/static/kanbanagents.js` |
+| AC-129 | Codex's model is not read, so its sessions show tokens only; Claude Code's 1-hour cache writes are priced as 5-minute ones; a session that changed model is priced at its last one. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -953,7 +952,7 @@ Only the following pass: a T-number with fixed words, never a title or a comment
 - Agents run with the user's own permission settings.
 - A project agent's command is the human's own words, run as they would type them: the board is the only way terminum offers to change it, no boundary against a process of the user's (`SECURITY.md`); RUN's dialog shows it in full.
 
-**What a card shows.** Every walk's `taskusage {items: {"T-12": {"cpu": 12, "gib": 1.2, "minutes": 14, "tokens": {"input": 1200, "output": 34, "cached": 5}, "idle_subs": [{"id": "sub-1", "kind": "reviewer"}]}}}` to every page, when it changed; `"tokens": null`: not known; `"not_measured": "Host out of reach"`. `budget_used` goes with it. A host's `ps` and `kill` go over one ssh command each with its recipe, 12 s at most, and only where a wanted pane stands: a host with no run is read one beat in four with a page open. tmux's control link was tried for them: `run-shell`'s output comes outside its command's block.
+**What a card shows.** Every walk's `taskusage {items: {"T-12": {"cpu": 12, "gib": 1.2, "minutes": 14, "tokens": {"input": 1200, "output": 34, "cache_write": 0, "cache_read": 5, "counted": 1234}, "idle_subs": [{"id": "sub-1", "kind": "reviewer"}]}}}` to every page, when it changed; `"tokens": null`: not known; `"not_measured": "Host out of reach"`. `budget_used` goes with it. A host's `ps` and `kill` go over one ssh command each with its recipe, 12 s at most, and only where a wanted pane stands: a host with no run is read one beat in four with a page open. tmux's control link was tried for them: `run-shell`'s output comes outside its command's block.
 
 **Logging.** `dispatcher: T-12 run 3 FAILED: budget 3600 s used, SIGTERM pid 48213, SIGKILL none`; `dispatcher: T-12 run 3 not delivered: screen not known (claude 2.3)`.
 
@@ -983,7 +982,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-125 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-126 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
 - [x] AC-127 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
-- [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
 - [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `web/test/e2e_livedispatcher.mjs`

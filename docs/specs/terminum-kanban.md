@@ -781,7 +781,6 @@ Comments and history are one table, `events`: a window lists them in one order. 
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
 | AC-145 | create_task takes any title, and a severity is optional. | `terminumd/src/tasks/tools.rs` |
-| AC-139 | The window is narrow, its folder a short field with no picker; no Agents at once. | `web/static/kanban.html` |
 | AC-120 | A host's agent lists, reads and writes tasks over its link; get_file says it cannot yet, and a long get_task is not paged. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
@@ -878,7 +877,7 @@ Depends on: nothing more.
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`
 - [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
-- [ ] AC-139 — its folder and Agents at once to come; `cargo test page::projects`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
 - [ ] AC-120 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py` for what is built
 - [ ] AC-145 — to come: `cargo test tasks::tools`, `cargo test cli::mcp`

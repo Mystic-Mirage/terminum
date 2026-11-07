@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A project's window (terminum-kanban.md AC-139): a new empty one, or one to change: its name, server,
-// folder and memory limits, the pool's keys beside them. terminumd checks what is kept and says what is wrong.
+// folder (typed, or chosen in its picker) and memory limits, the pool's keys beside them. terminumd checks what is
+// kept and says what is wrong.
+import { folderPicker } from "./kanbanfolder.js";
 import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
 
 /** `agents`: the agents' section; `archived`: its Archived list (AC-118); `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown. */
 export function projectWindow({ getMeta, reload, agents, archived, deleteProject, chosen }) {
-  const box = $("projectbox");
+  const box = $("projectbox"), picker = folderPicker();
   let shown = null;
 
   const say = (text) => { $("projecterror").textContent = text; $("projecterror").hidden = !text; };
@@ -14,9 +16,11 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
 
   /** Its memory limits (terminum-dispatcher.md AC-128): empty goes by the global ones; 0 turns one off. */
   function openLimits(project) {
-    const limits = $("limitsbox"), { projects, limits: all = [] } = getMeta();
+    const limits = $("limitsbox"), { projects, limits: all = [], global_limits: global } = getMeta();
     const now = all.find((l) => l.project === project);
-    $("limitstext").textContent = `For ${projects.find((p) => p.id === project)?.name ?? project}; 0 turns one off.`;
+    $("limitsfor").textContent = `For ${projects.find((p) => p.id === project)?.name ?? project}; empty goes by the global one, 0 turns one off.`;
+    $("limitwarn").placeholder = `${global.warn} (global)`;
+    $("limitend").placeholder = `${global.end} (global)`;
     $("limitwarn").value = now?.warn ?? "";
     $("limitend").value = now?.end ?? "";
     $("limitserror").hidden = true;
@@ -31,6 +35,9 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("limitsglobal").onclick = () => kept({ warn: null, end: null });
     limits.showModal();
   }
+  /** The folder's field as tall as its path: a long one reads whole, on a phone too (AC-139). */
+  const fit = () => { const f = $("projectdir"); f.style.height = "auto"; f.style.height = `${f.scrollHeight}px`; };
+  $("projectdir").addEventListener("input", fit);
   const drawAgents = () => {
     const rows = agents.rows();
     $("projectagentlist").replaceChildren(...rows);
@@ -49,11 +56,13 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("projecthead").textContent = p ? p.name : "New project";
     $("projectok").textContent = p ? "Done" : "Create";
     $("projectfields").hidden = !real;
+    $("projectnodir").hidden = !p || !real || !!p.dir;      // terminum-dispatcher.md AC-140
     $("projectagents").hidden = !p;
     $("projectdelete").hidden = !p || !real;
     if (p) drawAgents();
     say("");
     box.showModal();
+    fit();
     if (real) $(p && !p.dir ? "projectdir" : "projectname").focus();
   }
 
@@ -78,8 +87,9 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
 
   $("projectok").addEventListener("click", keep);
   box.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.isComposing && e.target.matches("input")) { e.preventDefault(); keep(); }
+    if (e.key === "Enter" && !e.isComposing && e.target.matches("input, textarea")) { e.preventDefault(); keep(); }   // a folder is one line
   });
+  $("projectpick").addEventListener("click", () => picker.open($("projecthost").value, $("projectdir").value, (path) => { $("projectdir").value = path; fit(); }));
   $("projectaddagent").addEventListener("click", () => agents.add());
   $("projectlimits").addEventListener("click", () => openLimits(shown.id));
   $("projectarchived").addEventListener("click", () => archived.open(shown));

@@ -373,6 +373,8 @@ async function projectWindowChecks(page, opts) {
   check("AC-139 the agent stands in the project's window", await until(() => page.isVisible('#projectagentlist .agentcard:has-text("Its first")')));
   await pressAt(page, "#projectlimits");
   await page.waitForSelector("#limitsbox[open]");
+  check("AC-128 the window says what it does", /every 30 s\. Two readings in a row over Warn tell the agent; over End its tasks fail and it is ended\. Nothing stops a process between readings/.test(await page.textContent("#limitstext")));
+  check("AC-128 empty fields show the global values", await page.getAttribute("#limitwarn", "placeholder") === "4 (global)" && await page.getAttribute("#limitend", "placeholder") === "8 (global)");
   await page.fill("#limitwarn", "2");
   await page.fill("#limitend", "3");
   await pressAt(page, "#limitsok");
@@ -389,6 +391,7 @@ async function projectWindowChecks(page, opts) {
   await page.click(`.card[data-id="${homeless}"] .crun`);
   check("AC-140 a press on Run says it and opens its window", await until(() => page.$("#projectbox[open]")) && /Fresh has no folder/.test(await page.textContent("#toast")), await page.textContent("#toast"));
   check("AC-140 no run window opens", !(await page.$("#runbox[open]")));
+  check("AC-139 its window says nothing can start", await page.isVisible("#projectnodir") && /No agent can start here until it has a folder\./.test(await page.textContent("#projectnodir")));
   await page.click('#projectbox button[value="cancel"]');
   await page.waitForSelector("#projectbox", { state: "hidden" });
   const refusedRun = await j(`/api/tasks/${homeless}/run`, "POST", { agent: (await j("/api/tasks/meta")).agents[0].id });
@@ -405,8 +408,27 @@ async function projectWindowChecks(page, opts) {
   };
   await pencil("Fresh");
   check("AC-139 the pencil on a project's row opens it", await page.inputValue("#projectname") === "Fresh" && await page.isVisible("#projectdelete") && await page.isDisabled("#projecthost"));
+  // its folder: 200 characters read whole; the picker lists the server's folders, up and in (AC-139)
+  await page.fill("#projectdir", `/${"a".repeat(199)}`);
+  check("AC-139 a folder of 200 characters reads whole", await page.$eval("#projectdir", (f) => f.scrollHeight <= f.clientHeight + 1 && f.scrollWidth <= f.clientWidth + 1),
+    JSON.stringify(await page.$eval("#projectdir", (f) => [f.scrollHeight, f.clientHeight, f.clientWidth])));
+  const parent = work.replace(/\/[^/]+$/, ""), leaf = work.slice(parent.length + 1);
+  await page.fill("#projectdir", parent);
+  await pressAt(page, "#projectpick");
+  await page.waitForSelector("#folderbox[open]");
+  check("AC-139 the picker opens at the folder set", await until(async () => await page.textContent("#folderpath") === parent), await page.textContent("#folderpath"));
+  check("AC-139 it lists folders as Files draws them, and up", await until(() => page.isVisible(`#folderlist .folderrow:has-text("${leaf}") svg`)) && await page.isVisible('#folderlist .folderrow[title="Up"]'));
+  await page.click('#folderlist .folderrow[title="Up"]');
+  check("AC-139 up goes to its parent", await until(async () => await page.textContent("#folderpath") === parent.replace(/\/[^/]+$/, "")), await page.textContent("#folderpath"));
+  await page.click('#folderbox button[value="cancel"]');
+  check("AC-139 Cancel leaves the field", await page.inputValue("#projectdir") === parent);
+  await pressAt(page, "#projectpick");
+  await until(async () => await page.textContent("#folderpath") === parent);
+  await page.click(`#folderlist .folderrow:has-text("${leaf}")`);
+  await until(async () => await page.textContent("#folderpath") === work);
+  await pressAt(page, "#folderok");
+  check("AC-139 Choose puts its path in the field", await until(async () => await page.inputValue("#projectdir") === work), await page.inputValue("#projectdir"));
   await page.fill("#projectname", "Fresher");
-  await page.fill("#projectdir", work);
   await page.click("#projectok");
   await page.waitForSelector("#projectbox", { state: "hidden" });
   check("AC-139 an edit of name and folder is kept", await until(async () => (await named("Fresher"))?.dir === work), JSON.stringify(await named("Fresher")));

@@ -45,13 +45,18 @@ pub fn sweep_once(server: &Arc<Server>) {
     tokio::spawn(async move { sweep(&server).await });
 }
 
+/// Whether `#{client_flags}` are those of a client terminumd attached: `ignore-size`, all of them.
+pub(crate) fn ours(flags: &str) -> bool {
+    flags.split(',').any(|x| x == "ignore-size")
+}
+
 /// The control clients tmux lists with `ignore-size`, as terminum's are, from
 /// `list-clients -F '#{client_pid} #{client_control_mode} #{client_flags}'`.
 fn listed(lines: &[String]) -> Vec<u32> {
     lines.iter().filter_map(|l| {
         let mut f = l.split(' ');
         let (pid, control, flags) = (f.next()?, f.next()?, f.next()?);
-        (control == "1" && flags.split(',').any(|x| x == "ignore-size")).then(|| pid.parse().ok()).flatten()
+        (control == "1" && ours(flags)).then(|| pid.parse().ok()).flatten()
     }).collect()
 }
 

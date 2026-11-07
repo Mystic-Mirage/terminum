@@ -15,7 +15,7 @@ use super::runs::{self, Run};
 use super::press::{also_of, budget_told, prompt_of, rev_of, shown_of, way, ways, Asked, Way};
 use super::pool::{self, Full};
 use super::screen::Screen;
-use super::{move_one, move_task, procs, say, start, store, walk};
+use super::{acts, move_one, move_task, procs, say, start, store, walk};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
@@ -114,7 +114,7 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(body): Js
 
 /// Where a run's pane is.
 fn pane_of(app: &Shared, r: &Run) -> Result<(Arc<Server>, String), String> {
-    r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)).ok_or_else(|| "Its session is gone.".to_string())
+    r.place(app).ok_or_else(|| "Its session is gone.".to_string())
 }
 
 async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
@@ -197,7 +197,7 @@ async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), Stri
     if !quiet || !matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
         return Err(format!("{}'s session is no longer idle: it stays.", r.names()));
     }
-    walk::close(app, &r, &server, &pane, &format!("Session ended: closed for {for_tasks}."), true, pool::closable).await?;
+    acts::close(app, &r, &server, &pane, &format!("Session ended: closed for {for_tasks}."), true, pool::closable).await?;
     super::told_all(app, &r);
     Ok(())
 }
@@ -225,8 +225,7 @@ async fn what_runs(app: &Shared, server: &Server, pane: &str) -> Result<Option<S
 /// Only its shell remains: the agent starts there anew, by the resume when a conversation is known;
 /// the pane's queue held from the look to the start, so no key starts anything between (AC-122).
 async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, again: String, t: &Task) -> Result<Value, String> {
-    let queue = server.typing(pane);
-    let _held = queue.lock().await;
+    let _held = server.typing(pane).lock_owned().await;
     if let Some(program) = what_runs(app, server, pane).await? {
         return Err(format!("{program} runs in its pane."));
     }
@@ -459,7 +458,7 @@ pub fn budget_changed(app: &Shared, task: &Task) {
         }).await else { return };
         if let Some((server, pane)) = app.tmux.resolve(&key) {
             let words = budget_told(&id, own, &r);
-            walk::tell(&app, &r, &server, &pane, words, "The new budget").await;
+            acts::tell(&app, &r, &server, &pane, words, "The new budget").await;
         }
     });
 }

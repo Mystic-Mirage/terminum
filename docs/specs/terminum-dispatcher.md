@@ -130,6 +130,10 @@ Scenario: AC-121 failure — did not start
   And when a Codex prompt was taken on screen and no hook came, the reason says "hooks not trusted: open /hooks in Codex"; the agent left running is named, and Dispatcher does not watch it
   And the window stays for AC-125 to close
 
+Scenario: AC-121 edge — the window still opening
+  Given a press has made the run and its window opens over a slow link
+  When Dispatcher's walk comes first
+  Then the run waits for its window and starts as ever; a run that gets no window within 60 s (a restart on the way) did not start: "its window is gone"
 Scenario: AC-121 failure — out of subscription or limit
   When a StopFailure comes on the first turn
   Then AC-123's failure scenario holds
@@ -294,6 +298,7 @@ Scenario: AC-123 failure — a turn failed
 Scenario: AC-123 failure — the agent died
   When the window command records another exit code, or the walk finds no agent in the pane's tree and no clean end came
   Then T-12 is FAILED with "The agent's process ended: exit <code>, last error <hook's error>"; no restart; RUN stays for the human
+  And its window holds the login shell at its prompt, with the terminal, whichever way the agent ended, a Ctrl-C too
   And an end Dispatcher caused (AC-126, AC-128) never counts: the status is written before the signal
 
 Scenario: AC-123 edge — only its sessions
@@ -904,10 +909,10 @@ CREATE TABLE usage (run TEXT NOT NULL REFERENCES runs, agent_id TEXT NOT NULL, a
 
 A run keeps the last totals it heard, copied to the run that goes on from it; a row holds what grew, or the whole total if it fell. Dollars are worked out when shown, from a table of list prices in terminumd, so a corrected price corrects old rows.
 
-**Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, in zsh, bash, fish or sh (csh's `-lic` is not taken: its run fails loud): `/bin/sh` goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, drops what the tty still holds so nothing meant for the agent reaches the shell, then stays as that shell. tmux gets each word apart and runs no shell of its own:
+**Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, in zsh, bash, fish or sh (csh's `-lic` is not taken: its run fails loud): `/bin/sh` runs with job control (`set -m`, so the terminal comes back to it however the agent ended) and survives the agent's Ctrl-C (`trap : INT`), goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, drops what the tty still holds so nothing meant for the agent reaches the shell, then stays as that shell. tmux gets each word apart and runs no shell of its own:
 
 ```sh
-new-window -d -a -t @7 -P -F '#{pane_id} #{session_name}:#{window_index}' /bin/sh -c 'd=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l' sh '/Users/alex/work/api' 'claude --model opus' tmux
+new-window -d -a -t @7 -P -F '#{pane_id} #{session_name}:#{window_index}' /bin/sh -c 'trap : INT; set -m; d=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l' sh '/Users/alex/work/api' 'claude --model opus' tmux
 ```
 
 Exit -1 is the folder's: no process exits with it. The target names the pane: `tmux set -p` without `-t` writes to the session's current pane.
@@ -977,7 +982,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
-- [x] AC-123 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs` with the test clock
+- [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::start`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-126 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals

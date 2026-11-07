@@ -298,7 +298,7 @@ pub fn tools() -> Value {
         json!({"name": name, "title": title, "description": description, "annotations": annotations,
                "inputSchema": {"type": "object", "properties": properties, "required": required}})
     };
-    let mut all = json!([
+    let mut all = vec![
         tool("update_session_plan", "Update the session's plan",
             "Store this session's plan, which terminum shows to the user. Send the whole plan each call, never a patch: \
 every item with status pending, in_progress, completed or blocked. doing: the current step. eta_minutes: your estimate \
@@ -315,11 +315,9 @@ of the minutes left. With your own plan tool its items count; this call then sto
         tool("get_session_plan", "Get the session's plan",
             "This session's plan as terminum stores it: [x] completed, [>] in progress, [ ] pending, [!] blocked.",
             json!({}), json!([])),
-    ]);
-    if let Some(list) = all.as_array_mut() {
-        list.extend(super::mcp_tasks::tools());
-    }
-    all
+    ];
+    all.extend(super::mcp_tasks::tools());
+    Value::Array(all)
 }
 
 #[cfg(test)]

@@ -78,12 +78,12 @@ fn auto_name(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_' || ".+@-".contains(c))
 }
 
-/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 19 fields (16 to 18 without
-/// the last ones, as tests write them; more: a name holding a tab) or its numbers are not numbers. An empty `#{automatic-rename}` (a tmux that
+/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 19 fields (cut short, or
+/// a name holding a tab) or its numbers are not numbers. An empty `#{automatic-rename}` (a tmux that
 /// does not say) counts as on when the window's name looks like a command.
 pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
     let f: Vec<&str> = line.trim_end_matches(['\r', '\n']).split('\t').collect();
-    if !(16..=19).contains(&f.len()) {
+    if f.len() != 19 {
         return None;
     }
     let flag = |s: &str| s == "1";
@@ -104,9 +104,9 @@ pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
         quick_for: f[13].into(),
         quick_side: f[14].into(),
         session_id: f[15].into(),
-        restored_title: f.get(16).copied().unwrap_or_default().into(),
-        agent_name: f.get(17).copied().filter(|n| crate::settings::is_name(n)).unwrap_or_default().into(),
-        window_activity: f.get(18).and_then(|a| a.parse().ok()).unwrap_or(0),
+        restored_title: f[16].into(),
+        agent_name: if crate::settings::is_name(f[17]) { f[17].into() } else { String::new() },
+        window_activity: f[18].parse().unwrap_or(0),
     })
 }
 

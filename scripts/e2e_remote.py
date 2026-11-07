@@ -22,7 +22,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, host_group, results, summary, unix_request, wait_layout  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 PORT, LOCAL_SOCKET, REMOTE_SOCKET = free_port(), own("tm-test-rlocal"), own("tm-test-remote")
 
 
@@ -112,8 +111,7 @@ def main():
     open(os.path.join(remote_home, "shot.png"), "wb").write(png)
     open(os.path.join(remote_home, "mark.svg"), "w").write('<svg xmlns="http://www.w3.org/2000/svg"><script>steal()</script></svg>')
     pids = os.path.join(t.root, "ssh-pids")
-    t.env.update(TM_SSH=os.path.join(HERE, "fake_ssh.py"), FAKE_SSH_HOME=remote_home, FAKE_SSH_TMUX_SOCKET=REMOTE_SOCKET,
-                 FAKE_SSH_PIDS=pids, FAKE_SSH_FAIL="Permission denied (publickey).", FAKE_SSH_FAIL_DEST="refused")
+    t.through_fake_ssh(remote_home, REMOTE_SOCKET, pids, FAKE_SSH_FAIL="Permission denied (publickey).", FAKE_SSH_FAIL_DEST="refused")
     os.system(f"tmux -L {REMOTE_SOCKET} kill-server 2>/dev/null")
     try:
         t.start()

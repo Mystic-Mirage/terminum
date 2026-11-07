@@ -3,13 +3,16 @@
 """terminumd's memory and CPU under load (terminum.md AC-20): 60 panes in 2 sessions of a
 private tmux server, two pages each showing a pane that prints a line a second; `ps`
 samples terminumd every second. Budgets: RSS under 60 MB and CPU under 2 % loaded; with no
-output and no page, CPU under 0.5 %. Also times a list refresh (`list-panes` of 60 panes).
+output and no page, CPU under 0.5 %. Also times a list refresh: `list-panes` of 60 panes in the
+format terminumd asks for (titles.rs LIST_PANES_FORMAT).
 Exits non-zero naming the number and the budget when one is missed.
 
     python3 scripts/bench_load.py [--minutes 5] [--idle-seconds 60]
 """
 import argparse
+import ast
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -22,6 +25,19 @@ from testrun import free_port, own  # noqa: E402
 
 PORT, SOCKET = free_port(), own("tm-test-bench-load")
 tmux = partial(tmux_on, SOCKET)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def list_panes_format(source=None):
+    """titles.rs's LIST_PANES_FORMAT, its macro filled in; raises when the source no longer says it so."""
+    if source is None:
+        with open(os.path.join(ROOT, "terminumd/src/tmux/titles.rs"), encoding="utf-8") as f:
+            source = f.read()
+    literal = r'"(?:[^"\\]|\\.)*"'
+    text = lambda rust: ast.literal_eval(rust.replace("\\\n", ""))   # Rust's line continuation; its other escapes are Python's
+    head, tail = re.search(rf"LIST_PANES_FORMAT: &str = concat!\(({literal}), agent_name_format!\(\), ({literal})\);", source, re.S).groups()
+    name = re.search(rf"\(\) => \{{ ({literal}) \}};", source).group(1)
+    return text(head) + text(name) + text(tail)
 
 
 def sample(pid, seconds):
@@ -62,7 +78,7 @@ def main():
             pages.append(ws)
         panes = sum(1 for _ in tmux("list-panes", "-a", "-F", "x").splitlines())
         t0 = time.perf_counter()
-        tmux("list-panes", "-a", "-F", "#{session_name}\t#{window_index}\t#{pane_id}\t#{pane_title}\t#{pane_current_command}\t#{pane_current_path}")
+        tmux("list-panes", "-a", "-F", list_panes_format())
         print(f"panes {panes}; one list-panes {1000 * (time.perf_counter() - t0):.1f} ms (tmux side)")
         stop = time.time() + a.minutes * 60
         rss, cpu = [], []

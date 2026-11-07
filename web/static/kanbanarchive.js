@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A project's Archived (terminum-kanban.md AC-118): its archived tasks newest first, a page at a time,
 // with Find; a row opens the task, Return puts it back in the column it had.
-import { $, api, button, el, say } from "./kanbanutil.js";
+import { el } from "./listparts.js";
+import { $, api, button, say } from "./kanbanutil.js";
 
 const PAGE = 200;
 const day = (at) => new Date(at * 1000).toLocaleDateString(undefined, { dateStyle: "medium" });

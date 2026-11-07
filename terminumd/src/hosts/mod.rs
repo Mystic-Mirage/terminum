@@ -118,7 +118,7 @@ pub fn sync(app: &Shared) {
     let mut broken = HashMap::new();
     app.hosts.tried.lock().retain(|name, _| recs.contains_key(name));
     for (name, rec) in &recs {
-        let args: Vec<String> = rec["ssh"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+        let args = crate::config::strings(&rec["ssh"]);
         let checked = recipe::name_ok(name).and_then(|()| recipe::check(&args));
         let off = rec["off"].as_bool().unwrap_or(false);
         let live = app.tmux.host(name).filter(|s| !off && runs.contains_key(name) && matches!(*s.status.lock(), Status::Attached));

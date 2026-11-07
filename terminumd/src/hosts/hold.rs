@@ -20,7 +20,7 @@ pub(super) async fn hold(app: Shared, server: Arc<Server>, retry: Arc<Notify>) {
     let (mut backoff, mut silent_tries) = (1u64, 0u32);
     loop {
         *server.status.lock() = Status::Connecting;
-        app.dirty.notify_one();
+        server.list_changed();
         let t0 = std::time::Instant::now();
         let attached = match server.sync_clients(&[]) {
             Ok(()) => wait_attached(&server).await,
@@ -31,7 +31,7 @@ pub(super) async fn hold(app: Shared, server: Arc<Server>, retry: Arc<Notify>) {
                 tracing::info!(event = "host.attached", host = %server.name, ms = t0.elapsed().as_millis() as u64);
                 *server.status.lock() = Status::Attached;
                 (backoff, silent_tries) = (1, 0);
-                app.dirty.notify_one();
+                server.list_changed();
                 tunnel::reconcile(&app, &server.name);
                 // judged by its `terminum` client alone: the user's session clients (AC-89)
                 // end and come back with it
@@ -70,7 +70,7 @@ pub(super) async fn hold(app: Shared, server: Arc<Server>, retry: Arc<Notify>) {
                 }
             }
         }
-        app.dirty.notify_one();
+        server.list_changed();
         if silent_tries >= silent::TRIES {
             retry.notified().await;                  // one try for each Reconnect: the count stays
             backoff = 1;

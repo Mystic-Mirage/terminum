@@ -2,14 +2,14 @@
 // RUN's window (terminum-dispatcher.md AC-121, AC-122, AC-138): which of the pool's free agents starts the
 // tasks and with what message; where is the project's (AC-140), said here; the agent dropped on, or the last
 // chosen, already picked: one press. Several tasks go by their numbers; what each says shows here first.
-import { $, THIS_MAC, api, fillAgents, onSend } from "./kanbanutil.js";
+import { $, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
 
 /** `addAgent()` opens the agents' window; `noFolder(project, words)`: terminumd says nothing can start there; `done()` after a run started. */
 export function runWindow({ addAgent, noFolder, done }) {
   const box = $("runbox");
   let tasks = [], offer = null, attached = [], fresh = false, dropped = null, answer = () => {};
 
-  const say = (text) => { $("runerror").textContent = text; $("runerror").hidden = !text; };
+  const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
   /** At a limit with nothing that could make room: not to be chosen. */
   const stuck = (a) => (a.full && !a.full.close ? "at its limit" : "");

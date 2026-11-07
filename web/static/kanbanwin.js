@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A task's window (AC-107, AC-108, AC-109, AC-113): its fields, text, files, and one list of comments
 // and history. A comment by a human closes with CLOSE; RUN comes with Dispatcher.
-import { askConfirm } from "./dialogs.js";
-import { $, SEVERITIES, agentChip, api, button, choose, download, el, fileMarkdown, fillSelect, iconButton, onFiles, onSend, read, renderInto, say, sessionOptions, upload, write } from "./kanbanutil.js";
+import { askConfirm, choose } from "./dialogs.js";
+import { el, iconButton, read, write } from "./listparts.js";
+import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, renderInto, say, sessionOptions, upload } from "./kanbanutil.js";
 
 const time = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 const EDITS = ".tasktext textarea, .markdown textarea";   // a text or a comment being edited
@@ -18,7 +19,7 @@ function editor(text, label) {
 
 export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
   const box = $("taskbox"), body = $("taskbody");
-  let shown = null, opening = 0;
+  let shown = null, drawn = "", opening = 0;
 
   /** A change of a field: whether terminumd took it. The window shows what stands; a text being
    *  typed stays (refresh). The board hears of it from terminumd. */
@@ -264,6 +265,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
 
   function draw(t) {
     shown = t;
+    drawn = JSON.stringify(t);
     $("tasktitle").textContent = `${t.id} ${t.title}`;
     const history = el("ol", "history");
     history.append(...t.history.map((e) => eventRow(t, e)));
@@ -292,14 +294,15 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
     return true;
   }
 
-  /** Reads it again; a text being edited holds until it is saved (`saved`). */
-  async function refresh(saved = false) {
+  /** Reads it again; a text being edited holds until it is saved (`saved`). What the page only heard
+   *  of (`news`) and answers the same draws nothing: no Markdown again, no picture fetched again. */
+  async function refresh(saved = false, news = false) {
     if (!box.open || !shown) return;
     const editing = () => !saved && body.querySelector(EDITS);
     if (editing()) return;
     try {
       const t = await api(`/api/tasks/${shown.id}`);
-      if (!editing()) draw(t);                     // an editor opened while it was read stays
+      if (!editing() && (!news || JSON.stringify(t) !== drawn)) draw(t);   // an editor opened while it was read stays
     } catch (e) { say(e.message); }
   }
 

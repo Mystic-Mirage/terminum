@@ -17,6 +17,7 @@ import time
 
 SETTLE_S = 15   # what ends by itself gets this long: terminumd's tmutil takes seconds on a busy Mac
 LEFT = 3   # the exit status of a check that passed but left something
+KILL_AFTER_S = 2   # a leftover still there this long after SIGTERM gets SIGKILL
 
 
 def own_processes(folder, group):
@@ -33,6 +34,19 @@ def own_processes(folder, group):
     return found
 
 
+def send(pid, number):
+    """Signal `number` to `pid`; True while it is there (0 only asks): one that ended meanwhile is no error."""
+    try:
+        os.kill(pid, number)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def alive(pid):
+    return send(pid, 0)
+
+
 def files_in(folder):
     """What is left, relative: an empty tmux-<uid> is tmux's own and does not count."""
     try:
@@ -46,8 +60,7 @@ def files_in(folder):
 
 def run(command, folder):
     """The check's (exit status, process group), in a group of its own; a signal here ends it too."""
-    env = {**os.environ, "TMPDIR": folder, "TMUX_TMPDIR": folder, "NODE_DISABLE_COMPILE_CACHE": "1",
-           "TM_USER_TMPDIR": tempfile.gettempdir()}   # for what must keep one path across runs (e2e_liveprogs.mjs)
+    env = {**os.environ, "TMPDIR": folder, "TMUX_TMPDIR": folder, "NODE_DISABLE_COMPILE_CACHE": "1"}
     child = subprocess.Popen(command, env=env, start_new_session=True)
 
     def forward(number, _frame):
@@ -64,13 +77,23 @@ def main(command):
     try:
         status, group = run(command, folder)
         end = time.monotonic() + SETTLE_S
-        while (files_in(folder) or own_processes(folder, group)) and time.monotonic() < end:
-            time.sleep(0.2)
+        processes = own_processes(folder, group)   # it reads every process's environment: once for a clean step
+        while (files_in(folder) or processes) and time.monotonic() < end:
+            time.sleep(1)
+            processes = own_processes(folder, group)
         left = 0
-        for pid, name in own_processes(folder, group):
+        for pid, name in processes:
             left += 1
             print(f"LEFT process {pid}: {name}", file=sys.stderr)
-            os.kill(pid, signal.SIGTERM)
+            send(pid, signal.SIGTERM)
+        # an interactive shell ignores SIGTERM; one spinning on a terminal gone, SIGHUP too
+        stays = [pid for pid, _ in processes]
+        end = time.monotonic() + KILL_AFTER_S
+        while stays and time.monotonic() < end:
+            time.sleep(0.1)
+            stays = [pid for pid in stays if alive(pid)]
+        for pid in stays:
+            send(pid, signal.SIGKILL)
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)

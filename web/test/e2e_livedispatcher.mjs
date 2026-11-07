@@ -50,15 +50,17 @@ export async function liveDispatcher(page, opts) {
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
   await page.click("#rungo");
   check("AC-121 the window closes on the press", await until(async () => !(await page.$("#runbox[open]"))));
+  // read while it stands: after DONE the test's fast clock closes the session soon (AC-125)
+  let key;
+  await until(async () => (key = (await j(`/api/tasks/${first}`)).session?.key));
+  check("AC-121 its pane is marked as the run's", await until(() => tmux("display", "-p", "-t", key.split(":").pop(), "#{@terminum-run}").trim().length > 0));
+  check("AC-121 it is a member of the project", await until(() => page.isVisible(`#sessions section.project[data-pid="${project}"] .item[data-id="${key}"]`)));
   check("AC-121 the agent takes it: IN PROGRESS", await hasStatus(first, "IN PROGRESS", 15000) || await status(first) === "DONE", await status(first));
   check("AC-123 finish_task is DONE", await hasStatus(first, "DONE", 15000), await history(first));
   const h = await history(first);
   check("AC-125 its start is on the task", /Session started: claude in window Runs:\d+, on this Mac\./.test(h), h);
   check("AC-121 the owner is the pool's agent that runs it", (await j(`/api/tasks/${first}`)).owner_name === "Plain", (await j(`/api/tasks/${first}`)).owner_name);
   check("AC-121 the task's history says Dispatcher moved it", /Dispatcher moved it from TODO to IN PROGRESS/.test(h), h);
-  const key = (await j(`/api/tasks/${first}`)).session?.key;
-  check("AC-121 its pane is marked as the run's", tmux("display", "-p", "-t", key.split(":").pop(), "#{@terminum-run}").trim().length > 0);
-  check("AC-121 it is a member of the project", await until(() => page.isVisible(`#sessions section.project[data-pid="${project}"] .item[data-id="${key}"]`)));
 
   // refused before starting
   const nowhere = (await j("/api/task-projects", "POST", { name: "Nowhere", dir: "/no/such/folder/at/all" })).id;
@@ -219,12 +221,14 @@ export async function liveDispatcher(page, opts) {
 
   // AC-127 a subagent silent and idle: one request to the main agent, then it is said
   const silentSub = await task("has a subagent SUBAGENT");
+  await page.goto(`${base}/kanban/?project=${project}`);
+  await page.waitForSelector(card(silentSub));
+  // watched from the start: the clock runs 300 times faster, and the session ends minutes of its time after this
+  const idleShown = until(async () => /idle: reviewer sub-1/.test(await page.textContent(card(silentSub)).catch(() => "")), 30000);
   await run(silentSub);
   check("AC-127 a silent subagent gets the main agent one request", await said(silentSub, "The request about a silent subagent", 15000), await history(silentSub));
   check("AC-127 one that runs inside the agent cannot be ended alone: said", await said(silentSub, "Subagent sub-1 cannot be ended alone", 15000), await history(silentSub));
-  await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(card(silentSub));
-  check("AC-127 the card shows its kind and ID, as idle", await until(async () => /idle: reviewer sub-1/.test(await page.textContent(card(silentSub))), 20000), await page.textContent(card(silentSub)));
+  check("AC-127 the card shows its kind and ID, as idle", await idleShown, await page.textContent(card(silentSub)));
 
   // AC-128 what it consumes: shown on its card; limits by project; a limit of 0 is off
   const badLimits = await j(`/api/task-projects/${project}/limits`, "PUT", { warn: 9, end: 3 });

@@ -14,7 +14,7 @@ use super::store::{DEFAULT_PROJECT, HUMAN};
 
 pub const COLUMNS: [&str; 5] = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 pub const SEVERITIES: [&str; 4] = ["P0", "P1", "P2", "P3"];
-const TITLE_MOST: usize = 200;
+pub(crate) const TITLE_MOST: usize = 200;
 pub const TEXT_MOST: usize = 1 << 20;
 pub const COMMENT_MOST: usize = 256 << 10;
 /// Open tasks by agents in one project (AC-115).
@@ -26,8 +26,11 @@ pub fn sql(e: rusqlite::Error) -> String {
 
 /// Every row `query` finds.
 pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: impl FnMut(&Row) -> rusqlite::Result<T>) -> Result<Vec<T>, String> {
-    tx.prepare(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)
+    tx.prepare_cached(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)
 }
+
+pub use super::users::{agent_user, pool_user, pool_user_id};
+pub(crate) use super::users::user_name;
 
 pub fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
@@ -111,30 +114,6 @@ pub fn get(tx: &Transaction, id: &str) -> Result<Task, String> {
 
 pub fn text_of(tx: &Transaction, id: &str) -> Result<String, String> {
     of_task(tx, id, "SELECT body FROM tasks WHERE number = ?1", |r| r.get(0))
-}
-
-pub(crate) fn user_name(tx: &Transaction, user: &str) -> Result<String, String> {
-    tx.query_row("SELECT name FROM users WHERE id = ?1", [user], |r| r.get(0)).optional().map_err(sql)?.ok_or_else(|| format!("No user {user}"))
-}
-
-/// The user an agent of the pool writes as, by its name (terminum-dispatcher.md AC-137): made the first time; the
-/// agent's window renames it.
-pub fn pool_user(tx: &Transaction, agent: &str, name: &str) -> Result<String, String> {
-    let id = pool_user_id(agent);
-    tx.execute("INSERT OR IGNORE INTO users (id, kind, name, role) VALUES (?1, 'agent', ?2, 'agent')", (&id, name)).map_err(sql)?;
-    Ok(id)
-}
-
-pub fn pool_user_id(agent: &str) -> String {
-    format!("agent:pool:{agent}")
-}
-
-/// The user an agent with no run of the pool writes as ("claude · api"), made the first time.
-pub fn agent_user(tx: &Transaction, agent: &str, session: &str) -> Result<String, String> {
-    let name = format!("{agent} · {session}");
-    let id = format!("agent:{name}");
-    tx.execute("INSERT OR IGNORE INTO users (id, kind, name, role) VALUES (?1, 'agent', ?2, 'agent')", (&id, &name)).map_err(sql)?;
-    Ok(id)
 }
 
 /// One line of a task's history; a comment is one too. Its id.
@@ -234,8 +213,9 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
 /// A session works on one task at a time (AC-113), but for those one run gave it together (terminum-dispatcher.md
 /// AC-138): refused while another than `but` stands in IN PROGRESS.
 fn check_free(tx: &Transaction, session: &str, but: &str) -> Result<(), String> {
-    let other: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL
-         AND NOT EXISTS (SELECT 1 FROM run_tasks a JOIN run_tasks b ON a.run = b.run JOIN runs r ON r.id = a.run WHERE a.task = tasks.id AND b.task = ?2 AND r.state NOT IN ('closed', 'left'))", (session, but), |r| r.get(0))
+    let still = crate::dispatcher::runs::STILL;
+    let other: Option<String> = tx.query_row(&format!("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM run_tasks a JOIN run_tasks b ON a.run = b.run JOIN runs r ON r.id = a.run WHERE a.task = tasks.id AND b.task = ?2 AND {still})"), (session, but), |r| r.get(0))
         .optional().map_err(sql)?;
     match other {
         Some(other) => Err(format!("Session {} already works on {other}. Finish or move {other} first.", pane_of(session))),
@@ -426,7 +406,7 @@ fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, at: i64)
     check_project(tx, project)?;
     let key = key_of(tx, id)?;
     let who = user_name(tx, author)?;
-    let name: String = tx.query_row("SELECT name FROM projects WHERE id = ?1", [project], |r| r.get(0)).map_err(sql)?;
+    let (name, _, _) = project_place(tx, project)?;
     let kids: Vec<String> = rows(tx, "SELECT id FROM tasks WHERE parent = ?1", [&key], |r| r.get(0))?;
     let held: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE parent = ?1 AND session_key IS NOT NULL", [&key], |r| r.get(0)).optional().map_err(sql)?;
     if let Some(kid) = held {
@@ -486,35 +466,14 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
     for (event, file) in rows(tx, "SELECT event, id, name, bytes, mime FROM files WHERE task = ?1 AND event IS NOT NULL", [&key], |r| Ok((r.get(0)?, File::of_row(r, 1)?)))? {
         files.entry(event).or_default().push(file);
     }
-    let mut events = tx.prepare("SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid").map_err(sql)?;
-    let mut out = Vec::new();
-    let mut got = events.query([&key]).map_err(sql)?;
-    while let Some(r) = got.next().map_err(sql)? {
-        let event: String = r.get(0).map_err(sql)?;
+    let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
+        let event: String = r.get(0)?;
         let attached = files.remove(&event).unwrap_or_default();
-        out.push(json!({"id": event, "at": r.get::<_, i64>(1).map_err(sql)?, "author": r.get::<_, String>(2).map_err(sql)?,
-            "author_name": r.get::<_, String>(3).map_err(sql)?, "author_kind": r.get::<_, String>(4).map_err(sql)?,
-            "kind": r.get::<_, String>(5).map_err(sql)?, "text": r.get::<_, Option<String>>(6).map_err(sql)?, "files": attached}));
-    }
+        Ok(json!({"id": event, "at": r.get::<_, i64>(1)?, "author": r.get::<_, String>(2)?,
+            "author_name": r.get::<_, String>(3)?, "author_kind": r.get::<_, String>(4)?,
+            "kind": r.get::<_, String>(5)?, "text": r.get::<_, Option<String>>(6)?, "files": attached}))
+    })?;
     Ok(Value::Array(out))
-}
-
-/// A title equal to an open task's in `project`, case, runs of spaces and end punctuation aside
-/// (AC-115): that task.
-pub fn repeat_of(tx: &Transaction, project: &str, title: &str) -> Result<Option<String>, String> {
-    let wanted = plain(title);
-    let mut st = tx.prepare("SELECT 'T-' || number, title FROM tasks WHERE project = ?1 AND status <> 'DONE' AND archived_at IS NULL").map_err(sql)?;
-    let mut rows = st.query([project]).map_err(sql)?;
-    while let Some(r) = rows.next().map_err(sql)? {
-        if plain(&r.get::<_, String>(1).map_err(sql)?) == wanted {
-            return Ok(Some(r.get(0).map_err(sql)?));
-        }
-    }
-    Ok(None)
-}
-
-fn plain(title: &str) -> String {
-    title.split_whitespace().collect::<Vec<_>>().join(" ").trim_end_matches(['.', '!', '?', ':', ';', ',']).to_lowercase()
 }
 
 #[cfg(test)]

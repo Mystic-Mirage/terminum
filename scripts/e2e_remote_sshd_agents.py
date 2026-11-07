@@ -26,7 +26,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_remote import api, host_group  # noqa: E402
 from e2e_remote_sshd import host_or_skip, stage  # noqa: E402
-from e2e_ws import Terminumd, check, results, summary, unix_request, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, results, summary, unix_request, wait_for, wait_layout  # noqa: E402
 from testrun import container_name, free_port, own, short_tmp  # noqa: E402
 
 VARIANT = sys.argv[3] if len(sys.argv) > 3 else "alpine"
@@ -117,13 +117,7 @@ def record(t, host):
 
 
 def state_until(t, host, pred, timeout=40):
-    end, rec = time.time() + timeout, {}
-    while time.time() < end:
-        rec = record(t, host)
-        if pred(rec.get("agents", "")):
-            return rec
-        time.sleep(0.5)
-    return rec
+    return wait_for(lambda: record(t, host), lambda rec: pred(rec.get("agents", "")), timeout, 0.5, last=True)
 
 
 def in_pane(cmd, user="alex", timeout=20):

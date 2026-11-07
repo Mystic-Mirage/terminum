@@ -85,7 +85,7 @@ fn new_mark(app: &Shared, page: &Page, msg: &Value) -> Result<bm::Item, bm::Mark
         return Err(bm::MarkError(bm::NOT_SHOWN.into()));
     };
     let (text, note, n) = bm::mark_of(msg)?;
-    let item = find_item(&app.layout.read(), &key);
+    let item = find_item(&app.layout.read(), &key).cloned();
     let Some(item) = item else { return Err(bm::MarkError(bm::CLOSED.into())) };
     let project = app.projects.lock().of(&key).map(|p| p.id.clone());   // its project's, else its session's
     let new = NewMark {
@@ -106,8 +106,13 @@ fn new_mark(app: &Shared, page: &Page, msg: &Value) -> Result<bm::Item, bm::Mark
 }
 
 /// The list's row of pane `key`.
-pub fn find_item(layout: &Value, key: &str) -> Option<Value> {
-    layout_items(layout.as_array()?).find(|it| it["id"] == key).cloned()
+pub fn find_item<'a>(layout: &'a Value, key: &str) -> Option<&'a Value> {
+    layout_items(layout.as_array()?).find(|it| it["id"] == key)
+}
+
+/// Every row of a layout as it is kept.
+pub fn layout_rows(layout: &Value) -> impl Iterator<Item = &Value> {
+    layout_items(layout.as_array().map_or(&[], |a| a.as_slice()))
 }
 
 /// Every row of the layout's groups.

@@ -79,6 +79,11 @@ pub fn check_session_name(s: &str) -> Result<String, String> {
     Ok(name)
 }
 
+/// The tmux session a project's windows open in (its [+] and RUN alike).
+pub fn project_session(name: &str) -> Result<String, String> {
+    check_session_name(&name.replace([':', '.'], "-"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

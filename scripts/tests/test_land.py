@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Landing a worktree (spec AC-104), on real repositories in a temporary folder; no remote is contacted."""
+import fcntl
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -13,6 +16,22 @@ SPEC.loader.exec_module(land)
 
 def git(*args, cwd):
     return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def git_dir(cwd):
+    return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd))
+
+
+# a process holding the turn until it is killed
+HOLDS = """
+import importlib.util, sys, time
+spec = importlib.util.spec_from_file_location("land", sys.argv[1])
+land = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(land)
+with land.Turn(sys.argv[2]):
+    print("holding", flush=True)
+    time.sleep(60)
+"""
 
 
 class Landing(unittest.TestCase):
@@ -166,6 +185,32 @@ class Landing(unittest.TestCase):
     def test_only_a_change_with_code_counts_as_code(self):
         self.assertFalse(land.has_code({"docs/USAGE.md", "README.md"}))
         self.assertTrue(land.has_code({"docs/USAGE.md", "terminumd/src/a.rs"}))
+
+    def turn_is_free(self):
+        with (git_dir(self.primary) / "terminum-land.turn").open("w") as file:
+            try:
+                fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return True
+            except BlockingIOError:
+                return False
+
+    def test_a_turn_held_is_held_however_old_and_is_freed_with_its_holder(self):  # AC-104
+        holder = subprocess.Popen([sys.executable, "-c", HOLDS, str(Path(land.__file__)), str(self.primary)], stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "holding")
+            os.utime(git_dir(self.primary) / "terminum-land.turn", (1, 1))
+            self.assertFalse(self.turn_is_free(), "no age frees it")
+        finally:
+            holder.kill()
+            holder.wait()
+            holder.stdout.close()
+        self.assertTrue(self.turn_is_free(), "its holder's death does")
+
+    def test_a_turn_ended_is_free_and_a_build_it_starts_holds_nothing(self):  # AC-104
+        with land.Turn(self.primary) as turn:
+            self.assertFalse(self.turn_is_free())
+            self.assertFalse(os.get_inheritable(turn.file.fileno()))
+        self.assertTrue(self.turn_is_free())
 
     def test_a_conflict_stays_in_the_tree_and_lands_once_resolved(self):
         one, other = self.tree("one"), self.tree("other")

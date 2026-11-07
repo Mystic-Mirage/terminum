@@ -4,7 +4,8 @@
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
-import { $, button, agentColor, api, countOf, el, fillSelect, iconButton } from "./kanbanutil.js";
+import { el, iconButton } from "./listparts.js";
+import { $, button, agentColor, api, countOf, fillSelect, showError } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -122,7 +123,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   }
 
   const values = () => Object.fromEntries(Object.entries(field).map(([k, e]) => [k, e.value]));
-  const say = (text) => { error.textContent = text; error.hidden = !text; };
+  const say = (text) => showError(error, text);
 
   // what a kind fills in follows the kind; what the user wrote stays
   field.kind.addEventListener("change", () => {

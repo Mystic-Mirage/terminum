@@ -11,9 +11,9 @@ import { hello } from "./proof.js";
 import { shownUrl } from "./shown.js";
 
 const KEY = "tm.session";
-/** The user's custom.css as last fetched (settings.js): shown at the next load before it is
- *  fetched again; it needs the sign-in, so it goes with it. */
-export const CSS_KEY = "tm.customcss";
+/** The user's custom.css as last fetched: shown at the next load before it is fetched again; it
+ *  needs the sign-in, so it goes with it. */
+const CSS_KEY = "tm.customcss";
 let secret = null;
 /** The current proof's credential (memory only), for the WebSocket (protocols). */
 let token = null;
@@ -113,3 +113,39 @@ export async function blobUrl(url) {
 
 /** The WebSocket's subprotocols: ["tm", credential] once the server proved itself (prove). */
 export const protocols = () => (secret && token ? ["tm", token] : undefined);
+/** terminumd's WebSocket, on the page's own host. */
+export const socketUrl = () => `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`;
+
+/** The copy last fetched of the user's custom.css (AC-19), shown at once at load. */
+export function showKeptCss() {
+  try { if (held()) document.getElementById("customcss").textContent = localStorage.getItem(CSS_KEY) ?? ""; } catch { /* no storage: fetched next */ }
+}
+let cssLoads = 0;
+/** The user's custom.css, fetched with the sign-in, shown and kept; the newest asked stands. */
+export async function loadCss() {
+  const mine = ++cssLoads;
+  const r = await fetch("/custom.css", { cache: "no-store" }).catch(() => null);
+  const text = r?.ok ? await r.text().catch(() => null) : null;
+  if (text === null || mine !== cssLoads) return;
+  document.getElementById("customcss").textContent = text;
+  try { localStorage.setItem(CSS_KEY, text); } catch { /* no storage: fetched at every load */ }
+}
+
+let updating = false;
+/** terminumd names the build `id`: a page of another (open across an upgrade, or restored from memory)
+ *  reloads once, never in a loop; it waits while `busy()`. `say(words)` hears why it has not yet. */
+export function reloadOnce(id, busy, say = () => {}) {
+  if (id === document.querySelector('meta[name="build"]').content || updating) return;
+  if (sessionStorage.getItem("web.reloaded-for") === id) return say("An update is ready: reload the page.");
+  updating = true;
+  const attempt = () => {
+    if (busy()) {
+      say("An update is ready: the page reloads after you save.");
+      setTimeout(attempt, 1000);
+      return;
+    }
+    try { sessionStorage.setItem("web.reloaded-for", id); } catch { /* private mode: at worst asks again */ }
+    location.reload();
+  };
+  attempt();
+}

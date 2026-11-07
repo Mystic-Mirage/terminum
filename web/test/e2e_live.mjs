@@ -135,7 +135,8 @@ const screenText = (page) => page.evaluate(() => document.getElementById("screen
 
 async function wide(browser, name) {
   runningIn(`${name} 1400×900`);
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  // reduced motion: a window stands where a press lands (e2e_motion.mjs checks the motion)
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   const errors = [];
   // WebKit reports a load that failed as the page's error, "Fetch API cannot load … due to access control
@@ -195,7 +196,7 @@ async function wide(browser, name) {
   const size = tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}");
   check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
   await liveQuick(page, { tmux, work: WORK });
-  await liveSplit(page, { tmux, work: WORK });
+  await liveSplit(page, { tmux, work: WORK, socket: SOCKET });
   // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
   const byhandName = `byhand-${name}`;
   tmux("new-window", "-d", "-n", byhandName);
@@ -260,7 +261,7 @@ async function wide(browser, name) {
   }, null, { timeout: 5000 }));
   fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));
   // a color scheme picked in one browser is every browser's (settings.json page.colorScheme)
-  const other = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+  const other = await browser.newContext({ viewport: { width: 1000, height: 700 }, reducedMotion: "reduce" });
   const page2 = await other.newPage();
   await signIn(page2);
   const bg = (p) => p.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim());
@@ -288,6 +289,10 @@ async function wide(browser, name) {
     await bgIs(board, boardOwn);
   });
   await page.keyboard.press("Escape");
+  fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#203040" }));
+  await within("AC-12 a changed theme file reaches an open board without a reload", () => bgIs(board, "#203040"));
+  fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));
+  await bgIs(board, "#102030");
   await other.close();
   check("AC-08 terminumd marks the tmux server it started with its own executable",
     tmux("show-options", "-gqv", "@terminum-started-by") === fs.realpathSync(BIN), tmux("show-options", "-gqv", "@terminum-started-by"));
@@ -302,9 +307,20 @@ async function wide(browser, name) {
   await page.click("#menubtn");
   await page.click('#schemes .swatch[data-scheme="Nord"]');
   await page.keyboard.press("Escape");
+  const shownPane = await page.evaluate(() => document.querySelector("#sessions .item.on").dataset.id.split(":").pop());
   await stop();
+  await page.waitForFunction(() => { const s = document.getElementById("status"); return !s.hidden && s.innerText.includes("not running"); }, null, { timeout: 8000 });
+  await page.click("#menubtn");
+  await page.click('#schemes .swatch[data-scheme="Dracula"]');
+  check("AC-12 a swatch pressed while the link is down says so and changes nothing",
+    await page.locator("#toast").innerText() === "Not connected: the colors stay as they were" && await page.getAttribute('#schemes .swatch[data-scheme="Nord"]', "aria-pressed") === "true" && await bg(page) === "#2e3440" && kept() === "Nord",
+    `${await page.locator("#toast").innerText()} ${await bg(page)} ${kept()}`);
+  await page.keyboard.press("Escape");
+  // written while terminumd is down, so only the new one can bring it: the rows left on the page prove nothing
+  tmux("send-keys", "-t", shownPane, "-l", "printf 'back-%s\\n' after-restart");
+  tmux("send-keys", "-t", shownPane, "Enter");
   await start();
-  await within("AC-14 the page reconnects after terminumd restarts and shows the pane", () => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3 && !document.getElementById("status").innerText.includes("not running"), null, { timeout: 8000 }));
+  await within("AC-14 the page reconnects after terminumd restarts and shows the pane", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("back-after-restart") && document.getElementById("status").hidden, null, { timeout: 8000 }));
   const still = await unreadRow();
   check("AC-93 a row marked unread is still unread after terminumd restarts", !still, still);
   check("AC-12 the color scheme picked is kept across the restart", kept() === "Nord" && await bg(page) === "#2e3440", `${kept()} ${await bg(page)}`);
@@ -323,7 +339,7 @@ async function wide(browser, name) {
 
 async function phone(browser, name) {
   runningIn(`${name} 390×844`);
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await signIn(page);
   if (BOARD_ALONE) {

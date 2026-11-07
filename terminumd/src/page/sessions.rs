@@ -81,7 +81,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
         return;
     }
     let result = match t {
-        "new" => new_window(app, page, asked_on, &s("group")).await,
+        "new" => new_window(app, page, at.as_ref(), &s("group")).await,
         "newsession" => new_session(app, page, asked_on, &s("name")).await,
         "split" => split(app, page, asked_on, &s("id"), &s("how")).await,
         "clone" => clone_window(app, page, asked_on, &s("id"), msg["project"].as_str()).await,
@@ -96,8 +96,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
     match result {
         Ok(()) if matches!(t, "rename" | "renamegroup" | "reorder" | "move" | "kill") => {
             // its server's list alone: nothing else changed
-            let server = msg["id"].as_str().and_then(|id| app.tmux.resolve(id)).or_else(|| msg["group"].as_str().and_then(|g| group(app, g)));
-            match server {
+            match about(app, msg) {
                 Some((server, _)) => { crate::lists::request(app, &server); }
                 None => crate::lists::request_all(app),
             }
@@ -107,10 +106,15 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
     }
 }
 
-async fn new_window(app: &Shared, page: &Page, asked_on: Option<&str>, wid: &str) -> Result<(), String> {
+/// The server a message names: its pane's, else its group's.
+pub(super) fn about(app: &Shared, msg: &Value) -> Option<(Arc<Server>, String)> {
+    msg["id"].as_str().and_then(|id| app.tmux.resolve(id)).or_else(|| msg["group"].as_str().and_then(|g| group(app, g)))
+}
+
+async fn new_window(app: &Shared, page: &Page, at: Option<&(String, Arc<Server>, String)>, wid: &str) -> Result<(), String> {
     let (server, session) = group(app, wid).ok_or("That session is gone.")?;
-    // after the shown pane's window, in its folder, when it is in this session
-    let shown = page.state.lock().shown.as_ref().filter(|s| s.server.id() == server.id()).map(|s| s.pane.clone());
+    // after the window of the pane shown when it was asked, in its folder, when it is in this session (AC-132)
+    let shown = at.filter(|(_, s, _)| s.id() == server.id()).map(|(_, _, pane)| pane.clone());
     let place = match &shown {
         Some(pane) => server.run(format!("display -p -t {pane} '#{{session_name}}\t#{{window_id}}'")).await.ok().and_then(|l| l.into_iter().next())
             .and_then(|l| l.split_once('\t').map(|(s, w)| (s.to_string(), w.to_string()))).filter(|(s, _)| *s == session),
@@ -125,7 +129,7 @@ async fn new_window(app: &Shared, page: &Page, asked_on: Option<&str>, wid: &str
         None => format!("-t {}", args::quote(&format!("={session}:"))),
     };
     let pane = open_window(&server, &target, &dir).await?;
-    created(app, page, asked_on, &server, &pane, note).await;
+    created(app, page, at.map(|(key, ..)| key.as_str()), &server, &pane, note).await;
     Ok(())
 }
 
@@ -152,10 +156,9 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
         _ => folder_of(&server, &pane).await,
     };
     let new = open_window(&server, &format!("-a -t {window}"), &dir).await?;
-    if let Some((pid, d)) = joins {
+    if let Some((pid, _)) = joins {
         let (key, after, a) = (server.key(&new), id.to_string(), app.clone());
-        let host = (!server.is_local()).then(|| server.name.clone());
-        let r = tokio::task::spawn_blocking(move || a.projects.lock().add(&key, Some(&pid), Some(&after), host, d, None)).await;
+        let r = tokio::task::spawn_blocking(move || a.projects.lock().add_to(&key, &pid, Some(&after))).await;
         if let Ok(Err(e)) = r {
             error(page, e, None);
         }
@@ -170,7 +173,7 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
 async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, project: &str, dir: &str) -> Result<(), String> {
     let (name, host, kept) = {
         let ps = app.projects.lock();
-        let p = ps.list().iter().find(|p| p.id == project).ok_or("That project is gone.")?;
+        let p = ps.by_id(project).ok_or("That project is gone.")?;
         (p.name.clone(), p.host.clone(), p.dir.clone())
     };
     let dir = if dir.is_empty() { kept } else { dir.to_string() };
@@ -185,7 +188,7 @@ async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, proje
     if server.is_local() && !std::path::Path::new(&dir).is_dir() {
         return Err(format!("The folder {dir} does not exist."));
     }
-    let session = args::check_session_name(&name.replace([':', '.'], "-"))?;
+    let session = args::project_session(&name)?;
     let exists = server.run(format!("has-session -t {}", args::quote(&format!("={session}")))).await.is_ok();
     let line = if exists {
         format!("new-window -t {} -c {} -P -F '#{{pane_id}}'", args::quote(&format!("={session}:")), args::format_arg(&dir))
@@ -195,13 +198,11 @@ async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, proje
     let made = server.run(line).await.map_err(|e| format!("No new window: {}", said(&e)))?;
     let pane = made.into_iter().next().unwrap_or_default();
     let (key, pid, a) = (server.key(&pane), project.to_string(), app.clone());
-    let folder = dir.clone();
-    let joined = tokio::task::spawn_blocking(move || {
+    crate::http::off(move || {
         let mut ps = a.projects.lock();
-        ps.set_dir(&pid, folder.clone())?;
-        ps.add(&key, Some(&pid), None, host, folder, None).map(|_| ())
-    }).await.map_err(|e| e.to_string()).and_then(|r| r);
-    joined?;
+        ps.set_dir(&pid, dir)?;
+        ps.add_to(&key, &pid, None)
+    }).await?;
     super::projects::tell(app);
     created(app, page, asked_on, &server, &pane, None).await;
     Ok(())
@@ -317,9 +318,9 @@ async fn kill(app: &Shared, id: &str) -> Result<(), String> {
 }
 
 /// Host, attach and restore actions, from either listener's page (§9 "What each listener allows").
-pub async fn admin(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
+pub async fn admin(app: &Shared, page: &Arc<Page>, msg: &Value) {
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
-    let result = match t {
+    let result = match msg["t"].as_str().unwrap_or("") {
         "addhost" => crate::hosts::add(app, &s("name"), &s("recipe"), msg["files"].as_bool().unwrap_or(false)).await.map(|name| {
             page.send_json(&json!({"t": "hostadded", "name": name}));
         }),
@@ -334,7 +335,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         "hostaction" => crate::hosts::action(app, &s("name"), &s("action")).await,
         // AC-89: a place is its server's id (`local:<socket>`, `<host>:default`)
         "addtmux" => {
-            let names: Vec<String> = msg["sessions"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            let names = crate::config::strings(&msg["sessions"]);
             crate::attach::Place::parse(app, &s("server")).and_then(|place| crate::attach::add(app, &place, &names).map(|()| {
                 page.send_json(&json!({"t": "tmuxadded", "server": place.id(), "sessions": names}));
             }))
@@ -362,3 +363,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         Err(e) => error(page, e, None),
     }
 }
+
+#[cfg(test)]
+#[path = "sessions_tests.rs"]
+mod tests;

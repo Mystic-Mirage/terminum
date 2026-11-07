@@ -40,7 +40,8 @@ fn title_of(app: &Shared, key: &str) -> String {
 }
 
 /// `at`: the pane shown when the page sent it: what was typed there stays that pane's (AC-132).
-pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value, at: super::client::At) {
+pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::client::At) {
+    let t = msg["t"].as_str().unwrap_or("");
     let agent = msg["agent"].as_str().filter(|a| !a.is_empty());
     let shown_key = at.as_ref().map(|(k, ..)| k.clone());
     let hooked = shown_key.as_ref().is_some_and(|k| app.hooks.has(k));
@@ -58,12 +59,16 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value, at: su
         return;
     }
     // the project: the pane's host ("local" for every server of this Mac) and folder
-    let (key, host, path) = match &at {
-        None => return { page.send_json(&json!({"t": "sentone", "error": "No pane is shown."})); },
-        Some((key, server, pane)) => match super::client::cwd_of(server, pane).await {
-            Ok(path) => (key.clone(), server.name.clone(), path),
-            Err(e) => return { page.send_json(&json!({"t": "sentone", "error": e})); },
-        },
+    let got = match &at {
+        None => Err("No pane is shown.".to_string()),
+        Some((key, server, pane)) => super::client::cwd_of(server, pane).await.map(|path| (key.clone(), server.name.clone(), path)),
+    };
+    let (key, host, path) = match got {
+        Ok(got) => got,
+        Err(e) => {
+            page.send_json(&json!({"t": "sentone", "error": e}));
+            return;
+        }
     };
     if t == "askno" {
         let (a, h, p, k) = (app.clone(), host.clone(), path.clone(), key.clone());

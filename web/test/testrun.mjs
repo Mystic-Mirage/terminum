@@ -46,31 +46,6 @@ export const ownTmp = (prefix) => {
   return dir;
 };
 
-/** What only one run at a time may use, across worktrees and sessions: waits for `lock`, a folder holding its
- *  run's pid, up to `waitMs`, past one whose run has died. A function that runs `cleanup` and gives it back, or
- *  null if it stayed taken; it runs when this run exits too. */
-export const holdLock = async (lock, waitMs, cleanup = () => {}) => {
-  const until = Date.now() + waitMs, pidFile = path.join(lock, "pid");
-  while (Date.now() < until) {
-    try {
-      fs.mkdirSync(lock);
-      fs.writeFileSync(pidFile, String(process.pid));
-      const release = () => { process.off("exit", release); cleanup(); fs.rmSync(lock, { recursive: true, force: true }); };
-      process.on("exit", release);
-      return release;
-    } catch (e) {
-      if (e.code !== "EEXIST") throw e;
-    }
-    try {
-      process.kill(Number(fs.readFileSync(pidFile, "utf8")), 0);
-    } catch (e) {
-      if (e.code === "ESRCH") { fs.rmSync(lock, { recursive: true, force: true }); continue; }   // else: just taken, or given back
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  return null;
-};
-
 /** `name` for this run only: `<name>-<pid>` (short: a tmux socket path ends at 104 bytes). */
 export const own = (name) => {
   if (!sockets.size) process.on("exit", removeDeadSockets);

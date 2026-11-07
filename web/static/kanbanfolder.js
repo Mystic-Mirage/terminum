@@ -3,7 +3,8 @@
 // going up and in. terminumd says where it opens and lists through Files' own `/fb/api/ls`; trouble is said
 // in the picker and the field stays typeable.
 import { icon } from "./icons.js";
-import { $, api, button, el } from "./kanbanutil.js";
+import { el } from "./listparts.js";
+import { $, api, button } from "./kanbanutil.js";
 import { settled } from "./panefiles.js";
 
 const PAGE = 500;                      // a listing's page (CLAUDE.md §1): past it, the rest is typed

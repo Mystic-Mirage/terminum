@@ -6,21 +6,16 @@
 //   fullscreen  the alternate screen and the mouse: Claude Code selects, and on the release copies
 //               with pbcopy (here a stub) and OSC 52 twice, plain and in tmux's passthrough.
 // Both take a pasted multi-line text as one paste, never as lines sent. A program not on PATH is a
-// visible SKIP. Claude Code is the user's own install and login: it runs with --safe-mode (no
-// CLAUDE.md, hooks, plugins or MCP servers), --tools '' and an unreachable ANTHROPIC_BASE_URL (no
-// model call), in terminum-claude-check under the user's own temporary folder (os.tmpdir(): 0700
-// on macOS; TM_USER_TMPDIR under check_step.py, whose TMPDIR changes per run: one folder, one entry),
-// checked to be this user's and 0700, emptied each run and removed when the run exits, which it is
-// asked once to trust: what it leaves is that folder's trust entry in ~/.claude.json and its state files.
-// One folder for every run, so one run at a time uses it (its lock beside it): another's cleanup would delete it.
+// visible SKIP. Claude Code is the user's own install, not their login or state: it runs with --safe-mode
+// (no CLAUDE.md, hooks, plugins or MCP servers), --tools '', an unreachable ANTHROPIC_BASE_URL (no model
+// call) and a CLAUDE_CONFIG_DIR of its own in the run's folder, which says onboarding is done and its
+// working folder trusted: ~/.claude.json and ~/.claude stay as they were, and the run's exit removes all.
 // TM_TEST_NO_CLAUDE=1 leaves it out.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
-import { check, until } from "./check.mjs";
+import { check, fills, until } from "./check.mjs";
 import { watch } from "./e2e_widgetsteady.mjs";
-import { holdLock } from "./testrun.mjs";
 
 const found = (cmd) => { try { return execFileSync("sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" }).trim(); } catch { return ""; } };
 const skip = (what, why) => console.log(`SKIP real program ${what}: ${why}`);
@@ -89,31 +84,24 @@ async function mc(page, { tmux, work }) {
   close(tmux, pane);
 }
 
-const DIR = path.join(process.env.TM_USER_TMPDIR ?? os.tmpdir(), "terminum-claude-check");
-/** The folder Claude Code is asked to trust: this user's, 0700, empty (never one another user made). */
-function ownDir() {
-  fs.rmSync(DIR, { recursive: true, force: true });
-  fs.mkdirSync(DIR, { mode: 0o700 });
-  const st = fs.lstatSync(DIR);
-  if (!st.isDirectory() || st.uid !== process.getuid() || (st.mode & 0o777) !== 0o700) throw new Error(`${DIR} is not this user's 0700 folder`);
-}
-const CLAUDE_WAIT_MS = 10 * 60000;   // its checks take about two minutes
 const PASTE = "alpha one\nbeta two\ngamma three";
 
-/** Claude Code in its `tui` mode in a new window, past the trust question: {pane, stubLog}. */
+/** Claude Code in its `tui` mode in a new window, its config and working folder this call's: {pane, dir, stubLog}. */
 async function claude(page, { tmux, work }, tui) {
-  ownDir();
+  const own = fs.realpathSync(fs.mkdtempSync(path.join(work, "cc-"))), dir = path.join(own, "dir"), config = path.join(own, "config");
+  fs.mkdirSync(dir);
+  fs.mkdirSync(config);
+  fs.writeFileSync(path.join(config, ".claude.json"), JSON.stringify({ hasCompletedOnboarding: true, projects: { [dir]: { hasTrustDialogAccepted: true } } }));
   const stub = fs.mkdtempSync(path.join(work, "pb-")), stubLog = path.join(stub, "copied.txt");
   // the user's clipboard is never written: pbcopy is a stub that keeps what it was given
   fs.writeFileSync(path.join(stub, "pbcopy"), `#!/bin/sh\ncat >> '${stubLog}'\n`, { mode: 0o755 });
-  const env = `PATH='${stub}':"$PATH" EDITOR='vim -u NONE -N' ANTHROPIC_BASE_URL=http://127.0.0.1:9 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
-  const pane = await open(page, tmux, DIR, `claude-${tui}`, `env ${env} claude --safe-mode --tools '' --settings '{"tui":"${tui}"}'`);
+  const env = `PATH='${stub}':"$PATH" EDITOR='vim -u NONE -N' CLAUDE_CONFIG_DIR='${config}' ANTHROPIC_AUTH_TOKEN=no-model-call ANTHROPIC_BASE_URL=http://127.0.0.1:9 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
+  const pane = await open(page, tmux, dir, `claude-${tui}`, `env ${env} claude --safe-mode --tools '' --settings '{"tui":"${tui}"}'`);
   const ready = await until(async () => {
     const t = tmux("capture-pane", "-p", "-t", pane);
-    if (t.includes("trust this folder") && t.includes("❯ No")) tmux("send-keys", "-t", pane, "Down", "Enter");
     return t.includes("Safe mode") && /^❯/m.test(t);
   }, 30000);
-  return { pane, stubLog, ready };
+  return { pane, dir, stubLog, ready };
 }
 
 /** Ctrl-C twice: Claude Code ends; the shell is back. */
@@ -123,6 +111,22 @@ async function quit(tmux, pane) {
     tmux("send-keys", "-t", pane, "C-c"); await until(() => SHELLS.test(tmux("display", "-p", "-t", pane, "#{pane_current_command}")), 3000);
   }
   return SHELLS.test(tmux("display", "-p", "-t", pane, "#{pane_current_command}"));
+}
+
+/** A teammate's split under real Claude Code, as it makes its first: 70% of the leader's window (AC-13):
+ *  its pane is zoomed and it lays its input box out across the whole window; the box still takes keys. */
+async function teammate(tmux, pane, tui) {
+  const mate = tmux("split-window", "-d", "-t", pane, "-h", "-l", "70%", "-P", "-F", "#{pane_id}");
+  const say = () => tmux("display", "-p", "-t", pane, "#{window_zoomed_flag} #{pane_active} #{pane_width} #{window_width}");
+  check(`AC-13 real claude (${tui}): a teammate's split: its pane is zoomed to the window`, await until(() => fills(tmux, pane), 5000), say());
+  const rule = () => Math.max(0, ...tmux("capture-pane", "-p", "-t", pane).split("\n").map((l) => (l.match(/─+/) ?? [""])[0].length));
+  const across = await until(() => rule() >= Number(say().split(" ")[3]) - 2, 5000);
+  check(`AC-13 real claude (${tui}): its input box runs across the window`, across, `${rule()}: ${say()}`);
+  tmux("send-keys", "-t", pane, "-l", "zoomkeys");
+  const keys = await until(() => tmux("capture-pane", "-p", "-t", pane).includes("zoomkeys"), 5000);
+  check(`AC-13 real claude (${tui}): zoomed, it takes keys`, keys);
+  tmux("send-keys", "-t", pane, "C-u");
+  tmux("kill-pane", "-t", mate);
 }
 
 /** A paste of three lines from the page: all in Claude Code's input, none sent. */
@@ -221,14 +225,14 @@ async function selectionCut(page, ctx) {
 }
 
 async function claudeDefault(page, ctx) {
-  const { pane, ready } = await claude(page, ctx, "default");
+  const { pane, dir, ready } = await claude(page, ctx, "default");
   const { tmux } = ctx;
   check("real claude (default): it runs on the normal screen with no mouse",
     ready && tmux("display", "-p", "-t", pane, "#{alternate_on}#{mouse_any_flag}") === "00", tmux("capture-pane", "-p", "-t", pane).slice(-200));
   if (!ready) return quit(tmux, pane).then(() => close(tmux, pane));
   check("AC-05 live: no full-screen mark for Claude Code's default TUI", !(await marked(page)));
   // AC-31 a table in Claude Code's own output, by its shell mode (no model call): a widget, its head whole, no frame of its rows
-  fs.writeFileSync(path.join(DIR, "claude-table.txt"), ["┌───┬────────┐", "│ # │ Server │", "│   │ name   │", "├───┼────────┤", "│ 1 │ alpha  │", "└───┴────────┘", "between them",
+  fs.writeFileSync(path.join(dir, "claude-table.txt"), ["┌───┬────────┐", "│ # │ Server │", "│   │ name   │", "├───┼────────┤", "│ 1 │ alpha  │", "└───┴────────┘", "between them",
     "│ gamma │ a first │", "│       │ part    │", "├───────┼─────────┤", "│ delta │ two     │", "└───────┴─────────┘"].join("\n") + "\n");
   await page.evaluate(watch);
   tmux("send-keys", "-t", pane, "-l", "!cat claude-table.txt");
@@ -244,7 +248,6 @@ async function claudeDefault(page, ctx) {
   const cutThere = await until(async () => (await cutCells()).includes("gamma"), 3000);
   check("AC-31 live: a table that lost its top in Claude Code's output is a widget of its rows", cutThere, JSON.stringify({ cells: await cutCells(), pane: tmux("capture-pane", "-p", "-t", pane).split("\n").filter((l) => l.trim()).slice(-14) }));
   tmux("send-keys", "-t", pane, "C-l");
-  fs.rmSync(path.join(DIR, "claude-table.txt"), { force: true });
   await pasted(page, tmux, pane, "default");
   // the page selects and copies itself (⌘C: the copy event the page fills): the row's words as shown
   await waitText(page, "Safe mode");
@@ -261,6 +264,7 @@ async function claudeDefault(page, ctx) {
   check("real claude (default): the page's own selection copies the row's words as shown",
     got === "Safe mode: all customizations", JSON.stringify({ at, got, sel: await page.evaluate(() => String(getSelection())) }));
   await page.evaluate(() => getSelection().removeAllRanges());
+  await teammate(tmux, pane, "default");
   check("real claude (default): Ctrl-C twice ends it", await quit(tmux, pane));
   close(tmux, pane);
 }
@@ -294,6 +298,7 @@ async function claudeFullscreen(page, ctx) {
       !!copied.trim() && times === 1, String(quote).replace(/\s+/g, " ").slice(0, 120));
     await page.keyboard.press("Escape"); await page.waitForTimeout(200);
   }
+  await teammate(tmux, pane, "fullscreen");
   check("real claude (fullscreen): Ctrl-C twice ends it", await quit(tmux, pane));
   close(tmux, pane);
   fs.rmSync(path.dirname(stubLog), { recursive: true, force: true });
@@ -306,12 +311,9 @@ export async function livePrograms(page, ctx) {
   if (process.env.TM_TEST_NO_CLAUDE === "1") skip("claude", "TM_TEST_NO_CLAUDE=1");
   else if (!found("claude")) skip("claude", "not on PATH");
   else {
-    const release = await holdLock(`${DIR}.lock`, CLAUDE_WAIT_MS, () => fs.rmSync(DIR, { recursive: true, force: true }));
-    if (!release) skip("claude", `another run has held ${DIR}.lock for ${CLAUDE_WAIT_MS / 60000} minutes`);
-    else {
-      try { await claudeDefault(page, ctx); await selectionCut(page, ctx); await claudeFullscreen(page, ctx); }
-      finally { release(); }
-    }
+    await claudeDefault(page, ctx);
+    await selectionCut(page, ctx);
+    await claudeFullscreen(page, ctx);
   }
   if (back) await page.click(`#sessions .item[data-id="${back}"]`).catch(() => {});
 }

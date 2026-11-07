@@ -34,8 +34,12 @@ pub struct Store {
     state: Mutex<State>,
 }
 
-pub(super) fn message(e: &rusqlite::Error) -> String {
+pub(super) fn message(e: &impl std::fmt::Display) -> String {
     format!("The tasks' store: {e}")
+}
+
+fn schema_version(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).map(|v| v as usize)
 }
 
 fn is_broken(e: &rusqlite::Error) -> bool {
@@ -44,7 +48,7 @@ fn is_broken(e: &rusqlite::Error) -> bool {
 
 /// Brings `conn` to `migrations.len()`, after a copy of a store that has a schema already.
 fn upgrade(conn: &mut Connection, path: &Path, migrations: &[&str]) -> rusqlite::Result<()> {
-    let version = conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? as usize;
+    let version = schema_version(conn)?;
     if version >= migrations.len() {
         return Ok(());
     }
@@ -64,7 +68,7 @@ fn upgrade(conn: &mut Connection, path: &Path, migrations: &[&str]) -> rusqlite:
 fn prepare(mut conn: Connection, path: &Path) -> rusqlite::Result<Result<Connection, String>> {
     conn.busy_timeout(Duration::from_secs(5))?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    let version = conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))? as usize;
+    let version = schema_version(&conn)?;
     if version > MIGRATIONS.len() {
         return Ok(Err("The tasks' store is newer than this terminum: upgrade terminum.".into()));
     }
@@ -113,11 +117,11 @@ fn state_of(path: &Path) -> State {
     }
     if let Some(dir) = path.parent()
         && let Err(e) = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(dir) {
-            return State::Failed(format!("The tasks' store: {e}"));
+            return State::Failed(message(&e));
         }
     // SQLite gives its -wal and -shm the main file's permissions
     if let Err(e) = std::fs::OpenOptions::new().create(true).append(true).mode(0o600).open(path) {
-        return State::Failed(format!("The tasks' store: {e}"));
+        return State::Failed(message(&e));
     }
     match Connection::open(path).and_then(|c| prepare(c, path)) {
         Ok(Ok(c)) => State::Open(c),
@@ -213,7 +217,7 @@ impl Store {
         if !matches!(*state, State::SetAside(_)) {
             return Err("The tasks' store was not set aside.".into());
         }
-        std::fs::remove_file(marker(&self.path)).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(format!("The tasks' store: {e}")) })?;
+        crate::config::remove_if_there(&marker(&self.path)).map_err(|e| message(&e))?;
         *state = state_of(&self.path);
         match &mut *state {
             // an older projects.json is no copy of what was set aside: the user asked for empty

@@ -49,8 +49,7 @@ fn guarded(run: &str, pane: &str, line: &str) -> String {
 /// Pastes `text` into `run`'s pane and sends it. `first`: its first prompt, no turn has ended yet:
 /// the caller knows the agent has started.
 pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text: &str, first: bool) -> Result<(), Miss> {
-    let queue = server.typing(pane);
-    let _held = queue.lock().await;
+    let _held = server.typing(pane).lock_owned().await;
     let said = server.run(format!("display -p -t {pane} '#{{@terminum-run}}\t#{{pane_in_mode}}\t#{{@terminum-exit}}\t#{{pane_current_command}}'")).await.map_err(|e| other(format!("tmux does not answer: {e}")))?;
     let fields: Vec<&str> = said.first().map_or(Vec::new(), |l| l.split('\t').collect());
     let field = |i: usize| fields.get(i).copied().unwrap_or("");

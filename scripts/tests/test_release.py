@@ -162,10 +162,10 @@ class ReleaseTest(unittest.TestCase):
         path.write_text(" \n", encoding="utf-8")
         self.assertIn("are empty", self.refused(release.release_notes, "v1.0.0"))
         path.write_bytes(b"\xff\xfe")
-        with mock.patch.object(release, "check_source"), mock.patch.object(release, "check_unpublished") as unpublished, \
+        with mock.patch.object(release, "check_source", return_value="abc"), mock.patch.object(release, "check_unpublished") as unpublished, \
                 mock.patch.object(release.package, "main") as build, mock.patch.object(release, "sign") as sign, \
                 mock.patch.object(release, "publish") as publish:
-            self.assertIn("cannot read release notes", self.refused(release.main, ["v1.0.0"]))
+            self.assertIn("cannot read release notes", self.refused(release.main, "v1.0.0", "abc"))
             unpublished.assert_not_called()
             build.assert_not_called()
             sign.assert_not_called()
@@ -215,19 +215,16 @@ class ReleaseTest(unittest.TestCase):
         with mock.patch.object(Path, "read_text", side_effect=AssertionError("must not read target")):
             self.assertIn("inside the repository", self.refused(release.release_notes, "v1.0.0"))
 
-    def test_a_release_needs_the_developer_id_before_anything_runs(self):
+    def test_a_release_needs_the_developer_id(self):
         os.environ["TM_CODESIGN_IDENTITY"] = " "
-        with mock.patch.object(release, "check_source") as checked, mock.patch.object(release, "run") as run:
-            self.assertIn("TM_CODESIGN_IDENTITY is not set", self.refused(release.main, ["v1.0.0"]))
-        checked.assert_not_called()
-        run.assert_not_called()
+        self.assertIn("TM_CODESIGN_IDENTITY is not set", self.refused(release.check_settings))
 
     def test_a_package_without_both_linux_builds_is_not_released(self):
-        with mock.patch.object(release, "check_source"), mock.patch.object(release, "release_notes", return_value="x"), \
+        with mock.patch.object(release, "check_source", return_value="abc"), mock.patch.object(release, "release_notes", return_value="x"), \
                 mock.patch.object(release, "check_unpublished", return_value=False), mock.patch.object(release, "run"), \
                 mock.patch.object(release.package, "main"), mock.patch.object(release, "sign") as sign, \
                 mock.patch.object(release, "publish") as publish:
-            self.assertIn("no linux-x86_64 terminumd", self.refused(release.main, ["v1.0.0"]))
+            self.assertIn("no linux-x86_64 terminumd", self.refused(release.main, "v1.0.0", "abc"))
         sign.assert_not_called()
         publish.assert_not_called()
 
@@ -237,14 +234,14 @@ class ReleaseTest(unittest.TestCase):
             binary.parent.mkdir(parents=True)
             binary.touch()
         with mock.patch.dict(os.environ, {"TM_BUILD": "checkout-id"}), \
-                mock.patch.object(release, "check_source"), mock.patch.object(release, "check_unpublished", return_value=False), \
+                mock.patch.object(release, "check_source", return_value="abc"), mock.patch.object(release, "check_unpublished", return_value=False), \
                 mock.patch.object(release, "release_notes", return_value="# Changes\n"), mock.patch.object(release, "run") as run, mock.patch.object(release.package, "main") as build, \
                 mock.patch.object(release, "check_unmoved") as unmoved, \
                 mock.patch.object(release, "sign") as sign, mock.patch.object(release, "publish", return_value="url") as publish:
             order = mock.Mock()
             for name, fn in (("run", run), ("build", build), ("sign", sign), ("unmoved", unmoved), ("publish", publish)):
                 order.attach_mock(fn, name)
-            release.main(["v1.0.0"])
+            release.main("v1.0.0", "abc")
             ui_call = next(call for call in run.call_args_list if call.args == ("npm", "run", "-s", "build"))
             self.assertEqual(ui_call.kwargs["env"]["TM_BUILD"], "v1.0.0")
             self.assertEqual(os.environ["TM_BUILD"], "checkout-id", "the override is local to the UI build")
@@ -261,9 +258,8 @@ class ReleaseTest(unittest.TestCase):
                 mock.patch.object(release, "check_unmoved"), mock.patch.object(release, "run", return_value="") as run, \
                 mock.patch.object(release.package, "main") as build, mock.patch.object(release, "sign", never), \
                 mock.patch.object(release, "publish", never), mock.patch.object(release, "gh", never), \
-                mock.patch.object(release, "release_notes", never), mock.patch.object(release, "check_unpublished", never), \
-                mock.patch.dict(os.environ, {"TM_GATE_HEAD": "abc1234567"}):
-            release.main(["--rehearse", "v1.0.0"])
+                mock.patch.object(release, "release_notes", never), mock.patch.object(release, "check_unpublished", never):
+            release.main("v1.0.0", "abc1234567", rehearsing=True)
         build.assert_called_once_with(["--build", "v1.0.0", "--release"])
         self.assertEqual([c.args[:2] for c in run.call_args_list], [("npm", "ci"), ("npm", "run")])
 
@@ -272,20 +268,17 @@ class ReleaseTest(unittest.TestCase):
             binary = self.out / release.package.NAME / "agents" / platform / "terminumd"
             binary.parent.mkdir(parents=True)
             binary.touch()
-        with mock.patch.dict(os.environ, {"TM_GATE_SAID": "the Mac test runner's checks did not run: x"}), \
-                mock.patch.object(release, "check_settings"), mock.patch.object(release, "check_source", return_value="abc"), \
+        with mock.patch.object(release, "check_settings"), mock.patch.object(release, "check_source", return_value="abc"), \
                 mock.patch.object(release, "check_unpublished", return_value=False), mock.patch.object(release, "release_notes", return_value="# Changes\n"), \
                 mock.patch.object(release, "run", return_value=""), mock.patch.object(release.package, "main"), mock.patch.object(release, "sign"), \
                 mock.patch.object(release, "check_unmoved"), mock.patch.object(release, "publish", return_value="url") as publish:
-            release.main(["v1.0.0"])
+            release.main("v1.0.0", "abc", "the Mac test runner's checks did not run: x")
         self.assertIn("**Not verified:** the Mac test runner's checks did not run: x", publish.call_args.args[2])
 
     def test_a_commit_the_checks_did_not_see_is_refused(self):  # AC-104
-        with mock.patch.dict(os.environ, {"TM_GATE_HEAD": "aaaa"}):
-            self.assertIn("HEAD moved since the full checks", self.refused(release.check_gate, "bbbb"))
-            release.check_gate("aaaa")
-        os.environ.pop("TM_GATE_HEAD", None)
-        release.check_gate("bbbb")
+        self.assertIn("HEAD moved since the full checks", self.refused(release.check_gate, "bbbb", "aaaa"))
+        self.assertIn("HEAD moved since the full checks", self.refused(release.check_gate, "bbbb", None), "no commit seen is no pass")
+        release.check_gate("aaaa", "aaaa")
 
 
 if __name__ == "__main__":

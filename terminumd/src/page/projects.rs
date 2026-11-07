@@ -12,13 +12,14 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use super::Page;
+use super::{lost_marks, Page};
 use crate::app::Shared;
 use crate::tasks::projects::{self as stored, Saved};
 use crate::tasks::store::Store;
@@ -69,8 +70,9 @@ pub struct Projects {
     fresh: HashMap<String, Instant>,
     /// when a list read is due for a member kept only for being fresh (`fresh_left`)
     recheck: Option<Instant>,
-    /// a list read changed them and the pages are not told yet (`tell_read`)
-    untold: bool,
+    /// a list read changed them and the pages are not told yet (`tell_read`): beside the lock, which
+    /// writers hold over the store, each publish reads it
+    pub untold: Arc<AtomicBool>,
     /// the session list's order, projects and tmux groups together ("p:<id>", "g:<group>"): every page's
     order: Vec<String>,
 }
@@ -103,7 +105,7 @@ impl Projects {
         let saved = stored::load(store, &self.legacy)?;
         (self.list, self.servers, self.order) = (saved.list, saved.servers, saved.order);
         self.loaded = true;
-        self.untold = true;
+        self.untold.store(true, Ordering::Release);
         Ok(())
     }
 
@@ -144,33 +146,47 @@ impl Projects {
         Ok(())
     }
 
+    pub fn by_id(&self, id: &str) -> Option<&Project> {
+        self.list.iter().find(|p| p.id == id)
+    }
+
     fn find(&mut self, id: &str) -> Result<&mut Project, String> {
         self.list.iter_mut().find(|p| p.id == id).ok_or_else(|| "That project is gone.".to_string())
     }
 
-    /// Puts pane `key` into project `to` (a new one when none: named `name`, else "Group N",
-    /// made from the pane's host and folder), after `after` when that is a member, else last;
-    /// out of any other. The project's id.
-    pub fn add(&mut self, key: &str, to: Option<&str>, after: Option<&str>, host: Option<String>, dir: String, name: Option<&str>) -> Result<String, String> {
+    /// Puts pane `key` into project `to`, after `after` when that is a member, else last; out of
+    /// any other.
+    pub fn add_to(&mut self, key: &str, to: &str, after: Option<&str>) -> Result<(), String> {
+        self.kept(|ps| ps.place(key, to, after))?;
+        self.fresh.insert(key.to_string(), Instant::now());
+        Ok(())
+    }
+
+    /// Puts pane `key` into a new project, named `name`, else "Group N", made from the pane's host
+    /// and folder; out of any other. The project's id.
+    pub fn add_new(&mut self, key: &str, name: Option<&str>, host: Option<String>, dir: String) -> Result<String, String> {
         let id = self.kept(|ps| {
-            let id = match to {
-                Some(id) => ps.find(id)?.id.clone(),
-                None => ps.make(name, host, dir)?,
-            };
-            if ps.find(&id)?.members.len() >= MOST_MEMBERS {
-                return Err(format!("At most {MOST_MEMBERS} sessions in a project."));
-            }
-            let p = ps.find(&id)?;
-            p.members.retain(|m| m != key);
-            let at = after.and_then(|a| p.members.iter().position(|m| m == a)).map_or(p.members.len(), |i| i + 1);
-            p.members.insert(at, key.to_string());
-            for p in ps.list.iter_mut().filter(|p| p.id != id) {
-                p.members.retain(|m| m != key);
-            }
+            let id = ps.make(name, host, dir)?;
+            ps.place(key, &id, None)?;
             Ok(id)
         })?;
         self.fresh.insert(key.to_string(), Instant::now());
         Ok(id)
+    }
+
+    /// Pane `key` in project `id` alone; the caller saves.
+    fn place(&mut self, key: &str, id: &str, after: Option<&str>) -> Result<(), String> {
+        let p = self.find(id)?;
+        if p.members.len() >= MOST_MEMBERS {
+            return Err(format!("At most {MOST_MEMBERS} sessions in a project."));
+        }
+        p.members.retain(|m| m != key);
+        let at = after.and_then(|a| p.members.iter().position(|m| m == a)).map_or(p.members.len(), |i| i + 1);
+        p.members.insert(at, key.to_string());
+        for p in self.list.iter_mut().filter(|p| p.id != id) {
+            p.members.retain(|m| m != key);
+        }
+        Ok(())
     }
 
     /// A new project with no session (AC-110): named `name`, else "Group N"; the first color no
@@ -366,8 +382,7 @@ pub fn tell(app: &Shared) {
 /// list without the closed panes (their rows do not stand in their tmux groups meanwhile). Kept until
 /// told: a read cut short tells them with the next.
 pub fn tell_read(app: &Shared) {
-    let untold = std::mem::take(&mut app.projects.lock().untold);
-    if untold {
+    if app.projects_untold.swap(false, Ordering::AcqRel) {
         tell(app);
     }
 }
@@ -382,7 +397,9 @@ pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String], e
     let (changed, closed, left) = {
         let mut p = app.projects.lock();
         let (changed, closed) = p.seen(&prefix, identity.as_deref(), &live);
-        p.untold |= changed;
+        if changed {
+            p.untold.store(true, Ordering::Release);
+        }
         (changed, closed, p.fresh_left(&prefix, &live))
     };
     if let Some(wait) = left {
@@ -402,7 +419,7 @@ pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String], e
         }).await;
     }
     let live: HashSet<String> = every.iter().cloned().collect();
-    orphan(app, move |k| k.starts_with(&prefix) && match closed {
+    lost_marks::orphan(app, move |k| k.starts_with(&prefix) && match closed {
         Closed::None => false,
         Closed::All => true,
         Closed::NotLive => !live.contains(k),
@@ -421,42 +438,15 @@ pub async fn restarted(app: &Shared, prefix: &str, panes: &[(String, String)]) {
         move |tx, now| stored::links_restored(tx, &prefix, &panes, now)
     }).await;
     let (a, prefix, panes) = (app.clone(), prefix.to_string(), panes.to_vec());
-    told(app, tokio::task::spawn_blocking(move || a.bookmarks.lock().restarted(&prefix, &panes)).await);
+    lost_marks::told(app, tokio::task::spawn_blocking(move || a.bookmarks.lock().restarted(&prefix, &panes)).await);
 }
 
 /// Tasks' links changed with a server (AC-113): the board and the rows' marks hear of it.
 async fn links_changed(app: &Shared, f: impl FnOnce(&rusqlite::Transaction, i64) -> Result<usize, String> + Send + 'static) {
-    let a = app.clone();
-    let done = tokio::task::spawn_blocking(move || a.tasks.with(|tx| f(tx, crate::tasks::ops::now()))).await;
-    match done {
-        Ok(Ok(0)) => {}
-        Ok(Ok(_)) => crate::tasks::api::told(app, ""),
-        Ok(Err(e)) => tracing::warn!(event = "tasks.links", error = %e),
+    match crate::tasks::api::store(app, move |tx| f(tx, crate::tasks::ops::now())).await {
+        Ok(0) => {}
+        Ok(_) => crate::tasks::api::told(app, ""),
         Err(e) => tracing::warn!(event = "tasks.links", error = %e),
-    }
-}
-
-/// The bookmarks whose session `closed` says closed are orphaned (AC-33): saved off the async
-/// workers when one is (named again there, under the lock), every
-/// page told.
-async fn orphan(app: &Shared, closed: impl Fn(&str) -> bool + Send + 'static) {
-    if super::bookmarks::lost(app.bookmarks.lock().all(), &closed).is_empty() {
-        return;
-    }
-    let a = app.clone();
-    told(app, tokio::task::spawn_blocking(move || {
-        let mut store = a.bookmarks.lock();
-        let ids = super::bookmarks::lost(store.all(), &closed);
-        store.orphan(&ids)
-    }).await);
-}
-
-/// Every page learns of the bookmarks a change made; one not saved is logged.
-fn told(app: &Shared, done: Result<Result<Vec<super::bookmarks::Item>, super::bookmarks::MarkError>, tokio::task::JoinError>) {
-    match done {
-        Ok(Ok(items)) => items.iter().for_each(|i| super::marks::tell_mark(app, i)),
-        Ok(Err(e)) => tracing::warn!(event = "bookmarks.unsaved", error = %e),
-        Err(e) => tracing::warn!(event = "bookmarks.unsaved", error = %e),
     }
 }
 
@@ -471,18 +461,21 @@ async fn save(app: &Shared) {
 /// `project {action, …}` from the page's session list (AC-92).
 pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
     let s = |k: &str| msg[k].as_str().map(str::to_string);
-    let ids = |k: &str| msg[k].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>()).unwrap_or_default();
+    let ids = |k: &str| crate::config::strings(&msg[k]);
     let action = s("action").unwrap_or_default();
     let (key, project, given) = (s("id").unwrap_or_default(), s("project"), s("name").filter(|n| !n.trim().is_empty()));
     let name = given.clone().unwrap_or_default();
     let (order, keys) = (ids("ids"), ids("keys"));
     // the pane's host and folder, for a new project's [+]
-    let (host, dir) = if action == "add" { crate::page::marks::find_item(&app.layout.read(), &key).map(|it| crate::page::marks::project_of(&it)).unwrap_or_default() } else { Default::default() };
+    let (host, dir) = if action == "add" { crate::page::marks::find_item(&app.layout.read(), &key).map(crate::page::marks::project_of).unwrap_or_default() } else { Default::default() };
     let a = app.clone();
     let done = crate::http::off(move || {
         let mut ps = a.projects.lock();
         match action.as_str() {
-            "add" if crate::tmux::parse_key(&key).is_some() => ps.add(&key, project.as_deref(), None, host, dir.unwrap_or_default(), given.as_deref()).map(|_| ()),
+            "add" if crate::tmux::parse_key(&key).is_some() => match project.as_deref() {
+                Some(to) => ps.add_to(&key, to, None),
+                None => ps.add_new(&key, given.as_deref(), host, dir.unwrap_or_default()).map(|_| ()),
+            },
             "remove" => ps.remove(&key),
             "rename" => ps.rename(project.as_deref().unwrap_or(""), &name),
             "delete" => ps.delete(project.as_deref().unwrap_or("")),

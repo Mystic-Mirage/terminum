@@ -22,7 +22,7 @@ import sys
 import time
 
 from shell_writes import writes
-from worktree import count, fetched, finished, git, has_ref, ours, primary_of, Refused, releasing, said_name, trees
+from worktree import common_dir, count, fetched, finished, git, has_ref, ours, primary_of, Refused, releasing, said_name, trees
 
 REPO = Path(__file__).resolve().parents[1]
 FETCH_EVERY = 300      # seconds between the hooks' fetches, for the whole repository
@@ -50,7 +50,7 @@ def behind_words(cwd):
 
 def fetch_failed(primary):
     """A fetch at most every FETCH_EVERY seconds in the whole repository, the last one's result."""
-    stamp = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=primary)) / "terminum-fetch"
+    stamp = common_dir(primary) / "terminum-fetch"
     try:
         if time.time() - stamp.stat().st_mtime < FETCH_EVERY:
             return stamp.read_text() == "failed"

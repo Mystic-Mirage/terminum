@@ -14,3 +14,4 @@ pub mod query;
 pub mod store;
 pub mod tell;
 pub mod tools;
+pub mod users;

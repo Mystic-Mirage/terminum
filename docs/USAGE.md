@@ -25,8 +25,10 @@ fact lives where is in [docs/README.md](README.md).
   terminal, open or closed for each session, its width set by dragging its border with the
   terminal; on a phone it is a view in its place.
 - **Sizing**: the pane follows the page you use: the one that opens it, comes to the front or
-  types there sizes it to its view (45×14 to 240×70 cells); a window of several panes (Claude
-  Code's teammates split it) keeps its layout. Text is never scaled: a pane narrower or wider than
+  types there sizes it to its view (45×14 to 240×70 cells); in a window of several panes
+  (Claude Code's teammates split it) the pane you look at is zoomed to fill it, the layout kept, and
+  only typing makes the window smaller; your own tmux, or a tmux client with that window on its
+  screen, keeps its layout unzoomed. Text is never scaled: a pane narrower or wider than
   your view re-flows to it, lines tmux or the program wrapped joined again (a full-screen program
   such as mc is drawn as its grid, scaled when wider). Switching sessions shows the new one at once
   at your text size.

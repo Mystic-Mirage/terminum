@@ -3,6 +3,7 @@
 //! session on a human's RUN, watches it by hooks' events and a walk on a fixed beat, moves the task
 //! as the session lives, and closes what it started. All its clocks and facts are in the store.
 
+mod acts;
 pub mod api;
 mod press;
 mod gate;
@@ -100,7 +101,7 @@ impl Dispatcher {
         self.active.lock().remove(key)
     }
 
-    fn has_run(&self, key: &str) -> bool {
+    pub fn has_run(&self, key: &str) -> bool {
         self.panes.lock().contains(key)
     }
 
@@ -129,8 +130,11 @@ impl Dispatcher {
         if ev["event"] == "SubagentStop" {
             pane.subs.remove(id);
         } else if pane.subs.contains_key(id) || pane.subs.len() < MOST_SUBS {
-            let kind: String = crate::plans::rules::clean(ev["subtype"].as_str().unwrap_or("")).chars().take(60).collect();
-            pane.subs.entry(id.to_string()).or_insert_with(|| Sub { kind, last: Instant::now(), told: plan::SubStep::Nothing }).last = Instant::now();
+            pane.subs.entry(id.to_string()).or_insert_with(|| Sub {
+                kind: crate::plans::rules::clean(ev["subtype"].as_str().unwrap_or("")).chars().take(60).collect(),
+                last: Instant::now(),
+                told: plan::SubStep::Nothing,
+            }).last = Instant::now();
         }
     }
 
@@ -143,11 +147,6 @@ impl Dispatcher {
         if known && self.has_run(key) {
             let _ = self.events.sender.send((key.to_string(), ev.clone()));
         }
-    }
-
-    /// Whether a turn's end in pane `key` should say its tokens: only a task's session shows them.
-    pub fn wants_tokens(&self, key: &str) -> bool {
-        self.has_run(key)
     }
 
     fn remember_typed(&self, key: &str, text: &str) {

@@ -99,6 +99,11 @@ def main():
         ws.until(lambda m: m["t"] == "sized", 5)
         check("AC-89 its view's new size follows", "100x32 manual" in size_of(own, "work:"), size_of(own, "work:"))
         check("AC-89 the private server's window with the same id keeps its own size", size_of(tmux, "main:").startswith("80x24 "), size_of(tmux, "main:"))
+        mate = own("split-window", "-h", "-d", "-t", "work:", "-P", "-F", "#{pane_id}").strip()
+        time.sleep(1.5)
+        zoomed = own("display", "-p", "-t", "work:", "#{window_zoomed_flag} #{window_panes}").strip()
+        check("AC-13 a split window of the user's tmux keeps its layout: never zoomed", zoomed == "0 2", zoomed)
+        own("kill-pane", "-t", mate)
 
         ws.send({"t": "new", "group": f"local:{OWN}/work"})
         made = ws.until(lambda m: m["t"] in ("created", "error"), 5)

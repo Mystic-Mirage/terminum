@@ -60,7 +60,7 @@ fn plan_validation() {
 fn ac98_an_agent_holding_the_old_list_is_told_the_tools_are_gone() {
     for tool in ["add_notes_for_user", "get_notes_for_user", "update_notes_for_user", "delete_notes_for_user"] {
         let (t, err, ch) = go(&Plans::default(), &caller(), tool, json!({"notes": [{"title": "t", "text": "a"}]}));
-        assert_eq!((t.as_str(), err, ch), ("This tool is gone. Use create_task for what must not get lost.", true, false), "{tool}");
+        assert_eq!((t.as_str(), err, ch), (NOTES_GONE, true, false), "{tool}");
     }
 }
 

@@ -13,6 +13,7 @@ pub mod pystr;
 pub mod hist;
 pub mod marks;
 pub mod plans;
+mod lost_marks;
 pub mod projects;
 pub mod quick;
 pub mod reads;
@@ -28,6 +29,7 @@ pub mod typing;
 pub mod unread;
 pub mod upload;
 pub mod ws;
+pub mod zoom;
 
 use std::collections::HashMap;
 use std::sync::Arc;

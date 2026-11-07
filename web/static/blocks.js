@@ -55,13 +55,15 @@ export class Blocks {
   // keeps the footer behind a button. The blocks are rebuilt only when they change.
   groupScreen() {
     const rows = this.screen.filter(Boolean);                     // a row not received yet is skipped
-    this.park(rows);
+    const boxes = this.agent ? rows.map(boxRow) : null;           // parking the cursor changes none of what they read
+    this.park(rows, boxes);
     // The screen's empty rows below its last text and the cursor are not shown: after a clear a
     // prompt stands at the top and the view, kept at its end, showed only them.
-    let used = rows.findIndex((r) => r.el.querySelector(".cur"));
+    const cursor = rows.findIndex((r) => r.el.querySelector(".cur"));
+    let used = cursor;
     for (let i = rows.length - 1; i > used; i--) if (!blankRow(rows[i])) { used = i; break; }
     rows.forEach((r, i) => r.el.classList.toggle("spare", i > used));
-    const at = this.agent ? this.findBox(rows) : null;
+    const at = boxes ? this.findBox(rows, boxes, cursor) : null;
     this.term.classList.toggle("hasbox", !!at);
     const groups = [{ kind: "", rows: [] }];
     rows.forEach((r, i) => {
@@ -97,10 +99,8 @@ export class Blocks {
   /** Rows the agent's input box and its footer take on the screen, 0 without one. */
   get boxHeight() { return this.box ? this.box.end - this.box.top + 1 : 0; }
 
-  findBox(rows) {
-    const cursor = rows.findIndex((r) => r.el.querySelector(".cur"));
-    const brs = rows.map(boxRow);
-    let at = inputBox(brs, cursor, (k) => this.histRow(k)) ?? codexBox(brs, cursor);
+  findBox(rows, boxes, cursor) {
+    let at = inputBox(boxes, cursor, (k) => this.histRow(k)) ?? codexBox(boxes, cursor);
     const was = this.box, rule = (i) => (i < 0 ? this.hist.at(i) : rows[i])?.el.classList.contains("rule");
     if (!at && cursor < 0 && was && was.end < rows.length && rule(was.top) && rule(was.bottom)) at = was;
     this.box = at;
@@ -121,10 +121,10 @@ export class Blocks {
   histRow(k) { const r = this.hist.at(-k); return r && boxRow(r); }
   // The cursor Claude Code left below its footer (agentbox.js parkedCaret) is drawn on its caret,
   // so the box, a tap and ↑ ↓ go on from there; rows drawn so go back to the bridge's data first.
-  park(rows) {
+  park(rows, boxes) {
     const data = (r) => r.orig ?? r.data;
     const cursor = rows.findIndex((r) => cursorCol(data(r)) >= 0);
-    const at = this.agent ? parkedCaret(rows.map(boxRow), cursor, this.caret, (k) => this.histRow(k), (txt) => !!this.idle?.has(statusKey(txt))) : null;
+    const at = boxes ? parkedCaret(boxes, cursor, this.caret, (k) => this.histRow(k), (txt) => !!this.idle?.has(statusKey(txt))) : null;
     const want = new Map(at ? [[cursor, null], [at.row, at.col]] : []);
     const base = this.hist.length;
     rows.forEach((r, i) => {

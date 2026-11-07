@@ -75,10 +75,13 @@ fn codex(rows: &[Row]) -> Screen {
         return Screen::Asks;
     }
     let Some(at) = rows.iter().rposition(|r| r.text.trim_start().starts_with('\u{203a}')) else { return Screen::Unknown };
-    if rows[at].text.trim_start().trim_start_matches('\u{203a}').trim() == PLACEHOLDER && rows[at].strong.trim_start().trim_start_matches('\u{203a}').trim().is_empty() {
+    fn after_mark(s: &str) -> &str {
+        s.trim_start().trim_start_matches('\u{203a}').trim()
+    }
+    let typed = after_mark(&rows[at].text);
+    if typed == PLACEHOLDER && after_mark(&rows[at].strong).is_empty() {
         return Screen::Empty;
     }
-    let typed = rows[at].text.trim_start().trim_start_matches('\u{203a}').trim();
     let more: Vec<&str> = rows[at + 1..].iter().map(|r| r.text.trim()).take_while(|r| !r.is_empty()).collect();
     if typed.is_empty() && more.is_empty() {
         return Screen::Unknown;

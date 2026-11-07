@@ -65,7 +65,7 @@ fn say(app: &Shared, task: &str, text: String) {
 /// cannot be delivered is said on the task and the move stands.
 pub async fn human_moved(app: &Shared, task: &Task) {
     let Some(key) = &task.session else { return };
-    let item = crate::page::marks::find_item(&app.layout.read(), key);
+    let item = crate::page::marks::find_item(&app.layout.read(), key).cloned();
     let host_up = crate::tmux::parse_key(key).is_some_and(|(h, _, _)| h == "local" || app.tmux.host(h).is_some_and(|s| s.connected()));
     if let Err(why) = delivery(item.as_ref(), host_up, app.hooks.session(key).is_some()) {
         say(app, &task.id, why.to_string());

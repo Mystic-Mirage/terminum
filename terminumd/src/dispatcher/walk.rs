@@ -51,9 +51,10 @@ enum Listed {
 }
 
 fn listed(app: &Shared, key: &str) -> Listed {
-    let item = crate::page::marks::find_item(&app.layout.read(), key);
-    let why = || item.as_ref().and_then(|it| it["why"].as_str().or(it["tool"].as_str())).unwrap_or("").to_string();
-    match item.as_ref().and_then(|it| it["state"].as_str()) {
+    let layout = app.layout.read();
+    let item = crate::page::marks::find_item(&layout, key);
+    let why = || item.and_then(|it| it["why"].as_str().or(it["tool"].as_str())).unwrap_or("").to_string();
+    match item.and_then(|it| it["state"].as_str()) {
         Some("waiting") => Listed::Waiting(why()),
         Some("failed") => Listed::Failed(why()),
         Some("done") => Listed::TurnEnded,

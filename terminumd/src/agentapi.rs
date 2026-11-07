@@ -72,7 +72,7 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
 
 /// A task tool (AC-115): every page hears of what it changed.
 async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> Json<Value> {
-    let row = crate::page::marks::find_item(&app.layout.read(), &caller.key).unwrap_or_default();
+    let row = crate::page::marks::find_item(&app.layout.read(), &caller.key).cloned().unwrap_or_default();
     let (host, dir) = crate::page::marks::project_of(&row);
     let who = crate::tasks::tools::Who {
         key: caller.key.clone(),

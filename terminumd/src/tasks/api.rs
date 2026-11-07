@@ -106,7 +106,7 @@ fn with_session(t: &Task, row: Option<&Value>) -> Value {
 }
 
 fn card(app: &Shared, t: &Task) -> Value {
-    let row = t.session.as_deref().and_then(|key| crate::page::marks::find_item(&app.layout.read(), key));
+    let row = t.session.as_deref().and_then(|key| crate::page::marks::find_item(&app.layout.read(), key).cloned());
     with_session(t, row.as_ref())
 }
 

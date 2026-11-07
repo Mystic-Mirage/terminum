@@ -459,7 +459,7 @@ pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
     let name = given.clone().unwrap_or_default();
     let (order, keys) = (ids("ids"), ids("keys"));
     // the pane's host and folder, for a new project's [+]
-    let (host, dir) = if action == "add" { crate::page::marks::find_item(&app.layout.read(), &key).map(|it| crate::page::marks::project_of(&it)).unwrap_or_default() } else { Default::default() };
+    let (host, dir) = if action == "add" { crate::page::marks::find_item(&app.layout.read(), &key).map(crate::page::marks::project_of).unwrap_or_default() } else { Default::default() };
     let a = app.clone();
     let done = crate::http::off(move || {
         let mut ps = a.projects.lock();

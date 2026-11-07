@@ -157,7 +157,6 @@ async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
                 }
                 gs.extend(absent);
             }
-            let live = read.keys.iter().map(|k| format!("web:{}", json!([host.clone().unwrap_or_default(), k]))).collect();
             crate::page::projects::seen(app, &server, &read.keys, &read.every).await;   // closed panes leave their projects (AC-92)
             crate::page::unread::seen(app, &server).await;                 // a tmux started anew takes its marks (AC-93)
             crate::plans::seen(app, &server).await;                        // and its plans (AC-97)
@@ -168,7 +167,7 @@ async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
                 crate::page::plans::tell(&app.pages, &changed);
             }
             server.set_panes(read.panes);
-            Got::Read(Told { groups: gs, keys: live, ok: true, ..Default::default() })
+            Got::Read(Told { groups: Arc::new(gs), keys: read.keys, ok: true, ..Default::default() })
         }
         Err(e) => {
             tracing::warn!(event = "tmux.error", server = %server.name, cmd = "list-panes", msg = e);
@@ -212,17 +211,18 @@ pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool) {
     let (mut groups, mut absent, mut live, mut complete) = (Vec::new(), Vec::new(), HashSet::new(), true);
     let all = app.tmux.all();
     for s in &all {
-        match s.list.told() {
-            Some(t) => {
-                groups.extend(t.groups);
-                absent.extend(t.absent);
-                live.extend(t.keys);
-                complete &= t.ok;
+        let read = s.list.with_told(|told| told.map(|t| {
+            groups.extend(t.groups.iter().cloned());
+            absent.extend(t.absent.iter().cloned());
+            if home_due {                            // what is kept for panes goes by them, once in a while
+                let host = if s.is_local() { "" } else { s.name.as_str() };
+                live.extend(t.keys.iter().map(|k| format!("web:{}", json!([host, k]))));
             }
-            None => {
-                groups.extend(unread_groups(app, s));
-                complete = false;
-            }
+            complete &= t.ok;
+        }));
+        if read.is_none() {
+            groups.extend(unread_groups(app, s));
+            complete = false;
         }
     }
     crate::page::sizing::reclaim_once(app, server);
@@ -266,7 +266,7 @@ pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool) {
     }
     let ended = if fresh {
         let layout = app.layout.read();
-        let busy = |k: &str| crate::page::marks::find_item(&layout, k).map(|it| crate::page::turns::busy(&it));
+        let busy = |k: &str| crate::page::marks::find_item(&layout, k).map(crate::page::turns::busy);
         app.turns.settle(&server.key(""), busy, Instant::now())
     } else {
         Vec::new()

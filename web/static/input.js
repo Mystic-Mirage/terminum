@@ -4,8 +4,8 @@ import { HeldDelete, WORD } from "./heldelete.js";
 import { inSelection, kbdTouch, MENU_AFTER, selectWordAt, TAP } from "./kbdtouch.js";
 import { clipboardInsert, ctrlChar, encodeKey } from "./keys.js";
 import { sendOnModEnter } from "./modenter.js";
-import { copyPreview, hiddenNote, selectedText, unhidden } from "./seltext.js";
-import { copyByCommand, keepSelectionAt } from "./touchcopy.js";
+import { hiddenNote, selectedText, unhidden } from "./seltext.js";
+import { copyByCommand, copyText, keepSelectionAt } from "./touchcopy.js";
 import { composing } from "./trace.js";
 import { inWidget } from "./widgetui.js";
 

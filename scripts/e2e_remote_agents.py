@@ -79,13 +79,7 @@ def host_rec(t, name="devbox"):
 
 
 def until(fn, pred, timeout):
-    end, v = time.time() + timeout, None
-    while time.time() < end:
-        v = fn()
-        if pred(v):
-            return v
-        time.sleep(0.3)
-    return v
+    return e2e_ws.wait_for(fn, pred, timeout, 0.3, last=True)
 
 
 def hooks_known(sock, target, evdir, hb):

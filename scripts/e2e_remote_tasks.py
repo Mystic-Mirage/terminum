@@ -10,10 +10,9 @@ import json
 import os
 import subprocess
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, tmux_on, unix_request  # noqa: E402
+from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_for  # noqa: E402
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
@@ -23,13 +22,7 @@ STUB = "#!/bin/sh\nexit 0\n"
 
 
 def until(fn, timeout=25):
-    end = time.time() + timeout
-    while time.time() < end:
-        v = fn()
-        if v:
-            return v
-        time.sleep(0.2)
-    return fn()
+    return wait_for(fn, bool, timeout, 0.2, last=True)
 
 
 def main():

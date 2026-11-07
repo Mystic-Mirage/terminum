@@ -53,8 +53,8 @@ def tmux_on(socket_name, *args):
     return subprocess.run(["tmux", "-L", socket_name, *args], capture_output=True, text=True).stdout
 
 
-def wait_for(read, predicate, seconds=15, every=0.1):
-    """read() until predicate(value) holds; its value, else an error with the last one."""
+def wait_for(read, predicate, seconds=15, every=0.1, last=False):
+    """read() until predicate(value) holds; its value, else an error with the last one (`last`: that one, for the caller to judge)."""
     end = time.monotonic() + seconds
     value = None
     while time.monotonic() < end:
@@ -62,6 +62,8 @@ def wait_for(read, predicate, seconds=15, every=0.1):
         if predicate(value):
             return value
         time.sleep(every)
+    if last:
+        return value
     raise AssertionError(f"The expected private test state did not arrive; last: {str(value)[:300]}")
 
 

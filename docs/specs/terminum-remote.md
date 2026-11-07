@@ -41,12 +41,13 @@ Assumptions:
 | AS-82 | The agent (`terminumd --agent --socket <path>`) serves a Unix socket on the host, takes its token on stdin and exits on stdin EOF. | Claude | verified over a real sshd (`scripts/e2e_remote_sshd.py`) |
 | AS-83 | The hosts in the owner's use are Ubuntu and Debian x86_64 and arm64 and macOS arm64. | Owner | stated |
 | AS-84 | OpenSSH's `-R <host path>:<Mac path>` (AC-99): (a) every refusal (`AllowStreamLocalForwarding no`, `DisableForwarding yes`, Alpine's stock `AllowTcpForwarding no`, a missing folder, a stale file) prints the same line: with `ExitOnForwardFailure=no` `Warning: remote port forwarding failed for listen path <path>` (hidden by `LogLevel=ERROR`), exit 0, the command runs; with `=yes` `Error: …`, exit 255, the command never runs; the client cannot tell them apart, so the helper checks its `--link` socket itself; `DisableForwarding yes` also refuses the Files tunnel's own `-L` (Files fail with it), and `AllowStreamLocalForwarding no` forbids both directions by sshd's definition, so only a refusal of `-R` alone (`AllowStreamLocalForwarding local`) keeps Files working; (b) sshd binds the socket (0600, the user's) before the remote command starts (10 of 10 also with `=no`), never creates its folder, and leaves the file after the connection ends; (c) a stale file is refused (sshd: `Address in use`) and the client's `StreamLocalBindUnlink=yes` does not help: a fresh random name per connection; (d) `-o ControlPath=none` makes no mux master, yet a user config's `RemoteForward` still applies and, failing on the second login, ends the ssh under `ExitOnForwardFailure=yes` (hence `=no`); a mux client's `-R` outlives the client under ControlPersist; a user ControlPath of 104 bytes or more fails the ssh; `ClearAllForwardings=yes` drops the command line's `-R` too (never used); (e) the Mac-side target needs a `/` (a bare name: `Bad remote forwarding specification`, exit 255) and at most 104 bytes; a request takes about 0.7–1.0 ms on loopback; (f) a login shell's rc output (lines above the interactive guard of Debian's `.bashrc`) precedes the command's stdout, `exec /bin/sh -c` included, and `-tt` adds `\r` to each line: output is read after a marker line. Dropbear has no stream-local forwarding, so it refuses Files' `-L` as well as `-R`. | Claude | verified against real sshd: OpenSSH 9.7p1 (Alpine 3.20) and 9.2p1 (Debian 12), client OpenSSH 9.9p2 (macOS); the `-L` refusal under `DisableForwarding yes` seen (`scripts/e2e_remote_sshd_agents.py`, Alpine: Files "unreachable", connection closed); Dropbear not tested; a macOS host's sshd not verified (Remote Login off on the Mac at hand) |
+| AS-85 | A control client of a newer tmux than its running server may get no answer at all while plain commands work (client 3.8, server 3.4): a new binary needs that server restarted. | Owner | measured |
 
 Dependencies:
 
 | ID | Dependency | Owner | Status |
 |---|---|---|---|
-| DEP-81 | tmux ≥ 3.2 on the host (DEP 02). | Owner | available |
+| DEP-81 | tmux ≥ 3.2 on the host (DEP 02); before 3.6 every `capture-pane -p` from a control client leaks its whole buffer, about 1 GB a day on a busy host, so 3.6 or newer is wanted. Only a server restart gives that memory back. | Owner | available |
 | DEP-82 | zig and cargo-zigbuild pinned by `scripts/agents.py` in `./.toolchain` for Linux musl builds; the owner's self-hosted Linux runner for CI. | Claude | available |
 
 Open questions:
@@ -60,7 +61,7 @@ Open questions:
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-81 | [MUST / P0] | The user adds a host by its ssh string and sees its `terminum` session in the list within 5 s, opens and types into its panes, and after a dropped link the host reconnects with back-off and says so; nothing is printed into any terminal. |
+| AC-81 | [MUST / P0] | The user adds a host by its ssh string and sees its `terminum` session in the list within 5 s, opens and types into its panes, and after a dropped link the host reconnects with back-off and says so; when ssh works and its tmux does not answer it stops after three tries, says why and offers Reconnect; nothing is printed into any terminal. |
 | AC-82 | [SHOULD / P1] | The user browses, reads, edits, creates, renames and trashes a host's files as if local, with live refresh, once the host's files are enabled. |
 | AC-83 | [SHOULD / P1] | The user enables a host's files with one click the first time its pane is shown; nothing is installed on a host without that click; a host's helper can be removed with one action. |
 | AC-84 | [SHOULD / P1] | After the Mac's terminum is upgraded, the helper on every attached host follows by itself and the page says so. |
@@ -88,6 +89,14 @@ Scenario: AC-81 happy path — the link drops and comes back
   And the group's rows stay in the list where they were, dimmed, with no agent state, until the host answers or is turned off or removed, its state "failed" too; a shown pane is never left for another
   When ssh succeeds again
   Then the group is back within 5 s, the shown pane's screen is captured anew (its history too), and the notice goes; the tmux session on the host never noticed
+
+Scenario: AC-81 failure — ssh works, tmux does not answer
+  Given a control client over ssh gets no answer, and a plain "tmux -V" over the same ssh does
+  When that happens three times in a row
+  Then terminumd stops trying (`host.stopped`) and ends the orphaned control clients those tries left (the next scenario's rule): a try costs the host a client, unlike a network that is down, which goes on with back-off
+  And the group says why under its name, with its versions when they differ ("tmux on devbox does not answer: its client is 3.8, its running server 3.4. Restart its server, or bring that version back."), its rows stay dimmed, and it has a [Reconnect] button
+  When the user presses [Reconnect] (or "Retry now", or runs "terminum hosts retry devbox")
+  Then one try is made: it attaches, and tries start from none again; or it says so and waits for the button again
 
 Scenario: AC-81 edge — a dropped link left its control client on the host
   Given the link dropped while the host stayed up, and the host's tmux kept terminum's control client of it ("tmux -u -C new-session -A -f ignore-size -s terminum", or "attach-session -E -f ignore-size -t <session>" for a session attached by name, its ssh end gone, its parent now init)
@@ -389,6 +398,8 @@ stateDiagram-v2
   reconnecting --> reconnecting: back-off
   reconnecting --> failed: ssh error before %begin
   failed --> reconnecting: back-off or Retry now
+  failed --> stopped: ssh works, tmux silent, three tries
+  stopped --> reconnecting: Reconnect
   attached --> off: hosts off
   off --> attached: hosts on
 ```
@@ -478,7 +489,7 @@ Agents' link (AC-99): a process on the host (the user, or root) can, only for th
 2026-10-15T10:07:44.010Z level=warn event=host.lost host=devbox retry_s=2
 ```
 
-Other events: `host.failed`, `host.recipe`, `clients.orphans`, `agent.updated`, `agent.failed`, `agent.enable_failed`, `agent.link_retry`, `remote.up`, `remote.down`, `remote.error`.
+Other events: `host.failed`, `host.stopped`, `host.recipe`, `clients.orphans`, `agent.updated`, `agent.failed`, `agent.enable_failed`, `agent.link_retry`, `remote.up`, `remote.down`, `remote.error`.
 
 ## 10. Delivery stages
 

@@ -387,6 +387,8 @@ terminum hosts agents devbox on|off                        # coding agents' prog
 terminum hosts off|on|retry|remove|files-remove devbox
 ```
 
+A host whose ssh works but whose tmux does not answer stops being tried after three tries: its group says why and has a **Reconnect** button (`terminum hosts retry devbox`). The usual cause is a new tmux binary with the old server still running: restart that server, or bring the old binary back. Use tmux 3.6 or newer on a host: older ones leak memory with every screen terminum reads.
+
 `hosts agents devbox on` (or the host menu's "Coding agents' progress on devbox…") puts terminum's
 hooks and MCP server into Claude Code and Codex on devbox (`~/.claude`, `~/.codex`) and prints one
 line per agent: installed, not found, needs Codex trust (/hooks), uses devbox's own terminum,

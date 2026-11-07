@@ -110,6 +110,23 @@ async fn output_arriving_keeps_a_slow_client_alive_past_the_answer_wait() {
     drop((slow_rx, quiet_rx));
 }
 
+/// AC-81: what tells "ssh works, tmux silent" apart stays when ssh printed a warning first.
+#[tokio::test]
+async fn a_silent_link_says_so_whatever_ssh_warned() {
+    let dir = crate::testutil::temp_root().join(format!("tm-silent-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let ssh = dir.join("my-ssh");
+    std::fs::write(&ssh, "#!/bin/sh\necho 'Warning: Permanently added devbox' >&2\nexec sleep 60\n").unwrap();
+    std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let (ntx, _nrx) = mpsc::unbounded_channel();
+    let (dtx, drx) = oneshot::channel();
+    let c = Control::spawn(Command::new(&ssh), ntx, dtx).unwrap();
+    drop(c.send("display -p x".into()));
+    let why = tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(5), drx).await;
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(why.expect("the watchdog ended it").unwrap(), SSH_NO_ANSWER);
+}
+
 #[test]
 fn notices_are_read_from_the_head_only() {
     assert_eq!(notice(b"%output %3 \\033[1mhi"), Some(Notice::Output("%3".into())));

@@ -179,12 +179,12 @@ pub fn host_group(server: &Server, files: Option<&str>) -> Value {
         Status::Attached => ("attached", server.held.lock().clone().unwrap_or_default()),
         Status::Connecting => ("reconnecting", "connecting".to_string()),
         Status::Reconnecting { why, retry_s } => ("reconnecting", format!("reconnecting ({retry_s} s){}", if why.is_empty() { String::new() } else { format!(": {why}") })),
-        Status::Failed { why } => ("failed", why.clone()),
+        Status::Failed { why } | Status::Stopped { why } => ("failed", why.clone()),
         Status::Off => ("off", "off".to_string()),
     };
     json!({"kind": "tmux", "label": server.name, "session": HOST_SESSION, "attach": attach_command(server, HOST_SESSION), "where": "", "host": server.name, "server": server.id(),
            "wid": format!("{}/{}", server.name, HOST_SESSION),
-           "new": (state == "attached").then_some("New window"), "pool": null, "items": [], "state": state, "why": why, "files": files})
+           "new": (state == "attached").then_some("New window"), "pool": null, "items": [], "state": state, "why": why, "files": files, "reconnect": matches!(status, Status::Stopped { .. })})
 }
 
 /// One word for a POSIX shell and zsh: as is when plain, else single-quoted (a leading `=` too:

@@ -11,7 +11,7 @@ AllowStreamLocalForwarding no would, and a stale file or a missing folder is ref
 `Warning:` line and the command runs, or with `-o ExitOnForwardFailure=yes` its `Error:` line
 and exit 255 (terminum-remote.md AS-84). Other `-o` options (ControlPath=none…) are ignored. SIGTERM drops
 the link (the remote side's processes end with it). Each run writes its pid into FAKE_SSH_PIDS, so a check can drop
-"the link" by killing it. Never used outside tests: terminumd takes it through TM_SSH."""
+"the link" by killing it. FAKE_SSH_TMUX_SILENT: see `tmux_shim`. Never used outside tests: terminumd takes it through TM_SSH."""
 import os
 import shutil
 import signal
@@ -166,7 +166,18 @@ def tmux_shim(socket_name):
     d = tempfile.mkdtemp(prefix=".fssh-", dir=os.environ.get("FAKE_SSH_HOME"))
     shim = os.path.join(d, "tmux")
     with open(shim, "w") as f:
-        f.write(f'#!/bin/sh\nexec "{real}" -L "{socket_name}" -f /dev/null "$@"\n')
+        # FAKE_SSH_TMUX_SILENT, while that file exists: a control client hears nothing, and the client
+        # is a newer version than the server (AC-81)
+        silent = os.environ.get("FAKE_SSH_TMUX_SILENT", "")
+        f.write(f"""#!/bin/sh
+if [ -n "{silent}" ] && [ -e "{silent}" ]; then
+  case " $* " in
+    *" -C "*) while [ -e "{silent}" ]; do sleep 0.2; done; exit 0 ;;
+    *" -V "*) echo "tmux 99.9"; exit 0 ;;
+  esac
+fi
+exec "{real}" -L "{socket_name}" -f /dev/null "$@"
+""")
     os.chmod(shim, stat.S_IRWXU)
     return d
 

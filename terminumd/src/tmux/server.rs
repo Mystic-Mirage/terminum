@@ -43,6 +43,8 @@ pub enum Status {
     Connecting,
     Reconnecting { why: String, retry_s: u64 },
     Failed { why: String },
+    /// no more tries: ssh works, tmux gives no answer; the user's Reconnect (AC-81)
+    Stopped { why: String },
     Off,
 }
 

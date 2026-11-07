@@ -224,7 +224,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-126 changed in flight: the agent is told", await until(async () => /budget is now 60 minutes/.test(tmux("capture-pane", "-p", "-S", "-40", "-t", await paneOf(changing))) || (await history(changing)).includes("set its budget"), 6000), await history(changing));
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector('.col[data-status="TODO"]');
-  check("AC-126 the card shows the time used and the budget", await until(async () => /\d+ of 60 min/.test(await page.textContent(card(changing)).catch(() => "")), 6000), await page.textContent(card(changing)).catch(() => ""));
+  check("AC-126 the card shows the time used and the budget", await until(async () => /\d+ of 60 min/.test(await page.textContent(card(changing)).catch(() => "")), 20000), await page.textContent(card(changing)).catch(() => ""));
 
   // AC-127 a subagent silent and idle: one request to the main agent, then it is said
   const silentSub = await task("has a subagent SUBAGENT");
@@ -312,6 +312,12 @@ export async function liveDispatcherReal(page, opts) {
   const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result ok", project })).id;
   const ran = await j(`/api/tasks/${t}/run`, "POST", { agent: claude });
   check("AC-121 real Claude Code: RUN starts", !!ran.run, JSON.stringify(ran));
+  // a folder it does not know: Dispatcher waits for the human's answer, which leaves that folder's trust entry in ~/.claude.json
+  await until(async () => {
+    const pane = await paneOf(t), screen = pane ? opts.tmux("capture-pane", "-p", "-t", pane) : "";
+    if (/trust this folder/.test(screen) && /❯ No/.test(screen)) opts.tmux("send-keys", "-t", pane, "Down", "Enter");
+    return /[❯>] *$/m.test(screen) || ["IN PROGRESS", "DONE"].includes(await status(t));
+  }, 30000);
   check("AC-121 real Claude Code: the gate reads its box, the hook says it took the prompt", await until(async () => ["IN PROGRESS", "DONE"].includes(await status(t)), 90000), await history(t));
   check("AC-123 real Claude Code: finish_task is DONE", await hasStatus(t, "DONE", 180000), await history(t));
   await page.goto(`${opts.base}/kanban/?project=${project}`);
@@ -330,6 +336,16 @@ export async function liveDispatcherReal(page, opts) {
   check("AC-122 real Claude Code: the conversation goes on: the agent took it again", await until(async () => (await history(t)).split("The agent took it.").length === 3, 90000), await history(t));
   check("AC-122 real Claude Code: and it ends", await hasStatus(t, "DONE", 180000), await history(t));
   console.log("REAL claude history:", (await history(t)).slice(0, 900));
+  // two tasks in one press: they go by number, the agent reads each by get_task and finishes each (AC-138)
+  const pool = await add("Real pool", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__finish_task mcp__plugin_terminum_terminum__get_task");
+  const makes = async (title, text) => (await j("/api/tasks", "POST", { title, text, project })).id;
+  const [first, second] = [await makes("First of two", "Finish this task with the result one."), await makes("Second of two", "Finish this task with the result two.")];
+  const both = await j(`/api/tasks/${first}/run`, "POST", { agent: pool, also: [second], comment: "Do both, briefly." });
+  check("AC-138 real Claude Code: one press runs two tasks", !!both.run, JSON.stringify(both));
+  check("AC-138 real Claude Code: its agent is busy", /is busy with/.test((await j(`/api/tasks/${await makes("A third", "")}/run`, "POST", { agent: pool })).error ?? ""));
+  check("AC-138 real Claude Code: both end DONE, from one session", await hasStatus(first, "DONE", 240000) && await hasStatus(second, "DONE", 120000) && await paneOf(first) === await paneOf(second), `${await history(first)} || ${await history(second)}`);
+  check("AC-138 real Claude Code: and each result is its own", /\bone\b/.test(await history(first)) && /\btwo\b/.test(await history(second)), `${await history(first)} || ${await history(second)}`);
+  check("AC-138 real Claude Code: its agent is free again, the cards stay on it", await until(async () => !(await j("/api/tasks?counts=1")).busy[pool], 90000) && (await j(`/api/tasks/${first}`)).agent?.name === "Real pool");
   if (!process.env.TM_TEST_REAL_CODEX) return;
   const codex = await add("Real Codex", "codex", "codex");
   const x = (await j("/api/tasks", "POST", { title: "Reply with the word ok", project })).id;

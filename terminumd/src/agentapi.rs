@@ -30,7 +30,7 @@ pub const HOOKS_OFF: &str = "terminum's hooks are not running in this session (C
 pub const OTHER_SESSION: &str = "Not applied: this call comes from another session than the pane's main agent (a subagent's). Only the main agent calls update_session_plan; report to it instead.";
 
 /// The answer to a note tool of an agent started before the upgrade (AC-98).
-pub const NOTES_GONE: &str = "This tool is gone. Use create_task for what must not get lost.";
+pub const NOTES_GONE: &str = "This tool is gone. Use create_task for what must not get lost. If your tools do not list it, this session started before the upgrade: say so and put the text in your report; the user's /mcp reconnect or a new session brings it.";
 
 pub async fn agent(State(app): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
     let server = crate::links::resolve(&app, crate::links::Via::Local, &body).await;

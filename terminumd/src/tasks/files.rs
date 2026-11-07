@@ -172,6 +172,18 @@ mod tests {
     use crate::tasks::ops::{create, NewTask};
     use crate::tasks::store::{Store, HUMAN};
 
+    #[test]
+    fn ac109_the_folder_s_first_name_moves_once() {
+        let dir = crate::testutil::fresh_dir("files-moved");
+        std::fs::create_dir(dir.join("kanban-files")).unwrap();
+        std::fs::write(dir.join("kanban-files").join("x"), "kept").unwrap();
+        move_old_folder(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(folder(&dir).join("x")).unwrap(), "kept");
+        std::fs::create_dir(dir.join("kanban-files")).unwrap();
+        move_old_folder(&dir).unwrap();
+        assert!(folder(&dir).join("x").exists(), "what stands under the new name is never written over");
+    }
+
     fn fresh(name: &str) -> (Store, PathBuf) {
         let dir = crate::testutil::fresh_dir(name);
         (Store::open(dir.join("kanban.sqlite")), dir)

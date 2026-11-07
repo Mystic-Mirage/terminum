@@ -187,3 +187,20 @@ fn ac137_a_store_of_the_first_schema_gains_the_agents_and_keeps_its_tasks() {
     let version: i64 = Connection::open(&path).unwrap().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
     assert_eq!(version, MIGRATIONS.len() as i64);
 }
+
+#[test]
+fn ac138_a_store_of_the_last_schema_keeps_its_runs() {
+    let path = crate::testutil::fresh_dir("store-schema5").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..4]).unwrap();
+    conn.execute_batch("INSERT INTO tasks (id, number, project, status, severity, rank, owner, updated_at, title, body) VALUES ('k1', 1, 'default', 'IN PROGRESS', 'P2', 1, 'human', 1, 't', ''), ('k2', 2, 'default', 'DONE', 'P2', 1, 'human', 1, 'u', '');
+        INSERT INTO project_agents (id, project, name, kind, dir, command) VALUES ('a1', 'default', 'Opus', 'claude', '/w', 'claude');
+        INSERT INTO runs (id, task, agent_id, kind, command, folder, state, result) VALUES ('r1', 'k1', 'a1', 'claude', 'claude', '/w', 'working', 0);
+        INSERT INTO runs (id, task, agent_id, kind, command, folder, state, held, result) VALUES ('r2', 'k2', 'gone', 'claude', 'claude', '/w', 'working', 1, 1);").unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    let row = |id: &str| conn.query_row("SELECT r.state, r.agent_name, m.task, m.result FROM runs r JOIN run_tasks m ON m.run = r.id WHERE r.id = ?1", [id], |x| Ok((x.get::<_, String>(0)?, x.get::<_, String>(1)?, x.get::<_, String>(2)?, x.get::<_, i64>(3)?))).unwrap();
+    assert_eq!(row("r1"), ("working".into(), "Opus".into(), "k1".into(), 0), "each run holds its task, its agent's name kept");
+    assert_eq!(row("r2"), ("left".into(), String::new(), "k2".into(), 1), "what a human's move held stays theirs; a result stays");
+    let color: i64 = conn.query_row("SELECT color FROM project_agents WHERE id = 'a1'", [], |x| x.get(0)).unwrap();
+    assert!(color > 0, "each agent has a color of its own");
+}

@@ -153,6 +153,7 @@ fn ac137_what_an_agent_wrote_stands_under_its_new_name() {
     }).unwrap();
 }
 
+/// terminum-dispatcher.md AC-144: each lives its own life
 #[test]
 fn ac144_a_project_or_an_agent_deleted_leaves_the_rest_standing() {
     use crate::dispatcher::runs::{self, Run};

@@ -26,7 +26,7 @@ pub fn sql(e: rusqlite::Error) -> String {
 
 /// Every row `query` finds.
 pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: impl FnMut(&Row) -> rusqlite::Result<T>) -> Result<Vec<T>, String> {
-    tx.prepare(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)
+    tx.prepare_cached(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)
 }
 
 pub fn now() -> i64 {

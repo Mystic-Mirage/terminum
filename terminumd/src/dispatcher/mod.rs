@@ -111,8 +111,11 @@ impl Dispatcher {
         if ev["event"] == "SubagentStop" {
             pane.subs.remove(id);
         } else if pane.subs.contains_key(id) || pane.subs.len() < MOST_SUBS {
-            let kind: String = crate::plans::rules::clean(ev["subtype"].as_str().unwrap_or("")).chars().take(60).collect();
-            pane.subs.entry(id.to_string()).or_insert_with(|| Sub { kind, last: Instant::now(), told: plan::SubStep::Nothing }).last = Instant::now();
+            pane.subs.entry(id.to_string()).or_insert_with(|| Sub {
+                kind: crate::plans::rules::clean(ev["subtype"].as_str().unwrap_or("")).chars().take(60).collect(),
+                last: Instant::now(),
+                told: plan::SubStep::Nothing,
+            }).last = Instant::now();
         }
     }
 

@@ -15,7 +15,7 @@ use super::runs::{self, Run};
 use super::press::{also_of, budget_told, prompt_of, rev_of, shown_of, way, ways, Asked, Way};
 use super::pool::{self, Full};
 use super::screen::Screen;
-use super::{move_one, move_task, plan, procs, say, start, store, walk};
+use super::{move_one, move_task, procs, say, start, store, walk};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
@@ -39,17 +39,21 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
         let all: Vec<Agent> = agents::list(tx)?;
         let lacks = no_folder(&name, &dir).err().filter(|_| matches!(w, Way::First));
-        if let (Some(named), Way::First) = (&asked.agent, &w) {
-            let a = all.iter().find(|a| a.id == *named).ok_or("That agent is gone.")?;
-            if let Some(Full { words, close: None }) = pool::check(tx, Some(a), &t.project, None)? {
-                return Err(words);
+        let slots = pool::Slots::read(tx)?;
+        let mut offered = Vec::new();
+        for a in &all {
+            let full = slots.check(tx, Some(a), &t.project, None)?;
+            if let (Some(Full { words, close: None }), Some(named), Way::First) = (&full, &asked.agent, &w)
+                && named == &a.id {
+                return Err(words.clone());
             }
-        }
-        let offered: Vec<Value> = all.iter().map(|a| {
             let mut v = json!(a);
-            pool::offered(tx, a, &t.project, &mut v)?;
-            Ok(v)
-        }).collect::<Result<_, String>>()?;
+            v["full"] = json!(full);
+            offered.push(v);
+        }
+        if asked.agent.as_ref().is_some_and(|named| !all.iter().any(|a| &a.id == named)) && matches!(w, Way::First) {
+            return Err("That agent is gone.".to_string());
+        }
         let last = runs::last_agent(tx, &t.project)?.filter(|l| all.iter().any(|a| a.id == *l));
         let shown = shown_of(tx, &tasks)?;
         Ok(json!({"first": matches!(w, Way::First), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
@@ -145,7 +149,10 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             if start::exit_of(&server, &pane).await.is_some() {
                 return from_shell(app, &r, &server, &pane, again, &t).await;
             }
-            reserve(app, &r).await?;
+            // its turn is taken for the words about to be typed, so nothing reads it idle meanwhile; no limit stops it:
+            // it starts no process (AC-141)
+            let id = r.id.clone();
+            store(app, move |tx| runs::change(tx, &id, |now| now.turn_ended = false).map(drop)).await?;
             if let Err(miss) = gate::deliver(app, &r, &server, &pane, &again, false).await {
                 let (id, was) = (r.id.clone(), r.turn_ended);
                 let _ = store(app, move |tx| runs::change(tx, &id, |now| now.turn_ended = was).map(drop)).await;
@@ -182,22 +189,18 @@ pub(super) fn has_stray(text: &str) -> bool {
     text.split(['\n', '\t']).any(has_control)
 }
 
-/// Its turn is taken for the words about to be typed, so nothing reads it idle meanwhile. No limit stops it: it starts no process (AC-141).
-async fn reserve(app: &Shared, r: &Run) -> Result<(), String> {
-    let id = r.id.clone();
-    store(app, move |tx| runs::change(tx, &id, |now| now.turn_ended = false).map(drop)).await
-}
-
 /// Closes an idle holder for the press that asked: read again here, its screen too: a draft or a question stands in the way (AC-141).
 async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), String> {
     let wanted = run.to_string();
     let r = store(app, move |tx| runs::by_id(tx, &wanted)).await?;
     let (server, pane) = pane_of(app, &r)?;
-    let quiet = plan::idle_holder(&r) && app.dispatcher.watch.lock().get(&server.key(&pane)).is_none_or(|w| w.subs.is_empty());
+    let wanted = r.id.clone();
+    let closable = store(app, move |tx| pool::closable(tx, &runs::by_id(tx, &wanted)?)).await?;
+    let quiet = closable && app.dispatcher.watch.lock().get(&server.key(&pane)).is_none_or(|w| w.subs.is_empty());
     if !quiet || !matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
         return Err(format!("{}'s session is no longer idle: it stays.", r.names()));
     }
-    walk::close(app, &r, &server, &pane, &format!("Session ended: closed for {for_tasks}."), true, plan::idle_holder).await?;
+    walk::close(app, &r, &server, &pane, &format!("Session ended: closed for {for_tasks}."), true, pool::closable).await?;
     super::told_all(app, &r);
     Ok(())
 }
@@ -288,7 +291,7 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String) -> Result<Str
     let (old, key, id) = (r.clone(), t.key.clone(), t.id.clone());
     store(app, move |tx| {
         // an agent deleted since has no slot to take: its run's own settings start
-        let agent = agents::list(tx)?.into_iter().find(|a| a.id == old.agent_id);
+        let agent = agents::by_id(tx, &old.agent_id)?;
         if let Some(full) = pool::check(tx, agent.as_ref(), &old.project, Some(&old.id))? {
             return Err(full.words);
         }
@@ -311,7 +314,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
     let (a, host, dir) = store(app, move |tx| {
         let (name, host, dir) = ops::project_place(tx, &project)?;
         no_folder(&name, &dir)?;
-        let a = agents::list(tx)?.into_iter().find(|a| Some(&a.id) == wanted.as_ref()).ok_or("No agents yet: add one first.")?;
+        let a = wanted.as_deref().map(|id| agents::by_id(tx, id)).transpose()?.flatten().ok_or("No agents yet: add one first.")?;
         Ok((a, host, dir))
     }).await?;
     let server = server_of(app, host.as_deref())?;

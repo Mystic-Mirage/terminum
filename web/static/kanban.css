@@ -67,12 +67,10 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* a dot for each live session: blinking while it works, still when it waits or idles */
 .agdots { display: flex; align-items: center; gap: var(--sp-1); min-height: 12px; padding-left: 20px; }
 .agdot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--surface-4); cursor: pointer; }
-.agdot.on { background: var(--ag); box-shadow: 0 0 6px var(--ag); animation: agblink 1.4s ease-in-out infinite; }
+.agdot.on { --dot: var(--ag); background: var(--ag); animation: pulse-bar 1.4s ease-in-out infinite; }   /* the session list's pulse: a state, kept under Reduce Motion */
 .agdot.waits { background: var(--ag); }
 .agdot.idle { background: color-mix(in srgb, var(--ag) 35%, var(--surface-4)); }
 .agcount { font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
-@keyframes agblink { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .agdot.on { animation: none; } }
 .agedit { position: absolute; top: var(--sp-1); right: var(--sp-1); display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-xs); color: var(--muted); }
 .agedit:hover { color: var(--t-fg); background: var(--surface-3); }
 @media (hover: hover) { .agentcard:not(:hover, :focus-within) .agedit { opacity: 0; } }

@@ -9,6 +9,8 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   let shown = null;
 
   const say = (text) => { $("projecterror").textContent = text; $("projecterror").hidden = !text; };
+  /** A number field: empty is none. */
+  const numberOrNull = (id) => ($(id).value === "" ? null : Number($(id).value));
 
   /** Its memory limits (terminum-dispatcher.md AC-128): empty goes by the global ones; 0 turns one off. */
   function openLimits(project) {
@@ -25,8 +27,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
         await reload();
       } catch (e) { $("limitserror").textContent = e.message; $("limitserror").hidden = false; }
     };
-    const gib = (id) => ($(id).value === "" ? null : Number($(id).value));
-    $("limitsok").onclick = () => kept({ warn: gib("limitwarn"), end: gib("limitend") });
+    $("limitsok").onclick = () => kept({ warn: numberOrNull("limitwarn"), end: numberOrNull("limitend") });
     $("limitsglobal").onclick = () => kept({ warn: null, end: null });
     limits.showModal();
   }
@@ -48,8 +49,6 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("projecthead").textContent = p ? p.name : "New project";
     $("projectok").textContent = p ? "Done" : "Create";
     $("projectfields").hidden = !real;
-    $("projectdefaults").hidden = real || !p;
-    if (!real) $("projectdefaultatonce").value = p?.agent_limit ?? "";
     $("projectagents").hidden = !p;
     $("projectdelete").hidden = !p || !real;
     if (p) drawAgents();
@@ -61,22 +60,19 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. */
   async function keep() {
     const name = $("projectname").value, dir = $("projectdir").value, host = $("projecthost").value;
-    const atOnce = (field) => ({ limit: $(field).value === "" ? null : Number($(field).value) });
+    const atOnce = { limit: numberOrNull("projectatonce") };
     try {
-      if (shown?.id === DEFAULT) {
-        await api(`/api/task-projects/${DEFAULT}/agents-at-once`, { method: "PUT", body: atOnce("projectdefaultatonce") });
-        return box.close();
-      }
       if (shown) {
-        await api(`/api/task-projects/${shown.id}/agents-at-once`, { method: "PUT", body: atOnce("projectatonce") });   // refused first: nothing else changes
-        await api(`/api/task-projects/${shown.id}`, { method: "PATCH", body: { name, dir } });   // the board hears of it
+        await api(`/api/task-projects/${shown.id}/agents-at-once`, { method: "PUT", body: atOnce });   // refused first: nothing else changes
+        if (shown.id !== DEFAULT) await api(`/api/task-projects/${shown.id}`, { method: "PATCH", body: { name, dir } });   // the board hears of it
         return box.close();
       }
+      // made first, its limit then: refused, the window stays on the new project, saying why
       const { id } = await api("/api/task-projects", { method: "POST", body: { name, dir, host } });
-      await api(`/api/task-projects/${id}/agents-at-once`, { method: "PUT", body: atOnce("projectatonce") });
       await reload();
       chosen(id);
       open(getMeta().projects.find((p) => p.id === id));
+      await api(`/api/task-projects/${id}/agents-at-once`, { method: "PUT", body: atOnce });
     } catch (e) { say(e.message); }
   }
 

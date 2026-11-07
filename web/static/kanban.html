@@ -249,11 +249,10 @@
       <label class="fieldrow">Name <input id="projectname" class="field" type="text" maxlength="40" autocomplete="off" spellcheck="false"></label>
       <div class="fieldgrid">
         <label class="fieldrow">Server <select id="projecthost" class="field"></select></label>
-        <label class="fieldrow">Agents at once <input id="projectatonce" class="field" type="number" min="1" max="100" step="1" placeholder="No limit"></label>
         <label class="fieldrow">Folder <input id="projectdir" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Asked at its first session"></label>
       </div>
     </div>
-    <label id="projectdefaults" class="fieldrow" hidden>Agents at once <input id="projectdefaultatonce" class="field" type="number" min="1" max="100" step="1" placeholder="No limit"></label>
+    <label class="fieldrow">Agents at once <input id="projectatonce" class="field" type="number" min="1" max="100" step="1" placeholder="No limit"></label>
     <section id="projectagents" aria-label="Agents" hidden>
       <div class="edithead"><span>Agents</span><span class="agentkeys"><button id="projectarchived" class="textkey" type="button">Archived…</button><button id="projectlimits" class="textkey" type="button">Memory limits…</button><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
       <div id="projectagentlist" class="agentlist"></div>

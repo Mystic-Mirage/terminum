@@ -18,6 +18,8 @@ use crate::termtext::{has_control, stray};
 use crate::tmux::hookstate::AGENTS;
 
 const MOST_NAME: usize = 40;
+/// The most of one agent, or of a project's agents, at once (terminum-dispatcher.md AC-141).
+pub const MOST_AT_ONCE: i64 = 100;
 const MOST_LINE: usize = 1000;
 
 #[derive(Clone, Serialize)]
@@ -58,7 +60,7 @@ struct Given {
 impl Given {
     fn of(body: &Value) -> Given {
         let text = |k: &str| body[k].as_str().unwrap_or_default().trim().to_string();
-        Given { name: text("name"), kind: text("kind"), command: text("command"), effort: text("effort"), at_once: body["at_once"].as_i64().unwrap_or(if body["at_once"].is_null() { 1 } else { 0 }) }
+        Given { name: text("name"), kind: text("kind"), command: text("command"), effort: text("effort"), at_once: if body["at_once"].is_null() { 1 } else { body["at_once"].as_i64().unwrap_or(-1) } }
     }
 
     /// What needs no store: refused with the words the window shows.
@@ -66,7 +68,7 @@ impl Given {
         if self.name.is_empty() {
             return Err("An agent needs a name.".into());
         }
-        if !(1..=100).contains(&self.at_once) {
+        if !(1..=MOST_AT_ONCE).contains(&self.at_once) {
             return Err("At once is 1 to 100.".into());
         }
         if self.name.chars().count() > MOST_NAME {
@@ -117,6 +119,11 @@ pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
     })
 }
 
+/// One of the pool, if it is still there.
+pub fn by_id(tx: &Transaction, id: &str) -> Result<Option<Agent>, String> {
+    Ok(list(tx)?.into_iter().find(|a| a.id == id))
+}
+
 /// Keeps a new one. Its id.
 fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
     given.fits(tx, "")?;
@@ -138,7 +145,7 @@ fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
 
 fn remove(tx: &Transaction, id: &str) -> Result<(), String> {
     if let Some(run) = crate::dispatcher::runs::holding_agent(tx, id)? {
-        return Err(format!("{} is busy with {}: it can go when they end, or after Give up.", run.agent_name, run.names()));
+        return Err(format!("{} has a session open: {}. Close it, or Give up, first.", run.agent_name, run.names()));
     }
     match tx.execute("DELETE FROM agents WHERE id = ?1", [id]).map_err(sql)? {
         0 => Err("That agent is gone.".into()),

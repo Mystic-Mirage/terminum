@@ -8,7 +8,7 @@ mod press;
 mod gate;
 mod hooks;
 pub mod plan;
-mod pool;
+pub mod pool;
 mod procs;
 pub mod runs;
 pub mod screen;

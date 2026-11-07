@@ -163,9 +163,9 @@ fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Res
 }
 
 /// Closes the pane: its mark checked just before; `keep`: the screen's last 200 rows stay on the task.
-/// `still` read of the run as it stands, last of all: no: it stays. tmux refusing: one more try at the next beat,
+/// `still`, of the run as it stands, read last of all: no: it stays. tmux refusing: one more try at the next beat,
 /// then it stays and says so (AC-125).
-pub(super) async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words: &str, keep: bool, still: fn(&Run) -> bool) -> Result<(), String> {
+pub(super) async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words: &str, keep: bool, still: fn(&rusqlite::Transaction, &Run) -> Result<bool, String>) -> Result<(), String> {
     start::is_marked(server, pane, &run.id).await?;
     if keep {
         let rows = server.run(format!("capture-pane -p -S -200 -t {pane}")).await.unwrap_or_default();
@@ -182,7 +182,7 @@ pub(super) async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &
         }
     }
     let wanted = run.id.clone();
-    if !store(app, move |tx| runs::by_id(tx, &wanted).map(|now| still(&now))).await? {
+    if !store(app, move |tx| still(tx, &runs::by_id(tx, &wanted)?)).await? {
         return Ok(());
     }
     let (id, words) = (run.id.clone(), words.to_string());
@@ -284,7 +284,7 @@ async fn do_later(app: &Shared, l: Later) {
                 }
             }
         }
-        Act::Close { words, keep } => close(app, &l.run, &server, &pane, &words, keep, plan::still_closes).await,
+        Act::Close { words, keep } => close(app, &l.run, &server, &pane, &words, keep, |_, r| Ok(plan::still_closes(r))).await,
         _ => Ok(()),
     };
     if let Err(e) = done {
@@ -491,8 +491,8 @@ async fn walk(app: &Shared) {
     // what no walk watches any more goes with it
     let kept: HashSet<&str> = wanted.iter().map(String::as_str).collect();
     app.dispatcher.watch.lock().retain(|k, _| kept.contains(k.as_str()));
-    let busy = store(app, runs::live).await.map_or(serde_json::Value::Null, |live| runs::busy_agents(&live));
-    let message = serde_json::json!({"t": "taskusage", "items": items, "busy": busy}).to_string();
+    let slots = store(app, super::pool::board).await.unwrap_or(serde_json::Value::Null);
+    let message = serde_json::json!({"t": "taskusage", "items": items, "slots": slots}).to_string();
     let mut told = app.dispatcher.usage.lock();
     if *told != message {
         app.pages.tell(&message);

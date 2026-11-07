@@ -76,7 +76,7 @@ pub(super) enum Way {
 
 pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool) -> Result<Way, String> {
     if let Some(r) = &last {
-        if t.status == "IN PROGRESS" && !r.is_over() && r.state != "gone" {
+        if t.status == "IN PROGRESS" && r.holds_slot() {
             return Err(format!("{} is in progress by Dispatcher.", t.id));
         }
         if r.is_starting() {

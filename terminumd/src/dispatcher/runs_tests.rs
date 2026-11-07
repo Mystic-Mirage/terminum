@@ -93,14 +93,14 @@ fn ac138_each_agent_lists_what_its_slots_hold() {
     store("runs-lists").with(|tx| {
         let (one, t) = working(tx, "a", &["one"]);
         let (_, u) = working(tx, "a", &["two"]);
-        let lines = busy_agents(&live(tx)?);
+        let lines = &crate::dispatcher::pool::board(tx)?["agents"];
         assert_eq!(lines["a"].as_array().map(Vec::len), Some(2), "a session each: none hides another");
         assert_eq!(lines["a"][0]["tasks"], t[0].id);
         assert_eq!(lines["a"][1]["tasks"], u[0].id);
         assert_eq!(lines["a"][0]["idle"], false);
         ops::move_to(tx, HUMAN, &t[0].id, "DONE", 3)?;
         change(tx, &one.id, |r| r.turn_ended = true)?;
-        assert_eq!(busy_agents(&live(tx)?)["a"][0]["idle"], true);
+        assert_eq!(crate::dispatcher::pool::board(tx)?["agents"]["a"][0]["idle"], true);
         Ok(())
     }).unwrap();
 }

@@ -10,7 +10,11 @@ use serde_json::{json, Value};
 
 use super::api::{store, told_projects};
 use super::ops::{check_project, rows, sql};
+use super::agents::MOST_AT_ONCE;
 use crate::app::Shared;
+
+/// What a project's Agents at once says when it is no number of 1 to MOST_AT_ONCE.
+const AGENTS_AT_ONCE: &str = "Agents at once is 1 to 100, or empty.";
 
 pub fn routes() -> Router<Shared> {
     Router::new().route("/api/task-projects/{id}/limits", put(set_limits)).route("/api/task-projects/{id}/agents-at-once", put(set_agent_limit))
@@ -54,10 +58,15 @@ async fn set_limits(State(app): State<Shared>, Path(project): Path<String>, Json
 /// How many agents a project runs at once; none: no limit.
 fn keep_agent_limit(tx: &Transaction, project: &str, limit: Option<i64>) -> Result<(), String> {
     check_project(tx, project)?;
-    if limit.is_some_and(|n| !(1..=100).contains(&n)) {
-        return Err("Agents at once is 1 to 100, or empty.".to_string());
+    if limit.is_some_and(|n| !(1..=MOST_AT_ONCE).contains(&n)) {
+        return Err(AGENTS_AT_ONCE.to_string());
     }
     tx.execute("UPDATE projects SET agent_limit = ?2 WHERE id = ?1", (project, limit)).map(drop).map_err(sql)
+}
+
+/// One project's: how many agents it runs at once; none: no limit.
+pub fn agent_limit(tx: &Transaction, project: &str) -> Result<Option<i64>, String> {
+    tx.query_row("SELECT agent_limit FROM projects WHERE id = ?1", [project], |r| r.get(0)).map_err(sql)
 }
 
 /// Every project's that has one.
@@ -68,7 +77,7 @@ pub fn agent_limits(tx: &Transaction) -> Result<std::collections::HashMap<String
 async fn set_agent_limit(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
     let wanted = match &body["limit"] {
         Value::Null => Ok(None),
-        n => n.as_i64().map(Some).ok_or_else(|| "Agents at once is 1 to 100, or empty.".to_string()),
+        n => n.as_i64().map(Some).ok_or_else(|| AGENTS_AT_ONCE.to_string()),
     };
     let done = match wanted {
         Ok(limit) => store(&app, move |tx| keep_agent_limit(tx, &project, limit).map(|()| json!({"ok": true}))).await,

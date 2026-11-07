@@ -118,7 +118,7 @@ fn ac138_a_busy_agent_is_not_deleted() {
         let like = crate::dispatcher::runs::Run { agent_id: id.clone(), agent_name: "Opus reviewer".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), ..Default::default() };
         let run = crate::dispatcher::runs::add(tx, &like, std::slice::from_ref(&t.key), 1)?;
         let refused = remove(tx, &id).unwrap_err();
-        assert!(refused.contains("Opus reviewer is busy with") && refused.contains(&t.id), "{refused}");
+        assert!(refused.contains("Opus reviewer has a session open:") && refused.contains(&t.id), "{refused}");
         crate::dispatcher::runs::change(tx, &run, |r| r.state = "closed".into())?;
         remove(tx, &id)
     }).unwrap();

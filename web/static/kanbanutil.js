@@ -63,7 +63,7 @@ export function fillSelect(select, options, chosen) {
 export function fillAgents(select, agents, busy, wanted, none = null) {
   const free = agents.filter((a) => !busy(a));
   const pick = wanted.find((id) => free.some((a) => a.id === id)) ?? free[0]?.id ?? "";
-  fillSelect(select, [...(none ? [["", none]] : []), ...agents.map((a) => [a.id, busy(a) ? `${a.name} (busy with ${busy(a)})` : a.name])], pick);
+  fillSelect(select, [...(none ? [["", none]] : []), ...agents.map((a) => [a.id, busy(a) ? `${a.name} (${busy(a)})` : a.name])], pick);
   for (const o of select.options) o.disabled = !!o.value && !free.some((a) => a.id === o.value);
 }
 

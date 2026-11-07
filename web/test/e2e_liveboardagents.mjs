@@ -109,6 +109,9 @@ export async function liveBoardAgents(page, opts) {
 }
 
 /** A press where a window opened over another modal one reports "element is inert" on some Playwrights. */
+/** Whether tmux still has `pane`, by its whole ID: %1 is no part of %12. */
+const paneAlive = (tmux, pane) => tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(pane);
+
 const pressAt = async (page, sel) => {
   await page.waitForSelector(sel, { state: "visible" });
   // a window opening still moves: a press waits for where it stands
@@ -211,7 +214,7 @@ async function agentPool(page, opts) {
   await page.waitForFunction(() => /^\/kanban\/$/.test(location.pathname));
 
   // at its limit with an idle holder: one press closes it and runs
-  const offered = async () => (await j(`/api/tasks/${c}/run`)).agents?.find((x) => x.id === fixer)?.full;
+  const offered = async () => (await j(`/api/tasks/${c}/run`)).agents?.find((x) => x.id === fixer)?.full?.close;
   check("AC-141 once two walks are quiet the idle holder can be closed", await until(offered, 15000), JSON.stringify(await offered()));
   const idlePane = await paneOf(a);
   tmux("send-keys", "-t", idlePane, "-l", "a draft in its box");
@@ -220,14 +223,14 @@ async function agentPool(page, opts) {
   check("AC-141 the window says what holds it and names the key", /at its limit of 1/.test(await page.textContent("#runnone")) && /Close .*'s session and run/.test(await page.textContent("#rungo")), await page.textContent("#rungo"));
   await page.fill("#runmessage", "WORKS");
   await page.click("#rungo");
-  check("AC-141 a draft in its box stops it: said, nothing closed", await until(async () => /no longer idle/.test(await page.textContent("#runerror"))) && tmux("list-panes", "-a", "-F", "#{pane_id}").includes(idlePane), await page.textContent("#runerror"));
+  check("AC-141 a draft in its box stops it: said, nothing closed", await until(async () => /no longer idle/.test(await page.textContent("#runerror"))) && paneAlive(tmux, idlePane), await page.textContent("#runerror"));
   await page.click('#runbox button[value="cancel"]');
   tmux("send-keys", "-t", idlePane, "C-u");
   await page.click(`${card(c)} .crun`);
   await page.waitForSelector("#runbox[open]");
   await page.fill("#runmessage", "WORKS");
   await page.click("#rungo");
-  check("AC-141 with its box empty it closes the holder", await until(() => !tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(idlePane), 15000));
+  check("AC-141 with its box empty it closes the holder", await until(() => !paneAlive(tmux, idlePane), 15000));
   check("AC-141 and says so on its task", await until(async () => /Session ended: closed for/.test(JSON.stringify((await j(`/api/tasks/${a}`)).history))));
   check("AC-141 and the third starts in the slot", await hasStatus(c, "IN PROGRESS"), await status(c));
   check("AC-138 a dot for it", await dotted((d) => d.length === 1 && d[0].includes(c)), JSON.stringify(await dots()));
@@ -291,7 +294,7 @@ async function agentPool(page, opts) {
   await page.click('#taskbody .newcomment button:has-text("Give up")');
   await pressAt(page, "#confirmok");
   check("AC-138 Give up fails its open tasks", await hasStatus(held, "FAILED") && await hasStatus(held2, "FAILED"), `${await status(held)} ${await status(held2)}`);
-  check("AC-138 its window stays", tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(heldPane));
+  check("AC-138 its window stays", paneAlive(tmux, heldPane));
   await page.click("#taskclose");
   check("AC-141 giving up frees its slot", await dotted((d) => d.length === 0), JSON.stringify(await dots()));
   tmux("kill-pane", "-t", heldPane);

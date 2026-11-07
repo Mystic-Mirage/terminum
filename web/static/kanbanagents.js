@@ -8,10 +8,10 @@ import { $, agentColor, api, el, fillSelect, iconButton } from "./kanbanutil.js"
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
-/** `getMeta()`: terminumd's agents; `chosen()`: the projects shown, none for all; `busy()`: what each agent's slots hold;
+/** `getMeta()`: terminumd's agents; `chosen()`: the projects shown, none for all; `slots()`: what each agent's slots hold, as terminumd counts them;
  *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
  *  agent; `run(tasks, agent)`. */
-export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging, given, run, openSession }) {
+export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow, dragging, given, run, openSession }) {
   const box = el("section", "agents"), list = el("div", "agentlist");
   const addKey = iconButton("icon", "plus", "Add agent", "Add an agent to the pool", () => open());
   addKey.id = "addagent";
@@ -22,21 +22,23 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging
   const dialog = $("agentbox"), error = $("agenterror");
   let editing = null, snapshot = "";
 
-  const slots = (a) => busy()[a.id] ?? [];
-  const full = (a) => slots(a).length >= a.at_once;
+  const slots = (a) => counted().agents[a.id] ?? [];
+  /** At a limit, as terminumd says: its own, or the one project shown's. */
+  const full = (a) => counted().full.includes(a.id) || (chosen().length === 1 && counted().full_projects.includes(chosen()[0]));
 
-  /** What a session does now, in a word or two. */
+  const WORDS = { starting: "starting", working: "working", waits: "waits for you", idle: "idle" };
+  /** What a session does now. */
   function doing(s) {
     if (s.idle) return "idle";
     const row = s.key ? liveRow(s.key) : null;
-    return ["starting", "typed"].includes(s.state) ? "starting" : s.state === "asking" || row?.state === "waiting" ? "waits for you" : "working";
+    return ["starting", "typed"].includes(s.state) ? "starting" : s.state === "asking" || row?.state === "waiting" ? "waits" : "working";
   }
 
   /** A session's dot: blinking while it works, still when it waits or idles; a press on it opens it. */
   function dot(s) {
-    const words = doing(s), d = el("span", `agdot ${words === "working" || words === "starting" ? "on" : words === "idle" ? "idle" : "waits"}`);
+    const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now}`);
     d.dataset.key = s.key ?? "";
-    d.title = [s.tasks, getMeta().projects.find((p) => p.id === s.project)?.name, words].filter(Boolean).join(" · ");
+    d.title = [s.tasks, getMeta().projects.find((p) => p.id === s.project)?.name, WORDS[now]].filter(Boolean).join(" · ");
     return d;
   }
 
@@ -88,7 +90,7 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging
   /** Anew only when what it shows changed, and not under a drag: a press spanning a read keeps its key. */
   function draw() {
     const tasks = given(), agents = getMeta().agents;
-    const now = JSON.stringify([agents, chosen(), agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
+    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
     if (dragging() || now === drawn) return;
     drawn = now;
     list.replaceChildren(...agents.map(target));

@@ -7,8 +7,8 @@ import { $, DEFAULT, api, el, fileMarkdown, fillAgents, fillSelect, iconButton, 
 const DRAFT = "tm.taskdraft";
 
 /** `onRun(task, agent)`: a task made by Run starts at once on the agent chosen (terminum-dispatcher.md AC-138);
- *  `agentsBusy()`: what each agent's slots hold. */
-export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
+ *  `slots()`: who is at a limit, as terminumd counts it. */
+export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const box = $("newbox");
   let files = [], uploads = 0, offered = "", parent = null;
   /** Each its own draft: a subtask's never takes a new task's. */
@@ -68,8 +68,8 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
 
   /** The pool: the agent the project's last run had, else the first free. */
   function showAgents() {
-    const meta = getMeta(), project = $("newproj").value, all = meta.agents, now = agentsBusy();
-    const busy = (a) => ((now[a.id]?.length ?? 0) >= a.at_once ? now[a.id].map((s) => s.tasks).join(", ") : "");
+    const meta = getMeta(), project = $("newproj").value, all = meta.agents, now = slots();
+    const busy = (a) => (now.full.includes(a.id) ? "at its limit" : now.full_projects.includes(project) ? "the project is at its limit" : "");
     fillAgents($("newagent"), all, busy, [meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
   }
 

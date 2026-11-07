@@ -11,17 +11,17 @@ export function runWindow({ addAgent, noFolder, done }) {
 
   const say = (text) => { $("runerror").textContent = text; $("runerror").hidden = !text; };
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
-  const free = () => offer.agents.filter((a) => !a.busy);
+  /** At a limit with nothing that could make room: not to be chosen. */
+  const stuck = (a) => (a.full && !a.full.close ? "at its limit" : "");
+  const free = () => offer.agents.filter((a) => !stuck(a));
+  let said = "";                                   // what the window says whatever agent is chosen
 
+  /** The chosen agent's, else the window's own words; at its limit with an idle holder, one press closes it and runs (AC-141). */
   function showAgent() {
-    const full = chosen()?.full;
-    if (full) {                                    // at its limit, an idle holder could go: one press does both (AC-141)
-      $("runnone").textContent = full.words;
-      $("runnone").hidden = false;
-    } else if (!$("runnone").dataset.kept) {
-      $("runnone").hidden = true;
-    }
-    $("rungo").textContent = full ? `Close ${full.tasks}'s session and run` : "Run";
+    const close = chosen()?.full?.close, words = said || (close ? chosen().full.words : "");
+    $("runnone").textContent = words;
+    $("runnone").hidden = !words;
+    $("rungo").textContent = close ? `Close ${close.tasks}'s session and run` : "Run";
     $("runserver").textContent = offer.host ?? THIS_MAC;
     $("runfolder").textContent = offer.dir;
     $("runcommand").textContent = chosen()?.line ?? "";
@@ -33,9 +33,7 @@ export function runWindow({ addAgent, noFolder, done }) {
     const names = tasks.map((t) => t.id).join(", "), on = offer.agents.find((a) => a.id === dropped);
     $("runhead").textContent = !first ? `Run ${names} again` : on ? `Run ${names} on ${on.name}` : `Run ${names}`;
     const words = none ? "No agents yet." : allBusy ? `All agents are busy: one takes more when its session closes or its tasks end.` : first ? "" : "It goes on in its session, with what you write.";
-    $("runnone").textContent = words;
-    $("runnone").hidden = !words;
-    if (words) $("runnone").dataset.kept = "1"; else delete $("runnone").dataset.kept;
+    said = words;
     // the agent it was dropped on is said by the title; what a person checks only sometimes stays folded
     $("runagentrow").hidden = !first || none || !!on;
     $("runhow").hidden = !first || none;
@@ -46,10 +44,10 @@ export function runWindow({ addAgent, noFolder, done }) {
     $("runfresh").hidden = first;
     $("rungo").disabled = none || allBusy;
     if (first) {
-      fillAgents($("runagent"), offer.agents, (a) => a.busy, [dropped, offer.last]);
+      fillAgents($("runagent"), offer.agents, stuck, [dropped, offer.last]);
       $("runprompt").textContent = offer.prompt;
-      showAgent();
     }
+    showAgent();
   }
 
   const others = () => tasks.slice(1).map((t) => t.id);
@@ -82,7 +80,8 @@ export function runWindow({ addAgent, noFolder, done }) {
     say("");
     $("rungo").disabled = true;
     try {
-      await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: fresh || offer.first ? $("runagent").value : null, close: fresh || offer.first ? chosen()?.full?.run : undefined, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });   // going on, it is its session's agent
+      const first = fresh || offer.first;
+      await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : null, close: first ? chosen()?.full?.close?.run : undefined, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });   // going on, it is its session's agent
       box.close("run");
       done();
     } catch (e) { say(e.message); }

@@ -143,7 +143,7 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         let tasks = query::list(tx, &filter)?;
         let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
         let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
-        let counts = if with_counts { Some((query::counts(tx, &filter)?, runs::busy_agents(&runs::live(tx)?))) } else { None };
+        let counts = if with_counts { Some((query::counts(tx, &filter)?, crate::dispatcher::pool::board(tx)?)) } else { None };
         Ok((tasks, counts, run_marks, on_agents))
     }).await;
     match done {
@@ -160,8 +160,8 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                 }
                 v
             }).collect();
-            let (counts, busy) = counts.unzip();
-            Json(json!({"tasks": shown, "counts": counts, "busy": busy})).into_response()
+            let (counts, slots) = counts.unzip();
+            Json(json!({"tasks": shown, "counts": counts, "slots": slots})).into_response()
         }
         Err(e) => refuse(StatusCode::SERVICE_UNAVAILABLE, e),
     }

@@ -562,7 +562,7 @@ Scenario: AC-138 edge — an agent deleted
   Then the card keeps the name and color its run knew
   Given Opus reviewer with a slot held by T-13
   When the user deletes it
-  Then its window says "Opus reviewer is busy with T-13: it can go when they end, or after Give up." and it stays
+  Then its window says "Opus reviewer has a session open: T-13. Close it, or Give up, first." and it stays
 
 Scenario: AC-138 failure — effort
   When an agent's effort is not one of its kind's, or its command holds ; | & or #

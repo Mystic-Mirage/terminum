@@ -31,7 +31,7 @@ let shownColumn = "TODO";
 const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-reduced-motion: reduce)");
 let dragging = null;                               // the tasks of a drag
 const picked = new Set();                          // the tasks ⌘ or Ctrl+click chose (terminum-dispatcher.md AC-138)
-let busy = {};                                     // what each agent's slots hold
+let slots = { agents: {}, full: [], full_projects: [] };   // what each agent's slots hold, and who is at a limit (AC-141)
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
 let loading = 0, changing = 0, chain = Promise.resolve();
@@ -63,12 +63,12 @@ async function load() {
     const parts = await Promise.all(COLUMNS.map(async (c, i) => {
       const pages = Math.max(1, Math.ceil(cards.get(c).length / PAGE));
       const got = await Promise.all(Array.from({ length: pages }, (_, n) => api(`/api/tasks?${query({ status: c, limit: PAGE, after: n ? n * PAGE : undefined, counts: i === 0 && !n ? 1 : undefined })}`)));
-      return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts, busy: got[0].busy };
+      return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts, slots: got[0].slots };
     }));
     if (mine !== loading || changing) return;
     cards = new Map(COLUMNS.map((c, i) => [c, parts[i].tasks]));
     counts = parts[0].counts;
-    busy = parts[0].busy ?? {};
+    slots = parts[0].slots ?? slots;
     agents.draw();
     banner(meta.problem ?? "");
     draw();
@@ -257,7 +257,7 @@ function send(m) {
 const openSession = (key) => { location.href = sessionUrl(key); };
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
 const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: () => readSoon() });
-const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, busy: () => busy, liveRow: (key) => liveRows.get(key),
+const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
 $("agentbar").append(agents.box);
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
@@ -355,7 +355,7 @@ const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, a
 $("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
 const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }) });
-const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, agentsBusy: () => busy });
+const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, slots: () => slots });
 
 /** Run in the new-task window: at once on its agent; what stands in the way opens RUN's window, saying it. */
 async function runMade(t, agent) {
@@ -460,7 +460,7 @@ function listen() {
       else if (m.t === "taskmarks") needs.came(m);
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
-        busy = m.busy ?? busy;
+        slots = m.slots ?? slots;
         agents.draw();
         for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
       }

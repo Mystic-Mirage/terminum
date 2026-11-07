@@ -3,30 +3,35 @@
 //! project's, or is refused naming what holds them. Decided in the transaction that adds the run, so two
 //! presses never both find one free; only starting is gated, a human typing never is.
 
+use std::collections::{BTreeMap, HashMap};
+
 use rusqlite::Transaction;
+use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::plan;
 use super::runs::{self, Run};
-use crate::tasks::agents::Agent;
-use crate::tasks::ops::{self, sql};
+use crate::tasks::agents::{self, Agent};
+use crate::tasks::limits;
+use crate::tasks::ops;
 
 /// A limit reached: what to say, and the idle holder whose closing would make room, if one would.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct Full {
     pub words: String,
     pub close: Option<Holder>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct Holder {
     pub run: String,
     pub tasks: String,
 }
 
-/// A project's limit of agents at once; none: no limit.
-fn limit_of(tx: &Transaction, project: &str) -> Result<Option<i64>, String> {
-    tx.query_row("SELECT agent_limit FROM projects WHERE id = ?1", [project], |r| r.get(0)).map_err(sql)
+/// Whether a session may be closed for a slot, as the store knows it: its run idle (`plan::idle_holder`) and
+/// no task taken in it still open. What its pane shows is read just before the close.
+pub fn closable(tx: &Transaction, r: &Run) -> Result<bool, String> {
+    Ok(plan::idle_holder(r) && !r.pane_key.as_deref().map_or(Ok(false), |key| runs::others_open(tx, key, &r.task))?)
 }
 
 fn names(holders: &[&Run]) -> String {
@@ -41,21 +46,40 @@ fn victim<'a>(tx: &Transaction, full: &[(&[&'a Run], i64)]) -> Result<Option<&'a
     }
     let mut idle = Vec::new();
     for r in first.iter().copied().filter(|r| full.iter().all(|(holders, _)| holders.iter().any(|h| h.id == r.id))) {
-        if plan::idle_holder(r) && !r.pane_key.as_deref().map_or(Ok(false), |key| runs::others_open(tx, key, &r.task))? {
+        if closable(tx, r)? {
             idle.push(r);
         }
     }
     Ok(idle.into_iter().max_by_key(|r| r.closing_for))
 }
 
-/// Whether a process of `agent` (none: one deleted since, its slot no one's) can start in `project`, `but` run
-/// not counted: the one it goes on from.
+/// What holds slots now, read once for every agent a window offers.
+pub struct Slots {
+    holding: Vec<Run>,
+}
+
+impl Slots {
+    pub fn read(tx: &Transaction) -> Result<Slots, String> {
+        Ok(Slots { holding: runs::live(tx)?.into_iter().filter(Run::holds_slot).collect() })
+    }
+
+    /// Whether a process of `agent` (none: one deleted since, its slot no one's) can start in `project`, `but` run
+    /// not counted: the one it goes on from.
+    pub fn check(&self, tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option<&str>) -> Result<Option<Full>, String> {
+        let holding: Vec<&Run> = self.holding.iter().filter(|r| Some(r.id.as_str()) != but).collect();
+        judge(tx, &holding, agent, project)
+    }
+}
+
+/// `check` of one agent, read now.
 pub fn check(tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option<&str>) -> Result<Option<Full>, String> {
-    let live = runs::live(tx)?;
-    let holding: Vec<&Run> = live.iter().filter(|r| r.holds_slot() && Some(r.id.as_str()) != but).collect();
+    Slots::read(tx)?.check(tx, agent, project, but)
+}
+
+fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &str) -> Result<Option<Full>, String> {
     let of_agent: Vec<&Run> = holding.iter().copied().filter(|r| agent.is_some_and(|a| a.id == r.agent_id)).collect();
     let of_project: Vec<&Run> = holding.iter().copied().filter(|r| r.project == project).collect();
-    let limit = limit_of(tx, project)?;
+    let limit = limits::agent_limit(tx, project)?;
     let mut full: Vec<(&[&Run], i64)> = Vec::new();
     let mut words = None;
     if let Some(a) = agent.filter(|a| of_agent.len() as i64 >= a.at_once) {
@@ -72,20 +96,24 @@ pub fn check(tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option
     Ok(Some(Full { words, close }))
 }
 
-/// What RUN's window says of `agent`: `busy` when nothing can make room, `full` when a press can.
-pub fn offered(tx: &Transaction, agent: &Agent, project: &str, v: &mut Value) -> Result<(), String> {
-    match check(tx, Some(agent), project, None)? {
-        None => {}
-        Some(Full { words, close: None }) => v["busy"] = json!(words),
-        Some(Full { words, close: Some(h) }) => v["full"] = json!({"words": words, "run": h.run, "tasks": h.tasks}),
+/// What the board shows of the slots (AC-138): each agent's sessions, and the agents and projects at their limit.
+pub fn board(tx: &Transaction) -> Result<Value, String> {
+    let holding = Slots::read(tx)?.holding;
+    let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
+    let mut in_project: HashMap<&str, i64> = HashMap::new();
+    for r in &holding {
+        of_agent.entry(&r.agent_id).or_default().push(json!({"tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy()}));
+        *in_project.entry(&r.project).or_default() += 1;
     }
-    Ok(())
+    let full: Vec<String> = agents::list(tx)?.into_iter().filter(|a| of_agent.get(a.id.as_str()).map_or(0, Vec::len) as i64 >= a.at_once).map(|a| a.id).collect();
+    let full_projects: Vec<String> = limits::agent_limits(tx)?.into_iter().filter(|(p, most)| in_project.get(p.as_str()).copied().unwrap_or(0) >= *most).map(|(p, _)| p).collect();
+    Ok(json!({"agents": of_agent, "full": full, "full_projects": full_projects}))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::ops::NewTask;
+    use crate::tasks::ops::{sql, NewTask};
     use crate::tasks::store::{Store, HUMAN};
 
     fn store(name: &str) -> Store {

@@ -336,7 +336,7 @@ export async function liveDispatcherReal(page, opts) {
   check("AC-141 real Claude Code: its agent is at its limit", /at its limit of 1/.test((await j(`/api/tasks/${await makes("A third", "")}/run`, "POST", { agent: pool })).error ?? ""));
   check("AC-138 real Claude Code: both end DONE, from one session", await hasStatus(first, "DONE", 240000) && await hasStatus(second, "DONE", 120000) && await paneOf(first) === await paneOf(second), `${await history(first)} || ${await history(second)}`);
   check("AC-138 real Claude Code: and each result is its own", /\bone\b/.test(await history(first)) && /\btwo\b/.test(await history(second)), `${await history(first)} || ${await history(second)}`);
-  check("AC-138 real Claude Code: its session idles, the cards stay on it", await until(async () => (await j("/api/tasks?counts=1")).busy[pool]?.every((s) => s.idle), 90000) && (await j(`/api/tasks/${first}`)).agent?.name === "Real pool");
+  check("AC-138 real Claude Code: its session idles, the cards stay on it", await until(async () => (await j("/api/tasks?counts=1")).slots.agents[pool]?.every((s) => s.idle), 90000) && (await j(`/api/tasks/${first}`)).agent?.name === "Real pool");
   if (!process.env.TM_TEST_REAL_CODEX) return;
   const codex = await add("Real Codex", "codex", "codex");
   const x = (await j("/api/tasks", "POST", { title: "Reply with the word ok", project })).id;

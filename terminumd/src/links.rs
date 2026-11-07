@@ -212,7 +212,7 @@ impl Links {
     pub fn stop(&self, app: &Shared, host: &str) {
         self.stop_listening(host);
         forget(&app.hooks, host);
-        app.dirty.notify_one();
+        crate::lists::host_changed(app, host);
     }
 
     fn stop_listening(&self, host: &str) {

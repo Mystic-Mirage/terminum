@@ -63,7 +63,7 @@ fn set(app: &Shared, host: &str, state: &str, note: &str) {
     a.state = state.to_string();
     a.note = note.to_string();
     drop(g);
-    app.dirty.notify_one();
+    crate::lists::host_changed(app, host);
 }
 
 /// The agent's state for the panel's offer and `terminum hosts`.
@@ -430,7 +430,7 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
         a.state = "enabling".into();
         a.note = format!("setting up {host}…");
     }
-    app.dirty.notify_one();
+    crate::lists::host_changed(app, host);
     let result = async {
         let p = probe(&recipe).await?.0?;
         install(&recipe, &binary_for(p)?, crate::agent::AGENT_ID).await?;
@@ -461,7 +461,7 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
                 g.remove(host); // an agents-only connection keeps running
             }
             drop(g);
-            app.dirty.notify_one();
+            crate::lists::host_changed(app, host);
             Err(format!("Could not enable {host}: {e}"))
         }
     }

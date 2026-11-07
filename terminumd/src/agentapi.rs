@@ -65,7 +65,7 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     if plan_changed {
         crate::plans::save(&app);
         crate::page::plans::tell(&app.pages, std::slice::from_ref(&key));
-        app.dirty.notify_one();
+        crate::lists::pane_changed(&app, &key);
     }
     answer(&text, error)
 }

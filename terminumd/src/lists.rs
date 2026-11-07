@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use tokio::sync::watch;
 
 use crate::app::Shared;
-use crate::tmux::server::{Server, Status};
+use crate::tmux::server::Server;
 
 /// Rows not read for this long, on a link still up, dim (AC-132).
 const STALE_AFTER: Duration = Duration::from_secs(30);
@@ -87,7 +87,7 @@ impl ServerList {
     }
 
     /// Keeps what a read found; true when it is this server's own list, fresh (a turn may settle by it).
-    fn store(&self, got: Got, now: Instant, off: bool) -> bool {
+    fn store(&self, got: Got, now: Instant) -> bool {
         let mut st = self.state.lock();
         st.tried = true;
         match got {
@@ -101,14 +101,12 @@ impl ServerList {
                 ok
             }
             Got::Down(groups) => {
-                if off {
-                    st.last_good.clear();
-                }
                 let groups = kept_rows(groups, &st.last_good);
                 st.told = Some(Told { groups, ..Default::default() });
                 false
             }
             Got::Gone(groups) => {
+                st.last_good.clear();
                 st.told = Some(Told { groups, ..Default::default() });
                 false
             }
@@ -146,6 +144,22 @@ pub fn request_all(app: &Shared) {
     }
 }
 
+/// News about one pane: its server's list alone (AC-132); no such server, all of them.
+pub fn pane_changed(app: &Shared, key: &str) {
+    match app.tmux.resolve(key) {
+        Some((server, _)) => server.list_changed(),
+        None => app.dirty.notify_one(),
+    }
+}
+
+/// News about one host: its list alone (AC-132); no such host, all of them.
+pub fn host_changed(app: &Shared, host: &str) {
+    match app.tmux.host(host) {
+        Some(server) => server.list_changed(),
+        None => app.dirty.notify_one(),
+    }
+}
+
 /// The servers tmux said changed are read again; the others are left alone.
 pub fn request_changed(app: &Shared) {
     for s in app.tmux.all() {
@@ -167,8 +181,7 @@ async fn run(app: Shared, server: Weak<Server>) {
         let Some(s) = server.upgrade() else { return };
         let target = s.list.state.lock().requested;
         let got = crate::manager::read_one(&app, &s).await;
-        let off = matches!(*s.status.lock(), Status::Off);
-        let fresh = s.list.store(got, Instant::now(), off);
+        let fresh = s.list.store(got, Instant::now());
         crate::manager::publish(&app, &s, fresh).await;
         s.list.done.send_replace(target);
         let mut st = s.list.state.lock();

@@ -80,7 +80,7 @@ pub fn hook_event(app: &Shared, key: &str, ev: &Value) -> Option<String> {
         save(app);
     }
     if changed {
-        app.dirty.notify_one();
+        crate::lists::pane_changed(app, key);
         crate::page::plans::tell(&app.pages, &[key.to_string()]);
     }
     remind

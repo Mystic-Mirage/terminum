@@ -108,6 +108,17 @@ pub async fn read_one(app: &Shared, server: &Arc<Server>) -> Got {
     }
 }
 
+/// A host with no link: its state, the user's sessions there waiting with it; its rows as last
+/// read stay, unless it was turned off.
+fn linkless(app: &Shared, server: &Arc<Server>) -> Got {
+    let mut g = layout::host_group(server, crate::hosts::files_state(app, &server.name).as_deref());
+    g["agents"] = json!(crate::hosts::link::agents_state(app, &server.name));   // AC-99
+    let why = format!("{}: {}", server.name, g["why"].as_str().unwrap_or_default());
+    let mut gs = vec![g];
+    gs.extend(crate::attach::host_waiting(server, &why));
+    if matches!(*server.status.lock(), crate::tmux::server::Status::Off) { Got::Gone(gs) } else { Got::Down(gs) }
+}
+
 /// One server's groups and pane keys.
 async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
     let local = server.is_local();
@@ -115,13 +126,8 @@ async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
         return Got::Read(Told { ok: true, ..Default::default() });
     }
     if !local && !server.attached() {
-        // judged by its `terminum` client; the user's sessions there wait with the host's state
-        let mut g = layout::host_group(&server, crate::hosts::files_state(app, &server.name).as_deref());
-        g["agents"] = json!(crate::hosts::link::agents_state(app, &server.name));   // AC-99
-        let why = format!("{}: {}", server.name, g["why"].as_str().unwrap_or_default());
-        let mut gs = vec![g];
-        gs.extend(crate::attach::host_waiting(&server, &why));
-        return Got::Down(gs);
+        // judged by its `terminum` client
+        return linkless(app, &server);
     }
     let host = (!local).then(|| server.name.clone());
     let home = if local { crate::config::home().display().to_string() } else { server.home().await.unwrap_or_default() };
@@ -169,7 +175,7 @@ async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
             if server.connected() {
                 Got::Unread                          // a timeout on a link up: its rows stay as last read
             } else {
-                Got::Gone(if local { Vec::new() } else { vec![layout::host_group(&server, None)] })
+                if local { Got::Gone(Vec::new()) } else { linkless(app, &server) }
             }
         }
     };
@@ -382,6 +388,19 @@ async fn stalls(app: Shared) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn ac132_a_link_lost_keeps_its_rows_and_only_turning_off_drops_them() {
+        let (root, app) = crate::testutil::app("linkless");
+        let link = crate::tmux::server::Link::Ssh { ssh: "unused".into(), args: Vec::new() };
+        let host = Server::new("devbox", "default", link, app.changed.clone());
+        *host.status.lock() = crate::tmux::server::Status::Reconnecting { why: String::new(), retry_s: 1 };
+        assert!(matches!(linkless(&app, &host), Got::Down(gs) if gs[0]["state"] == "reconnecting" && gs[0]["agents"].is_string()));
+        *host.status.lock() = crate::tmux::server::Status::Off;
+        assert!(matches!(linkless(&app, &host), Got::Gone(gs) if gs[0]["state"] == "off"));
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn a_turn_ends_when_a_working_or_waiting_pane_is_done_failed_or_no_agent() {

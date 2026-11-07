@@ -130,7 +130,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         return StatusCode::NO_CONTENT.into_response();
     };
     if changed {
-        app.dirty.notify_one();
+        server.list_changed();
     }
     // a turn ended (its last background subagent too): its reminders come up with the list
     // read this notice brings, also when it was too quick for a layout to show it working,

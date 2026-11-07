@@ -197,7 +197,7 @@ pub(super) fn set_agents(app: &Shared, host: &str, state: &str, refused: bool) {
         a.refusals = 0;
     }
     drop(g);
-    app.dirty.notify_one();
+    crate::lists::host_changed(app, host);
 }
 
 /// The agents' link for this connection, when agents are on and -R is not in its back-off;

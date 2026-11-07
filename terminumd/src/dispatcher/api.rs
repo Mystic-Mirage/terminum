@@ -161,8 +161,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             }
             let server = server_of(app, r.host.as_deref())?;
             let new = next_run(app, &r, &t, again).await?;
-            let project = project_of(app, &t);
-            start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind }).await?;
+            start::open(app, start::Opening { server: &server, task: &t, folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind }).await?;
             start::watch(app, &new);
             Ok(json!({"run": new}))
         }
@@ -229,13 +228,6 @@ async fn could_not_continue(app: &Shared, r: &Run, why: &str) -> Result<Value, S
     store(app, move |tx| if super::plan::finished(&run.status) { say(tx, &run, &words) } else { move_task(tx, &run, "FAILED", &words) }).await?;
     super::told_all(app, r);
     Err(format!("{why}: use Run from scratch."))
-}
-
-fn project_of(app: &Shared, t: &Task) -> Option<(String, String)> {
-    if t.project == DEFAULT_PROJECT {
-        return None;
-    }
-    app.projects.lock().by_id(&t.project).map(|p| (p.id.clone(), p.name.clone()))
 }
 
 /// RUN goes on in its live session: every clock starts anew; a finished task reopens alone, an open one
@@ -353,9 +345,8 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
         }
         runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host: ag.host, folder: f, prompt: Some(prompt), ..Default::default() }, &keys, ops::now())
     }).await?;
-    let project = project_of(app, t);
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
-    let opening = start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &chosen, command: &a.line, run: &run, tasks: &ids, program: &a.kind };
+    let opening = start::Opening { server: &server, task: t, folder: &chosen, command: &a.line, run: &run, tasks: &ids, program: &a.kind };
     if let Err(e) = start::open(app, opening).await {
         let r = run.clone();
         let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = "closed".into()).map(drop)).await;

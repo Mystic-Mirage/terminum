@@ -10,7 +10,7 @@ use super::screen::Screen;
 use super::{gate, hooks, move_task, say, store};
 use crate::app::Shared;
 use crate::tasks::ops;
-use crate::tasks::store::DISPATCHER;
+use crate::tasks::store::{DEFAULT_PROJECT, DISPATCHER};
 use crate::tmux::server::{Link, HOST_SESSION};
 use crate::tmux::{args, Server};
 
@@ -88,7 +88,7 @@ pub async fn is_marked(server: &Server, pane: &str, run: &str) -> Result<(), Str
 /// What a window is for.
 pub struct Opening<'a> {
     pub server: &'a Arc<Server>,
-    pub project: Option<(&'a str, &'a str)>,
+    pub task: &'a ops::Task,
     pub folder: &'a str,
     pub command: &'a str,
     pub run: &'a str,
@@ -96,18 +96,27 @@ pub struct Opening<'a> {
     pub program: &'a str,
 }
 
+/// A task's project, its id and name; Default stands for none.
+fn project_of(app: &Shared, t: &ops::Task) -> Option<(String, String)> {
+    if t.project == DEFAULT_PROJECT {
+        return None;
+    }
+    app.projects.lock().by_id(&t.project).map(|p| (p.id.clone(), p.name.clone()))
+}
+
 /// Opens the window, links it and says so.
 pub async fn open(app: &Shared, o: Opening<'_>) -> Result<(), String> {
-    let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command).await?;
+    let project = project_of(app, o.task);
+    let (pane, place) = open_window(app, o.server, project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), o.folder, o.command).await?;
     mark(o.server, &pane, o.run).await?;
     if let Some((session, _)) = place.rsplit_once(':') {
         o.server.note_pane(&pane, session);            // its agent's first hook may come before the next list
     }
     let key = o.server.key(&pane);
     app.dispatcher.panes.lock().insert(key.clone());
-    if let Some((project, _)) = o.project {
-        let (a, k, p, host) = (app.clone(), key.clone(), project.to_string(), (!o.server.is_local()).then(|| o.server.name.clone()));
-        let _ = crate::http::off(move || a.projects.lock().add(&k, Some(&p), None, host, String::new(), None)).await;
+    if let Some((project, _)) = project {
+        let (a, k) = (app.clone(), key.clone());
+        let _ = crate::http::off(move || a.projects.lock().add_to(&k, &project, None)).await;
         crate::page::projects::tell(app);
     }
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };

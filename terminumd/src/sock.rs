@@ -151,7 +151,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     // what waits for it rides the same event
     let context = if crate::plans::carries_context(&ev) { crate::tasks::tell::with_lines(&app, &key, remind) } else { remind };
     // a task's session: its hook sums the tokens, after this turn's end has gone (AC-129)
-    let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.wants_tokens(&key) || app.task_marks.has_session(&key));
+    let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.has_run(&key) || app.task_marks.has_session(&key));
     match (context, tokens) {
         (None, false) => StatusCode::NO_CONTENT.into_response(),
         (text, _) => {

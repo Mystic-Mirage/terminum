@@ -152,10 +152,9 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
         _ => folder_of(&server, &pane).await,
     };
     let new = open_window(&server, &format!("-a -t {window}"), &dir).await?;
-    if let Some((pid, d)) = joins {
+    if let Some((pid, _)) = joins {
         let (key, after, a) = (server.key(&new), id.to_string(), app.clone());
-        let host = (!server.is_local()).then(|| server.name.clone());
-        let r = tokio::task::spawn_blocking(move || a.projects.lock().add(&key, Some(&pid), Some(&after), host, d, None)).await;
+        let r = tokio::task::spawn_blocking(move || a.projects.lock().add_to(&key, &pid, Some(&after))).await;
         if let Ok(Err(e)) = r {
             error(page, e, None);
         }
@@ -195,11 +194,10 @@ async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, proje
     let made = server.run(line).await.map_err(|e| format!("No new window: {}", said(&e)))?;
     let pane = made.into_iter().next().unwrap_or_default();
     let (key, pid, a) = (server.key(&pane), project.to_string(), app.clone());
-    let folder = dir.clone();
     crate::http::off(move || {
         let mut ps = a.projects.lock();
-        ps.set_dir(&pid, folder.clone())?;
-        ps.add(&key, Some(&pid), None, host, folder, None).map(|_| ())
+        ps.set_dir(&pid, dir)?;
+        ps.add_to(&key, &pid, None)
     }).await?;
     super::projects::tell(app);
     created(app, page, asked_on, &server, &pane, None).await;
@@ -333,7 +331,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, msg: &Value) {
         "hostaction" => crate::hosts::action(app, &s("name"), &s("action")).await,
         // AC-89: a place is its server's id (`local:<socket>`, `<host>:default`)
         "addtmux" => {
-            let names: Vec<String> = msg["sessions"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            let names = crate::config::strings(&msg["sessions"]);
             crate::attach::Place::parse(app, &s("server")).and_then(|place| crate::attach::add(app, &place, &names).map(|()| {
                 page.send_json(&json!({"t": "tmuxadded", "server": place.id(), "sessions": names}));
             }))

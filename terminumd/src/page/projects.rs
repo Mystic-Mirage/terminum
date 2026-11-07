@@ -154,29 +154,39 @@ impl Projects {
         self.list.iter_mut().find(|p| p.id == id).ok_or_else(|| "That project is gone.".to_string())
     }
 
-    /// Puts pane `key` into project `to` (a new one when none: named `name`, else "Group N",
-    /// made from the pane's host and folder), after `after` when that is a member, else last;
-    /// out of any other. The project's id.
-    pub fn add(&mut self, key: &str, to: Option<&str>, after: Option<&str>, host: Option<String>, dir: String, name: Option<&str>) -> Result<String, String> {
+    /// Puts pane `key` into project `to`, after `after` when that is a member, else last; out of
+    /// any other.
+    pub fn add_to(&mut self, key: &str, to: &str, after: Option<&str>) -> Result<(), String> {
+        self.kept(|ps| ps.place(key, to, after))?;
+        self.fresh.insert(key.to_string(), Instant::now());
+        Ok(())
+    }
+
+    /// Puts pane `key` into a new project, named `name`, else "Group N", made from the pane's host
+    /// and folder; out of any other. The project's id.
+    pub fn add_new(&mut self, key: &str, name: Option<&str>, host: Option<String>, dir: String) -> Result<String, String> {
         let id = self.kept(|ps| {
-            let id = match to {
-                Some(id) => ps.find(id)?.id.clone(),
-                None => ps.make(name, host, dir)?,
-            };
-            if ps.find(&id)?.members.len() >= MOST_MEMBERS {
-                return Err(format!("At most {MOST_MEMBERS} sessions in a project."));
-            }
-            let p = ps.find(&id)?;
-            p.members.retain(|m| m != key);
-            let at = after.and_then(|a| p.members.iter().position(|m| m == a)).map_or(p.members.len(), |i| i + 1);
-            p.members.insert(at, key.to_string());
-            for p in ps.list.iter_mut().filter(|p| p.id != id) {
-                p.members.retain(|m| m != key);
-            }
+            let id = ps.make(name, host, dir)?;
+            ps.place(key, &id, None)?;
             Ok(id)
         })?;
         self.fresh.insert(key.to_string(), Instant::now());
         Ok(id)
+    }
+
+    /// Pane `key` in project `id` alone; the caller saves.
+    fn place(&mut self, key: &str, id: &str, after: Option<&str>) -> Result<(), String> {
+        let p = self.find(id)?;
+        if p.members.len() >= MOST_MEMBERS {
+            return Err(format!("At most {MOST_MEMBERS} sessions in a project."));
+        }
+        p.members.retain(|m| m != key);
+        let at = after.and_then(|a| p.members.iter().position(|m| m == a)).map_or(p.members.len(), |i| i + 1);
+        p.members.insert(at, key.to_string());
+        for p in self.list.iter_mut().filter(|p| p.id != id) {
+            p.members.retain(|m| m != key);
+        }
+        Ok(())
     }
 
     /// A new project with no session (AC-110): named `name`, else "Group N"; the first color no
@@ -450,7 +460,7 @@ async fn save(app: &Shared) {
 /// `project {action, …}` from the page's session list (AC-92).
 pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
     let s = |k: &str| msg[k].as_str().map(str::to_string);
-    let ids = |k: &str| msg[k].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>()).unwrap_or_default();
+    let ids = |k: &str| crate::config::strings(&msg[k]);
     let action = s("action").unwrap_or_default();
     let (key, project, given) = (s("id").unwrap_or_default(), s("project"), s("name").filter(|n| !n.trim().is_empty()));
     let name = given.clone().unwrap_or_default();
@@ -461,7 +471,10 @@ pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
     let done = crate::http::off(move || {
         let mut ps = a.projects.lock();
         match action.as_str() {
-            "add" if crate::tmux::parse_key(&key).is_some() => ps.add(&key, project.as_deref(), None, host, dir.unwrap_or_default(), given.as_deref()).map(|_| ()),
+            "add" if crate::tmux::parse_key(&key).is_some() => match project.as_deref() {
+                Some(to) => ps.add_to(&key, to, None),
+                None => ps.add_new(&key, given.as_deref(), host, dir.unwrap_or_default()).map(|_| ()),
+            },
             "remove" => ps.remove(&key),
             "rename" => ps.rename(project.as_deref().unwrap_or(""), &name),
             "delete" => ps.delete(project.as_deref().unwrap_or("")),

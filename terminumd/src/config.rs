@@ -92,6 +92,11 @@ pub fn find_program(name: &str, env_key: &str) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
+/// The strings of a JSON array; none for anything else.
+pub fn strings(v: &serde_json::Value) -> Vec<String> {
+    v.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default()
+}
+
 /// Writes `bytes` to `path` through a temporary file renamed over it, mode 0600.
 pub fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     write_replacing(path, bytes, 0o600, None)

@@ -96,7 +96,7 @@ impl Dispatcher {
         self.active.lock().remove(key)
     }
 
-    fn has_run(&self, key: &str) -> bool {
+    pub fn has_run(&self, key: &str) -> bool {
         self.panes.lock().contains(key)
     }
 
@@ -128,11 +128,6 @@ impl Dispatcher {
             _ => serde_json::Value::Null,
         };
         self.watch.lock().entry(key.to_string()).or_default().tokens = Some(kept);
-    }
-
-    /// Whether a turn's end in pane `key` should say its tokens: only a task's session shows them.
-    pub fn wants_tokens(&self, key: &str) -> bool {
-        self.has_run(key)
     }
 
     fn remember_typed(&self, key: &str, text: &str) {

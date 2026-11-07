@@ -103,3 +103,15 @@ pub fn counts(tx: &Transaction, q: &Query) -> Result<Value, String> {
     out.extend(found.into_iter().map(|(status, n)| (status, json!(n))));
     Ok(Value::Object(out))
 }
+
+/// A title equal to an open task's in `project`, case, runs of spaces and end punctuation aside
+/// (AC-115): that task.
+pub fn repeat_of(tx: &Transaction, project: &str, title: &str) -> Result<Option<String>, String> {
+    let wanted = plain(title);
+    let open: Vec<(String, String)> = rows(tx, "SELECT 'T-' || number, title FROM tasks WHERE project = ?1 AND status <> 'DONE' AND archived_at IS NULL", [project], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(open.into_iter().find(|(_, title)| plain(title) == wanted).map(|(number, _)| number))
+}
+
+fn plain(title: &str) -> String {
+    title.split_whitespace().collect::<Vec<_>>().join(" ").trim_end_matches(['.', '!', '?', ':', ';', ',']).to_lowercase()
+}

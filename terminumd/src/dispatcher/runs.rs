@@ -110,6 +110,7 @@ const SELECT: &str = "SELECT r.id, r.task,
     FROM runs r JOIN tasks t ON t.id = r.task";
 /// A run Dispatcher still holds, over `runs r`.
 pub(crate) const STILL: &str = "r.state NOT IN ('closed', 'left')";
+const STARTING: &str = "r.state IN ('starting', 'asking', 'typed')";
 
 /// `group_concat`'s list, its order by number.
 fn listed(text: Option<String>) -> Vec<String> {
@@ -219,9 +220,9 @@ fn listed_keys(keys: &[&str]) -> String {
 
 /// What a card says of its task's run: starting, asking, or `no_result`: DONE with no result from the agent (AC-123).
 pub fn card_marks(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, String>, String> {
-    Ok(rows(tx, "SELECT m.task, CASE WHEN r.state IN ('starting', 'asking', 'typed') THEN r.state ELSE 'no_result' END FROM run_tasks m JOIN runs r ON r.id = m.run JOIN tasks t ON t.id = m.task
+    Ok(rows(tx, &format!("SELECT m.task, CASE WHEN {STARTING} THEN r.state ELSE 'no_result' END FROM run_tasks m JOIN runs r ON r.id = m.run JOIN tasks t ON t.id = m.task
               WHERE m.task IN (SELECT value FROM json_each(?1)) AND m.rowid = (SELECT MAX(rowid) FROM run_tasks WHERE task = m.task)
-                AND (r.state IN ('starting', 'asking', 'typed') OR (t.status = 'DONE' AND m.result = 0 AND t.archived_at IS NULL))", [listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+                AND ({STARTING} OR (t.status = 'DONE' AND m.result = 0 AND t.archived_at IS NULL))"), [listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
 /// The agent each of `keys` stays on: its newest run's, as that run knew it (AC-138).

@@ -113,6 +113,11 @@ pub fn find_item<'a>(layout: &'a Value, key: &str) -> Option<&'a Value> {
     layout_items(layout.as_array()?).find(|it| it["id"] == key)
 }
 
+/// Every row of a layout as it is kept.
+pub fn layout_rows(layout: &Value) -> impl Iterator<Item = &Value> {
+    layout_items(layout.as_array().map_or(&[], |a| a.as_slice()))
+}
+
 /// Every row of the layout's groups.
 pub fn layout_items(groups: &[Value]) -> impl Iterator<Item = &Value> {
     groups.iter().flat_map(|g| g["items"].as_array().into_iter().flatten())

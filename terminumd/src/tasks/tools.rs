@@ -65,7 +65,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             "create_task" => {
                 let title: String = rules::clean(arg(args, "title")?).chars().take(200).collect();
                 let project = who.project.clone().unwrap_or_else(|| DEFAULT_PROJECT.to_string());
-                if let Some(same) = ops::repeat_of(tx, &project, &title)? {
+                if let Some(same) = super::query::repeat_of(tx, &project, &title)? {
                     return Err(format!("Not kept: {same} already says this. Read it with get_task, and comment if you have more."));
                 }
                 let parent = args["parent"].as_str().map(str::to_string);

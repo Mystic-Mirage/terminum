@@ -5,7 +5,7 @@
 use serde_json::json;
 
 /// The fields read with every capture, tab-separated; the folder last (it may hold a tab).
-pub const FIELDS: &str = "#{cursor_x}\t#{cursor_y}\t#{alternate_on}\t#{history_size}\t#{pane_width}\t#{pane_height}\t#{mouse_any_flag}\t#{mouse_sgr_flag}\t#{history_limit}\t#{cursor_flag}\t#{window_id}\t#{window_zoomed_flag}\t#{window_panes}\t#{pane_active}\t#{pid}\t#{pane_current_command}\t#{pane_current_path}";
+pub const FIELDS: &str = "#{cursor_x}\t#{cursor_y}\t#{alternate_on}\t#{history_size}\t#{pane_width}\t#{pane_height}\t#{mouse_any_flag}\t#{mouse_sgr_flag}\t#{history_limit}\t#{cursor_flag}\t#{window_id}\t#{window_zoomed_flag}\t#{window_panes}\t#{pane_active}\t#{pid}\t#{window_width}\t#{window_height}\t#{pane_current_command}\t#{pane_current_path}";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Fields {
@@ -26,6 +26,8 @@ pub struct Fields {
     pub active: bool,
     /// the tmux server's process: another one means the pane ids name other panes (AC-14)
     pub server_pid: u32,
+    /// the window's columns and rows: a zoomed pane under a border status is a row short of them
+    pub window_size: (usize, usize),
     pub command: String,
     pub path: String,
 }
@@ -33,8 +35,8 @@ pub struct Fields {
 impl Fields {
     /// The display line, or None when it is not one (an older tmux, a broken answer).
     pub fn parse(line: &str) -> Option<Fields> {
-        let p: Vec<&str> = line.splitn(17, '\t').collect();
-        if p.len() < 17 {
+        let p: Vec<&str> = line.splitn(19, '\t').collect();
+        if p.len() < 19 {
             return None;
         }
         let n = |i: usize| p[i].trim().parse::<i64>().ok();
@@ -55,8 +57,9 @@ impl Fields {
             panes: n(12).unwrap_or(1).max(1) as usize,
             active: flag(13),
             server_pid: n(14).unwrap_or(0) as u32,
-            command: p[15].to_string(),
-            path: p[16].to_string(),
+            window_size: (n(15).unwrap_or(0) as usize, n(16).unwrap_or(0) as usize),
+            command: p[17].to_string(),
+            path: p[18].to_string(),
         })
     }
 
@@ -148,10 +151,11 @@ mod tests {
 
     #[test]
     fn display_lines_parse_with_a_tab_in_the_folder() {
-        let f = Fields::parse("3\t4\t0\t120\t80\t24\t1\t1\t12000\t1\t@2\t0\t2\t1\t4242\tzsh\t/tmp/a\tb").unwrap();
+        let f = Fields::parse("3\t4\t0\t120\t80\t24\t1\t1\t12000\t1\t@2\t0\t2\t1\t4242\t129\t25\tzsh\t/tmp/a\tb").unwrap();
         assert_eq!((f.cx, f.cy, f.alt, f.history, f.width, f.height), (3, 4, false, 120, 80, 24));
         assert!(f.mouse && f.mouse_sgr && f.cursor_on && !f.zoomed);
         assert_eq!((f.window.as_str(), f.panes, f.active, f.server_pid, f.command.as_str(), f.path.as_str()), ("@2", 2, true, 4242, "zsh", "/tmp/a\tb"));
+        assert_eq!(f.window_size, (129, 25));
         assert_eq!(Fields::parse("1\t2\t3"), None);
     }
 

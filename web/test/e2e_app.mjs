@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { check } from "./check.mjs";
+import { check, slack } from "./check.mjs";
 import { webAppScreen } from "./e2e_appscreen.mjs";
 import { webViewPark } from "./e2e_viewpark.mjs";
 
@@ -86,7 +86,7 @@ export async function webApp(browser) {
   // reminders: the bridge sends a layout only when it changes; a session waiting 2.5 s with no
   // layout saying otherwise gets one; [x] and a click end it; it goes 2.5 s after waiting stops
   const cards = () => $eval(() => [...document.querySelectorAll("#asks .ask:not([hidden]) .what")].map((e) => e.textContent));
-  const settle = () => page.waitForTimeout(2700);
+  const settle = () => page.waitForTimeout(slack(2700));
   tell({ t: "layout", groups: layout("waiting") });
   await page.waitForTimeout(100);
   const soon = await cards();

@@ -165,7 +165,7 @@ async function agentPool(page, opts) {
   await page.fill("#runmessage", "WORKS");
   await page.press("#runmessage", "Meta+Enter");
   check("AC-138 ⌘Enter in the message runs", await until(async () => !(await page.$("#runbox[open]"))));
-  check("AC-138 both go IN PROGRESS", await hasStatus(a, "IN PROGRESS") && await hasStatus(b, "IN PROGRESS"), `${await status(a)} ${await status(b)}`);
+  check("AC-138 both go IN PROGRESS", await hasStatus(a, "IN PROGRESS") && await hasStatus(b, "IN PROGRESS"), `${await status(a)} ${await status(b)}: ${(await j(`/api/tasks/${a}`)).history?.at(-1)?.text}`);
   const key = (await j(`/api/tasks/${a}`)).session?.key;
   check("AC-138 in one session", !!key && (await j(`/api/tasks/${b}`)).session?.key === key, key);
   check("AC-138 what was chosen is let go", await until(async () => await page.locator(".card.picked").count() === 0));
@@ -298,7 +298,8 @@ async function projectWindowChecks(page, opts) {
   check("AC-139 Add agent opens the agent's window on it", await until(() => page.$("#agentbox[open]")) && await page.inputValue("#agentproject") === fresh && !(await page.isVisible("#agentproject")));
   await page.fill("#agentname", "Its first");
   await pressAt(page, "#agentok");
-  check("AC-139 the agent stands in the project's window", await until(() => page.isVisible('#projectagentlist .agentcard:has-text("Its first")')));
+  check("AC-139 the agent stands in the project's window", await until(() => page.isVisible('#projectagentlist .agentcard:has-text("Its first")')),
+    JSON.stringify(await page.evaluate(() => ({ asking: !!document.querySelector("#agentbox[open]"), why: document.getElementById("agenterror")?.textContent, list: document.getElementById("projectagentlist")?.textContent.slice(0, 200) }))));
   await pressAt(page, "#projectlimits");
   await page.waitForSelector("#limitsbox[open]");
   await page.fill("#limitwarn", "2");

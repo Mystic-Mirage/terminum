@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Sizing end to end, at the page's protocol (terminum.md AC-13: the active page sizes, a pane
-opened comes at the page's grid from its first frame (AC-04), a hidden one hands over, a window of several panes is never resized; AC-05 mc on a phone's 48×30) against
+opened comes at the page's grid from its first frame (AC-04), a hidden one hands over, the shown pane of a window of several panes is zoomed; AC-05 mc on a phone's 48×30) against
 a private terminumd and a private tmux server (never the user's). mc runs with a temporary HOME
 and no subshell.
 
@@ -10,6 +10,7 @@ and no subshell.
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -108,26 +109,157 @@ def screens_off(t, pid, pane, work):
     time.sleep(0.5)
 
 
+def filling(pane):
+    """Whether the pane is zoomed and as wide as its window."""
+    s = tmux("display", "-p", "-t", pane, "#{window_zoomed_flag} #{pane_active} #{pane_width} #{window_width}").split()
+    return len(s) == 4 and s[:2] == ["1", "1"] and s[2] == s[3]
+
+
+def until_filling(pane, seconds=3):
+    end = time.time() + seconds
+    while time.time() < end and not filling(pane):
+        time.sleep(0.05)
+    return filling(pane)
+
+
+def teammate(pane):
+    """Claude Code's first teammate: the leader alone in its window gives it 70%."""
+    return tmux("split-window", "-d", "-t", pane, "-h", "-l", "70%", "-P", "-F", "#{pane_id}").strip()
+
+
+def second_teammate(pane, mate):
+    """Its next: a sibling is split, then the layout and the leader's share are set again."""
+    made = tmux("split-window", "-d", "-t", mate, "-v", "-P", "-F", "#{pane_id}").strip()
+    tmux("select-layout", "-t", pane, "main-vertical")
+    tmux("resize-pane", "-t", pane, "-x", "30%")
+    return made
+
+
+def narrow_frame(ws):
+    """A frame narrower than the page's 130 columns within a second."""
+    return ws.until(lambda m: m["t"] == "screen" and m.get("cols") != 130, 1)
+
+
 def split(t, pid, pane):
-    """A window of several panes is never resized (AC-13); old pages' fit and screenmode are ignored."""
-    target = tmux("split-window", "-t", pane, "-P", "-F", "#{pane_id}").strip()
-    time.sleep(1.5)
-    before = window_of(target)
-    ws = t.page()
-    groups = wait_layout(ws, lambda gs: any(i["id"].endswith(":" + target) for i in items(gs)))
-    sid = next(i["id"] for i in items(groups) if i["id"].endswith(":" + target))
-    ws.send({"t": "sub", "id": sid})
-    ws.send({"t": "size", "cols": 48, "rows": 20, "typing": True})
+    """AC-13: the shown pane of a window of several panes is zoomed to fill it; old pages' fit and screenmode are ignored."""
+    ws = open_pane(t, pid, 130, 40)
+    settle(pane, "130x40")
+    mate = teammate(pane)
+    narrow = narrow_frame(ws)
+    check("AC-13 no frame goes out at the narrow width", narrow is None, narrow and narrow.get("cols"))
+    check("AC-13 a split under the shown pane: it is zoomed and fills the window", until_filling(pane), tmux("list-panes", "-t", pane, "-F", "#{pane_id} #{pane_width}"))
+    third = second_teammate(pane, mate)
+    narrow = narrow_frame(ws)
+    check("AC-13 a second teammate: the zoom comes back, no frame at the narrow width", narrow is None and until_filling(pane), narrow and narrow.get("cols"))
+    layout = tmux("display", "-p", "-t", pane, "#{window_layout}")
+    check("AC-13 the window's layout stays its maker's: the leader's 30% (restore reads it)", "39x40" in layout and layout != tmux("display", "-p", "-t", pane, "#{window_visible_layout}"), layout)
+    tmux("kill-pane", "-t", third)
+    until_filling(pane)
+    border(ws, pane)
+    same_pane(t, ws, pid, pane)
     ws.send({"t": "fit", "cols": 48, "rows": 20})
     ws.send({"t": "screenmode", "mode": "always"})
-    ws.send({"t": "size", "cols": 48, "rows": 20, "screen": True, "typing": False})
-    time.sleep(2.5)
-    flag = tmux("display", "-p", "-t", target, "#{window_zoomed_flag}").strip()
-    check("AC-13 a window of several panes keeps its size and is not zoomed; old messages are ignored",
-          window_of(target) == before and flag == "0" and "panicked" not in t.log(), (before, window_of(target), flag))
-    tmux("kill-pane", "-t", target)
+    time.sleep(1.5)
+    check("AC-13 it stays zoomed at the page's size; old messages are ignored",
+          filling(pane) and window_of(pane) == "130x40" and "panicked" not in t.log(), window_of(pane))
+    tmux("kill-pane", "-t", mate)
+    time.sleep(0.3)
+    check("AC-13 the sibling closed: one pane, the window's width", window_of(pane) == "130x40" and tmux("display", "-p", "-t", pane, "#{pane_width}").strip() == "130",
+          window_of(pane))
+    away(ws, pane)
+    two_pages(t, ws, pid, pane)
+    by_hand(ws, pane)
     ws.close()
     time.sleep(0.5)
+
+
+def border(ws, pane):
+    """A border status makes a zoomed pane a row short of its window: the size still settles (AC-13)."""
+    tmux("set-option", "-w", "-t", pane, "pane-border-status", "top")
+    time.sleep(0.5)
+    short = tmux("display", "-p", "-t", pane, "#{pane_height} #{window_height}").split()
+    ws.send({"t": "size", "cols": 130, "rows": 40, "typing": False})
+    again = ws.until(lambda m: m["t"] == "sized", 1.5)
+    check("AC-13 a zoomed pane a row short of its window: the same grid resizes nothing", short == ["39", "40"] and again is None, (short, again))
+    tmux("set-option", "-w", "-u", "-t", pane, "pane-border-status")
+    time.sleep(0.3)
+
+
+def same_pane(t, ws, pid, pane):
+    """A page that only looks leaves the window its holder's: the holder's wider view still sizes it (AC-13)."""
+    other = t.page()
+    other.send({"t": "sub", "id": pid, "cols": 48, "rows": 20})
+    time.sleep(1)
+    check("AC-13 a phone opens the zoomed pane: nothing shrinks", window_of(pane) == "130x40", window_of(pane))
+    ws.send({"t": "size", "cols": 140, "rows": 45, "typing": False})
+    check("AC-13 the page that sized it still sizes it", settle(pane, "140x45") == "140x45", window_of(pane))
+    other.close()
+    ws.send({"t": "size", "cols": 130, "rows": 40, "typing": True})
+    settle(pane, "130x40")
+
+
+def away(ws, pane):
+    """A page in sight out of focus zooms too: an agent starts a teammate while the user is elsewhere (AC-13)."""
+    ws.send({"t": "pause", "hidden": False})
+    mate = teammate(pane)
+    check("AC-13 a page in sight, out of focus: the pane is zoomed", until_filling(pane), window_of(pane))
+    check("AC-13 out of focus it zooms only: the window keeps its size", window_of(pane) == "130x40", window_of(pane))
+    tmux("kill-pane", "-t", mate)
+    ws.send({"t": "resume"})
+    time.sleep(0.3)
+
+
+def two_pages(t, ws, pid, pane):
+    """Two pages showing panes of one window: the zoom moves on opening and typing, never by itself (AC-13)."""
+    mate = teammate(pane)
+    until_filling(pane)
+    other = t.page()
+    groups = wait_layout(other, lambda gs: any(i["id"].endswith(":" + mate) for i in items(gs)))
+    sid = next(i["id"] for i in items(groups) if i["id"].endswith(":" + mate))
+    other.send({"t": "sub", "id": sid, "cols": 48, "rows": 20})
+    check("AC-13 another page opens the sibling: the zoom moves to it", until_filling(mate), tmux("list-panes", "-t", pane, "-F", "#{pane_id} #{pane_width}"))
+    check("AC-13 a page that only looks does not shrink a split window", window_of(pane) == "130x40", window_of(pane))
+    time.sleep(1.5)
+    check("AC-13 the first page does not take it back by itself", filling(mate), tmux("list-panes", "-t", pane, "-F", "#{pane_id} #{pane_active}"))
+    other.send({"t": "size", "cols": 48, "rows": 20, "typing": True})
+    check("AC-13 typing shrinks it to the typing page's grid", settle(pane, "48x20") == "48x20", window_of(pane))
+    other.send({"t": "size", "cols": 60, "rows": 25, "typing": True})
+    settle(pane, "60x25")
+    time.sleep(1.1)
+    other.send({"t": "size", "cols": 60, "rows": 26, "typing": True})    # takes the second
+    time.sleep(0.1)
+    other.send({"t": "size", "cols": 70, "rows": 30, "typing": False})   # waits for it
+    time.sleep(0.1)
+    other.send({"t": "size", "cols": 48, "rows": 20, "typing": True})    # left to the one waiting
+    check("AC-13 a key while a view's size waits: that one shrinks the window", settle(pane, "48x20") == "48x20", window_of(pane))
+    ws.send({"t": "size", "cols": 130, "rows": 40, "typing": True})
+    check("AC-13 the first page types: the zoom and the size come back", settle(pane, "130x40") == "130x40" and until_filling(pane), window_of(pane))
+    other.close()
+    tmux("kill-pane", "-t", mate)
+    time.sleep(0.3)
+
+
+def by_hand(ws, pane):
+    """A tmux client attached by hand, control mode too, has the window on its screen: its layout stays (AC-13)."""
+    session = tmux("display", "-p", "-t", pane, "#{session_name}").strip()
+    tmux("select-window", "-t", pane)
+    hand = subprocess.Popen(["tmux", "-L", SOCKET, "-C", "attach", "-t", session], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        time.sleep(0.3)
+        mate = teammate(pane)
+        time.sleep(1.5)
+        zoomed = tmux("display", "-p", "-t", pane, "#{window_zoomed_flag}").strip()
+        check("AC-13 a client attached by hand on this window: no zoom, no resize", zoomed == "0" and window_of(pane) == "130x40", (zoomed, window_of(pane)))
+    finally:
+        hand.stdin.close()
+        try:
+            hand.wait(5)
+        except subprocess.TimeoutExpired:
+            hand.terminate()
+            hand.wait(5)
+    check("AC-13 that client gone: the pane is zoomed", until_filling(pane), window_of(pane))
+    tmux("kill-pane", "-t", mate)
+    time.sleep(0.3)
 
 
 def drag(t, pid, pane):

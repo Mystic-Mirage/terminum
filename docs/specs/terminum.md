@@ -88,7 +88,7 @@ Open questions:
 | AC-09 | [MUST / P0] | A web page or local process cannot list sessions, read screens, type or touch files through terminumd without the sign-in, which only the password set by `terminum password` gets; wrong passwords are braked; writes need the exact Host, Origin and Content-Type. |
 | AC-10 | [SHOULD / P1] | A browser on another device reaches the same page through `tailscale serve` over HTTPS and signs in with the same password; what only the Mac may do is refused to forwarded requests; Tailscale Funnel is refused. |
 | AC-12 | [SHOULD / P1] | The user sees each session in a theme (colors, ANSI palette, font) chosen by rules per host and session from theme files, with light and dark variants following the system, changed live when a file changes; `local.json` and `remote.json` are the defaults. |
-| AC-13 | [MUST / P0] | The pane's size follows the active page that shows it: a wide window gets a wide pane and a phone a narrow one, a window of several panes is never resized, and a tmux client attached by hand keeps working. |
+| AC-13 | [MUST / P0] | The pane's size follows the active page that shows it: a wide window gets a wide pane and a phone a narrow one, the shown pane of a window of several panes is zoomed to fill it, and a tmux client attached by hand keeps working. |
 | AC-18 | [SHOULD / P1] | On a touch screen or a narrow window the hot keys panel, the keyboard button and the floating buttons work with a finger, and the panel's layout comes from a file the user can change. |
 | AC-19 | [SHOULD / P1] | The user customizes the page with a stylesheet of their own (`custom.css`) and settings in `settings.json`, with the page reloading when they change and refusing nothing silently. |
 | AC-20 | [SHOULD / P1] | terminumd stays within its budgets: under 60 MB with 60 panes and two pages, under 0.5 % CPU idle, a key echoed in 25 ms median on the Mac, a frame encoded in 3 ms; the page under 150 MB with 10,000 lines. |
@@ -273,7 +273,7 @@ Scenario: AC-04 happy path — one view, re-flowed to the browser
   Then the page draws the pane's lines at the chosen text size, its history above (AC-02); the pane is sized to this view's grid (AC-13), so its rows fill the view; there is no view mode to pick
   And on the normal screen nothing is scaled or scrolled sideways: a row wider than the view wraps at its edge; while the pane has the view's width its rows stay as the program laid them out (its hanging indents too)
 Scenario: AC-04 edge — a pane wider or narrower than the view
-  Given the pane's width is not the view's: a window of several panes (never resized, AC-13), another page's size, a refused resize, the 45-column floor, a view whose new width is on its way to tmux
+  Given the pane's width is not the view's: a window of several panes that stays as it is (AC-13), a split window another page zoomed, another page's size, a refused resize, the 45-column floor, a view whose new width is on its way to tmux
   Then on the normal screen its lines re-flow to the view's width (Wrap), at the chosen text size: a line tmux wrapped is one line again, prose a program wrapped at the pane's width re-joins (a word broken at the edge without a space), list items, agent marks and numbered lines start lines, separator lines span the view, and a narrow pane's lines fill the view
   And a full-screen program (AC-05) is drawn as its grid: scaled down to the view's width, at the chosen size with the rest by scrolling sideways when that would make the text smaller than 7 px (the smallest size − and + allow); "Sized for another screen (W×H)" says so when another page sized it
 Scenario: AC-04 edge — the view changes width
@@ -526,10 +526,22 @@ Scenario: AC-13 edge — the page that sized it is put away
   When the iPhone's page is hidden (the phone locked, Safari in the background, another tab)
   Then the window goes to the Mac's view at once, without a key, and a hidden page's new size takes nothing
 Scenario: AC-13 edge — a window of several panes
-  Given %3's window holds three panes (split by the user's own tmux, an agent such as Claude Code's teammates, or restored, terminum-lifecycle.md AC-15) and %3 is 31 of its 45 columns
-  Then no page resizes it, and nothing is drawn over the terminal: %3 is drawn as a pane of another width (AC-04)
+  Given %3's window holds three panes (split by an agent such as Claude Code's teammates, or restored, terminum-lifecycle.md AC-15) and %3 is 31 of its 45 columns
+  When a page in sight shows %3 (focused or not)
+  Then terminumd zooms %3 ("resize-pane -Z") before the next frame goes out, so the program lays itself out for the whole window, and the window is then sized for the page; nothing is drawn over the terminal
+  When a split, a closed pane or a program's layout command takes the zoom away
+  Then terminumd zooms %3 again at once, at most ten times a second; the window's layout stays its maker's (restore keeps it, terminum-lifecycle.md AC-15), and when the page stops showing %3 the zoom stays until another pane of the window is shown or tmux ends it
+  And a size reaches the panes the zoom hides too, which keep their share of the window and re-wrap, so while it has several panes a window grows for any page but shrinks only for a page that types: a phone that only looks draws the pane re-flowed (AC-04)
+Scenario: AC-13 edge — two pages show panes of one split window
+  Given the Mac's page shows %3 and has it zoomed, and the iPhone's page opens %4 of that window
+  Then the zoom moves to %4 ("select-pane -Z"), the window keeping its size; the Mac's view draws %3 as a pane of another width (AC-04) until its page opens it again or types
+  And a page in sight that holds the zoom keeps it against any page but an active one taking it from a page out of focus, so two pages never take it from each other by themselves
+Scenario: AC-13 edge — a split window that stays as it is
+  Given %3's window holds three panes
+  When its session is of the user's own tmux (AC-89), or a tmux client attached by hand has this window on its screen, or no page in sight shows a pane of it
+  Then no page zooms it or resizes it, and nothing is drawn over the terminal: %3 is drawn as a pane of another width (AC-04)
   And prose Claude Code wrapped at 31 columns re-joins and fills the view; a line it laid out for 31 columns (a table, a box) stays as it was drawn
-  And a window whose shown pane the user's own tmux zoomed ("resize-pane -Z") is sized as a window of one pane
+  And a window whose shown pane the user's own tmux zoomed ("resize-pane -Z") is sized as a split window whose pane terminumd zoomed
 Scenario: AC-13 edge — another tmux client is attached
   Given the user ran "tmux -L terminum attach -t main" in Terminal.app, or "tmux -CC -L terminum attach" in a terminal with a control mode
   Then terminumd's control client is attached with "-f ignore-size" (AS-02) and "window-size manual" on the windows it sizes: both clients see the size terminumd set; a window no page shows keeps tmux's own policy (latest) for that client
@@ -729,7 +741,7 @@ Scenario: AC-89 edge — the user's tmux.conf
 Scenario: AC-100 happy path — shown from the row's menu, copied on a press
   Given a session's row in the list, its pane running (a shell, vim, a coding agent)
   When the user picks Diagnostics… in the row's menu
-  Then the page asks terminumd ({t: "diag", id}) and terminumd answers tmux's own fields of that pane by name (`display -p` of the frame's fields: cursor, alternate_on, history_size and _limit, pane_width and _height, mouse_any_flag, mouse_sgr_flag, cursor_flag, the window's id, panes and zoom, pane_active, tmux's pid, pane_current_command and _path, the path with ~ for the server's home folder), control characters dropped, with its build and the server's name
+  Then the page asks terminumd ({t: "diag", id}) and terminumd answers tmux's own fields of that pane by name (`display -p` of the frame's fields: cursor, alternate_on, history_size and _limit, pane_width and _height, mouse_any_flag, mouse_sgr_flag, cursor_flag, the window's id, panes and zoom, pane_active, tmux's pid, the window's width and height, pane_current_command and _path, the path with ~ for the server's home folder), control characters dropped, with its build and the server's name
   And the Last Lines window (terminum-lifecycle.md AC-96) shows "Diagnostics · <title>", the line "Check it before you share it: it holds the pane's folder, host and title." and one plain text: "terminum diagnostics", the build, the pane's key and server, the browser and its window (width × height at its pixel ratio), the row as the list has it (title, agent, state, host, full-screen flag, window, index), then tmux's fields, "-" for an empty one
   And its Copy copies that text on its own press (Safari refuses a copy outside one), the page's copy saying what it took (terminum-terminal.md AC-37)
   And the text holds no screen lines, no history and no sign-in; the title is the program's own (a coding agent may put its task there)
@@ -815,12 +827,15 @@ stateDiagram-v2
   Other --> Sized: this page becomes active again or types
   Sized --> Other: this page is hidden: a page still looking takes it at once
   note right of Other: drawn as a pane of another width (AC-04)
+  note right of Sized: in a window of several panes the shown pane is zoomed first
 ```
 
 ## 7. Current behavior and gaps
 
 | AC | Gap | Evidence |
 |---|---|---|
+| AC-13 | A window no page in sight shows is not zoomed: an agent working unseen lays out what it prints for its share of the window while a teammate runs, and that stays when its pane is opened. | `terminumd/src/page/stream.rs` (only a shown pane's stream zooms) |
+| AC-13 | Two terminumds on one host's tmux, whose pages show different panes of a split window, take the zoom from each other about ten times a second: who holds it is known per terminumd, and each sees the other's clients as its own kind. | `terminumd/src/page/zoom.rs` `may_take` |
 | AC-88 | A dragged quick shell's floor is 12 % of the view, not 6 rows or 20 columns: a 600 px high view leaves about 4 rows. | `web/static/quick.js:11` |
 | AC-01 | A tmux older than 3.2 gets no message of terminum's: there is no version check, and "tmux 3.2 or newer is needed" is in no code. Only a missing tmux is said. | `terminumd/src/tmux/server.rs:30` |
 | AC-20 | `/health` has `pages` and `rss_mb` but not `frames_sent`, `frame_ms_p95`, `tmux_errors`, `client_restarts` or `panes_shown`, so nothing can alert on them. | `terminumd/src/sock.rs:256` |
@@ -836,7 +851,8 @@ stateDiagram-v2
 - A VT emulator in terminumd fed by `%output` (`alacritty_terminal`): tmux already keeps the grid, the history and the sizes, and a second emulator would have to agree with it on every escape sequence. It stays the upgrade path if `capture-pane` proves too slow for many shown panes (AC-20).
 - xterm.js in the page: the page's reading features (Wrap, folds, widgets, bookmarks, box navigation) are built on a line model the server owns.
 - Drawing a window's panes side by side as tmux does (AC-13): a page per pane is scaled apart and splits keys and focus across pages; one page of several panes is a large change, kept until watching several panes at once is wanted.
-- Resizing a window of several panes (AC-13): each resize re-wraps every pane, a coding agent leaves its old lines in each one's history, and the layout drifts from what its maker chose.
+- Keeping a split window's shown pane narrow and re-flowing it (AC-13): a program's tables, code and boxes stay laid out for its share of the window. The zoom costs a re-wrap of the hidden panes when the window grows, and of a pane when the zoom leaves it; a phone that only looks shrinks nothing, as a shrink leaves teammates' panes almost no room (tmux keeps a minimum: nine panes in 45×14 are 43×1, the leader 1 column) and drifts the layout.
+- Zooming on every window of several panes, shown or not: an agent working unseen prints narrow until its pane is opened (§7 gap), but a zoom nobody looks at costs a watcher of every server's layouts.
 
 ## 9. Technical details and specifications
 
@@ -894,13 +910,14 @@ A screen frame: `{"t":"screen","sid":"tmux:local:terminum:%3","full":false,"n":5
 |---|---|
 | Process | one `tmux -C -u -L <socket> attach-session -f ignore-size -t =<session>` per session (screens too; OQ-02) and one bulk client per server (`-f ignore-size,no-output`, OQ-02) for the local server; for a host one `ssh <options> -- <destination> 'tmux -u -C new-session -A -f ignore-size -s terminum'`; stdin takes commands, one a line (a line `a ; b` is answered by several blocks and a failure stops the rest), written at once and answered in order |
 | Arguments | one function builds every tmux argument: single-quoted with `'\''` for a quote (no `$VAR`, no `~` inside), `#` doubled to `##` in arguments tmux expands as formats (AS-11), control characters refused before a command is formed; a round-trip test on `tmux -L tm-test` creates windows and folders named `a#{pane_id}`, `#(id)`, `#S`, `$HOME`, `~x`, `a;b`, `it's` and reads them back exactly |
-| Frame | on `%output %N` for a shown pane: capture as AC-02 says when it was idle (no capture in the last 33 ms), else at the next 33 ms tick; a frame task per shown pane: `capture-pane -p -e -J -t %N -S 0 -E <rows-1>` and `display -p -t %N -F '#{cursor_x}␉#{cursor_y}␉#{alternate_on}␉#{history_size}␉#{pane_width}␉#{pane_height}␉#{mouse_any_flag}␉#{mouse_sgr_flag}␉#{history_limit}␉#{cursor_flag}␉#{window_id}␉#{window_zoomed_flag}␉#{window_panes}␉#{pane_active}␉#{pid}␉#{pane_current_command}␉#{pane_current_path}'`; both written at once; a shown pane is also looked at every second (a safety net: AS-06 holds); another server pid than the first frame's ends the pane ("This pane has closed") |
+| Frame | on `%output %N` for a shown pane: capture as AC-02 says when it was idle (no capture in the last 33 ms), else at the next 33 ms tick; a frame task per shown pane: `capture-pane -p -e -J -t %N -S 0 -E <rows-1>` and `display -p -t %N -F '#{cursor_x}␉#{cursor_y}␉#{alternate_on}␉#{history_size}␉#{pane_width}␉#{pane_height}␉#{mouse_any_flag}␉#{mouse_sgr_flag}␉#{history_limit}␉#{cursor_flag}␉#{window_id}␉#{window_zoomed_flag}␉#{window_panes}␉#{pane_active}␉#{pid}␉#{window_width}␉#{window_height}␉#{pane_current_command}␉#{pane_current_path}'`; both written at once; a shown pane is also looked at every second (a safety net: AS-06 holds); another server pid than the first frame's ends the pane ("This pane has closed") |
 | Rows | the joined capture is cut as AS-03 says (`unicode-width`), each row `{"r": runs, "e": hard}` where `e` is true on the last row of a joined line; the cursor cell gets the cursor flag; a row with a changed key is sent, others reused |
 | SGR | `CSI … m` only: 0, 1, 2, 3, 4, 5, 7, 8, 9, 21–29, 30–37, 39, 40–47, 49, 90–97, 100–107, 38/48;5;n, 38/48;2;r;g;b; OSC 8 links (AS-03); everything else in the capture is text |
 | History | absolute line `a` of the screen's top = rows tmux dropped + `history_size`; while it grows, the rows that scrolled off are appended; at the limit (AS-09) the rows that scrolled off are the fewest consistent with the new count (the screen's shift decides between counts a tenth apart); a shrink no trim explains (a clear) or a new width (a re-wrap, AS-09) resets the page's history (OQ-05); a redraw in place is no scroll; `more` asks the bulk client `capture-pane -p -e -J -S -<n> -E -<m>` |
 | Typing | text and named keys as AC-03 says (`S-Enter`, `C-Enter`: AS-10), `send-keys -H` only for mouse reports built from terminumd's own tables (SGR when `#{mouse_sgr_flag}`, else X10) and for Shift/Ctrl+Enter where AC-03 and AS-10 say, never for bytes from the page; a queue per client, one command in flight, later keys coalesced |
 | Paste | a paste between the bracketed-paste markers goes through a buffer (the commands: AC-03; the Mac's 0600 file is in `TM_APP_DIR`). Text without the markers goes as typed keys, in AC-03's parts |
-| Sizing | `set-option -w -t @W window-size manual` then `resize-window -t @W -x C -y R`; which windows, who and how often: AC-13; a window of the user's own tmux: AC-89 |
+| Sizing | `set-option -w -t @W window-size manual` then `resize-window -t @W -x C -y R`; the window's size, not the pane's, against the view's grid (a zoomed pane under a border status is a row short); which windows, who and how often: AC-13; a window of the user's own tmux: AC-89 |
+| Zoom | `resize-pane -Z -t %N`, `select-pane -Z -t %N` when another pane has the zoom, chosen from the frame's fields (a stale one toggles and the next frame zooms again; one `if-shell` line gives two answers, which a control client's queue takes for two commands); a client attached by hand: `list-clients -F '#{client_flags}␉#{window_id}'`, no `ignore-size` on this window; a stream refused asks again after 1 s (AC-13) |
 | Sessions | `list-panes -a -F '#{session_name}␉#{window_index}␉#{window_id}␉#{window_name}␉#{automatic-rename}␉#{pane_id}␉#{pane_index}␉#{pane_title}␉#{pane_current_command}␉#{pane_current_path}␉#{alternate_on}␉#{pane_active}␉#{host}␉#{@tm-quick}␉#{@tm-quick-side}␉#{session_id}␉#{@tm-title}␉` plus `--agent-name` taken from `#{pane_start_command}` by tmux's own format (only that value, a name of at most 64 characters, reaches terminumd; the rest of the command, which may hold the pane's environment, never does) every 2 s while a page looks and at once (coalesced 100 ms) on `%window-*`, `%layout-change`, `%session*` notices; the agent's state from the last 25 rows of its screen, read only when its title changed or 6 s passed |
 | Key | `tmux:<host>:<socket>:%N`; `local` for this Mac; the socket name |
 
@@ -1028,7 +1045,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-09 — scripts/e2e_access.py, scripts/e2e_ws.py, web/test/e2e_signin.mjs, web/test/proof.test.mjs, terminumd/src/auth/web_tests.rs, terminumd/src/auth/signin_tests.rs, terminumd/src/auth/credential_tests.rs, terminumd/src/auth/checks_tests.rs, terminumd/src/auth/websignin_tests.rs, terminumd/src/umask_tests.rs
 - [x] AC-10 — terminumd/src/auth/checks_tests.rs, scripts/e2e_access.py
 - [x] AC-12 — terminumd/src/theme_tests.rs, web/test/e2e_live.mjs, web/test/e2e_split.mjs, web/test/e2e_liveprogs.mjs
-- [x] AC-13 — scripts/e2e_sizing.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
+- [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing`, scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
 - [x] AC-18 — web/test/e2e_tmux.mjs, web/test/e2e_hold.mjs, web/test/e2e_phonerow.mjs, web/test/e2e_sheets.mjs, web/test/e2e_fold.mjs, web/test/onekbd.test.mjs
 - [x] AC-19 — terminumd/src/settings_tests.rs, web/test/e2e_signin.mjs, web/test/e2e_live.mjs, web/test/e2e_tmux.mjs
 - [x] AC-20 — scripts/bench_load.py, scripts/bench_echo.py, terminumd/benches/frame.rs (`cargo bench frame`)

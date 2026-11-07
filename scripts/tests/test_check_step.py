@@ -99,12 +99,13 @@ class Guard(unittest.TestCase):
         with tempfile.NamedTemporaryFile("r", suffix=".where") as where:
             run = subprocess.Popen([sys.executable, "-I", GUARD, "sh", "-c", f'touch "$TMPDIR/x"; echo "$TMPDIR" > {where.name}; exec sleep 30'],
                                    stderr=subprocess.PIPE, text=True)
-            for _ in range(100):
+            for _ in range(1200):    # up to 60 s: a signal before the step started tests nothing, and a busy machine starts it late
                 folder = where.read().strip()
                 where.seek(0)
                 if folder:
                     break
                 time.sleep(0.05)
+            self.assertTrue(folder, "the step never started")
             run.send_signal(signal.SIGTERM)
             _, err = run.communicate(timeout=20)
             self.assertNotEqual(run.returncode, 0)

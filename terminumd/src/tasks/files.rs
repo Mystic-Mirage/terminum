@@ -3,6 +3,7 @@
 //! folder, a row in the store. A file dropped in a window not yet saved has no task; such a file
 //! goes after 7 days. Nothing here runs or is opened on the page's origin.
 
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use rusqlite::{OptionalExtension, Row, Transaction};
@@ -13,6 +14,8 @@ use super::store::Store;
 use crate::page::upload::raster_mime;
 
 pub const MOST_BYTES: usize = 100 << 20;
+/// What `raster_mime` looks at.
+const MIME_HEAD: u64 = 12;
 const UNUSED_SECONDS: i64 = 7 * 24 * 3600;
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -66,19 +69,43 @@ fn mime_of(name: &str, data: &[u8]) -> String {
     }, str::to_string)
 }
 
-/// Writes the bytes then the row (no task yet); the bytes go again if the row is refused.
 pub fn keep(store: &Store, dir: &Path, name: &str, data: &[u8], at: i64) -> Result<File, String> {
+    keep_from(store, dir, name, data, at)
+}
+
+/// The bytes to `path`, new and private, synced; what stands of them goes on failure. Their count
+/// (past the most, one over) and the first ones, which say a picture.
+fn write_new(path: &Path, mut from: impl Read) -> std::io::Result<(u64, Vec<u8>)> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path)?;
+    let written = (|| {
+        let mut head = Vec::new();
+        from.by_ref().take(MIME_HEAD).read_to_end(&mut head)?;
+        file.write_all(&head)?;
+        let rest = std::io::copy(&mut from.take(MOST_BYTES as u64 + 1 - head.len() as u64), &mut file)?;
+        file.sync_all()?;
+        Ok((head.len() as u64 + rest, head))
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(path);
+    }
+    written
+}
+
+/// Writes the bytes as they come, then the row (no task yet); the bytes go again if the row is refused.
+pub fn keep_from(store: &Store, dir: &Path, name: &str, from: impl Read, at: i64) -> Result<File, String> {
     use std::os::unix::fs::DirBuilderExt;
     let name = clean_name(name)?;
-    if data.len() > MOST_BYTES {
-        return Err(format!("{name} is over 100 MB"));
-    }
     let id = crate::auth::crypto::random_hex::<16>();
     let path = path_of(dir, &id)?;
-    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(folder(dir))
-        .and_then(|()| crate::config::write_private(&path, data))
+    let (bytes, head) = std::fs::DirBuilder::new().recursive(true).mode(0o700).create(folder(dir))
+        .and_then(|()| write_new(&path, from))
         .map_err(|e| format!("{name} could not be kept: {e}"))?;
-    let file = File { mime: mime_of(&name, data), id, name, bytes: data.len() as i64 };
+    if bytes > MOST_BYTES as u64 {
+        let _ = std::fs::remove_file(&path);
+        return Err(format!("{name} is over 100 MB"));
+    }
+    let file = File { mime: mime_of(&name, &head), id, name, bytes: bytes as i64 };
     store.with(|tx| {
         tx.execute("INSERT INTO files (id, name, bytes, mime, at) VALUES (?1, ?2, ?3, ?4, ?5)", (&file.id, &file.name, file.bytes, &file.mime, at)).map(|_| ()).map_err(sql)
     }).inspect_err(|_| { let _ = std::fs::remove_file(&path); })?;
@@ -246,6 +273,7 @@ mod tests {
         let (s, dir) = fresh("tf-big");
         let big = vec![0u8; MOST_BYTES + 1];
         assert_eq!(keep(&s, &dir, "shot.mov", &big, 1).unwrap_err(), "shot.mov is over 100 MB");
+        assert_eq!(std::fs::read_dir(folder(&dir)).map_or(0, Iterator::count), 0, "nothing stands of what was refused");
         assert!(!folder(&dir).exists() || std::fs::read_dir(folder(&dir)).unwrap().next().is_none());
     }
 

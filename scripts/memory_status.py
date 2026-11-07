@@ -6,8 +6,10 @@ runs it, so it always exits 0. Only regular files are read: no links out of the 
 from datetime import date
 from pathlib import Path
 import re
-import subprocess
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from worktree import common_dir, Refused  # noqa: E402
 
 DUE_DAYS = 14
 PRINTED = ("INDEX.md", "state.md", "handoff.md")
@@ -17,8 +19,10 @@ OTHER_LINES = 150
 
 def folder():
     root = Path(__file__).resolve().parent
-    common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=root, capture_output=True, text=True).stdout.strip()
-    return Path(common).parent / "project-memory" if common else root.parent / "project-memory"
+    try:
+        return common_dir(root).parent / "project-memory"
+    except Refused:
+        return root.parent / "project-memory"
 
 
 def regular(path):

@@ -1,67 +1,81 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The chosen project's sessions beside the board's columns, and the session row on a card
-// (terminum-kanban.md AC-134, AC-135): the session list's own code draws both; a press opens the session.
-import { colored } from "./listparts.js";
-import { renderNav, row, setTaskMarks } from "./nav.js";
-import { ordered } from "./reorder.js";
+// The session list on the board, and the session row on a card (terminum-kanban.md AC-134, AC-135):
+// the session page's widget, its code and its markup: a press opens the session on its page. Only its
+// foot stays there; it shows the projects the board shows.
+import { sessionDrawer } from "./drawer.js";
+import { listTools } from "./listtools.js";
+import { colored, markedSessions } from "./listparts.js";
+import { findItem, renderNav, row, setTaskMarks } from "./nav.js";
+import { arranged, bindReorder, listOrderer, ordered } from "./reorder.js";
+import { rowMenus, saveOrder } from "./rowmenu.js";
 import { sessionUrl } from "./tasklink.js";
-import { $, el, iconButton, read, write } from "./kanbanutil.js";
+import { $, el, read, say, write } from "./kanbanutil.js";
 
-const DEFAULT = "default", HIDDEN = "board.sessionsHidden";
+const DEFAULT = "default";
 const openSession = (key) => { location.href = sessionUrl(key); };
+const store = { get: (k, d) => read(k) ?? d, set: write };
+const narrow = matchMedia("(max-width: 860px)");
 
-/** `chosen()`: the projects shown; `onCount(n)`: the rows now; a task's mark opens its window by `openTask`.
- *  Made with the columns: a phone's swipe snaps to what stands first. */
-export function sessionsColumn({ chosen, openTask, onCount }) {
-  let groups = [], projects = [], order = [], drawn = "";
-  const collapsed = new Set(read("collapsed") ?? []);   // the session list's: one list, one memory
-  const col = el("aside", "col"), head = el("h2", "colhead"), count = el("span", "count"), list = el("div");
-  col.id = "sidecol";
-  col.setAttribute("aria-label", "Sessions");
-  list.id = "sessions";
-  head.append(el("span", null, "Sessions"), count);
-  col.append(head, list);
+/** `chosen()`: the projects shown; a task's mark opens its window by `openTask`; `send(m)`: to terminumd. */
+export function boardSessions({ chosen, openTask, send }) {
+  const st = { groups: [], projects: [], listOrder: [] };
+  const list = $("sessions"), collapsed = new Set(store.get("collapsed", []));   // the session page's: one list, one memory
+  const marks = new Map();
+  let drawn = "", lastLines = 0;
+  const drawnGroups = () => ordered(st.groups, store.get("groupOrder", []));
+  const item = (id) => findItem(st.groups, id)?.item ?? null;
+  const clone = (it) => send({ t: "clone", id: it.id });
+  const copy = (text) => navigator.clipboard.writeText(text).then(() => say("Copied"), () => say("This browser refused to copy."));
+  const tools = listTools({ send, store, groups: () => st.groups, onResize: () => {} });
+  const orderList = listOrderer(st, () => arranged(drawnGroups(), st.projects, st.listOrder).map((p) => p.id), send, () => draw(true));
+  const menus = rowMenus({ list, send, item, projects: () => st.projects, clone, orderList, lastLines: () => lastLines, copy, say,
+    groups: () => st.groups, split: (it) => openSession(it.id),
+    keepFolded: (from, to) => { if (collapsed.has(from)) { collapsed.add(to); store.set("collapsed", [...collapsed]); } } });
+  const reorder = bindReorder(list, (kind, parent, ids) => {
+    if (kind === "part") orderList(ids);
+    else saveOrder(send, parent, ids);
+  }, () => draw(true), menus.held);
 
-  function draw() {
-    const picked = chosen();
-    const now = JSON.stringify([groups, projects, order, picked, [...collapsed]]);
-    if (now === drawn) return;
+  function draw(anew = false) {
+    if (reorder.dragging()) return;                // the next layout redraws it
+    const picked = chosen(), marked = markedSessions(marks.values());
+    const now = JSON.stringify([st, picked, [...collapsed], $("filter").value, [...marked]]);
+    if (!anew && now === drawn) return;
     drawn = now;
-    renderNav(list, ordered(groups, read("groupOrder") ?? []), null, "", openSession, collapsed, toggle, new Map(), null, null, null,
-      { projects, order, onTask: openTask, empty: "No sessions here.", show: (project) => !picked.length || picked.includes(project ? project.id : DEFAULT) });
-    const n = list.querySelectorAll(".item").length;
-    count.textContent = String(n);
-    onCount(n);
+    renderNav(list, drawnGroups(), null, $("filter").value, openSession, collapsed, toggle, marked, tools.hostMenu, copy, tools.importTmux, {
+      projects: st.projects, order: st.listOrder, onClone: clone, onProjectNew: (p, last) => menus.newInProject(p, last?.id),
+      onGroupNew: (g, last) => (last ? clone(last) : send({ t: "new", group: g.wid })), onProjectMenu: menus.headMenu, onProjectRename: menus.rename,
+      onGroupMenu: menus.groupMenu, onReconnect: tools.reconnect, onTask: openTask, empty: "No sessions here.",
+      show: (project) => !picked.length || picked.includes(project ? project.id : DEFAULT) });
   }
 
   function toggle(key) {
     if (!collapsed.delete(key)) collapsed.add(key);
-    write("collapsed", [...collapsed]);
+    store.set("collapsed", [...collapsed]);
     draw();
   }
 
-  // hidden on a wide window, remembered; a phone's is a page of the swipe (kanban.css)
-  const board = $("board");
-  const hide = (on) => {
-    board.classList.toggle("noside", on);
-    key.setAttribute("aria-pressed", String(!on));
-  };
-  const key = iconButton("icon", "panel-left", "Sessions beside the columns", "Show or hide the sessions beside the columns", () => {
-    const on = !board.classList.contains("noside");
-    write(HIDDEN, on);
-    hide(on);
-  });
-  key.id = "sidetoggle";
-  $("boardacts").prepend(key);
-  hide(!!read(HIDDEN));
+  sessionDrawer({ narrow, store, drawNav: draw, focusInput: () => {}, peek: () => {}, hiddenKey: "board.sessionsHidden" });
 
-  return {
-    col,
-    draw,
-    layout(g) { groups = g; draw(); },
-    projects(items, ids) { projects = items; order = ids; draw(); },
-    marks(m) { setTaskMarks(m); drawn = ""; draw(); },
-  };
+  /** What terminumd says for the list; false: not the list's. */
+  function seen(m) {
+    menus.seen(m);
+    switch (m.t) {
+      case "layout": st.groups = m.groups ?? []; tools.layoutCame(st.groups); draw(); return;
+      case "projects": st.projects = m.items ?? []; st.listOrder = m.order ?? []; draw(); return;
+      case "taskmarks": setTaskMarks(m); draw(true); return;
+      case "marks": marks.clear(); for (const i of m.items ?? []) marks.set(i.id, i); draw(); return;
+      case "mark": marks.set(m.item.id, m.item); draw(); return;
+      case "unmark": marks.delete(m.id); draw(); return;
+      case "settings": lastLines = m.page?.lastLines ?? 0; return;
+      case "hostadded": case "hostagents": tools.hostAnswer(m); return;
+      case "tmuxadded": tools.tmuxAdded(); return;
+      case "tmuxsessions": tools.tmuxChoices(m); return;
+      case "note": say(m.msg); return;
+      case "error": if (m.msg && !tools.formError(m.msg)) say(m.msg); return;
+    }
+  }
+  return { draw, seen };
 }
 
 /** A card's strip: its session's own row and what the agent says it does now; `project` colors its bar. */

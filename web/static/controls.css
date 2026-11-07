@@ -115,3 +115,17 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
   #planpane button { min-height: 44px; min-width: 44px; }   /* the Plan pane (planpane.css) */
   .item .plpct { padding: 12px 6px; margin: -12px 0; }   /* the row's percent: a finger's height, the row's own kept */
 }
+
+/* a tick, drawn: a recess, its check in the accent's ink (as todobem's list marks its value); a switch keeps its own */
+input[type="checkbox"]:not([role="switch"]) { appearance: none; -webkit-appearance: none; flex: none; display: inline-grid; place-content: center; width: 16px; height: 16px; margin: 0; padding: 0;
+  border-radius: var(--r-xs); background: var(--field-fill); box-shadow: var(--m-well); cursor: pointer; }
+input[type="checkbox"]:not([role="switch"]):focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+input[type="checkbox"]:not([role="switch"]):checked { background: var(--accent); box-shadow: var(--m-edge-ctl); }
+input[type="checkbox"]:not([role="switch"]):checked::before { content: ""; width: 9px; height: 5px; margin-top: -2px; border: solid var(--surface-0); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
+
+/* a list of choices drawn over a select's key (dropdown.js): a plate, the highlighted row, the value it had marked */
+.dropdown { position: fixed; z-index: 70; min-width: 160px; max-width: min(480px, calc(100vw - 16px)); max-height: min(360px, calc(100dvh - 16px)); overflow-y: auto; padding: var(--sp-1);
+  background: var(--chrome-2); box-shadow: var(--shadow-far); border-radius: var(--r-lg); font-size: var(--fs-body); color: var(--t-fg); }
+.dropdown-option { position: relative; padding: 7px 12px 7px 30px; border-radius: var(--r-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+.dropdown-option.active { background: var(--surface-4); }
+.dropdown-option[aria-selected="true"]::before { content: ""; position: absolute; left: 11px; top: 50%; width: 9px; height: 5px; margin-top: -5px; border: solid var(--t-fg); border-width: 0 0 2px 2px; transform: rotate(-45deg); }

@@ -7,15 +7,17 @@ import "./press.js";
 import "./pop.js";
 import { pageColors } from "./contrast.js";
 import { withScheme } from "./schemes.js";
-import { askConfirm, askName } from "./dialogs.js";
+import { askConfirm } from "./dialogs.js";
 import { takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
 import { projectInk } from "./listparts.js";
 import { seeFolders } from "./nav.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
-import { sessionStrip, sessionsColumn } from "./kanbanside.js";
+import { boardSessions, sessionStrip } from "./kanbanside.js";
 import { agentsSection } from "./kanbanagents.js";
+import { projectWindow } from "./kanbanproject.js";
+import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
 import { $, COLUMNS, api, button, el, iconButton, say } from "./kanbanutil.js";
@@ -254,15 +256,18 @@ const columns = new Map(COLUMNS.map((column) => {
   });
   return [column, { col, count, list, tab: tabFor(column), drawn: "" }];
 }));
-/** A phone's pages: the columns, then the project's sessions (AC-135). */
-const SESSIONS = "Sessions";
-const sessionsTab = tabFor(SESSIONS);
-const side = sessionsColumn({ chosen: () => filters().project, openTask, onCount: (n) => { sessionsTab.textContent = `${SESSIONS} ${n}`; } });
+let socket = null;
+/** A press in the session list: as the session page's, over the one socket. */
+function send(m) {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(m));
+  else say("Not connected");
+}
+const side = boardSessions({ chosen: () => filters().project, openTask, send });
 const runs = runWindow({ addAgent: (project) => agents.addTo(project), done: () => readSoon() });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta });
-side.col.append(agents.box);
-const pages = new Map([...columns, [SESSIONS, { col: side.col, tab: sessionsTab }]]);
-$("board").replaceChildren(side.col, ...[...columns.values()].map((c) => c.col));
+$("agentbar").append(agents.box);
+const pages = columns;
+$("board").replaceChildren(...[...columns.values()].map((c) => c.col));
 $("colswitch").replaceChildren(...[...pages.values()].map((p) => p.tab));
 
 /** A column is built anew only when what it shows changed; a drag's card stays until it ends. */
@@ -313,7 +318,6 @@ function sessionsCame(groups) {
   meta.sessions = items.map((it) => ({ key: it.id, title: it.title }));
   liveRows = new Map(items.map((it) => [it.id, it]));
   seeFolders(groups);
-  side.layout(groups);
   const shown = new Map([...document.querySelectorAll(".card")].map((c) => [c.dataset.id, c]));
   for (const t of [...cards.values()].flat()) {
     const it = t.session && liveRows.get(t.session.key);
@@ -326,18 +330,6 @@ function sessionsCame(groups) {
     }
     if (c) showSession(c, t);
   }
-}
-
-function newProject() {
-  const b = button(null, "New project…", () => {
-    $("fproject").open = false;
-    askName("New project", "", "Create", 40, async (name) => {
-      await api("/api/task-projects", { method: "POST", body: { name } });
-      await loadMeta();
-    });
-  });
-  b.id = "newproject";
-  return b;
 }
 
 // the page's theme with the color scheme every page shows over it (AC-12)
@@ -363,7 +355,9 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
-const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, newProject });
+const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, editProject: (p) => project.open(p) });
+const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, send, chosen: (id) => bar.setFilters({ project: [id] }) });
+$("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
 const windowed = taskWindow({ getMeta: () => meta, runs });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden });
@@ -442,19 +436,20 @@ function listen() {
     readSoon();
   };
   signin.prove().then(() => {
-    const ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`, signin.protocols());
+    const ws = socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`, signin.protocols());
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
+      side.seen(m);
       if (m.t === "taskchange") again(m.id);
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
       else if (m.t === "build") buildCame(m.id);
-      else if (m.t === "taskmarks") { side.marks(m); needs.came(m); }
+      else if (m.t === "taskmarks") needs.came(m);
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
         for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
       }
       else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
-      else if (m.t === "projects") { side.projects(m.items ?? [], m.order ?? []); clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
+      else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);
   });

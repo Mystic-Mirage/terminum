@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A project's agents under the Sessions column, and their window (terminum-dispatcher.md AC-137):
+// A project's agents over the columns, and their window (terminum-dispatcher.md AC-137):
 // what RUN can start. terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm } from "./dialogs.js";
 import { projectInk } from "./listparts.js";
@@ -10,15 +10,10 @@ const KINDS = ["claude", "codex"];                 // their commands are their n
 
 /** `chosen()`: the projects shown, none for all; `getMeta()`: terminumd's projects, agents and hosts. */
 export function agentsSection({ getMeta, chosen, reload }) {
-  const box = el("section", "agents"), head = el("h2", "colhead"), list = el("div", "agentlist");
+  const box = el("section", "agents"), list = el("div", "agentlist");
   const add = iconButton("icon", "plus", "Add agent", "Add an agent to a project", () => open());
   add.id = "addagent";
-  const limits = iconButton("icon", "gauge", "Memory limits", "This project's memory limits", () => openLimits());
-  limits.id = "projectlimits";
-  const keys = el("span", "agentkeys");
-  keys.append(limits, add);
-  head.append(el("span", null, "Agents"), keys);
-  box.append(head, list);
+  box.append(list, add);
   const field = { project: $("agentproject"), name: $("agentname"), kind: $("agentkind"), host: $("agenthost"), dir: $("agentdir"), command: $("agentcommand") };
   const dialog = $("agentbox"), error = $("agenterror");
   let editing = null, snapshot = "";
@@ -36,7 +31,7 @@ export function agentsSection({ getMeta, chosen, reload }) {
     txt.append(line, metaLine([...(several ? [p?.name ?? a.project] : []), a.host ?? THIS_MAC, a.command], false));
     b.append(bar, txt, el("span", "st"));
     b.title = [a.name, a.host ?? THIS_MAC, a.dir || "the project's folder", a.command].join(" · ");
-    b.addEventListener("click", () => open(a));
+    b.addEventListener("click", () => edit(a));
     return b;
   }
 
@@ -45,8 +40,10 @@ export function agentsSection({ getMeta, chosen, reload }) {
     const agents = getMeta().agents.filter((a) => !picked.length || picked.includes(a.project));
     list.replaceChildren(...agents.map((a) => row(a, picked.length !== 1)));
     if (!agents.length) list.append(el("p", "colempty", "No agents yet: add one to run tasks."));
-    limits.hidden = picked.length !== 1;
   }
+
+  /** The rows of `project`'s agents, for its own window. */
+  const rowsOf = (project) => getMeta().agents.filter((a) => a.project === project).map((a) => row(a, false));
 
   const values = () => Object.fromEntries(Object.entries(field).map(([k, e]) => [k, e.value]));
   const say = (text) => { error.textContent = text; error.hidden = !text; };
@@ -109,8 +106,8 @@ export function agentsSection({ getMeta, chosen, reload }) {
   });
 
   /** A project's memory limits (terminum-dispatcher.md AC-128): empty goes by the global ones; 0 turns one off. */
-  function openLimits() {
-    const project = chosen()[0], box = $("limitsbox"), { projects, limits: all = [] } = getMeta();
+  function openLimits(project) {
+    const box = $("limitsbox"), { projects, limits: all = [] } = getMeta();
     const now = all.find((l) => l.project === project);
     $("limitstext").textContent = `For ${projects.find((p) => p.id === project)?.name ?? project}; 0 turns one off.`;
     $("limitwarn").value = now?.warn ?? "";
@@ -129,10 +126,9 @@ export function agentsSection({ getMeta, chosen, reload }) {
     box.showModal();
   }
 
+  const closed = () => new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
   /** A new one in `project`; once its window closes. */
-  const addTo = (project) => {
-    open(null, project);
-    return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
-  };
-  return { box, draw, addTo };
+  const addTo = (project) => { open(null, project); return closed(); };
+  const edit = (a) => { open(a); return closed(); };
+  return { box, draw, addTo, edit, rowsOf, openLimits };
 }

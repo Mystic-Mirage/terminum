@@ -30,3 +30,17 @@ export const projectColor = (p) => hueColor(projectHue(p));
 export const colored = (p) => p?.color >= 0;
 /** A project's color for words and dots, Default's the muted. */
 export const projectInk = (p) => (colored(p) ? projectColor(p) : "var(--muted)");
+
+export const openReminder = (i) => !!i.remind && !i.resolved;
+/** pane id -> {mark, remind}: the list's marks of a session with bookmarks or open reminders. */
+export function markedSessions(items) {
+  const m = new Map();
+  for (const b of items) {
+    const mark = !b.remind, remind = openReminder(b);
+    if (b.orphaned || !(mark || remind)) continue;
+    const v = m.get(b.sid) ?? { mark: false, remind: false };
+    v.mark ||= mark; v.remind ||= remind;
+    m.set(b.sid, v);
+  }
+  return m;
+}

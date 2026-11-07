@@ -27,6 +27,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks/meta", get(meta))
         .route("/api/tasks/start-empty", post(start_empty))
         .route("/api/task-projects", post(new_project))
+        .route("/api/task-projects/{id}", patch(edit_project))
         .merge(super::agents::routes())
         .merge(crate::dispatcher::api::routes())
         .route("/api/tasks/{id}", get(window).patch(change))
@@ -191,6 +192,24 @@ async fn new_project(State(app): State<Shared>, Json(body): Json<Value>) -> Resp
     let a = app.clone();
     let done = off(move || a.projects.lock().create(&name, host, dir)).await;
     told_projects(&app, done.map(|id| json!({"id": id})))
+}
+
+/// A project's name and folder from its window (AC-138); its server stays: its sessions are there.
+async fn edit_project(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
+    if id == DEFAULT_PROJECT {
+        return refuse(StatusCode::BAD_REQUEST, "Default is no real project: it has no name or folder to change.");
+    }
+    let (name, dir) = (text(&body, "name").unwrap_or_default(), text(&body, "dir").unwrap_or_default());
+    if let Err(e) = crate::tasks::agents::check_folder(&dir) {
+        return refuse(StatusCode::BAD_REQUEST, e);
+    }
+    let a = app.clone();
+    let done = off(move || {
+        let mut ps = a.projects.lock();
+        ps.rename(&id, &name)?;
+        ps.set_dir(&id, dir)
+    }).await;
+    told_projects(&app, done.map(|()| json!({"ok": true})))
 }
 
 fn text(v: &Value, key: &str) -> Option<String> {

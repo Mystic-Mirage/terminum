@@ -12,10 +12,12 @@
 <link rel="stylesheet" href="fonts/fonts.css">
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="layout.css">
 <link rel="stylesheet" href="shapes.css">
 <link rel="stylesheet" href="planpane.css">
 <link rel="stylesheet" href="tmux.css">
 <link rel="stylesheet" href="projects.css">
+<link rel="stylesheet" href="listdrag.css">
 <link rel="stylesheet" href="kanban.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="markdown.css">
@@ -25,13 +27,94 @@
 <style id="customcss"></style>
 </head>
 <body class="board-page">
-<header id="boardhead" class="wavebar">
-  <nav class="seg" aria-label="Pages">
-    <a id="tosessions" href="/sessions/">Sessions</a>
-    <a href="/kanban/" aria-current="page">Kanban</a>
-  </nav>
+<div id="app">
+  <aside id="nav" aria-label="Sessions">
+    <div class="nav-title narrow-only"><h1>Sessions</h1>
+      <a id="sheetsessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
+      <button id="drawerclose" class="icon" type="button" aria-label="Close the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <!-- the session list: kanban.html holds the same (terminumd test same_session_list) -->
+    <div class="nav-head">
+      <a id="tosessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
+      <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Filter sessions">
+        <kbd class="wide-only" title="Press / to filter">/</kbd>
+      </label>
+      <button id="navnew" class="icon wide-only" type="button" aria-expanded="false" aria-controls="newsess" title="New session" aria-label="New session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
+      <button id="navclose" class="icon wide-only" type="button" aria-label="Hide the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg></button>
+    </div>
+    <div id="sessions"></div>
+    <div id="hostmenu" class="box" role="menu" hidden></div>
+    <form id="newsess" class="footform box" aria-labelledby="newsesstitle" hidden>
+      <div class="dhead"><h2 id="newsesstitle">New session</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+      <input id="newsessname" class="field" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+        aria-label="Name of the new session" placeholder="Session name" enterkeyhint="go">
+      <p id="newsesserr" role="alert"></p>
+      <div class="actions"><button id="newsesscancel" type="button">Cancel</button><button class="primary" type="submit">Create</button></div>
+    </form>
+    <form id="addhost" class="footform box" aria-labelledby="addhosttitle" hidden>
+      <div class="dhead"><h2 id="addhosttitle">Add host</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+      <label class="lead field"><span>ssh</span><input id="addhostssh" maxlength="300" autocomplete="off" autocapitalize="off"
+        autocorrect="off" spellcheck="false" aria-label="ssh" placeholder="devbox or alex@devbox.example -p 2222" enterkeyhint="go"></label>
+      <p class="hint">As after <code>ssh</code> in a terminal: a Host of ~/.ssh/config, or user@host with -p -l -i -J. Your keys sign in; ssh must not ask for a password.</p>
+      <input id="addhostname" class="field" maxlength="32" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+        aria-label="Name in the list" placeholder="Name in the list (optional)">
+      <label class="tick"><input id="addhostfiles" type="checkbox"> Browse its files <span>(copies a small helper to the host)</span></label>
+      <p id="addhosterr" role="alert"></p>
+      <div class="actions"><button id="addhostcancel" type="button">Cancel</button><button class="primary" type="submit">Add host</button></div>
+    </form>
+    <form id="addtmux" class="footform box" aria-labelledby="addtmuxtitle" hidden>
+      <div class="dhead"><h2 id="addtmuxtitle">Attach tmux sessions</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+      <label class="lead field"><span>On</span><select id="addtmuxon" aria-label="Where your tmux runs"></select></label>
+      <div id="addtmuxticks" role="group" aria-label="Sessions running there"></div>
+      <input id="addtmuxname" class="field" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+        aria-label="Another session, by name" placeholder="Another session, by name" enterkeyhint="go">
+      <p class="hint">Sessions of your own tmux there. They stay yours: terminum never closes them, and shows one as soon as it runs.</p>
+      <p id="addtmuxerr" role="alert"></p>
+      <div class="actions"><button id="addtmuxcancel" type="button">Cancel</button><button class="primary" type="submit">Attach</button></div>
+    </form>
+    <div id="navgrip" role="separator" aria-orientation="vertical" aria-label="Width of the session list" tabindex="0"
+      aria-valuemin="200" aria-valuemax="640"></div>
+    <!-- Tip of the day (AC-101, tips.js): a computer's only, above the list's tools -->
+    <section id="tip" aria-labelledby="tiphead" hidden>
+      <div class="tiphead"><h2 id="tiphead">Tip of the day</h2>
+        <button id="tipclose" class="icon x" type="button" title="Close until tomorrow (Settings shows it again)" aria-label="Close until tomorrow"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:13px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+      <p id="tiptext"></p>
+      <div class="tipacts"><button id="tipoff" type="button" title="Turn tips off (Settings turns them on)">Turn off</button><button id="tipnext" type="button">Next</button></div>
+    </section>
+    <!-- the foot (AC-07): on a computer folded to one row of its buttons' icons, a toggle (foot.css; foot.js copies them) -->
+    <div class="nav-foot">
+      <button id="foottoggle" class="footpeek" type="button" aria-expanded="false" aria-controls="footmenu" aria-label="Session tools" title="Session tools"><span class="icons" aria-hidden="true"><span id="markpeek" class="count"></span></span><svg class="tri" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M3 1.5 7.5 5 3 8.5z" fill="currentColor"/></svg></button>
+      <div id="footmenu" class="footmenu"><div class="footin">
+      <button id="newsessbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="newsess" title="A new tmux session, with a shell in your home folder">
+        <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>New<span class="more"> session</span></span>
+      </button>
+      <button id="marksbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="marksdlg" title="Every session's bookmarks and open reminders">
+        <svg class="lu two" viewBox="0 0 50 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/><g class="bell" transform="translate(26 0)"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></g></svg><svg class="lu one" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span>Bookmarks<span class="more"> / <svg class="lu bell" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>Reminders</span></span><span id="markcount" class="count"></span>
+      </button>
+      <button id="addhostbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="addhost" title="The tmux session of another computer, over ssh">
+        <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg><span>Add host</span>
+      </button>
+      <button id="addtmuxbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="addtmux" title="Show sessions of your own tmux, on this Mac or a host, by their names">
+        <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg><span>Attach<span class="more"> tmux sessions</span></span>
+      </button>
+      <p id="buildinfo" aria-label="terminum's version"></p>
+      </div></div>
+    </div>
+    <!-- /the session list -->
+  </aside>
+  <div id="scrim"></div>
+  <dialog id="rowmenu" class="box" role="menu" aria-label="Session"></dialog>
+  <section id="main">
+<header id="bar" class="wavebar">
+      <button id="navbtn" class="icon" type="button" aria-label="Show sessions" aria-controls="nav" aria-expanded="false">
+        <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg>
+      </button>
+      <a id="barsessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
   <div id="filters">
     <details id="fproject" class="pick" name="picks"><summary class="textkey" title="The project the board shows">All projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
+    <button id="newproject" class="textkey" type="button" title="A new project, empty"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Project</button>
     <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
       <input id="find" type="search" placeholder="Find tasks" aria-label="Find tasks" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
     <button id="filtersbtn" class="textkey" type="button" aria-expanded="false" aria-controls="picks">Filters</button>
@@ -45,9 +128,33 @@
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
+<div id="agentbar" aria-label="Agents"></div>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
 <main id="board" aria-label="Tasks"></main>
+  </section>
+</div>
 <p id="toast" class="box" role="status" popover="manual" hidden></p>
+
+<dialog id="lastlines" class="box dlg docdlg" aria-labelledby="lastlinestitle">
+  <div class="dhead"><h2 id="lastlinestitle">Last lines</h2>
+    <div id="lastlinesseg" class="seg" role="tablist" aria-label="Which lines" hidden><button type="button" role="tab" data-which="before" aria-selected="true" title="The lines kept before its tmux restarted">Before restart</button><button type="button" role="tab" data-which="latest" aria-selected="false" title="The lines kept since">Now</button></div>
+    <button id="lastlinescopy" class="icon" type="button" title="Copy the lines shown" aria-label="Copy the lines" disabled><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+    <button id="lastlinesclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+  <p id="lastlinesmeta" class="docmeta"></p>
+  <p id="lastlinesnone" class="docmeta" hidden>Nothing kept yet: a session's last lines are kept within 5 s of its output.</p>
+  <pre id="lastlinestext" hidden></pre>
+</dialog>
+<dialog id="agentsbox" class="box dlg" aria-labelledby="agentstitle">
+  <form method="dialog">
+    <div class="dhead"><h2 id="agentstitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <p id="agentstext"></p>
+    <p id="agentslines" role="status" style="white-space: pre-line" hidden></p>
+    <div class="actions">
+      <button id="agentscancel" value="cancel" type="submit">Cancel</button>
+      <button id="agentsok" value="ok" type="button" class="primary">Enable</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="taskbox" class="box dlg" aria-labelledby="tasktitle">
   <form method="dialog" id="taskform">
@@ -125,6 +232,29 @@
       <button id="runfresh" type="button" hidden>Run from scratch</button>
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="rungo" type="button" class="primary">Run</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="projectbox" class="box dlg" aria-labelledby="projecthead">
+  <form method="dialog" id="projectform">
+    <div class="dhead"><h2 id="projecthead">New project</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <div id="projectfields">
+      <label class="fieldrow">Name <input id="projectname" class="field" type="text" maxlength="40" autocomplete="off" spellcheck="false"></label>
+      <div class="fieldgrid">
+        <label class="fieldrow">Server <select id="projecthost" class="field"></select></label>
+        <label class="fieldrow">Folder <input id="projectdir" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Asked at its first session"></label>
+      </div>
+    </div>
+    <section id="projectagents" aria-label="Agents" hidden>
+      <div class="edithead"><span>Agents</span><span class="agentkeys"><button id="projectlimits" class="textkey" type="button">Memory limits…</button><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
+      <div id="projectagentlist" class="agentlist"></div>
+    </section>
+    <p id="projecterror" role="alert" hidden></p>
+    <div class="actions">
+      <button id="projectdelete" type="button" hidden>Delete project</button>
+      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="projectok" type="button" class="primary">Create</button>
     </div>
   </form>
 </dialog>

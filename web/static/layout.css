@@ -92,6 +92,6 @@ body.wide #filewin .winhead { display: flex; padding: 6px 6px 6px 12px; }   /* o
 /* the build under the session list's buttons, small and quiet (app.js showBuild) */
 #buildinfo { margin: 4px 10px 0; font: var(--fs-micro)/1.3 var(--ui); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #buildinfo:empty { display: none; }
-/* the Kanban link: in the header where it fits, in the settings menu everywhere */
-body:not(.wide) #tokanban { display: none; }
+/* the Kanban link: in the header; a phone's two rows have no room: its sheet's and the settings menu's */
+@media (max-width: 860px) { #tokanban { display: none; } }
 #sheetkanban { margin-left: auto; margin-right: var(--icon-gap); }

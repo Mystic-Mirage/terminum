@@ -2,7 +2,7 @@
 // The board's filters, kept in its URL (terminum-kanban.md AC-111), and the project it shows, which
 // this browser remembers (AC-135).
 import { projectInk } from "./listparts.js";
-import { $, SEVERITIES, button, el, read, write } from "./kanbanutil.js";
+import { $, SEVERITIES, button, el, iconButton, read, write } from "./kanbanutil.js";
 
 const CHOSEN = "board.project";
 const toggled = (list, id, on) => (on ? [...list, id] : list.filter((x) => x !== id));
@@ -41,8 +41,8 @@ export function query(extra = {}) {
   return p.toString();
 }
 
-/** The filters' keys over `getMeta()`'s projects; `changed` after any change, `newProject` for its menu's item. */
-export function filterBar({ getMeta, changed, newProject }) {
+/** The filters' keys over `getMeta()`'s projects; `changed` after any change, `editProject(p)` from a project's pencil. */
+export function filterBar({ getMeta, changed, editProject }) {
   function setFilters(next) {
     address(next);
     if ("project" in next) write(CHOSEN, next.project.join(",") || null);
@@ -50,7 +50,7 @@ export function filterBar({ getMeta, changed, newProject }) {
     changed();
   }
 
-  /** The ticks of one filter's menu. */
+  /** The ticks of one filter's menu; its key says how many are on. */
   function picks(box, options, chosen, onChange) {
     const inner = box.querySelector("div");
     inner.replaceChildren(...options.map(({ id, name }) => {
@@ -70,7 +70,7 @@ export function filterBar({ getMeta, changed, newProject }) {
     return d;
   };
 
-  /** Its menu: a name chooses that project alone, a tick adds it to those shown (AC-135). */
+  /** Its menu: a name chooses that project alone, a tick adds it to those shown, a pencil edits it (AC-135). */
   function drawProjects(chosen) {
     const box = $("fproject"), { projects } = getMeta();
     const only = (ids) => { box.open = false; setFilters({ project: ids }); };
@@ -80,12 +80,13 @@ export function filterBar({ getMeta, changed, newProject }) {
       const c = tick(chosen.includes(p.id), (on) => setFilters({ project: toggled(filters().project, p.id, on) }));
       c.setAttribute("aria-label", `Show ${p.name} too`);
       also.append(c);
-      const name = button(null, "", () => only([p.id]));
+      const name = button("projname", "", () => only([p.id]));
       name.append(dot(p), el("span", "pname", p.name));
-      line.append(also, name);
+      const edit = iconButton("projedit", "pencil", `Edit ${p.name}`, `Edit ${p.name}: its folder and its agents`, () => { box.open = false; editProject(p); });
+      line.append(also, name, edit);
       return line;
     });
-    box.querySelector("div").replaceChildren(button(null, "All projects", () => only([])), ...rows, newProject());
+    box.querySelector("div").replaceChildren(button(null, "All projects", () => only([])), ...rows);
     const first = projects.find((p) => p.id === chosen[0]);
     const words = !chosen.length ? "All projects" : `${first?.name ?? chosen[0]}${chosen.length > 1 ? ` +${chosen.length - 1}` : ""}`;
     box.querySelector("summary").replaceChildren(...(first ? [dot(first)] : []), el("span", "pname", words));

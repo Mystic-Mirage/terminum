@@ -8,6 +8,7 @@ import "./pop.js";                                  // where a window flies out 
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
 import { pageTasks } from "./pagetasks.js";
+import { addressedSession } from "./tasklink.js";
 import { findItem, listParts, renderNav, seeWaits, serverDown, setTaskMarks, taskMarksOf } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
@@ -212,7 +213,6 @@ $("attachfab").addEventListener("click", pickFile);
 $("attachfab").addEventListener("mousedown", (e) => e.preventDefault());   // the terminal keeps the keys
 files.bindDrop($("term"));
 
-
 const tools = navTools({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
   onResize: () => view.keepBottom(applyFit), onRenamed: () => (computer.matches ? focusTerminal() : document.activeElement?.blur()) });
 dockGrip({ store, cellWidth: () => view.charRatio() * view.chosenSize(), onResize: () => view.keepBottom(applyFit) });   // docked Files' width (AC-70)
@@ -325,6 +325,7 @@ const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
 
 function pick(id) {
   const of = !narrow.matches && findItem(st.groups, id)?.item.quickOf;   // a quick shell's row: its pane, with it
+  tasks.address(of || id, true);
   select(of || id); closeDrawer();
   if (of) quick.focus(); else focusTerminal();
 }
@@ -371,7 +372,10 @@ function toggleGroup(key) {
 const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
   send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), tasks: () => taskMarksOf(st.sid), toast, onShown: tools.sayStalls });
 
+addEventListener("popstate", () => { const id = addressedSession(); if (id && id !== st.sid) select(id); });
+
 function select(id, force = false) {
+  if (id) tasks.address(id);
   if (id === st.sid && !force && view.screen.length) return;
   st.sid = id; store.set("sid", id); place.note(); seeWaits(st.groups, id);
   recent.shown(id);

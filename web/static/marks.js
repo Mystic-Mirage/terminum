@@ -3,6 +3,7 @@
 // signed-in browser (the bridge's bookmarks.py). Here: the dialog that makes or edits one, the
 // marks on the terminal's right edge, the bar that shows the one brought into view, and the list
 // below the sessions of those no session shows (orphaned). Text from the terminal is shown as text only.
+import { markedSessions, openReminder } from "./listparts.js";
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
@@ -33,7 +34,7 @@ export const el = (tag, cls, text) => {
 export const when = (s) => new Date(s * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** A reminder not resolved (AC-91). */
-export const openReminder = (i) => !!i.remind && !i.resolved;
+export { openReminder };
 
 /** The selected text as a Markdown quote, its lines kept. */
 export const quote = (text) => text.split("\n").map((l) => `> ${l}`).join("\n");
@@ -135,17 +136,7 @@ export class Marks {
   }
 
   /** pane id -> {mark, remind}: the list's marks of a session with bookmarks or open reminders. */
-  sids() {
-    const m = new Map();
-    for (const b of this.items.values()) {
-      const mark = !b.remind, remind = openReminder(b);
-      if (b.orphaned || !(mark || remind)) continue;
-      const v = m.get(b.sid) ?? { mark: false, remind: false };
-      v.mark ||= mark; v.remind ||= remind;
-      m.set(b.sid, v);
-    }
-    return m;
-  }
+  sids() { return markedSessions(this.items.values()); }
   /** The shown pane's own bookmarks and reminders, never another's, of its project too (asked on
    *  every frame: kept until the bookmarks, the layout or the pane shown change). */
   here() {

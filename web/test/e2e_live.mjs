@@ -130,6 +130,7 @@ const signIn = async (page) => {
 };
 const BOARD_ALONE = process.argv.includes("board");
 const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a task's family and its end
+const POOL_ALONE = process.argv.includes("boardpool");     // while working on the pool and what runs on it
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
@@ -148,6 +149,11 @@ async function wide(browser, name) {
   await signIn(page);
   if (process.env.TM_TEST_REAL_AGENTS) {
     await liveDispatcherReal(page, { base: BASE, tmux, work: process.env.TM_TEST_REAL_DIR ?? WORK, bin: BIN, home: HOME, app: APP });
+    return ctx;
+  }
+  if (POOL_ALONE) {
+    await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
     return ctx;
   }
   if (TASKS_ALONE) {

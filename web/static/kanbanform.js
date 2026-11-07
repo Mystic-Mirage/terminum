@@ -66,9 +66,9 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
     if (preview) renderInto($("newshown"), $("newtext").value);
   }
 
-  /** The project's agents: the one its last run had, else the first free. */
+  /** The pool: the agent the project's last run had, else the first free. */
   function showAgents() {
-    const meta = getMeta(), project = $("newproj").value, all = meta.agents.filter((a) => a.project === project), now = agentsBusy();
+    const meta = getMeta(), project = $("newproj").value, all = meta.agents, now = agentsBusy();
     const busy = (a) => now[a.id]?.tasks;
     fillAgents($("newagent"), all, busy, [meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
   }

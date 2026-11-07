@@ -290,6 +290,11 @@ pub fn set_budget(tx: &Transaction, author: &str, id: &str, minutes: Option<i64>
 }
 
 /// A project's name and folder.
+/// Where a project's agents start: its name, server and folder (terminum-dispatcher.md AC-140).
+pub(crate) fn project_place(tx: &Transaction, project: &str) -> Result<(String, Option<String>, String), String> {
+    tx.query_row("SELECT name, host, dir FROM projects WHERE id = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)
+}
+
 pub(crate) fn project_row(tx: &Transaction, project: &str) -> Result<(String, String), String> {
     tx.query_row("SELECT name, dir FROM projects WHERE id = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)
 }

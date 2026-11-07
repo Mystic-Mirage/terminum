@@ -256,8 +256,8 @@ function send(m) {
 }
 const openSession = (key) => { location.href = sessionUrl(key); };
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
-const runs = runWindow({ addAgent: (project) => agents.addTo(project), done: () => readSoon() });
-const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, busy: () => busy, liveRow: (key) => liveRows.get(key),
+const runs = runWindow({ addAgent: () => agents.add(), setFolder: needsFolder, done: () => readSoon() });
+const agents = agentsSection({ getMeta: () => meta, reload: loadMeta, busy: () => busy, liveRow: (key) => liveRows.get(key),
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
 $("agentbar").append(agents.box);
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
@@ -368,6 +368,15 @@ async function runMade(t, agent) {
   } catch (e) {
     runs.open([t], { why: e.message }).catch((no) => say(no.message));
   }
+}
+
+/** A task's project with no folder starts nothing: said, and its window opens at the folder (terminum-dispatcher.md AC-140). */
+function needsFolder(t) {
+  const p = projectOf(t.project);
+  if (!p || p.dir) return false;
+  say(`${p.name} has no folder: set it in its window.`);
+  project.open(p);
+  return true;
 }
 
 const addressed = () => /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];

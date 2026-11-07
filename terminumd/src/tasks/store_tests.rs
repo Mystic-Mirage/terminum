@@ -201,8 +201,30 @@ fn ac138_a_store_of_the_last_schema_keeps_its_runs() {
     let row = |id: &str| conn.query_row("SELECT r.state, r.agent_name, m.task, m.result FROM runs r JOIN run_tasks m ON m.run = r.id WHERE r.id = ?1", [id], |x| Ok((x.get::<_, String>(0)?, x.get::<_, String>(1)?, x.get::<_, String>(2)?, x.get::<_, i64>(3)?))).unwrap();
     assert_eq!(row("r1"), ("working".into(), "Opus".into(), "k1".into(), 0), "each run holds its task, its agent's name kept");
     assert_eq!(row("r2"), ("left".into(), String::new(), "k2".into(), 1), "what a human's move held stays theirs; a result stays");
-    let color: i64 = conn.query_row("SELECT color FROM project_agents WHERE id = 'a1'", [], |x| x.get(0)).unwrap();
+    let color: i64 = conn.query_row("SELECT color FROM agents WHERE id = 'a1'", [], |x| x.get(0)).unwrap();
     assert!(color > 0, "each agent has a color of its own");
+}
+
+#[test]
+fn ac137_an_older_store_s_agents_join_one_pool_and_its_runs_keep_their_place() {
+    let path = crate::testutil::fresh_dir("store-schema6").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..5]).unwrap();
+    conn.execute_batch("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 0, '/srv/api', 0);
+        INSERT INTO project_agents (id, project, name, kind, host, dir, command, effort, color) VALUES ('a1', 'default', 'Opus', 'claude', NULL, '/w', 'claude', 'high', 1), ('a2', 'api', 'Opus', 'codex', 'devbox.example', '/far', 'codex', '', 1), ('a3', 'api', 'Fast', 'claude', NULL, '', 'claude', '', 2);
+        INSERT INTO tasks (id, number, project, status, severity, rank, owner, updated_at, title, body) VALUES ('k1', 1, 'api', 'DONE', 'P2', 1, 'human', 1, 't', '');
+        INSERT INTO runs (id, task, agent_id, agent_name, kind, command, host, folder, agent_session, state) VALUES ('r1', 'k1', 'a2', 'Opus', 'codex', 'codex', 'devbox.example', '/far', 's1', 'closed');").unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    let names: Vec<String> = conn.prepare("SELECT name FROM agents ORDER BY rowid").unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(names, ["Opus", "Opus (2)", "Fast"], "a name two projects used stays unique, each agent stays");
+    let effort: String = conn.query_row("SELECT effort FROM agents WHERE id = 'a1'", [], |r| r.get(0)).unwrap();
+    assert_eq!(effort, "high");
+    let at_once: i64 = conn.query_row("SELECT at_once FROM agents WHERE id = 'a2'", [], |r| r.get(0)).unwrap();
+    assert_eq!(at_once, 1, "one at a time, as it was");
+    let run: (String, String, String) = conn.query_row("SELECT host, folder, agent_session FROM runs WHERE id = 'r1'", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+    assert_eq!(run, ("devbox.example".into(), "/far".into(), "s1".into()), "a resume goes where its conversation began (AS-122)");
+    let home: String = conn.query_row("SELECT dir FROM projects WHERE is_default = 1", [], |r| r.get(0)).unwrap();
+    assert_eq!(home, "~", "Default starts at home (AC-140)");
 }
 
 #[test]

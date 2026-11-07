@@ -27,32 +27,40 @@ pub fn routes() -> Router<Shared> {
     Router::new().route("/api/tasks/{id}/run", get(offer).post(press)).route("/api/tasks/{id}/give-up", post(give_up))
 }
 
-/// What RUN's dialog shows (AC-121, AC-138): each agent says what keeps it busy; an agent named that cannot
-/// take them is refused here, so the window never offers another under its name.
+/// What RUN's dialog shows (AC-121, AC-138): the pool, each saying what keeps it busy; an agent named that cannot
+/// take them is refused here, so the window never offers another under its name. No folder: nothing can start (AC-140).
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
     answer(store(&app, move |tx| {
         let (tasks, w) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
         let w = w?;
         let t = &tasks[0];
-        let of_project: Vec<Agent> = agents::of_project(tx, &t.project)?;
+        let (name, host, dir) = ops::project_place(tx, &t.project)?;
+        let pool: Vec<Agent> = agents::list(tx)?;
+        if matches!(w, Way::First) {
+            no_folder(&name, &dir)?;
+        }
         if let (Some(named), Way::First) = (&asked.agent, &w) {
-            let a = of_project.iter().find(|a| a.id == *named).ok_or_else(|| format!("{} is in another project than this agent.", t.id))?;
+            let a = pool.iter().find(|a| a.id == *named).ok_or("That agent is gone.")?;
             if let Some(other) = runs::busy_with(tx, &a.id, None)? {
                 return Err(refused_busy(&a.name, &other));
             }
         }
         let busy = runs::busy_agents(&runs::live(tx)?);
-        let offered: Vec<Value> = of_project.iter().map(|a| {
+        let offered: Vec<Value> = pool.iter().map(|a| {
             let mut v = json!(a);
             v["busy"] = busy[&a.id]["tasks"].clone();
             v
         }).collect();
-        let last = runs::last_agent(tx, &t.project)?.filter(|l| of_project.iter().any(|a| a.id == *l));
-        let (name, dir) = ops::project_row(tx, &t.project)?;
+        let last = runs::last_agent(tx, &t.project)?.filter(|l| pool.iter().any(|a| a.id == *l));
         let shown = shown_of(tx, &tasks)?;
-        Ok(json!({"first": matches!(w, Way::First), "agents": offered, "last": last, "project_dir": dir, "project": t.project, "project_name": name,
+        Ok(json!({"first": matches!(w, Way::First), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "project_name": name,
                   "prompt_rev": rev_of(&shown), "prompt": shown, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
     }).await)
+}
+
+/// A project with no folder starts nothing: no one knows where (AC-140).
+fn no_folder(project: &str, dir: &str) -> Result<(), String> {
+    if dir.is_empty() { Err(format!("{project} has no folder: set it in its window.")) } else { Ok(()) }
 }
 
 /// Whether terminum's hooks are in place for `kind` on this Mac (AC-121).
@@ -86,7 +94,6 @@ fn server_of(app: &Shared, host: Option<&str>) -> Result<Arc<Server>, String> {
 #[derive(Deserialize)]
 struct Press {
     agent: Option<String>,
-    folder: Option<String>,
     comment: Option<String>,
     prompt_rev: Option<String>,
     #[serde(default)]
@@ -286,17 +293,14 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
     let t = &tasks[0];
     let (all, seen, said, attached) = (tasks.to_vec(), body.prompt_rev.clone(), comment, body.files.clone());
     let (project, wanted) = (t.project.clone(), body.agent.clone());
-    let (a, dir) = store(app, move |tx| {
-        let (name, dir) = ops::project_row(tx, &project)?;
-        let a = agents::of_project(tx, &project)?.into_iter().find(|a| Some(&a.id) == wanted.as_ref()).ok_or_else(|| format!("No agents in {name} yet: add one first."))?;
-        Ok((a, dir))
+    let (a, host, chosen) = store(app, move |tx| {
+        let (name, host, dir) = ops::project_place(tx, &project)?;
+        no_folder(&name, &dir)?;
+        let a = agents::list(tx)?.into_iter().find(|a| Some(&a.id) == wanted.as_ref()).ok_or("No agents yet: add one first.")?;
+        Ok((a, host, dir))
     }).await?;
-    let given = body.folder.as_deref().map(str::trim).filter(|d| !d.is_empty()).map(str::to_string);
-    let chosen = given.or_else(|| Some(a.dir.clone()).filter(|d| !d.is_empty())).or_else(|| Some(dir.clone()).filter(|d| !d.is_empty()));
-    let Some(chosen) = chosen else { return Err("This run needs a folder.".to_string()) };
-    agents::check_folder(&chosen)?;
-    let server = server_of(app, a.host.as_deref())?;
-    if let Some(host) = &a.host {
+    let server = server_of(app, host.as_deref())?;
+    if let Some(host) = &host {
         let state = crate::hosts::link::agents_state(app, host);
         if state == "off" {
             return Err(format!("Run terminum hooks install on {host} first"));
@@ -313,12 +317,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
             return Err("Run terminum hooks install first: Dispatcher cannot follow the agent without them.".to_string());
         }
     }
-    // a project with no folder keeps the one asked (terminum-kanban.md AC-110)
-    if dir.is_empty() && t.project != DEFAULT_PROJECT {
-        let (ap, p, d) = (app.clone(), t.project.clone(), chosen.clone());
-        let _ = crate::http::off(move || ap.projects.lock().set_dir(&p, d)).await;
-    }
-    let (ag, f) = (a.clone(), chosen.clone());
+    let (ag, f, host) = (a.clone(), chosen.clone(), host.clone());
     let run = store(app, move |tx| {
         // the one check that counts: in the transaction that takes the agent, each task as it stands now
         if let Some(other) = runs::busy_with(tx, &ag.id, None)? {
@@ -351,7 +350,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
                 runs::change(tx, &old.id, |r| r.state = "left".into())?;
             }
         }
-        runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host: ag.host, folder: f, prompt: Some(prompt), ..Default::default() }, &keys, ops::now())
+        runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host, folder: f, prompt: Some(prompt), ..Default::default() }, &keys, ops::now())
     }).await?;
     let project = project_of(app, t);
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();

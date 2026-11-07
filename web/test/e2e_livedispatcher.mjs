@@ -24,7 +24,7 @@ export async function liveDispatcher(page, opts) {
   const { base, tmux, work, shots, stop, start } = opts;
   const { j, keyOf, card, open, backToSessions, cli } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Runs", dir: work })).id;
-  const agent = async (name, more = "", kind = "claude") => (await j(`/api/task-projects/${project}/agents`, "POST", { name, kind, command: `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}` })).id;
+  const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { name, kind, command: `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}` })).id;
   const plain = await agent("Plain");
   const task = async (title, text = "") => (await j("/api/tasks", "POST", { title, text, project })).id;
   // an agent takes more only when free (AC-138): a run here has its own, so one left open stands in no other's way
@@ -41,9 +41,10 @@ export async function liveDispatcher(page, opts) {
   await page.click(`${card(first)} .crun`);
   check("AC-121 a card's play key asks which agent", await until(() => page.$("#runbox[open]")));
   check("AC-121 it stays where it was until one takes it", await status(first) === "TODO");
-  check("AC-121 the dialog offers the project's agents", await page.inputValue("#runagent") === plain);
+  check("AC-121 the dialog offers the pool", await page.$eval("#runagent", (e, id) => [...e.options].some((o) => o.value === id), plain));
+  await page.selectOption("#runagent", plain);
   check("AC-121 it shows the command in full", (await page.textContent("#runcommand")).includes("fake_agent.py"), await page.textContent("#runcommand"));
-  check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.inputValue("#runfolder") === work, await page.inputValue("#runfolder"));
+  check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
   check("AC-121 and the text that will be sent, in its order", /^The human ran task T-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nWhen it is done, call finish_task/.test(prompt), prompt);
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
@@ -59,20 +60,10 @@ export async function liveDispatcher(page, opts) {
   check("AC-121 its pane is marked as the run's", tmux("display", "-p", "-t", key.split(":").pop(), "#{@terminum-run}").trim().length > 0);
   check("AC-121 it is a member of the project", await until(() => page.isVisible(`#sessions section.project[data-pid="${project}"] .item[data-id="${key}"]`)));
 
-  // AC-121: the same project's next run starts with the last chosen picked; a project with no agents says so
-  const alone = (await j("/api/task-projects", "POST", { name: "NoAgents" })).id;
-  const lonely = (await j("/api/tasks", "POST", { title: "no agent to run it", project: alone })).id;
-  await page.goto(`${base}/kanban/?project=${alone}`);
-  await page.waitForSelector(card(lonely));
-  await page.click(`${card(lonely)} .crun`);
-  check("AC-121 a project with no agents says so and offers one", await until(async () => /No agents in NoAgents yet/.test(await page.textContent("#runnone"))) && await page.isVisible("#runadd") && await page.isDisabled("#rungo"));
-  await page.click('#runbox button[value="cancel"]');
-  check("AC-121 Cancel moves nothing", await status(lonely) === "TODO");
-  check("AC-121 no agent: the route says so", /No agents in/.test((await run((await j("/api/tasks", "POST", { title: "x", project: alone })).id, { agent: "nope" })).error));
-
   // refused before starting
-  const badDir = await task("folder gone");
-  const no = await run(badDir, { agent: plain, folder: "/no/such/folder/at/all" });
+  const nowhere = (await j("/api/task-projects", "POST", { name: "Nowhere", dir: "/no/such/folder/at/all" })).id;
+  const badDir = (await j("/api/tasks", "POST", { title: "folder gone", project: nowhere })).id;
+  const no = await run(badDir);
   check("AC-121 a folder that does not exist is said and nothing starts", /does not exist on this Mac/.test(no.error) && await status(badDir) === "TODO" && !(await j(`/api/tasks/${badDir}`)).session, JSON.stringify(no));
   const linked = await task("linked by hand");
   const otherPane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", "byhand").trim();
@@ -169,7 +160,7 @@ export async function liveDispatcher(page, opts) {
 
   // what the tty holds when its agent has gone never reaches the shell it leaves (§9 Window command)
   const nothing = path.join(work, "typed-into-the-shell");
-  const sleepy = (await j(`/api/task-projects/${project}/agents`, "POST", { name: "Sleepy", kind: "claude", command: "sleep 2" })).id;
+  const sleepy = (await j("/api/task-agents", "POST", { name: "Sleepy", kind: "claude", command: "sleep 2" })).id;
   const drained = await task("drained");
   await run(drained, { agent: sleepy });
   const drainedPane = await until(() => paneOf(drained)) && await paneOf(drained);
@@ -306,7 +297,7 @@ export async function liveDispatcherReal(page, opts) {
   const { work } = opts;
   const { j, card } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "RealRuns", dir: work })).id;
-  const add = async (name, kind, command) => (await j(`/api/task-projects/${project}/agents`, "POST", { name, kind, command })).id;
+  const add = async (name, kind, command) => (await j("/api/task-agents", "POST", { name, kind, command })).id;
   const { status, history, paneOf, hasStatus } = taskKit(j);
   const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__finish_task");
   const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result ok", project })).id;

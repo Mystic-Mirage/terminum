@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A project's agents on the board, against a real private terminumd (e2e_live.mjs; terminum-dispatcher.md
-// AC-137, AC-138; terminum-kanban.md AC-139): kept, listed, changed and deleted by a human, refused with
-// words; tasks run on one by a press or a drop, several at once; a project's own window.
+// The pool on the board, against a real private terminumd (e2e_live.mjs; terminum-dispatcher.md AC-137,
+// AC-138, AC-140; terminum-kanban.md AC-139): kept, listed, changed and deleted by a human, refused with
+// words; tasks run on one by a press or a drop, several at once, at their project's place; a project's own window.
 // scripts/fake_agent.py speaks by the real hooks and tools.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,11 +17,11 @@ export async function liveBoardAgents(page, opts) {
   const project = (await j("/api/task-projects", "POST", { name: "AgentsHere" })).id;
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector("#addagent");
-  check("AC-137 a project with none says so", await until(async () => /No agents yet/.test(await page.textContent(".agents"))), await page.textContent(".agents"));
+  check("AC-137 an empty pool says so", await until(async () => /No agents yet/.test(await page.textContent(".agents"))), await page.textContent(".agents"));
 
   await page.click("#addagent");
   await page.waitForSelector("#agentbox[open]");
-  check("AC-137 the window starts in the project shown", await page.inputValue("#agentproject") === project);
+  check("AC-137 the window asks no project, server or folder", !(await page.$("#agentproject")) && !(await page.$("#agenthost")) && !(await page.$("#agentdir")));
   check("AC-137 its kind fills in name and command", await page.inputValue("#agentname") === "Claude Code" && await page.inputValue("#agentcommand") === "claude");
   await page.selectOption("#agentkind", "codex");
   check("AC-137 another kind changes them", await page.inputValue("#agentname") === "Codex" && await page.inputValue("#agentcommand") === "codex");
@@ -43,14 +43,9 @@ export async function liveBoardAgents(page, opts) {
   await refused("#agentname", "", "An agent needs a name.");
   await refused("#agentcommand", "", "An agent needs a command.");
   await refused("#agentcommand", "x".repeat(1001), "An agent's command is 1000 characters at most.");
-  await refused("#agentdir", "work/api", "A folder starts with / or ~.");
-  const said = await j(`/api/task-projects/${project}/agents`, "POST", { name: "line", kind: "claude", command: "claude\nrm -rf x" });
+  const said = await j("/api/task-agents", "POST", { name: "line", kind: "claude", command: "claude\nrm -rf x" });
   check("AC-137 refused: a line break in a command", said.code === 400 && /one line/.test(said.error), JSON.stringify(said));
-  const elsewhere = await j(`/api/task-projects/${project}/agents`, "POST", { name: "far", kind: "claude", host: "nowhere.example", command: "claude" });
-  check("AC-137 refused: a server it does not have", elsewhere.code === 400 && /nowhere.example/.test(elsewhere.error), JSON.stringify(elsewhere));
-  const gone = await j("/api/task-projects/gone-id/agents", "POST", { name: "x", kind: "claude", command: "claude" });
-  check("AC-137 refused: a project gone", gone.code === 400 && /gone/.test(gone.error), JSON.stringify(gone));
-  check("AC-137 nothing was kept", (await j("/api/tasks/meta")).agents.filter((a) => a.project === project).length === 0);
+  check("AC-137 nothing was kept", (await j("/api/tasks/meta")).agents.length === 0);
 
   // a slip asks, Cancel means it
   await page.keyboard.press("Escape");
@@ -63,31 +58,31 @@ export async function liveBoardAgents(page, opts) {
   check("AC-137 Enter keeps it and it stands under Agents", await until(() => page.isVisible(row)), await page.textContent(".agents"));
   check("AC-137 the window closes", !(await page.$("#agentbox[open]")));
   const hover = () => page.getAttribute(row, "title");
-  check("AC-137 its rectangle says its kind; hovering, its server and command", await page.isVisible(`${row} .agmark img`) && /Claude Code/.test(await page.textContent(row)) && /This Mac/.test(await hover()) && (await hover()).includes(COMMAND), await hover());
-  const stored = (await j("/api/tasks/meta")).agents.find((a) => a.project === project);
-  check("AC-137 its command is kept as written", stored?.command === COMMAND && stored.kind === "claude" && stored.host === null && stored.dir === "", JSON.stringify(stored));
+  check("AC-137 its rectangle says its kind; hovering, its command", await page.isVisible(`${row} .agmark img`) && /Claude Code/.test(await page.textContent(row)) && (await hover()).includes(COMMAND), await hover());
+  const stored = (await j("/api/tasks/meta")).agents.find((a) => a.name === "Opus reviewer");
+  check("AC-137 its command is kept as written, and it knows no place", stored?.command === COMMAND && stored.kind === "claude" && !("host" in stored) && !("dir" in stored) && !("project" in stored), JSON.stringify(stored));
   if (shots) await page.screenshot({ path: path.join(shots, "agents-column.png") });
 
   // every page hears
   const other = await page.context().newPage();
   await other.goto(`${base}/kanban/?project=${project}`);
   await other.waitForSelector(row);
-  await j(`/api/task-projects/${project}/agents`, "POST", { name: "Codex two", kind: "codex", dir: "~/work", command: "codex" });
+  await j("/api/task-agents", "POST", { name: "Codex two", kind: "codex", command: "codex" });
   check("AC-137 every page hears within 2 s", await until(() => other.isVisible('.agents .agentcard:has-text("Codex two")'), 2500));
   await other.close();
   check("AC-137 this one too", await until(() => page.isVisible('.agents .agentcard:has-text("Codex two")'), 2500));
 
-  // a name stands once in its project
+  // a name stands once in the pool
   await page.click("#addagent");
   await page.fill("#agentname", "Opus reviewer");
   await page.click("#agentok");
-  check("AC-137 a name its project has is refused", await until(async () => /already has an agent named Opus reviewer/.test(await page.textContent("#agenterror"))), await page.textContent("#agenterror"));
+  check("AC-137 a name the pool has is refused", await until(async () => /already has an agent named Opus reviewer/.test(await page.textContent("#agenterror"))), await page.textContent("#agenterror"));
   await page.click('#agentbox button[value="cancel"]');
   check("AC-137 Cancel closes with no question", !(await page.$("#confirmbox[open]")) && !(await page.$("#agentbox[open]")));
 
   // changed and deleted
   await page.click(row);
-  check("AC-137 a press opens it filled", await page.inputValue("#agentcommand") === COMMAND && await page.isVisible("#agentdrop") && await page.isDisabled("#agentproject"));
+  check("AC-137 a press opens it filled", await page.inputValue("#agentcommand") === COMMAND && await page.isVisible("#agentdrop"));
   await page.fill("#agentcommand", "claude --model sonnet");
   await page.click("#agentok");
   check("AC-137 Save keeps a change", await until(async () => (await hover()).includes("claude --model sonnet")), await hover());
@@ -96,12 +91,10 @@ export async function liveBoardAgents(page, opts) {
   await page.click("#confirmok");
   check("AC-137 Delete, confirmed, takes it", await until(async () => !(await page.isVisible(row))), await page.textContent(".agents"));
 
-  // with all projects, each one's name beside it
-  await page.goto(`${base}/kanban/`);
-  await page.waitForSelector("#addagent");
+  // the pool is the same whichever project is shown
   await page.click("#fproject summary");
   await page.click('#fproject button:has-text("All projects")');
-  check("AC-137 with all projects its project is named", await until(async () => /AgentsHere/.test(await page.textContent(".agents"))), await page.textContent(".agents"));
+  check("AC-137 with all projects the same pool stands", await until(() => page.isVisible('.agents .agentcard:has-text("Codex two")')), await page.textContent(".agents"));
 
   // a reload finds what stays
   await page.goto(`${base}/kanban/?project=${project}`);
@@ -127,7 +120,7 @@ async function agentPool(page, opts) {
   const { base, work, tmux, shots } = opts;
   const { j, card, cli } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Pool", dir: work })).id;
-  const fixer = (await j(`/api/task-projects/${project}/agents`, "POST", { name: "Fast fixer", kind: "claude", effort: "high", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
+  const fixer = (await j("/api/task-agents", "POST", { name: "Fast fixer", kind: "claude", effort: "high", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
   const task = async (title) => (await j("/api/tasks", "POST", { title, project })).id;
   const a = await task("first of two"), b = await task("second of two"), c = await task("a third");
   const status = async (id) => (await j(`/api/tasks/${id}`)).status;
@@ -160,7 +153,7 @@ async function agentPool(page, opts) {
   check("AC-138 its title names both and the agent", head.includes(a) && head.includes(b) && head.endsWith("on Fast fixer"), head);
   check("AC-138 no agent to choose: it was dropped on one", !(await page.isVisible("#runagent")));
   check("AC-138 what will be sent stands open for several", await page.evaluate(() => document.querySelector("#runwhat").open) && /The human ran 2 tasks: /.test(await page.textContent("#runprompt")), await page.textContent("#runprompt"));
-  check("AC-121 where and how stays folded, filled", !(await page.evaluate(() => document.querySelector("#runhow").open)) && await page.inputValue("#runfolder") === work && (await page.textContent("#runcommand")).includes("fake_agent.py"));
+  check("AC-121 where and how stays folded, filled", !(await page.evaluate(() => document.querySelector("#runhow").open)) && await page.textContent("#runfolder") === work && (await page.textContent("#runcommand")).includes("fake_agent.py"));
   if (shots) await page.screenshot({ path: path.join(shots, "run-several.png") });
   await page.fill("#runmessage", "WORKS");
   await page.press("#runmessage", "Meta+Enter");
@@ -278,7 +271,7 @@ async function agentPool(page, opts) {
   tmux("kill-pane", "-t", heldPane);
 }
 
-/** AC-139: a project made empty, its window stays for its agents; a pencil opens it; a change is kept. */
+/** AC-139, AC-140: a project made empty, its window stays for the pool; with no folder nothing starts; a pencil opens it; a change is kept. */
 async function projectWindowChecks(page, opts) {
   const { base, work } = opts;
   const { j } = boardKit(page, opts);
@@ -295,7 +288,7 @@ async function projectWindowChecks(page, opts) {
   const fresh = (await named("Fresh")).id;
   check("AC-139 it is the project shown", await until(() => new URL(page.url()).searchParams.get("project") === fresh), page.url());
   await pressAt(page, "#projectaddagent");
-  check("AC-139 Add agent opens the agent's window on it", await until(() => page.$("#agentbox[open]")) && await page.inputValue("#agentproject") === fresh && !(await page.isVisible("#agentproject")));
+  check("AC-139 Add agent opens the agent's window on it", await until(() => page.$("#agentbox[open]")));
   await page.fill("#agentname", "Its first");
   await pressAt(page, "#agentok");
   check("AC-139 the agent stands in the project's window", await until(() => page.isVisible('#projectagentlist .agentcard:has-text("Its first")')));
@@ -307,6 +300,24 @@ async function projectWindowChecks(page, opts) {
   check("AC-139 limits are kept from the project's window", await until(async () => (await j("/api/tasks/meta")).limits.some((l) => l.project === fresh && l.warn === 2 && l.end === 3)), JSON.stringify((await j("/api/tasks/meta")).limits));
   await pressAt(page, "#projectok");
   await page.waitForSelector("#projectbox", { state: "hidden" });
+
+  // no folder: no one knows where an agent would start (AC-140)
+  const homeless = (await j("/api/tasks", "POST", { title: "nowhere to run", project: fresh })).id;
+  await page.waitForSelector(`.card[data-id="${homeless}"]`, { timeout: 8000 });
+  await page.click("#fproject summary");
+  check("AC-140 its row in the menu says no folder", await until(async () => /no folder/.test(await page.textContent('#fproject .projrow:has-text("Fresh")'))));
+  await page.click("#fproject summary");
+  await page.click(`.card[data-id="${homeless}"] .crun`);
+  check("AC-140 a press on Run says it and opens its window", await until(() => page.$("#projectbox[open]")) && /Fresh has no folder/.test(await page.textContent("#toast")), await page.textContent("#toast"));
+  check("AC-140 no run window opens", !(await page.$("#runbox[open]")));
+  await page.click('#projectbox button[value="cancel"]');
+  await page.waitForSelector("#projectbox", { state: "hidden" });
+  const refusedRun = await j(`/api/tasks/${homeless}/run`, "POST", { agent: (await j("/api/tasks/meta")).agents[0].id });
+  check("AC-140 terminumd refuses it too, and nothing starts", /Fresh has no folder: set it in its window/.test(refusedRun.error) && (await j(`/api/tasks/${homeless}`)).status === "TODO", JSON.stringify(refusedRun));
+  await page.click(`.card[data-id="${homeless}"]`);
+  await page.waitForSelector("#taskbox[open]");
+  await page.click('#taskbody .newcomment button:has-text("Archive")');
+  await page.click("#taskclose");
 
   const pencil = async (name) => {
     await page.click("#fproject summary");

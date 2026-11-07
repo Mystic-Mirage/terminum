@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A project's agents (`terminum-dispatcher.md` AC-137): what RUN can start. Only a signed-in page
-//! changes them, never `terminum mcp`; a command is the human's own words, kept as written.
+//! The pool of agents (`terminum-dispatcher.md` AC-137): what RUN can start, none a project's. Where it
+//! starts is the project's (AC-140). Only a signed-in page changes them, never `terminum mcp`; a command is
+//! the human's own words, kept as written.
 
 use axum::extract::{Path, State};
 use axum::response::Response;
 use axum::routing::{patch, post, put};
 use axum::{Json, Router};
-use rusqlite::{OptionalExtension, Transaction};
+use rusqlite::Transaction;
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -22,14 +23,11 @@ const MOST_LINE: usize = 1000;
 #[derive(Clone, Serialize)]
 pub struct Agent {
     pub id: String,
-    pub project: String,
     pub name: String,
     pub kind: String,
-    pub host: Option<String>,
-    pub dir: String,
     pub command: String,
     pub effort: String,
-    /// its place in the palette (listparts.js): none of a project's two share one while another is free
+    /// its place in the palette (listparts.js): none of two share one while another is free
     pub color: i64,
     /// what starts it: its command with its effort
     pub line: String,
@@ -50,8 +48,6 @@ fn command_line(kind: &str, command: &str, effort: &str) -> String {
 struct Given {
     name: String,
     kind: String,
-    host: Option<String>,
-    dir: String,
     command: String,
     effort: String,
 }
@@ -59,11 +55,11 @@ struct Given {
 impl Given {
     fn of(body: &Value) -> Given {
         let text = |k: &str| body[k].as_str().unwrap_or_default().trim().to_string();
-        Given { name: text("name"), kind: text("kind"), host: Some(text("host")).filter(|h| !h.is_empty()), dir: text("dir"), command: text("command"), effort: text("effort") }
+        Given { name: text("name"), kind: text("kind"), command: text("command"), effort: text("effort") }
     }
 
     /// What needs no store: refused with the words the window shows.
-    fn check(&self, hosts: &[String]) -> Result<(), String> {
+    fn check(&self) -> Result<(), String> {
         if self.name.is_empty() {
             return Err("An agent needs a name.".into());
         }
@@ -94,28 +90,20 @@ impl Given {
                 return Err("An effort goes on one program's command: this one has ; | & or #. Write it in the command.".into());
             }
         }
-        check_folder(&self.dir)?;
-        if let Some(host) = self.host.as_ref().filter(|h| !hosts.contains(h)) {
-            return Err(format!("The server {host} is not one of this terminum's hosts."));
-        }
         Ok(())
     }
 
-    /// What its project decides: a name once in it; "the project's folder" is on the project's server.
-    fn fits(&self, tx: &Transaction, project: &str, but: &str) -> Result<(), String> {
-        let (name, host): (String, Option<String>) = tx.query_row("SELECT name, host FROM projects WHERE id = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)?;
-        let taken: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM project_agents WHERE project = ?1 AND name = ?2 AND id != ?3)", (project, &self.name, but), |r| r.get(0)).map_err(sql)?;
+    /// A name stands once in the pool.
+    fn fits(&self, tx: &Transaction, but: &str) -> Result<(), String> {
+        let taken: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM agents WHERE name = ?1 AND id != ?2)", (&self.name, but), |r| r.get(0)).map_err(sql)?;
         if taken {
-            return Err(format!("{name} already has an agent named {}.", self.name));
-        }
-        if self.dir.is_empty() && self.host != host {
-            return Err(format!("{name}'s folder is on {}: an agent on another server needs its own folder.", host.as_deref().unwrap_or("This Mac")));
+            return Err(format!("The pool already has an agent named {}.", self.name));
         }
         Ok(())
     }
 }
 
-/// `dir` as a run or an agent may have it (AC-121, AC-137).
+/// A project's folder as it may be kept (terminum-kanban.md AC-139).
 pub fn check_folder(dir: &str) -> Result<(), String> {
     if !dir.is_empty() && !(dir.starts_with('/') || dir.starts_with('~')) {
         return Err("A folder starts with / or ~.".into());
@@ -126,43 +114,38 @@ pub fn check_folder(dir: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Every project's, as they were added.
+/// The pool, as they were added.
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
-    rows(tx, "SELECT id, project, name, kind, host, dir, command, effort, color FROM project_agents ORDER BY rowid", [], |r| {
-        let (kind, command, effort): (String, String, String) = (r.get(3)?, r.get(6)?, r.get(7)?);
-        Ok(Agent { id: r.get(0)?, project: r.get(1)?, name: r.get(2)?, line: command_line(&kind, &command, &effort), kind, host: r.get(4)?, dir: r.get(5)?, command, effort, color: r.get(8)? })
+    rows(tx, "SELECT id, name, kind, command, effort, color FROM agents ORDER BY rowid", [], |r| {
+        let (kind, command, effort): (String, String, String) = (r.get(2)?, r.get(3)?, r.get(4)?);
+        Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)? })
     })
 }
 
-/// One project's.
-pub fn of_project(tx: &Transaction, project: &str) -> Result<Vec<Agent>, String> {
-    Ok(list(tx)?.into_iter().filter(|a| a.project == project).collect())
-}
-
 /// Keeps a new one. Its id.
-fn add(tx: &Transaction, project: &str, given: &Given) -> Result<String, String> {
-    check_project(tx, project)?;
-    given.fits(tx, project, "")?;
+fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
+    given.fits(tx, "")?;
     let id = crate::auth::crypto::random_hex::<8>();
-    // the next color after the project's last: agents far apart, and no two alike for a palette's length
-    let color: i64 = tx.query_row("SELECT COALESCE(MAX(color) + 1, 0) FROM project_agents WHERE project = ?1", [project], |r| r.get(0)).map_err(sql)?;
-    tx.execute("INSERT INTO project_agents (id, project, name, kind, host, dir, command, effort, color) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-               (&id, project, &given.name, &given.kind, &given.host, &given.dir, &given.command, &given.effort, color)).map_err(sql)?;
+    // the next color after the last: agents far apart, and no two alike for a palette's length
+    let color: i64 = tx.query_row("SELECT COALESCE(MAX(color) + 1, 0) FROM agents", [], |r| r.get(0)).map_err(sql)?;
+    tx.execute("INSERT INTO agents (id, name, kind, command, effort, color) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+               (&id, &given.name, &given.kind, &given.command, &given.effort, color)).map_err(sql)?;
     Ok(id)
 }
 
 fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
-    let project: String = tx.query_row("SELECT project FROM project_agents WHERE id = ?1", [id], |r| r.get(0)).optional().map_err(sql)?.ok_or_else(|| "That agent is gone.".to_string())?;
-    given.fits(tx, &project, id)?;
-    tx.execute("UPDATE project_agents SET name = ?2, kind = ?3, host = ?4, dir = ?5, command = ?6, effort = ?7 WHERE id = ?1",
-               (id, &given.name, &given.kind, &given.host, &given.dir, &given.command, &given.effort)).map(|_| ()).map_err(sql)
+    given.fits(tx, id)?;
+    match tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5 WHERE id = ?1", (id, &given.name, &given.kind, &given.command, &given.effort)).map_err(sql)? {
+        0 => Err("That agent is gone.".into()),
+        _ => Ok(()),
+    }
 }
 
 fn remove(tx: &Transaction, id: &str) -> Result<(), String> {
     if let Some(run) = crate::dispatcher::runs::busy_with(tx, id, None)? {
         return Err(format!("{} is busy with {}: it can go when they end, or after Give up.", run.agent_name, run.names()));
     }
-    match tx.execute("DELETE FROM project_agents WHERE id = ?1", [id]).map_err(sql)? {
+    match tx.execute("DELETE FROM agents WHERE id = ?1", [id]).map_err(sql)? {
         0 => Err("That agent is gone.".into()),
         _ => Ok(()),
     }
@@ -170,29 +153,29 @@ fn remove(tx: &Transaction, id: &str) -> Result<(), String> {
 
 pub fn routes() -> Router<Shared> {
     Router::new()
-        .route("/api/task-projects/{id}/agents", post(new_agent))
+        .route("/api/task-agents", post(new_agent))
         .route("/api/task-agents/{id}", patch(change_agent).delete(drop_agent))
         .route("/api/task-projects/{id}/limits", put(set_limits))
 }
 
 /// The body as kept, or what is wrong with it.
-fn checked(app: &Shared, body: &Value) -> Result<Given, String> {
+fn checked(body: &Value) -> Result<Given, String> {
     let given = Given::of(body);
-    given.check(&crate::hosts::names(app))?;
+    given.check()?;
     Ok(given)
 }
 
-async fn new_agent(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
-    let given = match checked(&app, &body) {
+async fn new_agent(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
+    let given = match checked(&body) {
         Ok(g) => g,
         Err(e) => return answer::<()>(Err(e)),
     };
-    let done = store(&app, move |tx| add(tx, &project, &given).map(|id| json!({"id": id}))).await;
+    let done = store(&app, move |tx| add(tx, &given).map(|id| json!({"id": id}))).await;
     told_projects(&app, done)
 }
 
 async fn change_agent(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
-    let given = match checked(&app, &body) {
+    let given = match checked(&body) {
         Ok(g) => g,
         Err(e) => return answer::<()>(Err(e)),
     };

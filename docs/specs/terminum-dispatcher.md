@@ -833,7 +833,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-127 | A subagent is never ended alone, as none is tied to a process or pane yet (OQ-122, AS-126): it is said. | `terminumd/src/dispatcher/walk.rs` |
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
-| AC-137, AC-138, AC-140 | Agents belong to a project and may have their own server and folder; the run's dialog can take a folder. | `terminumd/src/tasks/agents.rs`, `web/static/kanbanagents.js` |
+| AC-137, AC-138 | No At once or limits in an agent's window; an agent shows what it does in words, one run, not a dot per session. | `web/static/kanbanagents.js` |
 | AC-141 | An agent is free or busy, one run at a time, by what its tasks stand at; an idle window holds nothing; a project has no limit; no key closes a holder. | `terminumd/src/dispatcher/runs.rs` |
 | AC-142 | No session starts without a task: a run's row needs one, and its project comes from it. | `terminumd/src/dispatcher/runs.rs` |
 | AC-129, AC-143 | Tokens stay in memory, three integers with no model; no price; no week or month. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/mod.rs` |
@@ -990,7 +990,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
 - [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `web/test/e2e_livedispatcher.mjs`
-- [ ] AC-140 — to come: `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [ ] AC-141 — to come: `cargo test dispatcher::pool`, `web/test/e2e_liveboardagents.mjs`
 - [ ] AC-142 — to come: `cargo test dispatcher::runs`, `web/test/e2e_liveboardagents.mjs`
 - [ ] AC-143 — to come: `cargo test dispatcher::usage`, `web/test/e2e_liveboardagents.mjs`

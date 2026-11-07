@@ -10,7 +10,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
 
   const say = (text) => { $("projecterror").textContent = text; $("projecterror").hidden = !text; };
   const drawAgents = () => {
-    const rows = agents.rowsOf(shown.id);
+    const rows = agents.rows();
     $("projectagentlist").replaceChildren(...rows);
     $("projectagentlist").hidden = !rows.length;
   };
@@ -31,7 +31,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     if (p) drawAgents();
     say("");
     box.showModal();
-    if (real) $("projectname").focus();
+    if (real) $(p && !p.dir ? "projectdir" : "projectname").focus();
   }
 
   /** Created, the window stays: now its agents can be added; else what changed is kept and it closes. */
@@ -54,7 +54,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.isComposing && e.target.matches("input")) { e.preventDefault(); keep(); }
   });
-  $("projectaddagent").addEventListener("click", () => agents.addTo(shown.id));
+  $("projectaddagent").addEventListener("click", () => agents.add());
   $("projectlimits").addEventListener("click", () => agents.openLimits(shown.id));
   $("projectarchived").addEventListener("click", () => archived.open(shown));
   $("projectdelete").addEventListener("click", () => { box.close(); deleteProject(shown.id); });

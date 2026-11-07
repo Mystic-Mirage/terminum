@@ -64,8 +64,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agentlist .colempty { margin: 0; align-self: center; white-space: nowrap; }
 .agentlist .item { position: relative; flex: none; width: 240px; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
-.agproj { margin-left: auto; padding-left: var(--sp-2); flex: none; font-size: var(--fs-meta); font-weight: var(--fw-body); color: var(--muted); }
-.agentcard:hover .agproj { visibility: hidden; }   /* its pencil stands there */
 /* what it does now: its lamp lit while it is busy */
 .agstatus { display: flex; align-items: center; gap: var(--sp-1); padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agstatus::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--surface-4); }
@@ -92,6 +90,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .chead { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
 .cid { font-variant-numeric: tabular-nums; }
 .cparent { font-size: var(--fs-small); color: var(--muted); }
+.projnofolder { margin-left: auto; font-size: var(--fs-small); color: var(--danger, var(--muted)); }
 .csev { padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); line-height: 16px; font-variant-numeric: tabular-nums; background: var(--surface-1); }
 .csev.P0 { color: var(--danger-ink); background: var(--danger-fill); }
 .csev.P1 { color: var(--danger-ink); background: var(--warn-fill); }

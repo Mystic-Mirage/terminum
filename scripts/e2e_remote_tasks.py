@@ -54,7 +54,7 @@ def main():
         project = call("/api/task-projects", "POST", {"name": "Far", "host": "devbox", "dir": folder})[1]["id"]
         hb = os.path.join(home, ".terminum", "bin", "terminum-host")
         command = f"python3 -I {os.path.join(HERE, 'fake_agent.py')} {hb} --kind claude"
-        st, added = call(f"/api/task-projects/{project}/agents", "POST", {"name": "Far agent", "kind": "claude", "host": "devbox", "command": command})
+        st, added = call("/api/task-agents", "POST", {"name": "Far agent", "kind": "claude", "command": command})
         check("setup: an agent on the host", st == 200, added)
         agent = added["id"]
         status = lambda i: call(f"/api/tasks/{i}")[1]["status"]  # noqa: E731

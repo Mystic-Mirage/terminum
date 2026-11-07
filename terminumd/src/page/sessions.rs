@@ -361,3 +361,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, msg: &Value) {
         Err(e) => error(page, e, None),
     }
 }
+
+#[cfg(test)]
+#[path = "sessions_tests.rs"]
+mod tests;

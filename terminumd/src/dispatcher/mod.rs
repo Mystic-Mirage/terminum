@@ -134,16 +134,14 @@ impl Dispatcher {
         }
     }
 
-    /// A hook's three integers, or null when they are not (AC-129): nothing else of them is kept.
+    /// A hook's four integers, or null when they are not (AC-129); its model goes on to the store only.
     pub fn heard_tokens(&self, key: &str, ev: &serde_json::Value) {
-        let kept = usage::Totals::of(&ev["tokens"]).map_or(serde_json::Value::Null, |t| {
-            serde_json::json!({"input": t.input, "output": t.output, "cached": t.cache_read, "cache_write": t.cache_write})
-        });
+        let kept = usage::Totals::of(&ev["tokens"]).map_or(serde_json::Value::Null, |t| t.shown());
         let known = !kept.is_null();
         self.watch.lock().entry(key.to_string()).or_default().tokens = Some(kept);
         // what grew goes to the store, in its turn with the run's other events (AC-129)
         if known && self.has_run(key) {
-            let _ = self.events_sender().send((key.to_string(), ev.clone()));
+            let _ = self.events.sender.send((key.to_string(), ev.clone()));
         }
     }
 

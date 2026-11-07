@@ -4,8 +4,7 @@
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
-import { $, button, agentColor, api, el, fillSelect, iconButton } from "./kanbanutil.js";
-import { countOf } from "./kanbanutil.js";
+import { $, button, agentColor, api, countOf, el, fillSelect, iconButton } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -37,7 +36,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
 
   /** Its last 7 and 30 days (AC-143): of its limit when it has one, else the tokens; past a limit in the danger color. */
   function spentOf(a) {
-    const s = a.spent ?? { week: 0, month: 0 }, part = (word, used, limit) => (limit ? `${word} ${Math.round((used / (limit * 1e6)) * 100)}%` : `${word} ${countOf(used)}`);
+    const s = a.spent, part = (word, used, limit) => (limit ? `${word} ${Math.round((used / (limit * 1e6)) * 100)}%` : `${word} ${countOf(used)}`);
     const line = el("span", "agspent", `${part("week", s.week, a.week_limit)} · ${part("month", s.month, a.month_limit)}`);
     line.classList.toggle("over", (a.week_limit && s.week > a.week_limit * 1e6) || (a.month_limit && s.month > a.month_limit * 1e6));
     line.title = `${s.week.toLocaleString("en")} tokens in 7 days, ${s.month.toLocaleString("en")} in 30, of every project: terminum's own count`;

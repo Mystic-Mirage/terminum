@@ -105,8 +105,7 @@ function sessionLine(t) {
 
 /** What a finished task's sessions spent (terminum-dispatcher.md AC-129): tokens that count, dollars where known. */
 function spentLine(s) {
-  const counted = s.input + s.output + s.cache_write;
-  const line = el("span", "cspent", [countOf(counted), s.usd != null ? `≈$${s.usd.toFixed(2)}` : null].filter(Boolean).join(" · "));
+  const line = el("span", "cspent", [countOf(s.counted), s.usd != null ? `≈$${s.usd.toFixed(2)}` : null].filter(Boolean).join(" · "));
   line.title = [`${s.input.toLocaleString("en")} in, ${s.output.toLocaleString("en")} out, ${s.cache_write.toLocaleString("en")} written to the cache, ${s.cache_read.toLocaleString("en")} read from it`,
     s.usd != null ? "an estimate at list prices" : "no price known for its model", s.with.length ? `for this and ${s.with.join(", ")} together` : null].filter(Boolean).join("; ");
   return line;
@@ -118,7 +117,7 @@ function usageWords(id) {
   if (!u) return "";
   const words = u.not_measured ? [u.not_measured] : [`CPU ${u.cpu}%`, `${u.gib} GiB`, `${u.minutes} min`];
   if (u.budget_total) words.unshift(`${Math.floor(u.budget_used / 60)} of ${u.budget_total / 60} min`);
-  if (u.tokens) words.push(`${(u.tokens.input + u.tokens.output + u.tokens.cached + (u.tokens.cache_write ?? 0)).toLocaleString("en")} tokens`);
+  if (u.tokens) words.push(`${u.tokens.counted.toLocaleString("en")} tokens`);
   else if (u.tokens === null) words.push("Tokens not known");
   for (const s of u.idle_subs ?? []) words.push(`idle: ${s.kind || "subagent"} ${s.id}`);
   return words.join(" · ");
@@ -169,7 +168,7 @@ function card(t) {
   if (!t.agent) foot.append(el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));   // on an agent, the agent says who
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
-  if (t.spent && ["DONE", "FAILED"].includes(t.status)) foot.append(spentLine(t.spent));
+  if (t.spent) foot.append(spentLine(t.spent));
   showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
   showUsage(c, t.id);

@@ -17,7 +17,7 @@ use crate::tasks::ops;
 
 /// A model's name as a hook may say it: kept only in this shape.
 fn good_model(m: &str) -> bool {
-    !m.is_empty() && m.len() <= 60 && m.chars().all(|c| c.is_ascii_alphanumeric() || "-._[]".contains(c))
+    !m.is_empty() && m.len() <= super::usage::MOST_MODEL && m.chars().all(|c| c.is_ascii_alphanumeric() || "-._[]".contains(c))
 }
 
 /// The shape a session ID must have to reach a command line (§9 Resume): no flag.
@@ -88,7 +88,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
 
 /// Hooks' events waiting for their turn: what comes first is applied first.
 pub(super) struct Events {
-    sender: UnboundedSender<(String, Value)>,
+    pub(super) sender: UnboundedSender<(String, Value)>,
     waiting: Mutex<Option<UnboundedReceiver<(String, Value)>>>,
 }
 
@@ -96,12 +96,6 @@ impl Default for Events {
     fn default() -> Events {
         let (sender, waiting) = unbounded_channel();
         Events { sender, waiting: Mutex::new(Some(waiting)) }
-    }
-}
-
-impl crate::dispatcher::Dispatcher {
-    pub(super) fn events_sender(&self) -> &UnboundedSender<(String, Value)> {
-        &self.events.sender
     }
 }
 

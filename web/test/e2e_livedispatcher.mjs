@@ -243,18 +243,18 @@ export async function liveDispatcher(page, opts) {
   await j(`/api/task-projects/${project}/limits`, "PUT", { warn: null, end: null });
   check("AC-128 the global ones are back", !(await j("/api/tasks/meta")).limits.some((l) => l.project === project));
 
-  // AC-129 tokens: three integers from its turn's end
+  // AC-129 tokens: four integers from its turn's end; cache reads do not count
   const tokens = await task("counts TOKENS");
   await run(tokens);
   await hasStatus(tokens, "IN PROGRESS", 15000);
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(card(tokens));
-  check("AC-129 the card shows the tokens its session used", await until(async () => /1,239 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), await page.textContent(card(tokens)));
-  let spent;
-  check("AC-129 what grew is kept in the store, with the model's price", await until(async () => (spent = (await j(`/api/tasks?id=${tokens}`)).tasks?.[0]?.spent)?.input === 1200, 8000)
-    && spent.output === 34 && spent.cache_read === 5 && Math.abs(spent.usd - (1200 * 4 + 34 * 20 + 5 * 0.2) / 1e6) < 1e-9, JSON.stringify(spent));
+  check("AC-129 the card shows the tokens its session used", await until(async () => /1,234 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), await page.textContent(card(tokens)));
   check("AC-143 its agent's week and month count it", (await j("/api/tasks/meta")).agents.some((a) => a.spent?.week >= 1234 && a.spent?.month >= 1234));
   await j(`/api/tasks/${tokens}/give-up`, "POST");
+  let spent;
+  check("AC-129 what grew is kept in the store, with the model's price", await until(async () => (spent = (await j(`/api/tasks?id=${tokens}`)).tasks?.[0]?.spent)?.input === 1200, 20000)
+    && spent.counted === 1234 && spent.output === 34 && spent.cache_read === 5 && Math.abs(spent.usd - (1200 * 4 + 34 * 20 + 5 * 0.2) / 1e6) < 1e-9, JSON.stringify(spent));
   check("AC-129 a finished card says what it spent, an estimate in dollars", await until(async () => /1\.2k · ≈\uFE0E?\$0\.01/.test(await page.textContent(`${card(tokens)} .cspent`).catch(() => "")), 20000), await page.textContent(card(tokens)).catch(() => ""));
 
   // AC-125 closing, with the screen kept when there is no result

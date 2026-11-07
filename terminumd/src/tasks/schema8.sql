@@ -16,4 +16,4 @@ CREATE TABLE usage (
   model TEXT
 );
 CREATE INDEX usage_run ON usage (run);
-CREATE INDEX usage_agent ON usage (agent_id, at);
+CREATE INDEX usage_at ON usage (at);

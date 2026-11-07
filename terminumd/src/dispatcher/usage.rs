@@ -22,15 +22,47 @@ pub struct Totals {
 /// Past this a number is no count of tokens: SQLite's integers hold it, a made-up hook's cannot overflow.
 const MOST: u64 = 1 << 52;
 
+/// The longest model name kept: the hook's and the store's.
+pub const MOST_MODEL: usize = 60;
+
 impl Totals {
     /// A hook's numbers; `None` when one is missing.
     pub fn of(t: &Value) -> Option<Totals> {
         let n = |k: &str| t[k].as_u64().map(|v| v.min(MOST) as i64);
-        Some(Totals { input: n("input")?, output: n("output")?, cache_write: n("cache_write").unwrap_or(0), cache_read: n("cached")? })
+        Some(Totals { input: n("input")?, output: n("output")?, cache_write: n("cache_write").unwrap_or(0), cache_read: n("cache_read")? })
     }
 
     fn fields(&self) -> [i64; 4] {
         [self.input, self.output, self.cache_write, self.cache_read]
+    }
+
+    fn from_fields([input, output, cache_write, cache_read]: [i64; 4]) -> Totals {
+        Totals { input, output, cache_write, cache_read }
+    }
+
+    /// Tokens that count against a limit: cache reads are not (AC-143).
+    pub fn counted(&self) -> i64 {
+        self.input + self.output + self.cache_write
+    }
+
+    /// As the hook says them.
+    pub fn json(&self) -> Value {
+        json!({"input": self.input, "output": self.output, "cache_write": self.cache_write, "cache_read": self.cache_read})
+    }
+
+    /// As the board shows them: with the tokens that count, so the Page adds nothing up.
+    pub fn shown(&self) -> Value {
+        let mut v = self.json();
+        v["counted"] = json!(self.counted());
+        v
+    }
+}
+
+impl std::ops::Add for Totals {
+    type Output = Totals;
+    fn add(self, o: Totals) -> Totals {
+        let (a, b) = (self.fields(), o.fields());
+        Totals::from_fields(std::array::from_fn(|i| a[i].saturating_add(b[i])))
     }
 }
 
@@ -40,8 +72,7 @@ fn grown(seen: Totals, now: Totals) -> Totals {
     if n.iter().zip(&s).any(|(n, s)| n < s) {
         return now;
     }
-    let d: Vec<i64> = n.iter().zip(&s).map(|(n, s)| n - s).collect();
-    Totals { input: d[0], output: d[1], cache_write: d[2], cache_read: d[3] }
+    Totals::from_fields(std::array::from_fn(|i| n[i] - s[i]))
 }
 
 /// A report of run `run`: what grew is kept, and the run remembers what it has heard.
@@ -91,24 +122,30 @@ pub fn dollars(t: &Totals, model: &str) -> Option<f64> {
 /// What each of `keys` spent in every session it was in: the sums, dollars when every model's price is known, and
 /// the other tasks it shared a session with (AC-129).
 pub fn of_tasks(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, Value>, String> {
-    let by: Vec<(String, Option<String>, i64, i64, i64, i64)> = rows(tx, "SELECT m.task, u.model, sum(u.input), sum(u.output), sum(u.cache_write), sum(u.cache_read)
+    let listed = super::runs::listed_keys(keys);
+    let by: Vec<(String, Option<String>, Totals)> = rows(tx, "SELECT m.task, u.model, sum(u.input), sum(u.output), sum(u.cache_write), sum(u.cache_read)
         FROM run_tasks m JOIN usage u ON u.run = m.run WHERE m.task IN (SELECT value FROM json_each(?1)) GROUP BY m.task, u.model",
-        [serde_json::to_string(keys).unwrap_or_default()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)))?;
+        [&listed], |r| Ok((r.get(0)?, r.get(1)?, Totals { input: r.get(2)?, output: r.get(3)?, cache_write: r.get(4)?, cache_read: r.get(5)? })))?;
     let mut out: HashMap<String, (Totals, Option<f64>)> = HashMap::new();
-    for (task, model, input, output, cache_write, cache_read) in by {
-        let t = Totals { input, output, cache_write, cache_read };
+    for (task, model, t) in by {
         let usd = model.as_deref().and_then(|m| dollars(&t, m));
         let (sum, cost) = out.entry(task).or_insert((Totals::default(), Some(0.0)));
-        *sum = Totals { input: sum.input + input, output: sum.output + output, cache_write: sum.cache_write + cache_write, cache_read: sum.cache_read + cache_read };
+        *sum = *sum + t;
         *cost = cost.zip(usd).map(|(a, b)| a + b);
     }
-    let mut spent = HashMap::new();
-    for (task, (t, usd)) in out {
-        let with: Vec<String> = rows(tx, "SELECT DISTINCT 'T-' || x.number FROM run_tasks m JOIN usage u ON u.run = m.run JOIN run_tasks o ON o.run = m.run
-            JOIN tasks x ON x.id = o.task WHERE m.task = ?1 AND o.task != ?1 ORDER BY x.number", [&task], |r| r.get(0))?;
-        spent.insert(task, json!({"input": t.input, "output": t.output, "cache_write": t.cache_write, "cache_read": t.cache_read, "usd": usd, "with": with}));
+    let shared: Vec<(String, String)> = rows(tx, "SELECT DISTINCT m.task, 'T-' || x.number, x.number FROM run_tasks m JOIN run_tasks o ON o.run = m.run AND o.task != m.task
+        JOIN tasks x ON x.id = o.task WHERE m.task IN (SELECT value FROM json_each(?1)) AND EXISTS (SELECT 1 FROM usage u WHERE u.run = m.run) ORDER BY x.number",
+        [&listed], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let mut with: HashMap<String, Vec<String>> = HashMap::new();
+    for (task, number) in shared {
+        with.entry(task).or_default().push(number);
     }
-    Ok(spent)
+    Ok(out.into_iter().map(|(task, (t, usd))| {
+        let mut v = t.shown();
+        v["usd"] = json!(usd);
+        v["with"] = json!(with.remove(&task).unwrap_or_default());
+        (task, v)
+    }).collect())
 }
 
 /// What each agent spent in the last 7 and 30 days, of every project: tokens that count (AC-143).
@@ -144,6 +181,7 @@ mod tests {
             heard(tx, &r, "a", t(1500, 120, 50, 6000), Some("claude-opus-5-5"), 12)?;
             let spent = &of_tasks(tx, &[task.key.as_str()])?[&task.key];
             assert_eq!((spent["input"].as_i64(), spent["output"].as_i64(), spent["cache_read"].as_i64()), (Some(1500), Some(120), Some(6000)), "a Stop and a SessionEnd of one total add nothing");
+            assert_eq!(spent["counted"], 1500 + 120 + 50, "cache reads do not count");
             heard(tx, &r, "a", t(200, 10, 0, 0), None, 13)?;
             assert_eq!(of_tasks(tx, &[task.key.as_str()])?[&task.key]["input"], 1700, "a total that fell, after a /clear: all of it");
             Ok(())
@@ -187,7 +225,7 @@ mod tests {
         assert_eq!(dollars(&t(1_000_000, 0, 0, 0), "gpt-5-codex"), None);
         assert_eq!(dollars(&t(1_000_000, 0, 0, 0), "claude-opus-5-5"), Some(4.0), "Opus 5.5, not Opus 5");
         assert_eq!(dollars(&t(0, 1_000_000, 0, 0), "claude-opus-5-20260101"), Some(25.0));
-        assert_eq!(Totals::of(&json!({"input": 1u64 << 60, "output": 1, "cached": 0})).unwrap().input, 1 << 52, "a made-up number is capped");
+        assert_eq!(Totals::of(&json!({"input": 1u64 << 60, "output": 1, "cache_read": 0})).unwrap().input, 1 << 52, "a made-up number is capped");
         assert_eq!(Totals::of(&json!({"input": 1})), None);
     }
 

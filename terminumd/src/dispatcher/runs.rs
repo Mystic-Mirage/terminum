@@ -219,7 +219,7 @@ pub fn last_agents(tx: &Transaction) -> Result<HashMap<String, String>, String> 
 }
 
 /// `keys` as one SQL argument: a page's tasks, however many.
-fn listed_keys(keys: &[&str]) -> String {
+pub(super) fn listed_keys(keys: &[&str]) -> String {
     serde_json::to_string(keys).unwrap_or_else(|_| "[]".to_string())
 }
 

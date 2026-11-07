@@ -11,8 +11,6 @@ import { banner } from "./banners.js";
 import { stalls } from "./nav.js";
 import { askConfirm } from "./dialogs.js";
 
-export { askConfirm, askName } from "./dialogs.js";
-
 const $ = (id) => document.getElementById(id);
 
 /** Close Session (the menu's, a row's): asked first, as the program in it ends; then sent. */

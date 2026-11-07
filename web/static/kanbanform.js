@@ -2,7 +2,8 @@
 // The new-task window (AC-106): a title, Markdown with Preview, files dropped or pasted into the
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm } from "./dialogs.js";
-import { $, api, el, fileMarkdown, fillSelect, iconButton, onFiles, onSend, read, renderInto, sessionOptions, upload, write } from "./kanbanutil.js";
+import { el, iconButton, read, write } from "./listparts.js";
+import { $, api, fileMarkdown, fillSelect, onFiles, onSend, renderInto, sessionOptions, showError, upload } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -12,7 +13,7 @@ export function taskForm({ getMeta, getFilter, onMade }) {
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
   const canCreate = (busy = false) => { $("newcreate").disabled = busy || uploads > 0; };
 
-  const error = (text) => { $("newerror").textContent = text ?? ""; $("newerror").hidden = !text; };
+  const error = (text) => showError($("newerror"), text);
   const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files });
   const keep = () => write(DRAFT, draft());
 

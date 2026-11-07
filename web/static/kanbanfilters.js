@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The board's filters, kept in its URL (terminum-kanban.md AC-111), and the project it shows, which
 // this browser remembers (AC-135).
-import { projectInk } from "./listparts.js";
-import { $, SEVERITIES, button, el, read, write } from "./kanbanutil.js";
+import { el, projectInk, read, write } from "./listparts.js";
+import { $, SEVERITIES, button } from "./kanbanutil.js";
 
 const CHOSEN = "board.project";
 const toggled = (list, id, on) => (on ? [...list, id] : list.filter((x) => x !== id));

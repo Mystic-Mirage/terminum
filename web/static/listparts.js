@@ -3,6 +3,10 @@
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
 
+/** A JSON value kept on this browser; in private mode, this page's only. */
+export function read(key) { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } }
+export function write(key, v) { try { if (v) localStorage.setItem(key, JSON.stringify(v)); else localStorage.removeItem(key); } catch { /* private mode */ } }
+
 export function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;

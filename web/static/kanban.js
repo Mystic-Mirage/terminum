@@ -11,13 +11,13 @@ import { askConfirm, askName } from "./dialogs.js";
 import { takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
-import { projectInk } from "./listparts.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
 import { sessionStrip, sessionsColumn } from "./kanbanside.js";
 import { agentsSection } from "./kanbanagents.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
-import { $, COLUMNS, api, button, el, iconButton, say } from "./kanbanutil.js";
+import { el, iconButton, projectInk } from "./listparts.js";
+import { $, COLUMNS, api, button, hasFiles, say } from "./kanbanutil.js";
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -391,7 +391,6 @@ $("taskbox").addEventListener("close", () => {
 });
 
 // A file dropped anywhere never takes the page away: on the board it starts a new task (AC-133)
-const hasFiles = (e) => e.dataTransfer?.types.includes("Files");
 document.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
 document.addEventListener("drop", (e) => {
   if (!hasFiles(e) || e.defaultPrevented) return;

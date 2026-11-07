@@ -13,8 +13,6 @@ import { arranged } from "./reorder.js";
 import { PROJECT_HUES, el, hueColor, iconButton, projectColor, projectHue } from "./listparts.js";
 import { taskUrl } from "./tasklink.js";
 
-export { el, projectColor };
-
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
 // but a quiet terminal mark while a shell, a monitor or a task it started still runs (terminumd reads
 // Claude Code's footer, AC-39).

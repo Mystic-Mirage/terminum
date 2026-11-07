@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The chosen project's sessions beside the board's columns, and the session row on a card
 // (terminum-kanban.md AC-134, AC-135): the session list's own code draws both; a press opens the session.
-import { colored } from "./listparts.js";
+import { colored, el, iconButton, read, write } from "./listparts.js";
 import { renderNav, row, setTaskMarks } from "./nav.js";
 import { ordered } from "./reorder.js";
 import { sessionUrl } from "./tasklink.js";
-import { $, el, iconButton, read, write } from "./kanbanutil.js";
+import { $ } from "./kanbanutil.js";
 
 const DEFAULT = "default", HIDDEN = "board.sessionsHidden";
 const openSession = (key) => { location.href = sessionUrl(key); };

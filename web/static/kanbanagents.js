@@ -4,7 +4,8 @@
 import { askConfirm } from "./dialogs.js";
 import { projectInk } from "./listparts.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
-import { $, THIS_MAC, api, el, fillSelect, iconButton } from "./kanbanutil.js";
+import { el, iconButton } from "./listparts.js";
+import { $, THIS_MAC, api, button, fillSelect, showError } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -26,8 +27,7 @@ export function agentsSection({ getMeta, chosen, reload }) {
   function row(a, several) {
     const { projects } = getMeta();
     const p = projects.find((x) => x.id === a.project);
-    const b = el("button", "item");
-    b.type = "button";
+    const b = button("item", undefined, () => open(a));
     b.dataset.agent = a.id;
     const bar = el("span", "pbar");
     bar.style.setProperty("--dot", projectInk(p));
@@ -36,7 +36,6 @@ export function agentsSection({ getMeta, chosen, reload }) {
     txt.append(line, metaLine([...(several ? [p?.name ?? a.project] : []), a.host ?? THIS_MAC, a.command], false));
     b.append(bar, txt, el("span", "st"));
     b.title = [a.name, a.host ?? THIS_MAC, a.dir || "the project's folder", a.command].join(" · ");
-    b.addEventListener("click", () => open(a));
     return b;
   }
 
@@ -49,7 +48,7 @@ export function agentsSection({ getMeta, chosen, reload }) {
   }
 
   const values = () => Object.fromEntries(Object.entries(field).map(([k, e]) => [k, e.value]));
-  const say = (text) => { error.textContent = text; error.hidden = !text; };
+  const say = (text) => showError(error, text);
 
   // what a kind fills in follows the kind; what the user wrote stays
   field.kind.addEventListener("change", () => {

@@ -7,11 +7,13 @@
 // sessions in the project, a tmux session's windows in tmux; a project among the projects. Each is modal (a <dialog>): the
 // page is shaded and takes no press while it is open; a press outside it closes it and does
 // nothing else; Esc closes it.
-import { askConfirm, askName, closeSession } from "./navtools.js";
+import { askConfirm, askName } from "./dialogs.js";
+import { closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
 import { inside, placeModal } from "./fabpane.js";
 import { floats } from "./fold.js";
-import { groupKey, groupRows, projectColor, taskMarksOf, tasksOfProject } from "./nav.js";
+import { projectColor } from "./listparts.js";
+import { groupKey, groupRows, taskMarksOf, tasksOfProject } from "./nav.js";
 import { newTaskUrl } from "./tasklink.js";
 import { lastLinesView } from "./lastlines.js";
 import { diagnostics } from "./diag.js";
@@ -21,7 +23,7 @@ const HOLD = 500;                // ms a finger rests before its menu opens
 // each item's icon, by its action (icons.js); a destructive one's is a red ×
 const MARKS = { newtask: "list-checks", clone: "copy-plus", project: "folder-plus", unproject: "folder-minus", plan: "list-checks", lastlines: "history",
   diag: "activity", top: "arrow-up-to-line", up: "arrow-up", down: "arrow-down", bottom: "arrow-down-to-line", movewin: "arrow-right-left",
-  close: "x", new: "plus", newproject: "plus", rename: "pencil", ungroup: "ungroup", back: "chevron-left", session: "terminal",
+  close: "x", new: "plus", newproject: "plus", rename: "pencil", back: "chevron-left", session: "terminal",
   paste: "clipboard", copy: "copy", undo: "undo-2", redo: "redo-2" };
 // the splits of the view (AC-88), side by side: what each makes, drawn
 const SPLITS = [["Below", "bottom"], ["Right", "right"], ["Left", "left"]];

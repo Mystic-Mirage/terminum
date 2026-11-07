@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // RUN's window (terminum-dispatcher.md AC-121, AC-122): which of the project's agents starts the
 // task, where, by what command and with what words; the last chosen is already picked, one press.
-import { $, THIS_MAC, api, fillSelect } from "./kanbanutil.js";
+import { $, THIS_MAC, api, fillSelect, showError } from "./kanbanutil.js";
 
 /** `addAgent(project)` opens the agents' window; `done()` after a run started. */
 export function runWindow({ addAgent, done }) {
   const box = $("runbox");
   let task = null, offer = null, comment = "", attached = [], fresh = false, answer = () => {};
 
-  const say = (text) => { $("runerror").textContent = text; $("runerror").hidden = !text; };
+  const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
 
   function showAgent() {
@@ -41,7 +41,7 @@ export function runWindow({ addAgent, done }) {
 
   const read = async () => { offer = await api(`/api/tasks/${task.id}/run`); };
 
-  /** Opens it for task `t`: true when a run started, "move" for Only move it, else false; a refusal
+  /** Opens it for task `t`: "run" when a run started, "move" for Only move it, else neither; a refusal
    *  throws terminumd's words. `words`, `files`: the comment that goes with it. */
   async function open(t, { words = "", files = [], canMove = false } = {}) {
     task = t;
@@ -78,6 +78,6 @@ export function runWindow({ addAgent, done }) {
     await read();
     draw(true);
   });
-  box.addEventListener("close", () => answer(box.returnValue === "run" ? true : box.returnValue === "move" ? "move" : false));
+  box.addEventListener("close", () => answer(box.returnValue));
   return { open };
 }

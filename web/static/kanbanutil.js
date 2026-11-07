@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the board's parts share: terminumd's routes, small DOM helpers, dialogs and files.
 import * as signin from "./signin.js";
-import { el, iconButton } from "./listparts.js";
+import { el } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 
-export { el, iconButton };
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
 export const THIS_MAC = "This Mac";
@@ -33,10 +32,6 @@ export async function api(path, { method = "GET", body } = {}) {
 /** One short message, where the action was taken cannot hold it. */
 export const say = (text) => toast(text, 4000);
 
-/** A JSON value kept on this browser; in private mode, this page's only. */
-export function read(key) { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } }
-export function write(key, v) { try { if (v) localStorage.setItem(key, JSON.stringify(v)); else localStorage.removeItem(key); } catch { /* private mode */ } }
-
 /** A text pressed ⌘Enter in goes where its button would. */
 export const onSend = (area, go) => area.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } });
 
@@ -56,39 +51,22 @@ export function fillSelect(select, options, chosen) {
 /** The sessions a task can be linked to. */
 export const sessionOptions = (meta) => [["", "None"], ...meta.sessions.map((s) => [s.key, s.title || s.key])];
 
+/** A dialog's line of error: `text`, or hidden with none. */
+export const showError = (box, text) => { box.textContent = text ?? ""; box.hidden = !text; };
+
+/** Whether what is dragged is files. */
+export const hasFiles = (e) => e.dataTransfer?.types.includes("Files");
+
 /** Files pasted into `area` or dropped on `zone` go to `add`; `lit(on)` says one is over it. */
 export function onFiles(area, zone, add, lit = () => {}) {
   area.addEventListener("paste", (e) => { const list = [...(e.clipboardData?.files ?? [])]; if (list.length) { e.preventDefault(); add(list); } });
-  zone.addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) { e.preventDefault(); lit(true); } });
+  zone.addEventListener("dragover", (e) => { if (hasFiles(e)) { e.preventDefault(); lit(true); } });
   zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) lit(false); });
   zone.addEventListener("drop", (e) => {
     const list = [...(e.dataTransfer?.files ?? [])];
     lit(false);
     if (list.length) { e.preventDefault(); add(list); }
   });
-}
-
-/** Several ways on: the value of the button pressed, or null for Cancel and Esc. */
-export function choose(title, more, options) {
-  const box = $("confirmbox"), acts = $("confirmacts");
-  $("confirmtitle").textContent = title;
-  $("confirmtext").textContent = more ?? "";
-  $("confirmtext").hidden = !more;
-  $("confirmok").hidden = true;
-  const added = options.map(([value, label]) => {
-    const b = button(null, label);
-    b.type = "submit";
-    b.value = value;
-    return b;
-  });
-  acts.append(...added);
-  box.returnValue = "";
-  box.showModal();
-  return new Promise((resolve) => box.addEventListener("close", () => {
-    $("confirmok").hidden = false;
-    added.forEach((b) => b.remove());
-    resolve(box.returnValue && box.returnValue !== "cancel" ? box.returnValue : null);
-  }, { once: true }));
 }
 
 /** Keeps a file with terminumd: its {id, name, bytes, mime}. Over `most` bytes is said before it is sent. */

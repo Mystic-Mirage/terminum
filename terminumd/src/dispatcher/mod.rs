@@ -61,6 +61,8 @@ struct PaneWatch {
     cpu: Option<(f64, Instant)>,
     /// walks in a row over a memory limit (AC-128)
     over: (u32, u32),
+    /// its agent was not under it at the last walk, with no exit recorded: the wrapper may not have got there
+    agent_missed: bool,
     /// its subagents as its hooks said (AC-127); bounded: a hook's fields are data
     subs: HashMap<String, Sub>,
     /// the tokens of its last turn's end; null: not known (AC-129)

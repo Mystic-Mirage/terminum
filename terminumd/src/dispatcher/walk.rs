@@ -382,15 +382,21 @@ async fn walk(app: &Shared) {
         let measured = s.tree.as_ref().zip(p).map(|(t, p)| procs::under(t, &p.pid));
         // ps did not answer: the agent stands while tmux says no exit, and no limit fires on missing numbers
         let under = measured.as_ref().map_or(p.is_some_and(|p| p.exit.is_none()), |u| u.any);
-        let (busy, memory) = {
+        let (busy, memory, under) = {
             let mut watch = app.dispatcher.watch.lock();
             let w = watch.entry(key.clone()).or_default();
+            // gone with no exit recorded: only a second reading says so, the wrapper records it a moment after
+            let unsure = !under && p.is_some_and(|p| p.exit.is_none()) && !std::mem::replace(&mut w.agent_missed, !under);
+            if unsure {
+                app.dispatcher.soon.notify_one();
+            }
+            let under = under || unsure;
             let busy = measured.as_ref().is_some_and(|u| w.cpu.is_some_and(|(was, _)| u.cpu - was >= CPU_ACTIVE / scale() as f64));
             let memory = measured.as_ref().map(|u| {
                 let (warn, end) = limits.get(&r.project).copied().unwrap_or((global_warn, global_end));
                 plan::Memory::read(u.gib(), warn, end, &mut w.over)
             });
-            (busy, memory)
+            (busy, memory, under)
         };
         let (waiting, failed, ended) = match listed(app, &key) {
             Listed::Waiting(why) => (Some(why), None, false),

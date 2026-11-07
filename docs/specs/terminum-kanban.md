@@ -282,13 +282,15 @@ Scenario: AC-111 edge — nothing left
 
 ```gherkin
 Scenario: AC-112 happy path — one level
-  When the user picks New subtask in T-12
-  Then T-13 is a full task of T-12's project with its own status, owner, severity and session, and T-12's card shows "0/1"
-  And Show subtasks in the head makes subtasks cards of their own; off, they show only in their parent's window
+  When the user presses New subtask in T-12's window
+  Then the new-task window says "New subtask of T-12", its project fixed, with a draft of its own
+  And T-13 is a full task of T-12's project with its own status, owner, severity and session, and T-12's card shows "0/1"
+  And T-12's window lists its subtasks, a press opening each, and T-13's says "Subtask of T-12"
+  And Show subtasks in the head makes subtasks cards of their own, each saying "in T-12"; off, they show only in their parent's window
 
 Scenario: AC-112 edge — the parent
-  When T-12 moves to DONE with T-13 open
-  Then it asks "T-13 is still open. Move T-12 to DONE?"; the parent's status never changes by itself
+  When T-12 ends in DONE with T-13 open
+  Then T-13 stays open and T-12's card still shows "0/1"; the parent's status never changes by itself, nor a subtask's by its parent's
   When T-12 moves to another project
   Then its subtasks move with it in one transaction
 
@@ -413,14 +415,16 @@ Scenario: AC-118 happy path — by hand and by time
   Then it archives itself with its subtasks that are DONE; the history says "Archived by Dispatcher"
 
 Scenario: AC-118 happy path — Archived
-  When the user opens Archived in a project's menu on the board
-  Then its archived tasks list newest first, 200 a page, with Find
+  When the user opens Archived in a project's window on the board
+  Then its archived tasks list newest first, subtasks too, 200 a page, with Find
   When the user picks Return on one
   Then it stands in the column it had
 
 Scenario: AC-118 edge — a subtask still open
   Given a parent DONE for 2 days with a subtask open
   Then the parent stays on the board until its subtasks are DONE or archived
+  Given a task DONE for 2 days that a run still holds with another task open, or one brought back from Archived
+  Then it stays: the run ends first, and a return starts the 2 days again
 
 Scenario: AC-118 edge — a live session
   When a task with a live session is archived
@@ -733,9 +737,7 @@ Comments and history are one table, `events`: a window lists them in one order. 
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-112 | Subtasks are kept and counted; no window makes one and Show subtasks is not there. | `terminumd/src/tasks/ops.rs`, `web/static/kanbanwin.js` |
 | AC-116 | No record offers Make a task. | `web/static/marks.js` |
-| AC-118 | Archive and Archived are by hand, the whole board's by a key in the head; DONE does not archive itself, no project has its own list. | `terminumd/src/tasks/query.rs`, `web/static/kanbanwin.js` |
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
 | AC-120 | A host's agent lists, reads and writes tasks over its link; get_file says it cannot yet, and a long get_task is not paged. | `terminumd/src/tasks/tools.rs` |
@@ -824,12 +826,12 @@ Depends on: nothing more.
 - [x] AC-109 — `cargo test tasks::files`, `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
 - [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
-- [ ] AC-112 — `cargo test tasks::ops` for the rules; the window to come
+- [x] AC-112 — `cargo test tasks::ops`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-113 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
 - [ ] AC-116 — to come
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`
-- [ ] AC-118 — to come
+- [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`
 - [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)

@@ -132,7 +132,7 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         number: q.get("id").and_then(|id| ops::number_of(id).ok()),
         reach: None,
         text: q.get("q").cloned(),
-        with_subtasks: false,
+        with_subtasks: q.get("subtasks").is_some_and(|c| c == "1"),
         archived: q.get("archived").is_some_and(|c| c == "1"),
         after: q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0),
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
@@ -250,6 +250,9 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
     }).await;
     if let Ok(t) = &done {
         told(&app, &t.id);
+        if let Some(up) = &t.parent {
+            told(&app, up);                            // its card counts it, its window lists it (AC-112)
+        }
     }
     answer(done.map(|t| card(&app, &t)))
 }
@@ -261,10 +264,12 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         let t = ops::get(tx, &wanted)?;
         let held = runs::holding(tx, &t.key)?.map(|r| r.names());
         let agent = runs::card_agents(tx, &[&t.key])?.remove(&t.key);
-        Ok((ops::text_of(tx, &wanted)?, ops::history(tx, &wanted)?, files::of_task(tx, &wanted)?, held, agent, t))
+        let kids = query::subtasks(tx, &t.key)?;
+        Ok((ops::text_of(tx, &wanted)?, ops::history(tx, &wanted)?, files::of_task(tx, &wanted)?, held, agent, kids, t))
     }).await;
-    answer(done.map(|(body, history, attached, held, agent, t)| {
+    answer(done.map(|(body, history, attached, held, agent, kids, t)| {
         let mut v = card(&app, &t);
+        v["children"] = json!(kids);
         v["text_rev"] = json!(text_rev(&body));
         v["text"] = json!(body);
         v["history"] = history;

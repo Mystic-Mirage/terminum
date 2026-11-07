@@ -11,6 +11,7 @@ import { askConfirm } from "./dialogs.js";
 import { sessionUrl, takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
+import { archivedWindow } from "./kanbanarchive.js";
 import { projectInk } from "./listparts.js";
 import { seeFolders } from "./nav.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
@@ -145,6 +146,7 @@ function card(t) {
   c.rowDrawn = "";
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
+  if (t.parent) head.append(el("span", "cparent", `in ${t.parent}`));
   if (t.agent) head.append(agentChip(t.agent));
   // on an open session its run has it; with none it can always start: nothing else takes it out of IN PROGRESS
   if (t.status !== "IN PROGRESS" || !t.session || t.session.closed) head.append(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])));
@@ -343,16 +345,16 @@ async function loadMeta() {
 
 /** A task a filter hides is said when made: it does not just vanish. terminumd says what its filters show. */
 async function madeHidden(t) {
-  if (!hasFilter()) return;
+  if (!hasFilter() || t.parent) return;            // a subtask shows in its parent's window
   const { tasks } = await api(`/api/tasks?${query({ id: t.id })}`);
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
 const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, editProject: (p) => project.open(p) });
-const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
+const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
 $("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
-const windowed = taskWindow({ getMeta: () => meta, runs });
+const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }) });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, agentsBusy: () => busy });
 
 /** Run in the new-task window: at once on its agent; what stands in the way opens RUN's window, saying it. */

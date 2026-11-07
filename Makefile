@@ -13,11 +13,11 @@
 #   make release TAG=vX.Y.Z   tag HEAD, build, sign (key via ssh-agent and the Keychain) and
 #                   publish; only when the maintainer asks for it (CLAUDE.md §10)
 #   make rehearse TAG=vX.Y.Z  what make release does up to the built package: no release key, nothing public
-#   make land SLUG=x  a worktree's targeted checks, then merged, pushed, the checkout updated, the tree deleted
+#   make land SLUG=x  a worktree merged, its smoke set (and its targeted checks if not passed), pushed, the checkout updated, the tree deleted
 #   make leftovers  what old test runs left (AC-102); END=1 removes it, as make release does first
 #   make signing-key       the maintainer's release key (once)
 #   make test       unit tests (Rust, scripts, UI, page)
-#   make check      the full run, the release's gate, once per tree (scripts/check_all.sh; --force: CHECK_ARGS=--force)
+#   make check      the full run, the release's gate, once per tree, on a quiet machine (scripts/check_all.sh; --force: CHECK_ARGS=--force)
 #   make test-mac   the macOS checks on the LAN's Mac test runner over ssh (scripts/ci_mac.sh)
 #   make installed  whether the running terminumd is this tree's build (exit 1 if another)
 #   make hooks      the git hooks of scripts/hooks (security_check before a commit and on its message)

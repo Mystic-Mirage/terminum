@@ -96,7 +96,7 @@ class Plan(unittest.TestCase):
 class Land(unittest.TestCase):
     def test_a_landings_smoke_set_is_the_basics_on_one_platform(self):  # AC-104
         got = dict(check_changed.land_plan(["terminumd/src/hosts/tunnel.rs", "docs/USAGE.md"]))
-        self.assertEqual(list(got), ["security", "ui", "debug-build", "cargo", "e2e_core", "smoke"])
+        self.assertEqual(list(got), ["security", "ui", "debug-build", "cargo", "e2e_core", "e2e_attach", "smoke"])
         self.assertEqual(got["smoke"], "node web/test/e2e_live.mjs chromium smoke")
         self.assertNotIn("hosts::tunnel", got["cargo"], "the tree's own tests passed before it landed")
         self.assertEqual(dict(check_changed.land_plan(["docs/USAGE.md"])), {"security": check_changed.SCAN})
@@ -153,9 +153,44 @@ class Passed(unittest.TestCase):
             self.assertEqual(len(ran), 1)
             self.assertIn("targeted: passed already on 3f9a21c40b7d5e11", "".join(c.args[0] for c in out.write.call_args_list))
 
+    def main_with(self, tmp, run, ids):
+        with mock.patch.object(check_changed, "REPO", Path(tmp)), \
+                mock.patch.object(check_changed, "tree_id", side_effect=ids), \
+                mock.patch.object(check_changed, "changed_files", return_value=(["docs/x.md"], "HEAD")), \
+                mock.patch.object(check_changed, "touched_cases", return_value=set()), \
+                mock.patch.object(check_changed, "run", run), mock.patch("sys.stdout"):
+            (Path(tmp) / ".checks").mkdir(exist_ok=True)
+            return check_changed.main([])
+
+    def test_a_red_run_records_no_pass(self):  # AC-104
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self.main_with(tmp, lambda steps, **_: ["page"], ["aaaa", "aaaa"]), 1)
+            self.assertEqual(list((Path(tmp) / ".checks").glob("changed-*.ok")), [])
+
+    def test_content_changed_during_the_run_records_no_pass(self):  # AC-104
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(self.main_with(tmp, lambda steps, **_: [], ["aaaa", "bbbb"]), 0)
+            self.assertEqual(list((Path(tmp) / ".checks").glob("changed-*.ok")), [])
+
     def test_the_id_is_the_content_not_the_commit(self):  # AC-104
-        self.assertEqual(check_changed.tree_id(), check_changed.tree_id())
-        self.assertRegex(check_changed.tree_id(), r"^[0-9a-f]{16}$")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            (root / ".gitignore").write_text(".checks/\n")
+            (root / "a.txt").write_text("one\n")
+            first = check_changed.tree_id(root)
+            self.assertRegex(first, r"^[0-9a-f]{16}$")
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", tmp, "add", "-A"], check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", tmp, "commit", "-qm", "x"], check=True)
+            self.assertEqual(check_changed.tree_id(root), first, "a commit keeps the content")
+            (root / ".checks").mkdir()
+            (root / ".checks" / "changed-x.ok").write_text("")
+            self.assertEqual(check_changed.tree_id(root), first, "what is ignored is no content")
+            (root / "a.txt").write_text("two\n")
+            self.assertNotEqual(check_changed.tree_id(root), first, "an edit")
+            (root / "a.txt").write_text("one\n")
+            (root / "new.txt").write_text("")
+            self.assertNotEqual(check_changed.tree_id(root), first, "a new file")
 
 
 if __name__ == "__main__":

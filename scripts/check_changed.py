@@ -167,7 +167,7 @@ def land_plan(files):
     if any(not is_doc(f) for f in files):
         steps += [("ui", "make ui"), ("debug-build", DEBUG_BUILD),
                   ("cargo", f"cd terminumd && {NICE} cargo test --locked -- " + " ".join(CRITICAL_CARGO)),
-                  ("e2e_core", "python3 scripts/e2e_core.py"),
+                  ("e2e_core", "python3 scripts/e2e_core.py"), ("e2e_attach", "python3 scripts/e2e_attach.py"),
                   ("smoke", "node web/test/e2e_live.mjs chromium smoke")]
     return steps
 

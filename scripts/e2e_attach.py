@@ -16,7 +16,7 @@ import time
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_for, wait_layout  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET, OWN = free_port(), own("tm-test-att"), own("tm-test-own")
@@ -44,7 +44,7 @@ def main():
         # only while a client holds it (a control client here, standing for the user's terminal)
         own("new-session", "-d", "-s", "scratch", "-c", work)
         holder = subprocess.Popen(["tmux", "-L", OWN, "-C", "attach", "-t", "=scratch"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL)
-        time.sleep(0.5)
+        wait_for(lambda: own("list-clients", "-t", "=scratch"), bool)   # held before it may go with its last client
         own("set-option", "-t", "scratch", "destroy-unattached", "on")
         ws.send({"t": "tmuxsessions", "server": f"local:{OWN}"})
         offer = ws.until(lambda m: m["t"] == "tmuxsessions", 5)

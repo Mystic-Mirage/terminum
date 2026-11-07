@@ -410,7 +410,7 @@ Scenario: AC-104 happy path — targeted checks green, the tree lands
   When the agent runs make land SLUG=fix-paste from the primary checkout
   Then the branch is merged with origin/main in the tree
   And the targeted checks do not run again, origin/main having changed none of the files the tree changed
-  And on the merged result scripts/check_changed.py --land runs the smoke set: the security scan, terminumd's debug build, cargo test of the critical modules, scripts/e2e_core.py, and the real page in Chromium at one size (signing in, the list, a pane drawn, typing, Files), with no timed check
+  And on the merged result scripts/check_changed.py --land runs the smoke set: the security scan, terminumd's debug build, cargo test of the critical modules, scripts/e2e_core.py (terminum's own tmux), scripts/e2e_attach.py (the user's own tmux), and the real page in Chromium at one size (signing in, the list, a pane drawn, typing, Files), with no timed check
   And on green it is pushed to origin main, never forced
   And the primary checkout is fast-forwarded to it, the tree is deleted by scripts/delete_worktree.sh, and it prints "landed 4f2a91c07 on origin/main"
 

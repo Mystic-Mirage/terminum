@@ -422,8 +422,7 @@ function readSoon(columns = true) {
 }
 
 /** Every page hears of a task's change; an open window reads again only when it shows that task; a change
- *  to its `history` alone is on no card. The projects, but for `members`: a session's move comes with `layout`. */
-let projectsSaid = null;
+ *  to its `history` alone is on no card. */
 function listen() {
   const again = (id, history) => {
     windowToo ||= !id || windowed.shows(id);
@@ -446,13 +445,7 @@ function listen() {
       }
       else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
       else if (m.t === "boardtheme") { meta.theme = m.theme; colors(); }
-      else if (m.t === "projects") {
-        const said = JSON.stringify((m.items ?? []).map(({ members: _, ...p }) => p));
-        if (said === projectsSaid) return;
-        projectsSaid = said;
-        clearTimeout(ws.wait);
-        ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500);
-      }
+      else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);
   });

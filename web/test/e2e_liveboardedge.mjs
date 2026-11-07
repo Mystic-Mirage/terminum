@@ -88,6 +88,34 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       await j(`/api/tasks/${id}`, "PATCH", { status: "FAILED" });
       check("  and hears changes again", await until(async () => await colOf(id) === "FAILED", 8000), await colOf(id));
     },
+    async reads_what_changed() {
+      const id = await make("heard with no read"), p2 = await page.context().newPage();
+      let toPage, columns = 0, windows = 0;
+      const tell = (m) => toPage.send(JSON.stringify(m));
+      await p2.routeWebSocket(/\/ws$/, (ws) => {
+        const far = ws.connectToServer();
+        ws.onMessage((m) => far.send(m));
+        far.onMessage((m) => ws.send(m));
+        toPage = ws;
+      });
+      p2.on("request", (r) => {
+        const at = new URL(r.url()).pathname;
+        if (at === "/api/tasks") columns++;
+        else if (at === `/api/tasks/${id}`) windows++;
+      });
+      const counted = () => `columns ${columns}, window ${windows}`;
+      await p2.goto(`${base}/kanban/${id}`);
+      await p2.waitForSelector("#taskbox[open]");
+      await nap(1000);   // the first word of the projects has been read
+      columns = windows = 0;
+      tell({ t: "taskchange", id, history: true }); await nap(500);
+      check("a line of a task's history alone reads no column", columns === 0, counted());
+      check("  and the window showing it reads it again", windows > 0, counted());
+      columns = 0;
+      tell({ t: "taskchange", id });
+      check("a task's own change reads the columns", await until(() => columns > 0, 2000), counted());
+      await p2.close();
+    },
     async stale_answer() {
       const id = await make("newest wins"); await open();
       let held = true;

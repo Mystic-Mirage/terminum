@@ -113,9 +113,11 @@ class Guard(unittest.TestCase):
 
 
 def gone(pid, seconds=5):
-    """Whether `pid` has ended (or is a zombie) within `seconds`."""
+    """Whether `pid` has ended within `seconds` (not this test's child: launchd reaps it)."""
     for _ in range(int(seconds * 10)):
-        if subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()[:1] in ("", "Z"):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
             return True
         time.sleep(0.1)
     return False

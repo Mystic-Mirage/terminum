@@ -34,6 +34,14 @@ def own_processes(folder, group):
     return found
 
 
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
 def files_in(folder):
     """What is left, relative: an empty tmux-<uid> is tmux's own and does not count."""
     try:
@@ -73,10 +81,14 @@ def main(command):
             left += 1
             print(f"LEFT process {pid}: {name}", file=sys.stderr)
             os.kill(pid, signal.SIGTERM)
-        if processes:   # an interactive shell ignores SIGTERM; one spinning on a terminal gone, SIGHUP too
-            time.sleep(KILL_AFTER_S)
-            for pid, _ in own_processes(folder, group):
-                os.kill(pid, signal.SIGKILL)
+        # an interactive shell ignores SIGTERM; one spinning on a terminal gone, SIGHUP too
+        stays = [pid for pid, _ in processes]
+        end = time.monotonic() + KILL_AFTER_S
+        while stays and time.monotonic() < end:
+            time.sleep(0.1)
+            stays = [pid for pid in stays if alive(pid)]
+        for pid in stays:
+            os.kill(pid, signal.SIGKILL)
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)

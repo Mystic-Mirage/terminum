@@ -41,7 +41,7 @@ def main():
         f.write(STUB)
     os.chmod(stub, 0o700)
     t.through_fake_ssh(home, REMOTE_SOCKET, os.path.join(t.root, "ssh-pids"))
-    subprocess.run(["tmux", "-L", REMOTE_SOCKET, "kill-server"], stderr=subprocess.DEVNULL, check=False)
+    end_tmux(REMOTE_SOCKET)
     try:
         t.start()
         secret = t.signin()

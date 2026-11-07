@@ -54,19 +54,15 @@ def tmux_on(socket_name, *args):
 
 
 def end_tmux(socket_name):
-    """Ends the private server `socket_name` and its panes' programs: a login shell of macOS's bash
-    can outlive kill-server, its terminal gone, ignoring SIGHUP and spinning (a Dispatcher's window)."""
-    pids = [int(p) for p in tmux_on(socket_name, "list-panes", "-a", "-F", "#{pane_pid}").split() if p.isdigit()]
-    subprocess.run(["tmux", "-L", socket_name, "kill-server"], stderr=subprocess.DEVNULL, check=False)
-    end = time.monotonic() + 2
-    while pids and time.monotonic() < end:
-        time.sleep(0.1)
-        pids = [p for p in pids if subprocess.run(["ps", "-o", "stat=", "-p", str(p)], capture_output=True, text=True).stdout.strip()[:1] not in ("", "Z")]
-    for p in pids:
+    """Ends the private server `socket_name`, its panes' programs first, by pid while the server still
+    holds them (no pid reused): a login shell of macOS's bash can outlive kill-server, its terminal
+    gone, ignoring SIGHUP and spinning (a Dispatcher's window)."""
+    for pid in tmux_on(socket_name, "list-panes", "-a", "-F", "#{pane_pid}").split():
         try:
-            os.kill(p, signal.SIGKILL)
-        except ProcessLookupError:
+            os.kill(int(pid), signal.SIGKILL)
+        except (ValueError, ProcessLookupError):
             pass
+    tmux_on(socket_name, "kill-server")
 
 
 def wait_for(read, predicate, seconds=15, every=0.1, last=False):
@@ -215,7 +211,7 @@ class Terminumd:
         return os.path.join(self.app, "terminumd.sock")
 
     def start(self):
-        subprocess.run(["tmux", "-L", self.tmux_socket, "kill-server"], stderr=subprocess.DEVNULL)
+        end_tmux(self.tmux_socket)
         log = open(self.log_path, "a")
         self.proc = subprocess.Popen([BIN], env=self.env, stdout=log, stderr=log)
         for _ in range(100):
@@ -235,7 +231,7 @@ class Terminumd:
 
     def cleanup(self):
         self.stop()
-        subprocess.run(["tmux", "-L", self.tmux_socket, "kill-server"], stderr=subprocess.DEVNULL)
+        end_tmux(self.tmux_socket)
         shutil.rmtree(self.root, ignore_errors=True)
 
     def log(self):

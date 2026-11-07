@@ -159,6 +159,10 @@ Scenario: AC-02 happy path — output streams
   When the pane prints 5,000 lines in 2 s
   Then terminumd captures the screen on its %output notices once the pane is quiet 6 ms (a write that came in parts is whole; 33 ms after the first notice at most), at most every 33 ms, and sends only the rows that changed ("full": false, "ch": [[row, line]…]); lines that scrolled off the screen are appended to the history ("hist", "append") with their absolute numbers
   And the page draws each frame in under 16 ms and follows the output while the view is at its end
+Scenario: AC-02 edge — a coding agent's redraw comes in parts further apart than the quiet
+  Given a coding agent's redraw takes the cursor up to its spinner row and back in two writes over 6 ms apart (the program stalled)
+  When a frame is caught between them
+  Then the page keeps the input box in its place and draws the cursor on the caret last seen in it (its row's text unchanged, terminum-terminal.md AC-40); above a box where no caret was seen, or whose caret's row changed, the cursor stays where it is
 Scenario: AC-02 edge — the pane prints while its history is read
   Given a frame said tmux's history holds h rows, and before the rows that scrolled off are read the pane prints 60 more (a coding agent's long result, over a host's ssh)
   Then terminumd's capture reaches 64 rows above the range (further once more when more scrolled) and comes with #{history_size} and #{pane_width} read before and after it, and the rows asked for are taken from where the rows that scrolled meanwhile moved them: the page gets the rows it numbered, never those 60 rows on shown in their place (a paragraph doubled, text out of its place); rows tmux no longer has are empty, never others

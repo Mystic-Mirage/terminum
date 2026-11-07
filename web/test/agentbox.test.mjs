@@ -71,6 +71,11 @@ test("Claude Code's cursor left below its footer: the caret last seen in the box
   assert.deepEqual(parkedCaret(screen(), 11, { ...seen, top: 3 }), { row: 7, col: 2 }, "a box seen elsewhere is not this one");
   assert.deepEqual(parkedCaret(screen(), 11, { ...seen, txt: "❯\u00a0hi there" }), { row: 7, col: 2 }, "its row's text changed since (a submit)");
   assert.deepEqual(parkedCaret(screen(), 11, { ...seen, col: 0 }), { row: 5, col: 2 }, "never on the prompt");
+  assert.deepEqual(parkedCaret(screen(), 1, seen), { row: 5, col: 9 }, "AC-02 a redraw caught half done, the cursor on the spinner's row above the box: the caret");
+  assert.equal(parkedCaret(screen(), 1, null), null, "above a box no caret was seen in: where it is");
+  assert.equal(parkedCaret(screen(), 1, { ...seen, txt: "❯\u00a0hi there" }), null, "the caret's row changed since");
+  assert.equal(parkedCaret(screen(), 3, { ...seen, top: 3, bottom: 8 }), null, "those rules are not around it now");
+  assert.equal(parkedCaret(rows("......... "), 1, seen), null, "its rules gone: the box is gone");
   const tall = rows("-" + ".".repeat(16) + "-.. ");
   assert.deepEqual(parkedCaret(tall, 20, null), { row: 16, col: 2 }, "a tall input (16 rows): the end of its last row");
   assert.deepEqual(parkedCaret(tall, 20, { top: 0, bottom: 17, row: 2, col: 4, txt: "  text" }), { row: 2, col: 4 }, "a tall input: where it was seen, 15 rows above its last");

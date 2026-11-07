@@ -136,40 +136,35 @@ class Run(unittest.TestCase):
 
 
 class Passed(unittest.TestCase):
-    def test_the_same_content_runs_once(self):  # AC-104
-        with tempfile.TemporaryDirectory() as tmp:
-            ran = []
-            with mock.patch.object(check_changed, "REPO", Path(tmp)), \
-                    mock.patch.object(check_changed, "tree_id", return_value="3f9a21c40b7d5e11"), \
-                    mock.patch.object(check_changed, "changed_files", return_value=(["docs/x.md"], "HEAD")), \
-                    mock.patch.object(check_changed, "touched_cases", return_value=set()), \
-                    mock.patch.object(check_changed, "run", lambda steps, **_: ran.append(steps) or []), \
-                    mock.patch("sys.stdout") as out:
-                (Path(tmp) / ".checks").mkdir()
-                self.assertEqual(check_changed.main(["--passed"]), 1)
-                self.assertEqual(check_changed.main([]), 0)
-                self.assertEqual(check_changed.main([]), 0)
-                self.assertEqual(check_changed.main(["--passed"]), 0)
-            self.assertEqual(len(ran), 1)
-            self.assertIn("targeted: passed already on 3f9a21c40b7d5e11", "".join(c.args[0] for c in out.write.call_args_list))
-
-    def main_with(self, tmp, run, ids):
+    def main_with(self, tmp, run, ids, argv=()):
         with mock.patch.object(check_changed, "REPO", Path(tmp)), \
                 mock.patch.object(check_changed, "tree_id", side_effect=ids), \
                 mock.patch.object(check_changed, "changed_files", return_value=(["docs/x.md"], "HEAD")), \
                 mock.patch.object(check_changed, "touched_cases", return_value=set()), \
-                mock.patch.object(check_changed, "run", run), mock.patch("sys.stdout"):
+                mock.patch.object(check_changed, "run", run), mock.patch("sys.stdout") as out:
             (Path(tmp) / ".checks").mkdir(exist_ok=True)
-            return check_changed.main([])
+            return check_changed.main(list(argv)), "".join(c.args[0] for c in out.write.call_args_list)
+
+    def test_the_same_content_runs_once(self):  # AC-104
+        with tempfile.TemporaryDirectory() as tmp:
+            ran = []
+            run = lambda steps, **_: ran.append(steps) or []   # noqa: E731
+            same = ["3f9a21c40b7d5e11"] * 9
+            self.assertEqual(self.main_with(tmp, run, same, ["--passed"])[0], 1)
+            self.assertEqual(self.main_with(tmp, run, same)[0], 0)
+            code, said = self.main_with(tmp, run, same)
+            self.assertEqual((code, len(ran)), (0, 1))
+            self.assertIn("targeted: passed already on 3f9a21c40b7d5e11", said)
+            self.assertEqual(self.main_with(tmp, run, same, ["--passed"])[0], 0)
 
     def test_a_red_run_records_no_pass(self):  # AC-104
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(self.main_with(tmp, lambda steps, **_: ["page"], ["aaaa", "aaaa"]), 1)
+            self.assertEqual(self.main_with(tmp, lambda steps, **_: ["page"], ["aaaa", "aaaa"])[0], 1)
             self.assertEqual(list((Path(tmp) / ".checks").glob("changed-*.ok")), [])
 
     def test_content_changed_during_the_run_records_no_pass(self):  # AC-104
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(self.main_with(tmp, lambda steps, **_: [], ["aaaa", "bbbb"]), 0)
+            self.assertEqual(self.main_with(tmp, lambda steps, **_: [], ["aaaa", "bbbb"])[0], 0)
             self.assertEqual(list((Path(tmp) / ".checks").glob("changed-*.ok")), [])
 
     def test_the_id_is_the_content_not_the_commit(self):  # AC-104

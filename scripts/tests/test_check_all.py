@@ -13,7 +13,7 @@ STUB = {
     "check_changed.py": "print('0123456789abcdef')",
     "load_gate.py": "import os, sys; open('gate.log', 'a').write('gate\\n'); sys.exit(int(os.environ['GATE_EXIT']))",
     "check_step.py": "import sys; open('steps.log', 'a').write(' '.join(sys.argv[1:3]) + '\\n')",
-    "check_docker.py": "import sys; sys.exit(1)",
+    "check_docker.py": "import os, sys; sys.exit(0 if os.environ.get('DOCKER_CAN') else 1)",
 }
 
 
@@ -58,7 +58,8 @@ class Start(unittest.TestCase):
         self.assertEqual(self.check(GATE_EXIT="75").returncode, 0)
         self.assertEqual(self.read("gate.log"), "", "the pass runs nothing, so it waits for nothing")
         (self.root / ".checks/0123456789abcdef.docker-skip").write_text("Docker does not answer\n")
-        self.assertEqual(self.check("--passed").returncode, 1, "a pass without Docker still has a step to run")
+        self.assertEqual(self.check("--passed").returncode, 0, "a pass without Docker counts while Docker cannot run")
+        self.assertEqual(self.check("--passed", DOCKER_CAN="1").returncode, 1, "Docker answers now: its step has to run")
 
 
 if __name__ == "__main__":

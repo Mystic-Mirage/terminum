@@ -52,7 +52,7 @@ class Gate(unittest.TestCase):
 
     def test_a_machine_busy_for_15_minutes_gives_up(self):  # AC-140
         m = Machine(31)
-        self.assertEqual(m.wait(), "load 31 over 8 for 15 minutes")
+        self.assertEqual(m.wait(), "load 31 over 8")
         self.assertEqual(m.now, 15 * 60)
 
     def test_quiet_late_still_gets_its_3_minutes(self):  # AC-140
@@ -86,7 +86,7 @@ class Gate(unittest.TestCase):
         self.assertEqual(m.said[-1], "gate: running under a release is running: a timing failure may be the load's")
 
     def test_make_check_by_hand_ends_75_when_still_busy(self):  # AC-140
-        with mock.patch.object(gate, "wait", return_value="load 31 over 8 for 15 minutes"), \
+        with mock.patch.object(gate, "wait", return_value="load 31 over 8"), \
                 mock.patch("sys.stderr") as err:
             self.assertEqual(gate.main([]), 75)
         self.assertIn("check: the machine is busy: load 31 over 8 for 15 minutes: nothing ran", "".join(c.args[0] for c in err.write.call_args_list))
@@ -97,11 +97,11 @@ class OneFullRun(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             subprocess.run(["git", "init", "-q", home], check=True)
             with gate.Turn(home) as first:
-                self.assertIsNone(first.take())
+                self.assertIsNone(first.busy())
                 with gate.Turn(home) as second:
-                    self.assertIn("another full run", second.take())
+                    self.assertIn("another full run", second.busy())
             with gate.Turn(home) as third:
-                self.assertIsNone(third.take())
+                self.assertIsNone(third.busy())
 
 
 if __name__ == "__main__":

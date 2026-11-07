@@ -32,6 +32,10 @@ NICE = "nice -n 10"   # several trees build at once: their builds leave room for
 DEBUG_BUILD = f"cd terminumd && {NICE} cargo build --locked"   # what the e2e checks run; no release build
 
 
+def cargo_test(modules):
+    return f"cd terminumd && {NICE} cargo test --locked -- " + " ".join(sorted(modules))
+
+
 def git(*args, cwd=REPO):
     return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout
 
@@ -144,7 +148,7 @@ def plan(files, cases, root=REPO, tests_of_cases=None):
     if rust:
         steps.append(("clippy", f"cd terminumd && {NICE} cargo clippy --locked --all-targets -- -D warnings"))
     if rust or modules:
-        steps.append(("cargo", f"cd terminumd && {NICE} cargo test --locked -- " + " ".join(sorted(modules | set(CRITICAL_CARGO)))))
+        steps.append(("cargo", cargo_test(modules | set(CRITICAL_CARGO))))
     if any(f.startswith("scripts/") or f == "Makefile" or f.startswith(".claude/") for f in tests):
         steps.append(("scripts", "python3 -m unittest discover -s scripts/tests"))
     if ui:
@@ -166,7 +170,7 @@ def land_plan(files):
     steps = [("security", SCAN)]
     if any(not is_doc(f) for f in files):
         steps += [("ui", "make ui"), ("debug-build", DEBUG_BUILD),
-                  ("cargo", f"cd terminumd && {NICE} cargo test --locked -- " + " ".join(CRITICAL_CARGO)),
+                  ("cargo", cargo_test(CRITICAL_CARGO)),
                   ("e2e_core", "python3 scripts/e2e_core.py"), ("e2e_attach", "python3 scripts/e2e_attach.py"),
                   ("smoke", "node web/test/e2e_live.mjs chromium smoke")]
     return steps
@@ -191,7 +195,7 @@ def run(steps, root=REPO, gate=True, nice=False):
         log = logs / f"changed.{name}.log"
         with log.open("w") as out:
             # under make check's guard (AC-102): a step that leaves a process or a file fails here too
-            guarded = ["nice", "-n", "10"] * nice + [sys.executable, "-I", str(root / "scripts" / "check_step.py"), "sh", "-c", command.lstrip("-")]
+            guarded = (NICE.split() if nice else []) + [sys.executable, "-I", str(root / "scripts" / "check_step.py"), "sh", "-c", command.lstrip("-")]
             code = subprocess.run(guarded, cwd=root, stdout=out, stderr=subprocess.STDOUT).returncode
         seconds = round(time.monotonic() - started)
         if code == 0 or optional:
@@ -212,13 +216,12 @@ def main(argv):
     parser.add_argument("--tree-id", action="store_true")
     parser.add_argument("--base", default="origin/main")
     args = parser.parse_args(argv)
-    ident = tree_id()
-    if args.tree_id:
-        print(ident)
-        return 0
-    passed = REPO / ".checks" / f"changed-{ident}.ok"
-    if args.passed:
-        return 0 if passed.exists() else 1
+    if args.tree_id or args.passed:
+        ident = tree_id()
+        if args.tree_id:
+            print(ident)
+            return 0
+        return 0 if (REPO / ".checks" / f"changed-{ident}.ok").exists() else 1
     files, merge_base = changed_files(args.base)
     if args.land:
         failed = run(land_plan(files), gate=False, nice=releasing(REPO))
@@ -235,6 +238,8 @@ def main(argv):
         for name, command in steps:
             print(f"  {name}: {command}")
         return 0
+    ident = tree_id()
+    passed = REPO / ".checks" / f"changed-{ident}.ok"
     if passed.exists() and not args.force:
         print(f"targeted: passed already on {ident}")
         return 0

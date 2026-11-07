@@ -22,7 +22,7 @@ class Turn:
     def __init__(self, _):
         pass
 
-    def take(self):
+    def busy(self):
         return None
 
     def __enter__(self):
@@ -79,7 +79,7 @@ class Chain(unittest.TestCase):
         self.notes.assert_called_once()
 
     def test_a_busy_build_server_ends_the_release_before_any_test(self):  # AC-140
-        self.busy = "load 31 over 8 for 15 minutes"
+        self.busy = "load 31 over 8"
         with mock.patch("sys.stderr") as err:
             self.assertEqual(self.run_chain(["v1.0.0"]), 1)
         self.assertIn("release: the build server is not available for a release: load 31 over 8 for 15 minutes: nothing is public",
@@ -93,7 +93,7 @@ class Chain(unittest.TestCase):
         self.assertTrue(self.gate_skipped)
 
     def test_a_tree_that_passed_already_waits_for_nothing(self):  # AC-140
-        self.passed_before, self.busy = True, "load 31 over 8 for 15 minutes"
+        self.passed_before, self.busy = True, "load 31 over 8"
         self.assertEqual(self.run_chain(["v1.0.0"]), 0)
         self.assertEqual(len(self.released), 1)
 

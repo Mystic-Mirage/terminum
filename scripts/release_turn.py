@@ -50,9 +50,9 @@ def chain(repo, tag, rehearsing):
     head = release.run("git", "rev-parse", "HEAD", cwd=repo)
     with load_gate.Turn(repo) as turn:
         if subprocess.run(["bash", "scripts/check_all.sh", "--passed"], cwd=repo).returncode:   # a pass waits for nothing
-            busy = load_gate.wait(busy=turn.take)
+            busy = load_gate.wait(busy=turn.busy)
             if busy:
-                print(f"release: the build server is not available for a release: {busy}: nothing is public", file=sys.stderr)
+                print(f"release: the build server is not available for a release: {busy} {load_gate.MINUTES}: nothing is public", file=sys.stderr)
                 return 1
         if subprocess.run(["bash", "scripts/check_all.sh"], cwd=repo, env={**os.environ, "TM_GATE_PASSED": "1"}).returncode:
             print("release: failing tests stop it: nothing is public", file=sys.stderr)

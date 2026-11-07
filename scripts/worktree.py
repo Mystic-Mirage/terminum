@@ -23,6 +23,7 @@
 worktree_fresh.py keeps agents and installs on a fresh origin/main. Nothing here starts, stops or kills a process or container.
 """
 import argparse
+import fcntl
 import os
 from pathlib import Path
 import re
@@ -82,6 +83,27 @@ def primary_of(cwd):
 def common_dir(cwd):
     """The repository's git folder, the one every worktree shares."""
     return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd))
+
+
+class Turn:
+    """A turn among this repository's trees, a file in git's common folder: the kernel frees it with its holder."""
+    def __init__(self, cwd, name):
+        self.path = common_dir(cwd) / name
+
+    def __enter__(self):
+        self.file = self.path.open("w")   # not inherited: a build it starts holds nothing
+        return self
+
+    def __exit__(self, *_):
+        self.file.close()
+
+    def take(self, wait=False):
+        """True once held; without `wait`, False while another holds it."""
+        try:
+            fcntl.flock(self.file, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        except BlockingIOError:
+            return False
+        return True
 
 
 def mark_path(cwd):
@@ -146,11 +168,13 @@ def exclude(primary):
     return f"excluded {' '.join(missing)}" if missing else "excludes present"
 
 
+CLONE = ["cp", "-R", "-c"] if sys.platform == "darwin" else ["cp", "-R", "--reflink=always"]
+
+
 def clone(source, target):
     """`cp -c` (APFS clonefile; it copies where the disk cannot clone), a reflink elsewhere;
     False, with nothing left at `target`, where neither is made."""
-    how = ["-cR"] if sys.platform == "darwin" else ["-R", "--reflink=always"]
-    run = subprocess.run(["cp", *how, str(source), str(target)], capture_output=True, text=True)
+    run = subprocess.run([*CLONE, str(source), str(target)], capture_output=True, text=True)
     if run.returncode != 0:
         shutil.rmtree(target, ignore_errors=True)
     return run.returncode == 0
@@ -167,8 +191,7 @@ def clone_builds(source, target):
         return False
     deps = [str(p) for p in (source / "deps").iterdir() if not p.name.startswith(OWN_BUILDS)] if (source / "deps").is_dir() else []
     (target / "deps").mkdir()
-    how = ["-c"] if sys.platform == "darwin" else ["--reflink=always"]
-    return all(subprocess.run(["cp", "-R", *how, *deps[i:i + 500], str(target / "deps")], capture_output=True).returncode == 0
+    return all(subprocess.run([*CLONE, *deps[i:i + 500], str(target / "deps")], capture_output=True).returncode == 0
                for i in range(0, len(deps), 500))
 
 

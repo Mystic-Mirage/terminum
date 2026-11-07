@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Landing a worktree (spec AC-104), on real repositories in a temporary folder; no remote is contacted."""
-import fcntl
 import importlib.util
 import os
 from pathlib import Path
@@ -215,12 +214,9 @@ class Landing(unittest.TestCase):
         self.assertTrue(land.has_code({"docs/USAGE.md", "terminumd/src/a.rs"}))
 
     def turn_is_free(self):
-        with (git_dir(self.primary) / "terminum-land.turn").open("w") as file:
-            try:
-                fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return True
-            except BlockingIOError:
-                return False
+        """Whether another landing would get the turn now: the same call a landing makes, not a lock of the test's own."""
+        with land.TreeTurn(self.primary, "terminum-land.turn") as other:
+            return other.take()
 
     def test_a_turn_held_is_held_however_old_and_is_freed_with_its_holder(self):  # AC-104
         holder = subprocess.Popen([sys.executable, "-c", HOLDS, str(Path(land.__file__)), str(self.primary)], stdout=subprocess.PIPE, text=True)

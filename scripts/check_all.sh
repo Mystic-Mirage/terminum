@@ -22,7 +22,9 @@ step() {   # step <name> <command…>: its output to the log, one line here; wha
   if python3 -I scripts/check_step.py "$@" >"$log" 2>&1; then echo "ok   $name ($((SECONDS - t0)) s)"
   else echo "FAIL $name ($((SECONDS - t0)) s): $log"; tail -n 15 "$log" | sed 's/^/     /'; failed+=("$name"); fi
 }
-if [ "${1:-}" = --passed ]; then [ -f ".checks/$id.ok" ] && [ ! -f ".checks/$id.docker-skip" ]; exit; fi
+if [ "${1:-}" = --passed ]; then   # as below: a pass without Docker counts while Docker still cannot run
+  [ -f ".checks/$id.ok" ] && { [ ! -f ".checks/$id.docker-skip" ] || ! python3 scripts/check_docker.py --can-run; }; exit
+fi
 if [ "${1:-}" != --force ] && [ -f ".checks/$id.ok" ]; then
   if [ -f ".checks/$id.docker-skip" ] && python3 scripts/check_docker.py --can-run; then   # a pass without Docker, and it works now
     echo "check: passed on $id without Docker, which works now: its step runs"

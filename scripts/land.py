@@ -12,7 +12,6 @@ stays where it is (scripts/release_turn.py), and the smoke set yields to it (nic
                     TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code
 Exit: 0 landed; 1 checks failed or refused (the tree stays); 2 a merge conflict, left in the tree
 to resolve and commit before running this again. No force, ever."""
-import fcntl
 import os
 from pathlib import Path
 import re
@@ -21,7 +20,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_changed import is_doc  # noqa: E402
-from worktree import common_dir, primary_of, Refused, releasing  # noqa: E402
+from worktree import primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
 
 BASE = "origin/main"
 TRIES = 8
@@ -48,25 +47,20 @@ def files_between(a, b, cwd):
     return set(git("diff", "--name-only", f"{a}...{b}", cwd=cwd).stdout.splitlines())
 
 
-class Turn:
-    """One tree at a time merges and pushes, however long its install takes; the kernel frees the turn when its holder dies."""
+class Turn(TreeTurn):
+    """One tree at a time merges and pushes, however long its install takes."""
     def __init__(self, tree):
         try:
-            self.path = common_dir(tree) / "terminum-land.turn"
+            super().__init__(tree, "terminum-land.turn")
         except Refused as refused:
             raise Stop(1, str(refused)) from refused
 
     def __enter__(self):
-        self.file = self.path.open("w")   # not inherited: a build it starts holds nothing
-        try:
-            fcntl.flock(self.file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        super().__enter__()
+        if not self.take():
             print("land: another tree's landing has its turn: waiting", flush=True)
-            fcntl.flock(self.file, fcntl.LOCK_EX)
+            self.take(wait=True)
         return self
-
-    def __exit__(self, *_):
-        self.file.close()
 
 
 def merge_base_in(tree):
@@ -109,7 +103,6 @@ def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land"), pa
     if git("merge-base", "--is-ancestor", "HEAD", BASE, cwd=tree, check=False).returncode == 0:
         return git("rev-parse", "HEAD", cwd=tree).stdout.strip()  # nothing of its own to land
     checked = passed(tree)   # the tree's own content, before the merge
-    smoked = None
     own_files = files_between(BASE, "HEAD", tree)
     for _ in range(TRIES):
         git("fetch", "--quiet", "origin", cwd=tree)
@@ -123,11 +116,9 @@ def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land"), pa
             if not check(tree):
                 raise Stop(1, f"targeted checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
             checked = True
-        head = git("rev-parse", "HEAD", cwd=tree).stdout.strip()
-        if head != smoked:   # a renamed function, a new caller: what others landed meets this tree's code
-            if not smoke(tree):
-                raise Stop(1, f"smoke checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
-            smoked = head
+        # each pass follows a merge: a renamed function, a new caller, what others landed meets this tree's code
+        if not smoke(tree):
+            raise Stop(1, f"smoke checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
         with Turn(tree):
             git("fetch", "--quiet", "origin", cwd=tree)
             if not has_base(tree):

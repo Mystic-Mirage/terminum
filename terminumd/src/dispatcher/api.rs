@@ -216,11 +216,9 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
     let line = start::resume_command(r).unwrap_or_else(|_| r.command.clone());
     let new = next_run(app, r, t, again).await?;
     start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await?;
-    let (key, n) = (server.key(pane), new.clone());
-    app.dispatcher.watch_pane(&key);
-    let k = key.clone();
-    store(app, move |tx| runs::change(tx, &n, |now| now.pane_key = Some(k)).map(drop)).await?;
-    app.dispatcher.watch_pane(&key);                   // a walk that read before this has dropped it
+    let (a, key, n) = (app.clone(), server.key(pane), new.clone());
+    app.dispatcher.panes.lock().insert(key.clone());    // its agent's first hooks
+    store(app, move |tx| a.dispatcher.pane_opened(tx, &n, &key).map(drop)).await?;
     start::watch(app, &new);
     Ok(json!({"run": new}))
 }
@@ -245,7 +243,7 @@ fn project_of(app: &Shared, t: &Task) -> Option<(String, String)> {
 async fn went_on(app: &Shared, r: &Run, t: &Task) -> Result<Value, String> {
     let (id, task, key, status, words) = (r.id.clone(), t.id.clone(), t.key.clone(), t.status.clone(), "The human ran it again.");
     let done = store(app, move |tx| {
-        let now = runs::change(tx, &id, Run::going_on)?;
+        let now = runs::change(tx, &id, |now| { now.state = "working".into(); now.new_work(); })?;
         bring_back(tx, &task)?;
         if super::plan::finished(&status) {
             move_one(tx, &task, "IN PROGRESS", words)?;

@@ -77,27 +77,18 @@ impl Run {
         self.targets().join(", ")
     }
 
-    /// RUN or a human's own prompt: every clock starts anew (AC-122).
+    /// RUN or a human's own prompt: every clock starts anew (AC-122). The turn is the agent's: a hook says when one starts.
     pub fn new_work(&mut self) {
         self.nudged = false;
         self.nudge_turn = false;
         self.no_result_wait = false;
         self.wait_moved = false;
-        self.turn_ended = false;
         self.again_said = false;
         self.idle_for = 0;
         self.closing_for = 0;
         self.budget_used = 0;                          // AC-122: the budget starts anew
         self.warned = false;
         self.memory_warned = false;
-    }
-
-    /// RUN went on in its live session, its words typed: a turn's end heard since stands, it is that turn's.
-    pub fn going_on(&mut self) {
-        let ended = self.turn_ended;
-        self.state = "working".into();
-        self.new_work();
-        self.turn_ended = ended;
     }
 }
 

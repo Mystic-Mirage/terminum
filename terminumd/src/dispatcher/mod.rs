@@ -39,8 +39,9 @@ const TYPED_FOR: Duration = Duration::from_secs(300);
 pub struct Dispatcher {
     /// panes with activity since the last walk
     active: Mutex<HashSet<String>>,
-    /// panes with a live run, each since when: the others' hook events cost nothing here
-    panes: Mutex<HashMap<String, Instant>>,
+    /// panes with a live run: the others' hook events cost nothing here; changed only with the store's lock
+    /// held, so a walk's read and a window's opening each see the other whole
+    panes: Mutex<HashSet<String>>,
     /// hooks' events, in the order they came (AC-131)
     events: hooks::Events,
     /// what terminum typed, by pane
@@ -98,22 +99,21 @@ impl Dispatcher {
     }
 
     fn has_run(&self, key: &str) -> bool {
-        self.panes.lock().contains_key(key)
+        self.panes.lock().contains(key)
     }
 
-    /// Pane `key` has a live run from now on.
-    fn watch_pane(&self, key: &str) {
-        self.panes.lock().insert(key.to_string(), Instant::now());
+    /// Pane `key` holds `run` from now on, in the transaction that says so (AC-131).
+    fn pane_opened(&self, tx: &rusqlite::Transaction, run: &str, key: &str) -> Result<runs::Run, String> {
+        let r = runs::change(tx, run, |r| r.pane_key = Some(key.to_string()))?;
+        self.panes.lock().insert(key.to_string());
+        Ok(r)
     }
 
-    /// The panes of the runs a walk read at `read_at`; one opened since stands, that read could not have seen it.
-    fn keep_panes(&self, live: impl Iterator<Item = String>, read_at: Instant) {
-        let live: HashSet<String> = live.collect();
-        let mut panes = self.panes.lock();
-        panes.retain(|k, since| live.contains(k) || *since >= read_at);
-        for k in live {
-            panes.entry(k).or_insert(read_at);
-        }
+    /// The runs a walk goes by, and the panes they hold, in one transaction (AC-131).
+    fn read_runs(&self, tx: &rusqlite::Transaction) -> Result<Vec<runs::Run>, String> {
+        let all = runs::live(tx)?;
+        *self.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
+        Ok(all)
     }
 
     /// A hook's facts of a watched pane: a new agent starts clean; its subagents, shape-checked (AC-127).

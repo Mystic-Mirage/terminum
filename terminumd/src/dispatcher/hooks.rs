@@ -36,6 +36,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.state = "working".into();
             r.prompt = None;
             r.new_work();
+            r.turn_ended = false;
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
             let project = ops::project_row(tx, &r.project)?.0;
             let agent = ops::agent_user(tx, &r.kind, &project)?;
@@ -50,6 +51,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             // a human's own prompt: new work (AC-122); to which of several finished tasks, it does not say
             active = true;
             r.new_work();
+            r.turn_ended = false;
             if r.status != "IN PROGRESS" && (r.ids.len() == 1 || !r.open.is_empty()) {
                 for id in r.targets() {
                     move_one(tx, id, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
@@ -105,11 +107,12 @@ pub fn heard(app: &Shared, key: &str, ev: &Value) {
 /// What one event does to its run.
 async fn one_event(app: Shared, key: String, ev: Value) {
     let typed = ev["event"] == "UserPromptSubmit" && ev["prompt"].as_str().is_some_and(|p| app.dispatcher.was_typed(&key, p));
-    let (k, e) = (key.clone(), ev.clone());
+    let ended = ev["event"] == "SessionEnd" && ev["reason"] != "clear";
+    let k = key.clone();
     let done = store(&app, move |tx| {
         let Some(mut r) = runs::in_pane(tx, &k)? else { return Ok(None) };
         let was = r.clone();
-        let (moved, active) = apply(tx, &mut r, &e, typed)?;
+        let (moved, active) = apply(tx, &mut r, &ev, typed)?;
         if r != was {
             runs::save(tx, &r)?;
         }
@@ -128,16 +131,16 @@ async fn one_event(app: Shared, key: String, ev: Value) {
         Err(e) => tracing::warn!(event = "dispatcher.hook", error = %e),
     }
     // an end: the exit code decides, at a walk now (AS-127)
-    if ev["event"] == "SessionEnd" && ev["reason"] != "clear" {
+    if ended {
         app.dispatcher.soon.notify_one();
     }
 }
 
-/// Each item in its turn; one that panics is said and takes no other with it.
-async fn in_turn<T, F: Future<Output = ()> + Send + 'static>(mut items: UnboundedReceiver<T>, work: impl Fn(T) -> F) {
+/// Each item in its turn; one that panics goes to `panicked` and takes no other with it.
+async fn in_turn<T, F: Future<Output = ()> + Send + 'static>(mut items: UnboundedReceiver<T>, work: impl Fn(T) -> F, panicked: impl Fn(tokio::task::JoinError)) {
     while let Some(item) = items.recv().await {
         if let Err(e) = tokio::spawn(work(item)).await {
-            tracing::error!(event = "dispatcher.hook", error = %e);
+            panicked(e);
         }
     }
 }
@@ -145,14 +148,19 @@ async fn in_turn<T, F: Future<Output = ()> + Send + 'static>(mut items: Unbounde
 /// Hooks' events, one at a time (AC-131): a Stop never overtakes the prompt before it.
 pub async fn hearing(app: Shared) {
     let Some(events) = app.dispatcher.events.waiting.lock().take() else { return };
-    in_turn(events, move |(key, ev)| one_event(app.clone(), key, ev)).await;
+    let told = app.clone();
+    in_turn(events, move |(key, ev)| one_event(app.clone(), key, ev), move |e| {
+        tracing::error!(event = "dispatcher.panic", error = %e);
+        super::walk::note(&told, "Dispatcher could not take an agent's event: see terminumd's log. It goes on with the next.".to_string());
+    }).await;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tasks::store::{Store, HUMAN};
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     #[tokio::test]
     async fn ac131_a_slow_event_is_not_overtaken_by_the_next() {
@@ -169,16 +177,15 @@ mod tests {
                 tokio::time::sleep(Duration::from_millis(wait)).await;
                 log.lock().push(name);
             }
-        }).await;
-        tokio::time::sleep(Duration::from_millis(80)).await;
+        }, |e| panic!("{e}")).await;
         assert_eq!(*seen.lock(), vec!["Prompt", "Stop"]);
     }
 
     #[tokio::test]
-    async fn ac131_a_panic_takes_only_its_own_event() {
+    async fn ac131_a_panic_is_said_and_takes_only_its_own_event() {
         let (sender, items) = unbounded_channel();
-        let seen = Arc::new(Mutex::new(Vec::new()));
-        let log = seen.clone();
+        let (seen, said) = (Arc::new(Mutex::new(Vec::new())), Arc::new(Mutex::new(0)));
+        let (log, count) = (seen.clone(), said.clone());
         for item in [true, false] {
             sender.send(item).unwrap();
         }
@@ -189,22 +196,28 @@ mod tests {
                 assert!(!bad, "a test's own panic");
                 log.lock().push(bad);
             }
-        }).await;
-        tokio::time::sleep(Duration::from_millis(40)).await;
+        }, move |_| *count.lock() += 1).await;
         assert_eq!(*seen.lock(), vec![false]);
+        assert_eq!(*said.lock(), 1);
     }
 
     #[test]
-    fn ac121_a_walk_that_read_earlier_keeps_a_pane_opened_since() {
+    fn ac131_a_walk_before_or_after_a_window_opens_keeps_its_pane() {
+        let store = Store::open(crate::testutil::fresh_dir("hooks-panes").join("kanban.sqlite"));
         let d = crate::dispatcher::Dispatcher::default();
-        d.watch_pane("gone");
-        std::thread::sleep(Duration::from_millis(2));
-        let read_at = Instant::now();
-        std::thread::sleep(Duration::from_millis(2));
-        d.watch_pane("opening");
-        d.keep_panes(["live".to_string()].into_iter(), read_at);
-        assert!(d.has_run("live"), "what the walk read");
-        assert!(d.has_run("opening"), "its first hooks must be heard: the walk could not have read it");
-        assert!(!d.has_run("gone"), "older than the read, and no run has it");
+        let run = store.with(|tx| {
+            let t = crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
+            let like = runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), ..Default::default() };
+            runs::add(tx, &like, std::slice::from_ref(&t.key), 1)
+        }).unwrap();
+        store.with(|tx| d.read_runs(tx)).unwrap();
+        assert!(!d.has_run("%7"), "no pane yet");
+        store.with(|tx| d.pane_opened(tx, &run, "%7")).unwrap();
+        assert!(d.has_run("%7"), "a walk that read first has come and gone");
+        store.with(|tx| d.read_runs(tx)).unwrap();
+        assert!(d.has_run("%7"), "a walk that reads after it sees it in the store");
+        store.with(|tx| runs::change(tx, &run, |r| r.state = "closed".into()).map(drop)).unwrap();
+        store.with(|tx| d.read_runs(tx)).unwrap();
+        assert!(!d.has_run("%7"), "over: its hooks cost nothing again");
     }
 }

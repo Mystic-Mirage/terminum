@@ -155,10 +155,10 @@ fn ac138_its_budget_is_what_they_have_together() {
 
 #[test]
 fn ac122_a_stop_heard_while_its_words_were_typed_stands() {
-    let mut r = Run { state: "left".into(), turn_ended: true, budget_used: 60, idle_for: 9, ..Default::default() };
-    r.going_on();
+    let mut r = Run { turn_ended: true, budget_used: 60, idle_for: 9, ..Default::default() };
+    r.new_work();
     assert!(r.turn_ended, "reserving took it before the typing: what is set now came after");
-    assert_eq!((r.state.as_str(), r.budget_used, r.idle_for), ("working", 0, 0), "every clock starts anew");
+    assert_eq!((r.budget_used, r.idle_for), (0, 0), "every clock starts anew");
 }
 
 #[test]

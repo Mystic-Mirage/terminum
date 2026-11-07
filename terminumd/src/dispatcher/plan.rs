@@ -232,7 +232,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
 
 /// Whether a Close a walk decided still holds, read just before the pane goes: a press or a prompt may have come since.
 pub fn still_closes(run: &Run) -> bool {
-    finished(&run.status) && !run.is_over() && run.closing_for >= CLOSE && (run.turn_ended || run.state == "gone")
+    finished(&run.status) && !run.is_over() && !run.busy() && run.closing_for >= CLOSE
 }
 
 /// How far a subagent has been dealt with, by how long it has been silent and idle (AC-127). A busy

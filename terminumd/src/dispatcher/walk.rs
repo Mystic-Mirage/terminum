@@ -215,12 +215,12 @@ fn usage_line(app: &Shared, key: &str, seen: &Seen, pane: &str) -> serde_json::V
 
 /// One beat.
 async fn walk(app: &Shared) {
-    let Ok((all, linked, limits)) = store(app, |tx| Ok((
-        runs::live(tx)?,
+    let a = app.clone();
+    let Ok((all, linked, limits)) = store(app, move |tx| Ok((
+        a.dispatcher.read_runs(tx)?,
         ops::rows(tx, "SELECT 'T-' || number, session_key FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?,
         crate::tasks::agents::limits(tx)?,
     ))).await else { return };
-    *app.dispatcher.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
     if all.is_empty() && linked.is_empty() {
         return;
     }

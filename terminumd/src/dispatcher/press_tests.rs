@@ -102,3 +102,23 @@ fn ac138_a_message_holds_line_ends_and_nothing_else_unseen() {
     assert!(has_stray("a\x1b[31m"));
     assert!(has_stray("a\u{202e}b"));
 }
+
+#[test]
+fn ac138_a_task_without_a_budget_lifts_no_limit_from_the_prompt() {
+    store_of("api-budget").with(|tx| {
+        let (mut a, b) = (made(tx, "one", ""), made(tx, "two", ""));
+        a.budget_seconds = Some(30 * 60);
+        let prompt = prompt_of(tx, &[a, b], None)?;
+        assert!(prompt.contains("You have 30 minutes for this."), "{prompt}");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac126_the_agent_hears_what_the_session_has_now() {
+    let run = |ids: &[&str], budget| Run { ids: ids.iter().map(|s| s.to_string()).collect(), budget, ..Default::default() };
+    assert_eq!(budget_told("T-1", None, &run(&["T-1"], None)), "[terminum Dispatcher] T-1: its time budget is off.");
+    assert_eq!(budget_told("T-1", Some(600), &run(&["T-1"], Some(600))), "[terminum Dispatcher] T-1: its time budget is now 10 minutes.");
+    assert_eq!(budget_told("T-1", None, &run(&["T-1", "T-2"], Some(1800))), "[terminum Dispatcher] T-1: its time budget is off. The session's limit is now 30 minutes.");
+    assert_eq!(budget_told("T-1", None, &run(&["T-1", "T-2"], None)), "[terminum Dispatcher] T-1: its time budget is off. The session has no limit now.");
+}

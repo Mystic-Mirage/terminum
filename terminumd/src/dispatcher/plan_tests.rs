@@ -252,3 +252,16 @@ fn ac127_a_silent_subagent_gets_one_request_then_it_is_said() {
     assert_eq!(subagent_step(1200, SubStep::Nothing), Some(SubStep::CannotEnd), "a jump past both");
     assert_eq!(subagent_step(9000, SubStep::CannotEnd), None, "said once");
 }
+
+#[test]
+fn ac125_a_close_decided_is_read_again_before_the_pane_goes() {
+    let due = || { let mut r = run("DONE"); r.turn_ended = true; r.closing_for = CLOSE; r };
+    assert!(still_closes(&due()));
+    assert!(still_closes(&Run { state: "gone".into(), turn_ended: false, ..due() }), "its agent ended");
+    let mut pressed = due();
+    pressed.new_work();
+    assert!(!still_closes(&pressed), "a human's own prompt, or RUN, since the walk");
+    assert!(!still_closes(&Run { turn_ended: false, ..due() }), "RUN took it to type in it");
+    assert!(!still_closes(&Run { status: "IN PROGRESS".into(), ..due() }), "open again");
+    assert!(!still_closes(&Run { state: "left".into(), ..due() }), "given up since");
+}

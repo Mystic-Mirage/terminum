@@ -107,7 +107,8 @@ def main():
         st, said = call(f"/api/tasks/{timed}", "PATCH", {"budget_minutes": 5})
         check("setup: a budget", st == 200, said)
         run(timed)
-        check("AC-130 at the limit the task is FAILED", until(lambda: status(timed) == "FAILED"), history(timed))
+        # its start takes its real time before the test clock's budget begins: a loaded machine needs longer
+        check("AC-130 at the limit the task is FAILED", until(lambda: status(timed) == "FAILED", 60), history(timed))
         tkey = pane_of(timed)
         ended = until(lambda: shown(tkey, "#{@terminum-exit}"), 10)
         check("AC-130 its agent is ended over the host's link", bool(ended), ended)

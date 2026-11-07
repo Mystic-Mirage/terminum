@@ -262,6 +262,7 @@ async fn serve() {
     webaccess::apply(&app);
     tokio::spawn(manager::run(app.clone()));
     tokio::spawn(dispatcher::walking(app.clone()));
+    tokio::spawn(dispatcher::hearing(app.clone()));
     tokio::spawn(looks::follow(app.clone()));
     tokio::spawn(restore::follow(app.clone()));
     tokio::spawn(lastlines::follow(app.clone()));

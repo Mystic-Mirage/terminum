@@ -5,7 +5,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* left the session page's widget, right the board: the same two parts, the same line between them (style.css, layout.css);
    the widget's foot stays on the session page */
 .board-page :is(.nav-foot, #tip) { display: none; }
-.board-page #bar { flex: none; }
+.board-page #bar { flex: none; padding-left: var(--gutter); padding-right: var(--gutter); }   /* on the columns' edges */
 .board-page #sessions { padding-bottom: var(--gutter); }
 .board-page .search kbd { display: none; }   /* its head holds one key more: the word stays whole */
 #barsessions { flex: none; }

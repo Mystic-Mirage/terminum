@@ -197,7 +197,7 @@ impl Projects {
         self.kept(|ps| ps.make(Some(name), host, dir))
     }
 
-    /// A project's window (terminum-kanban.md AC-138): its name and folder together; what is not said stays.
+    /// A project's window (terminum-kanban.md AC-139): its name and folder together; what is not said stays.
     pub fn edit(&mut self, id: &str, name: Option<&str>, dir: Option<String>) -> Result<(), String> {
         let name = name.map(name_ok).transpose()?;
         if let Some(name) = &name {

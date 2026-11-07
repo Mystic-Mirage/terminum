@@ -199,7 +199,7 @@ async fn new_project(State(app): State<Shared>, Json(body): Json<Value>) -> Resp
     told_projects(&app, done.map(|id| json!({"id": id})))
 }
 
-/// A project's name and folder from its window (AC-138); its server stays: its sessions are there.
+/// A project's name and folder from its window (AC-139); its server stays: its sessions are there.
 async fn edit_project(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
     if id == DEFAULT_PROJECT {
         return refuse(StatusCode::BAD_REQUEST, "Default is no real project: it has no name or folder to change.");

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A project's window (terminum-kanban.md AC-138): a new empty one, or one to change: its name, server,
+// A project's window (terminum-kanban.md AC-139): a new empty one, or one to change: its name, server,
 // folder, agents and memory limits. terminumd checks what is kept and says what is wrong.
 import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
 

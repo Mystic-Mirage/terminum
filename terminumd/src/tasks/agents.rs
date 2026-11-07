@@ -5,14 +5,14 @@
 
 use axum::extract::{Path, State};
 use axum::response::Response;
-use axum::routing::{patch, post, put};
+use axum::routing::{patch, post};
 use axum::{Json, Router};
 use rusqlite::Transaction;
 use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::api::{answer, store, told_projects};
-use super::ops::{check_project, rows, sql};
+use super::ops::{rows, sql};
 use crate::app::Shared;
 use crate::termtext::{has_control, stray};
 use crate::tmux::hookstate::AGENTS;
@@ -103,17 +103,6 @@ impl Given {
     }
 }
 
-/// A project's folder as it may be kept (terminum-kanban.md AC-139).
-pub fn check_folder(dir: &str) -> Result<(), String> {
-    if !dir.is_empty() && !(dir.starts_with('/') || dir.starts_with('~')) {
-        return Err("A folder starts with / or ~.".into());
-    }
-    if dir.chars().count() > MOST_LINE || has_control(dir) {
-        return Err(format!("A folder is one line of {MOST_LINE} characters at most, with no control or invisible characters."));
-    }
-    Ok(())
-}
-
 /// The pool, as they were added.
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
     rows(tx, "SELECT id, name, kind, command, effort, color FROM agents ORDER BY rowid", [], |r| {
@@ -155,7 +144,6 @@ pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/api/task-agents", post(new_agent))
         .route("/api/task-agents/{id}", patch(change_agent).delete(drop_agent))
-        .route("/api/task-projects/{id}/limits", put(set_limits))
 }
 
 /// The body as kept, or what is wrong with it.
@@ -185,41 +173,6 @@ async fn change_agent(State(app): State<Shared>, Path(id): Path<String>, Json(bo
 
 async fn drop_agent(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     let done = store(&app, move |tx| remove(tx, &id).map(|()| json!({"ok": true}))).await;
-    told_projects(&app, done)
-}
-
-/// A project's memory limits, or none to go by the global ones (terminum-dispatcher.md AC-128); 0: off.
-fn keep_limits(tx: &Transaction, project: &str, limits: Option<(f64, f64)>) -> Result<(), String> {
-    check_project(tx, project)?;
-    match limits {
-        None => tx.execute("DELETE FROM project_limits WHERE project = ?1", [project]).map_err(sql)?,
-        Some((warn, end)) => {
-            if warn < 0.0 || end < 0.0 {
-                return Err("A limit is a number of GiB, 0 for off.".to_string());
-            }
-            if end > 0.0 && warn > end {
-                return Err("The warning is above the end.".to_string());
-            }
-            tx.execute("INSERT INTO project_limits (project, warn_gib, end_gib) VALUES (?1, ?2, ?3) ON CONFLICT (project) DO UPDATE SET warn_gib = ?2, end_gib = ?3", (project, warn, end)).map_err(sql)?
-        }
-    };
-    Ok(())
-}
-
-/// Every project's limits: (project, warn, end).
-pub fn limits(tx: &Transaction) -> Result<Vec<(String, f64, f64)>, String> {
-    rows(tx, "SELECT project, warn_gib, end_gib FROM project_limits", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-}
-
-async fn set_limits(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
-    let wanted = match (&body["warn"], &body["end"]) {
-        (Value::Null, Value::Null) => Ok(None),
-        (w, e) => w.as_f64().zip(e.as_f64()).map(Some).ok_or_else(|| "A limit is a number of GiB, 0 for off.".to_string()),
-    };
-    let done = match wanted {
-        Ok(limits) => store(&app, move |tx| keep_limits(tx, &project, limits).map(|()| json!({"ok": true}))).await,
-        Err(e) => Err(e),
-    };
     told_projects(&app, done)
 }
 

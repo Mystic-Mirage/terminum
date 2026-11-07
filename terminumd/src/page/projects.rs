@@ -193,7 +193,7 @@ impl Projects {
 
     /// A project made on the board, with no session (AC-110). Its id.
     pub fn create(&mut self, name: &str, host: Option<String>, dir: String) -> Result<String, String> {
-        crate::tasks::agents::check_folder(&dir)?;
+        crate::tasks::projects::check_folder(&dir)?;
         self.kept(|ps| ps.make(Some(name), host, dir))
     }
 
@@ -204,7 +204,7 @@ impl Projects {
             self.name_free(name, Some(id))?;
         }
         if let Some(dir) = &dir {
-            crate::tasks::agents::check_folder(dir)?;
+            crate::tasks::projects::check_folder(dir)?;
         }
         self.kept(|ps| {
             let p = ps.find(id)?;
@@ -220,6 +220,7 @@ impl Projects {
 
     /// The folder a project asks for at its first [+] (AC-110).
     pub fn set_dir(&mut self, id: &str, dir: String) -> Result<(), String> {
+        crate::tasks::projects::check_folder(&dir)?;
         self.kept(|ps| {
             ps.find(id)?.dir = dir;
             Ok(())

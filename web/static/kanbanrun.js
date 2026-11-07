@@ -4,8 +4,8 @@
 // chosen, already picked: one press. Several tasks go by their numbers; what each says shows here first.
 import { $, THIS_MAC, api, fillAgents, onSend } from "./kanbanutil.js";
 
-/** `addAgent()` opens the agents' window; `setFolder(task)`: its project has no folder: true, and it is asked for; `done()` after a run started. */
-export function runWindow({ addAgent, setFolder, done }) {
+/** `addAgent()` opens the agents' window; `noFolder(project, words)`: terminumd says nothing can start there; `done()` after a run started. */
+export function runWindow({ addAgent, noFolder, done }) {
   const box = $("runbox");
   let tasks = [], offer = null, attached = [], fresh = false, dropped = null, answer = () => {};
 
@@ -52,12 +52,15 @@ export function runWindow({ addAgent, setFolder, done }) {
   /** Opens it for `list`, on `agent` if chosen: true when a run started, else false; a refusal throws terminumd's
    *  words. `words`, `files`: the comment that goes with it; `why`: what a press already found wrong. */
   async function open(list, { words = "", files = [], agent = null, why = "" } = {}) {
-    if (setFolder(list[0])) return false;
     tasks = list;
     dropped = agent;
     attached = files;
     $("runmessage").value = words;
     await read();
+    if (offer.no_folder) {
+      noFolder(offer.project, offer.no_folder);
+      return false;
+    }
     draw(false);
     say(why);
     box.returnValue = "";

@@ -52,8 +52,6 @@ fn ac137_refused_with_words() {
         assert_eq!(given.check().unwrap_err(), words);
     }
     assert!(opus().check().is_ok());
-    assert_eq!(check_folder("work/api").unwrap_err(), "A folder starts with / or ~.");
-    assert_eq!(check_folder("/a\nb").unwrap_err(), "A folder is one line of 1000 characters at most, with no control or invisible characters.");
     let trimmed = Given::of(&json!({"name": "  ", "kind": "claude", "command": " claude "}));
     assert_eq!((trimmed.name.as_str(), trimmed.command.as_str()), ("", "claude"), "what a page sends is trimmed");
 }
@@ -80,19 +78,6 @@ fn ac137_a_project_deleted_leaves_the_pool() {
         tx.execute("DELETE FROM projects WHERE id = 'p1'", []).map_err(sql)
     }).unwrap();
     assert_eq!(s.with(list).unwrap().len(), 1);
-}
-
-#[test]
-fn ac128_a_project_s_limits_are_checked_and_go_with_it() {
-    let s = open("agents-limits");
-    s.with(|tx| { project(tx, "p1")?; keep_limits(tx, "p1", Some((6.0, 12.0))) }).unwrap();
-    assert_eq!(s.with(limits).unwrap()[0].2, 12.0);
-    assert_eq!(s.with(|tx| keep_limits(tx, "p1", Some((9.0, 3.0)))).unwrap_err(), "The warning is above the end.");
-    assert_eq!(s.with(|tx| keep_limits(tx, "p1", Some((-1.0, 3.0)))).unwrap_err(), "A limit is a number of GiB, 0 for off.");
-    s.with(|tx| keep_limits(tx, "p1", Some((9.0, 0.0)))).unwrap();
-    s.with(|tx| keep_limits(tx, "p1", None)).unwrap();
-    assert!(s.with(limits).unwrap().is_empty(), "back to the global ones");
-    assert_eq!(s.with(|tx| keep_limits(tx, "gone", None)).unwrap_err(), "That project is gone.");
 }
 
 #[test]
@@ -142,4 +127,11 @@ fn ac140_default_stands_at_home() {
     let s = open("agents-place");
     let (name, host, dir) = s.with(|tx| crate::tasks::ops::project_place(tx, DEFAULT_PROJECT)).unwrap();
     assert_eq!((name.as_str(), host, dir.as_str()), ("Default", None, "~"));
+}
+
+#[test]
+fn ac139_a_folder_is_one_line_from_the_root_or_home() {
+    assert!(crate::tasks::projects::check_folder("~/work").is_ok() && crate::tasks::projects::check_folder("/srv/api").is_ok() && crate::tasks::projects::check_folder("").is_ok());
+    assert_eq!(crate::tasks::projects::check_folder("work/api").unwrap_err(), "A folder starts with / or ~.");
+    assert_eq!(crate::tasks::projects::check_folder("/a\nb").unwrap_err(), "A folder is one line of 1000 characters at most, with no control or invisible characters.");
 }

@@ -83,7 +83,7 @@ export function filterBar({ getMeta, changed, editProject }) {
       const name = button("projname", "", () => only([p.id]));
       name.append(dot(p), el("span", "pname", p.name));
       if (!p.dir) name.append(el("small", "projnofolder", "no folder"));   // no agent can start there (terminum-dispatcher.md AC-140)
-      const edit = iconButton("projedit", "pencil", `Edit ${p.name}`, `Edit ${p.name}: its folder and its agents`, () => { box.open = false; editProject(p); });
+      const edit = iconButton("projedit", "pencil", `Edit ${p.name}`, `Edit ${p.name}: its folder and limits`, () => { box.open = false; editProject(p); });
       line.append(also, name, edit);
       return line;
     });

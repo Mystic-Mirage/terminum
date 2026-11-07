@@ -30,6 +30,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/task-projects", post(new_project))
         .route("/api/task-projects/{id}", patch(edit_project))
         .merge(super::agents::routes())
+        .merge(super::limits::routes())
         .merge(crate::dispatcher::api::routes())
         .route("/api/tasks/{id}", get(window).patch(change))
         .route("/api/tasks/{id}/comments", post(add_comment))
@@ -178,7 +179,7 @@ async fn meta(State(app): State<Shared>) -> Response {
         let (users, agents, limits, last_agents) = a.tasks.with(|tx| Ok((
             ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
             super::agents::list(tx)?,
-            super::agents::limits(tx)?,
+            super::limits::limits(tx)?,
             runs::last_agents(tx)?,
         ))).unwrap_or_default();
         (users, agents, limits, last_agents, a.tasks.problem(), a.tasks.is_set_aside())

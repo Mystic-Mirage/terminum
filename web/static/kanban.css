@@ -90,7 +90,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .chead { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
 .cid { font-variant-numeric: tabular-nums; }
 .cparent { font-size: var(--fs-small); color: var(--muted); }
-.projnofolder { margin-left: auto; font-size: var(--fs-small); color: var(--danger, var(--muted)); }
+.projnofolder { margin-left: auto; font-size: var(--fs-small); color: var(--danger-text); }
 .csev { padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); line-height: 16px; font-variant-numeric: tabular-nums; background: var(--surface-1); }
 .csev.P0 { color: var(--danger-ink); background: var(--danger-fill); }
 .csev.P1 { color: var(--danger-ink); background: var(--warn-fill); }
@@ -145,7 +145,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* its windows: the page's own type; what is typed for a machine stays in the terminal's */
 .board-page dialog.dlg { font-family: var(--ui); font-size: var(--fs-body); }
 .board-page dialog.dlg :is(button, select, input, textarea, h2) { font-family: var(--ui); }
-.board-page dialog.dlg :is(#runfolder, #agentdir, #agentcommand, #projectdir, .runprompt, textarea.droparea, #newtext) { font-family: var(--term-font); }
+.board-page dialog.dlg :is(#agentcommand, #projectdir, .runprompt, textarea.droparea, #newtext) { font-family: var(--term-font); }
 .more summary { cursor: pointer; font-size: var(--fs-label); color: var(--muted); user-select: none; }
 .more[open] summary { margin-bottom: var(--sp-2); }
 .fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }

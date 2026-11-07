@@ -8,7 +8,7 @@ import { $, agentColor, api, el, fillSelect, iconButton } from "./kanbanutil.js"
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
-/** `getMeta()`: terminumd's projects and agents; `busy()`: what each busy agent does; `liveRow(key)`: a session's row;
+/** `getMeta()`: terminumd's agents; `busy()`: what each busy agent does; `liveRow(key)`: a session's row;
  *  `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an agent; `run(tasks, agent)`. */
 export function agentsSection({ getMeta, reload, busy, liveRow, dragging, given, run, openSession }) {
   const box = el("section", "agents"), list = el("div", "agentlist");
@@ -160,31 +160,10 @@ export function agentsSection({ getMeta, reload, busy, liveRow, dragging, given,
     if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
   });
 
-  /** A project's memory limits (terminum-dispatcher.md AC-128): empty goes by the global ones; 0 turns one off. */
-  function openLimits(project) {
-    const box = $("limitsbox"), { projects, limits: all = [] } = getMeta();
-    const now = all.find((l) => l.project === project);
-    $("limitstext").textContent = `For ${projects.find((p) => p.id === project)?.name ?? project}; 0 turns one off.`;
-    $("limitwarn").value = now?.warn ?? "";
-    $("limitend").value = now?.end ?? "";
-    $("limitserror").hidden = true;
-    const keep = async (body) => {
-      try {
-        await api(`/api/task-projects/${project}/limits`, { method: "PUT", body });
-        box.close();
-        await reload();
-      } catch (e) { $("limitserror").textContent = e.message; $("limitserror").hidden = false; }
-    };
-    const gib = (id) => ($(id).value === "" ? null : Number($(id).value));
-    $("limitsok").onclick = () => keep({ warn: gib("limitwarn"), end: gib("limitend") });
-    $("limitsglobal").onclick = () => keep({ warn: null, end: null });
-    box.showModal();
-  }
-
   /** A new one; once its window closes. */
   const add = () => {
     open();
     return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
   };
-  return { box, draw, add, rows, openLimits };
+  return { box, draw, add, rows };
 }

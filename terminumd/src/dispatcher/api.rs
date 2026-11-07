@@ -28,7 +28,7 @@ pub fn routes() -> Router<Shared> {
 }
 
 /// What RUN's dialog shows (AC-121, AC-138): the pool, each saying what keeps it busy; an agent named that cannot
-/// take them is refused here, so the window never offers another under its name. No folder: nothing can start (AC-140).
+/// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
     answer(store(&app, move |tx| {
         let (tasks, w) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
@@ -36,9 +36,7 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         let t = &tasks[0];
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
         let pool: Vec<Agent> = agents::list(tx)?;
-        if matches!(w, Way::First) {
-            no_folder(&name, &dir)?;
-        }
+        let lacks = no_folder(&name, &dir).err().filter(|_| matches!(w, Way::First));
         if let (Some(named), Way::First) = (&asked.agent, &w) {
             let a = pool.iter().find(|a| a.id == *named).ok_or("That agent is gone.")?;
             if let Some(other) = runs::busy_with(tx, &a.id, None)? {
@@ -53,7 +51,7 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         }).collect();
         let last = runs::last_agent(tx, &t.project)?.filter(|l| pool.iter().any(|a| a.id == *l));
         let shown = shown_of(tx, &tasks)?;
-        Ok(json!({"first": matches!(w, Way::First), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "project_name": name,
+        Ok(json!({"first": matches!(w, Way::First), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
                   "prompt_rev": rev_of(&shown), "prompt": shown, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
     }).await)
 }
@@ -293,7 +291,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
     let t = &tasks[0];
     let (all, seen, said, attached) = (tasks.to_vec(), body.prompt_rev.clone(), comment, body.files.clone());
     let (project, wanted) = (t.project.clone(), body.agent.clone());
-    let (a, host, chosen) = store(app, move |tx| {
+    let (a, host, dir) = store(app, move |tx| {
         let (name, host, dir) = ops::project_place(tx, &project)?;
         no_folder(&name, &dir)?;
         let a = agents::list(tx)?.into_iter().find(|a| Some(&a.id) == wanted.as_ref()).ok_or("No agents yet: add one first.")?;
@@ -309,15 +307,15 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
             return Err(format!("The link to {host}'s agents is not up: {state}"));
         }
     } else {
-        if !folder_there(&chosen).await {
-            return Err(format!("The folder {chosen} does not exist on this Mac"));
+        if !folder_there(&dir).await {
+            return Err(format!("The folder {dir} does not exist on this Mac"));
         }
         let kind = a.kind.clone();
         if !crate::http::off(move || Ok(hooks_there(&kind))).await.unwrap_or(false) {
             return Err("Run terminum hooks install first: Dispatcher cannot follow the agent without them.".to_string());
         }
     }
-    let (ag, f, host) = (a.clone(), chosen.clone(), host.clone());
+    let (ag, f) = (a.clone(), dir.clone());
     let run = store(app, move |tx| {
         // the one check that counts: in the transaction that takes the agent, each task as it stands now
         if let Some(other) = runs::busy_with(tx, &ag.id, None)? {
@@ -354,7 +352,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
     }).await?;
     let project = project_of(app, t);
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
-    let opening = start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &chosen, command: &a.line, run: &run, tasks: &ids, program: &a.kind };
+    let opening = start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &dir, command: &a.line, run: &run, tasks: &ids, program: &a.kind };
     if let Err(e) = start::open(app, opening).await {
         let r = run.clone();
         let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = "closed".into()).map(drop)).await;

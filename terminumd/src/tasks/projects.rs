@@ -11,6 +11,20 @@ use serde_json::{json, Value};
 use super::ops::{log, rows, sql};
 use super::store::{Store, DEFAULT_PROJECT, DISPATCHER, HUMAN};
 use crate::page::projects::Project;
+use crate::termtext::has_control;
+
+const MOST_FOLDER: usize = 1000;
+
+/// A project's folder as it may be kept (terminum-kanban.md AC-139).
+pub fn check_folder(dir: &str) -> Result<(), String> {
+    if !dir.is_empty() && !(dir.starts_with('/') || dir.starts_with('~')) {
+        return Err("A folder starts with / or ~.".into());
+    }
+    if dir.chars().count() > MOST_FOLDER || has_control(dir) {
+        return Err(format!("A folder is one line of {MOST_FOLDER} characters at most, with no control or invisible characters."));
+    }
+    Ok(())
+}
 
 /// What the session list's projects hold.
 #[derive(Default, Clone, Debug, PartialEq)]

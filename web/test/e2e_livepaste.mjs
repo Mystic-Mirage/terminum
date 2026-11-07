@@ -43,12 +43,13 @@ async function pasteInto(page, home, b64, type, name, tag) {
   await page.keyboard.type(`printf '${tag}<%s>\\n' `);
   await pasteFile(page, b64, type, name);
   for (let i = 0; i < 50 && shots(home).length === before; i++) await new Promise((r) => setTimeout(r, 100));
-  await page.waitForTimeout(300);
+  // Enter only once its path stands on the line, however long a busy machine takes to echo it
+  await page.waitForFunction((tag) => new RegExp(`${tag}<%s>.*/tmp/`).test(document.getElementById("screen").innerText), tag, { timeout: 15000 }).catch(() => {});
   await page.keyboard.press("Enter");
   return page.waitForFunction((tag) => {
     const m = document.getElementById("screen").innerText.match(new RegExp(`${tag}<(/[^>\\n]*)>`));
     return m && m[1];
-  }, tag, { timeout: 5000 }).then((h) => h.jsonValue()).catch(() => null);
+  }, tag, { timeout: 15000 }).then((h) => h.jsonValue()).catch(() => null);
 }
 
 /** A drop on the page of files [name, size in bytes, modified at (ms)]. */

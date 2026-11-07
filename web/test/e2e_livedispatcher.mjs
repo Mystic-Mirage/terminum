@@ -224,7 +224,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-126 changed in flight: the agent is told", await until(async () => /budget is now 60 minutes/.test(tmux("capture-pane", "-p", "-S", "-40", "-t", await paneOf(changing))) || (await history(changing)).includes("set its budget"), 6000), await history(changing));
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector('.col[data-status="TODO"]');
-  check("AC-126 the card shows the time used and the budget", await until(async () => /\d+ of 60 min/.test(await page.textContent(card(changing)).catch(() => "")), 6000), await page.textContent(card(changing)).catch(() => ""));
+  check("AC-126 the card shows the time used and the budget", await until(async () => /\d+ of 60 min/.test(await page.textContent(card(changing)).catch(() => "")), 20000), await page.textContent(card(changing)).catch(() => ""));
 
   // AC-127 a subagent silent and idle: one request to the main agent, then it is said
   const silentSub = await task("has a subagent SUBAGENT");

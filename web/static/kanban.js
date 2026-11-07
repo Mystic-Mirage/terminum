@@ -8,7 +8,7 @@ import "./pop.js";
 import { pageColors } from "./contrast.js";
 import { withScheme } from "./schemes.js";
 import { askConfirm } from "./dialogs.js";
-import { sessionUrl, takeSelection } from "./tasklink.js";
+import { sessionUrl, takeRecord, takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
 import { archivedWindow } from "./kanbanarchive.js";
@@ -511,7 +511,8 @@ listen();
 route();
 const asked = new URLSearchParams(location.search);
 if (asked.get("new") === "1") {
-  form.open({ session: asked.get("session"), project: asked.get("for"), text: takeSelection() });
+  const record = takeRecord();             // a bookmark or reminder made into a task (AC-116)
+  form.open({ session: asked.get("session"), project: asked.get("for"), text: record?.text ?? takeSelection(), title: record?.title, record: record?.id });
   for (const k of ["new", "session", "for"]) asked.delete(k);
   history.replaceState(null, "", `/kanban/${asked.size ? `?${asked}` : ""}`);
 }

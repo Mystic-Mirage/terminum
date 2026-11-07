@@ -26,11 +26,8 @@ pub fn hello(app: &Shared, page: &Page) {
 pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     match t {
         "unmark" => {
-            let id = msg["id"].as_str().unwrap_or("").to_string();
-            match app.bookmarks.lock().remove(&id) {
-                Ok(true) => tell_unmark(app, &id),
-                Ok(false) => {}
-                Err(e) => super::client::error(page, e.to_string(), None),
+            if let Err(e) = forget(app, msg["id"].as_str().unwrap_or("")) {
+                super::client::error(page, e, None);
             }
         }
         "remind" => {
@@ -127,6 +124,14 @@ pub fn project_of(item: &Value) -> (Option<String>, Option<String>) {
 /// Every page learns of a new or changed bookmark.
 pub fn tell_mark(app: &Shared, item: &bm::Item) {
     app.pages.tell(&json!({"t": "mark", "item": item.wire()}).to_string());
+}
+
+/// A bookmark or reminder goes, and every page hears; one already gone is nothing to do.
+pub fn forget(app: &Shared, id: &str) -> Result<(), String> {
+    if app.bookmarks.lock().remove(id).map_err(|e| e.to_string())? {
+        tell_unmark(app, id);
+    }
+    Ok(())
 }
 
 /// Every page learns a bookmark is gone.

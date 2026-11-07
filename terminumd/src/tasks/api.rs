@@ -268,6 +268,10 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
         if let Some(up) = &t.parent {
             told(&app, up);                            // its card counts it, its window lists it (AC-112)
         }
+        // the record it was made of goes once the task is kept (AC-116); refused, it stays
+        if let Some(record) = text(&body, "record") && let Err(e) = crate::page::marks::forget(&app, &record) {
+            tracing::warn!(event = "tasks.record_kept", error = %e);
+        }
     }
     answer(done.map(|t| card(&app, &t)))
 }

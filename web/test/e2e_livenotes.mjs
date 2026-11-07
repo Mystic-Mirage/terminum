@@ -153,6 +153,34 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     fs.rmSync(b.dir, { recursive: true, force: true });
     check("AC-33 live: a closed session's records are orphaned", await until(() => !!rec("B later")?.orphaned, 10000));
     check("AC-33 live: the other session's are not", !rec("A asks")?.orphaned, JSON.stringify(rec("A asks")));
+
+    // a record becomes a task (terminum-kanban.md AC-116)
+    const back = page.url();
+    const makeOf = async (note) => {
+      await page.click("#marksbtn");
+      await page.waitForSelector("#marksdlg[open]");
+      await page.click('#marklist .mkkind button:has-text("Reminders")');
+      await page.click(`#marklist li:has-text("${note}") .mkmake`);
+      await page.waitForSelector("#newbox[open]", { timeout: 8000 });
+    };
+    await makeOf("A asks");
+    const said = await page.inputValue("#newtext");
+    check("AC-116 Make a task fills the new-task window", await page.inputValue("#newtitle") === "A asks" && /^> .*selectable words/m.test(said) && /\]\(\/sessions\/#\//.test(said)
+      && (await page.inputValue("#newsession")).endsWith(`:${a.pane}`), said);
+    await page.click("#newdiscard");
+    await page.click("#confirmok");                  // what it brought counts as typed: Discard asks
+    await page.waitForSelector("#newbox", { state: "hidden" });
+    check("AC-116 Discard keeps the record", !!rec("A asks"));
+    await makeOf("A asks");
+    await page.fill("#newtitle", " ");
+    await page.click("#newcreate");
+    check("AC-116 a task refused says why, and the record stays", await until(async () => (await page.textContent("#newerror").catch(() => "")).length > 0) && await page.isVisible("#newbox") && !!rec("A asks"));
+    await page.fill("#newtitle", "A asks");
+    await page.click("#newcreate");
+    check("AC-116 Create keeps the task, then the record goes", await until(() => !rec("A asks"), 8000)
+      && (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200")).json()).tasks)).some((t) => t.title === "A asks"));
+    await page.goto(back);
+    await page.waitForSelector(row(a.pane), { timeout: 8000 });
   } finally {
     await page.evaluate((k) => document.querySelector(`#sessions .item[data-id$=":${k}"]`)?.click(), shown).catch(() => {});
     for (const { pane, dir } of made) { try { tmux("kill-pane", "-t", pane); } catch { /* its pane ended */ } fs.rmSync(dir, { recursive: true, force: true }); }

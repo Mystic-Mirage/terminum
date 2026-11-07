@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The ways between the session page and the board.
 const SELECTION = "tm.taskselection";
+const RECORD = "tm.taskrecord";
 
 export const taskUrl = (id) => `/kanban/${id}`;
 
@@ -19,15 +20,24 @@ export function addressedSession() {
   try { return said ? decodeURIComponent(said) : null; } catch { return null; }
 }
 
-/** Text for that window to take, once; in private mode it opens empty. */
-export function leaveSelection(text) {
-  try { localStorage.setItem(SELECTION, text); } catch { /* private mode */ }
+/** What that window takes, once; in private mode it opens empty. */
+function leave(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* private mode */ }
 }
 
-export function takeSelection() {
+function take(key) {
   try {
-    const text = localStorage.getItem(SELECTION) ?? "";
-    localStorage.removeItem(SELECTION);
-    return text;
-  } catch { return ""; }
+    const value = localStorage.getItem(key);
+    localStorage.removeItem(key);
+    return value;
+  } catch { return null; }
+}
+
+export const leaveSelection = (text) => leave(SELECTION, text);
+export const takeSelection = () => take(SELECTION) ?? "";
+
+/** A bookmark or reminder to make a task of (terminum-kanban.md AC-116): its id, title and text. */
+export const leaveRecord = (record) => leave(RECORD, JSON.stringify(record));
+export function takeRecord() {
+  try { return JSON.parse(take(RECORD) ?? "null"); } catch { return null; }
 }

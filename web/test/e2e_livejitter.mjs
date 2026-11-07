@@ -7,8 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { check } from "./check.mjs";
 
-// every 100 ms the spinner row rewritten in two writes 2 ms apart, the cursor on that row between
-const PROGRAM = `const G = ["·", "✢", "✳", "✶", "✻", "✽"];
+// every 100 ms the spinner row rewritten in two writes `gap` ms apart, the cursor on that row between
+const program = (gap) => `const G = ["·", "✢", "✳", "✶", "✻", "✽"];
 let k = 0;
 const spin = () => G[k % G.length] + " Beaming… (" + k + "s)";
 // drawn whole at the start and at each new size (the page sizes the window it shows), the cursor in the box
@@ -24,12 +24,18 @@ process.stdout.on("resize", draw);
 setInterval(() => {
   k++;
   process.stdout.write("\\x1b[3A\\r\\x1b[2K" + spin());
-  back = setTimeout(() => process.stdout.write("\\x1b[3B\\r\\x1b[2C"), 2);
+  back = setTimeout(() => process.stdout.write("\\x1b[3B\\r\\x1b[2C"), ${gap});
 }, 100);`;
 
-export async function liveJitter(page, { tmux, work }) {
+export async function liveJitter(page, opts) {
+  await redraws(page, opts, 2, "AC-02 a coding agent's redraw that reaches tmux in two parts is never a frame: its input box one block in one place, the cursor in it, for 3 s");
+  // past terminumd's quiet (SETTLE, stream.rs): every other frame caught between the parts, as a stall of the program does now and then
+  await redraws(page, opts, 20, "AC-02 and when its parts come further apart than terminumd waits, frames caught between them: the box and the cursor as they were, for 3 s");
+}
+
+async function redraws(page, { tmux, work }, gap, name) {
   const prog = path.join(work, "standin-claude.js");
-  fs.writeFileSync(prog, PROGRAM);
+  fs.writeFileSync(prog, program(gap));
   // a window named claude (-n: tmux renames it no more): its pane is a coding agent's (titles.rs); its row found by its pane
   const pane = tmux("new-window", "-P", "-F", "#{pane_id}", "-n", "claude", `node ${prog}`);
   try {
@@ -70,8 +76,7 @@ export async function liveJitter(page, { tmux, work }) {
       requestAnimationFrame(tick);
     }));
     if (got.lost) got.tmux = { pane, screen: tmux("capture-pane", "-p", "-t", pane).split("\n").filter(Boolean).slice(0, 4), cmd: tmux("display", "-p", "-t", pane, "#{pane_current_command} #{pane_dead}") };
-    check("AC-02 a coding agent's redraw that reaches tmux in two parts is never a frame: its input box one block in one place, the cursor in it, for 3 s",
-      got.frames > 60 && got.lost === 0 && got.away === 0 && got.boxes === 1 && got.tops.length === 1, JSON.stringify(got));
+    check(name, got.frames > 60 && got.lost === 0 && got.away === 0 && got.boxes === 1 && got.tops.length === 1, JSON.stringify(got));
   } finally {
     tmux("kill-window", "-t", pane);
     fs.rmSync(prog, { force: true });

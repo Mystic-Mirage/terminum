@@ -25,7 +25,8 @@ use crate::tmux::Server;
 /// Frames at most 30 a second (AC-02).
 pub const FRAME_GAP: Duration = Duration::from_millis(33);
 /// After `%output`, the quiet that ends a write: one the terminal took in two reads (Claude Code's
-/// cursor up to its spinner row, the row, the cursor back) is captured whole, not half done.
+/// cursor up to its spinner row, the row, the cursor back) is captured whole, not half done. A stall
+/// past it can still catch one half done: the page keeps the box for that frame (agentbox.js parkedCaret).
 const SETTLE: Duration = Duration::from_millis(6);
 /// A shown pane is also looked at this often: a safety net, %output wakes it (AS-06 holds).
 const POLL: Duration = Duration::from_secs(1);

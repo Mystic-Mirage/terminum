@@ -13,7 +13,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { check, playwright, results, runningIn, within } from "./check.mjs";
+import { check, playwright, results, runningIn, until, within } from "./check.mjs";
 import { freePort, own, shortTmp } from "./testrun.mjs";
 import { endOnSignal, NO_SIGNALS, stopChild } from "../../ui/test/process-stop.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
@@ -250,17 +250,28 @@ async function wide(browser, name) {
   const page2 = await other.newPage();
   await signIn(page2);
   const bg = (p) => p.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim());
+  const bgIs = (p, want) => p.waitForFunction((c) => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim() === c, want, { timeout: 5000 });
   const kept = () => JSON.parse(fs.readFileSync(path.join(HOME, "settings.json"), "utf8")).page?.colorScheme ?? null;
+  const board = await other.newPage();
+  await board.goto(`${BASE}/kanban/`);
+  await board.waitForFunction(() => document.documentElement.style.getPropertyValue("--t-bg"), null, { timeout: 5000 });   // its meta came
+  const boardOwn = await bg(board);
   await page.click("#menubtn");
   await page.click('#schemes .swatch[data-scheme="Nord"]');
   await within("AC-12 a color scheme picked in one browser shows in another at once and is kept in settings.json", async () => {
-    await page2.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim() === "#2e3440", null, { timeout: 5000 });
+    await bgIs(page2, "#2e3440");
     if (await bg(page) !== "#2e3440" || kept() !== "Nord") throw new Error(`${await bg(page)} ${kept()}`);
+  });
+  await within("AC-12 an open board takes the color scheme at once, and has it when opened again", async () => {
+    await bgIs(board, "#2e3440");
+    await board.reload();
+    await bgIs(board, "#2e3440");
   });
   await page.click('#schemes .swatch[data-scheme=""]');
   await within("AC-12 Theme goes back to the theme's colors in every browser", async () => {
-    await page2.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim() === "#102030", null, { timeout: 5000 });
+    await bgIs(page2, "#102030");
     if (kept() !== null) throw new Error(String(kept()));
+    await bgIs(board, boardOwn);
   });
   await page.keyboard.press("Escape");
   await other.close();
@@ -283,8 +294,13 @@ async function wide(browser, name) {
   const still = await unreadRow();
   check("AC-93 a row marked unread is still unread after terminumd restarts", !still, still);
   check("AC-12 the color scheme picked is kept across the restart", kept() === "Nord" && await bg(page) === "#2e3440", `${kept()} ${await bg(page)}`);
+  // pressed until kept: the page's link may still be coming back, and a press while it is down is not sent.
+  // Left to come back then, the scheme redraws the page in the middle of the check below, and stays for the next browser
   await page.click("#menubtn");
-  await page.click('#schemes .swatch[data-scheme=""]');
+  check("AC-12 Theme is kept once the link is back after the restart", await until(async () => {
+    if (kept() === null) return true;
+    await page.click('#schemes .swatch[data-scheme=""]');
+  }, 10000), String(kept()));
   await page.keyboard.press("Escape");
   await liveJitter(page, { tmux, work: WORK });
   check("no page errors", errors.length === 0, errors.slice(0, 3).join(" | "));

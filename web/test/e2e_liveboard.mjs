@@ -117,6 +117,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click("#confirmok");
   check("AC-109 a text is purged", await until(async () => /purged its text/.test(await page.textContent("#taskbody .history"))));
   await page.click("#taskclose");
+  await page.waitForFunction(() => location.pathname === "/kanban/");   // closing goes Back, which would cut the load below short
 
   // a deep link, files by header only
   await page.goto(`${base}/kanban/${first}`);

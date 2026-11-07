@@ -159,6 +159,10 @@ Scenario: AC-02 happy path — output streams
   When the pane prints 5,000 lines in 2 s
   Then terminumd captures the screen on its %output notices once the pane is quiet 6 ms (a write that came in parts is whole; 33 ms after the first notice at most), at most every 33 ms, and sends only the rows that changed ("full": false, "ch": [[row, line]…]); lines that scrolled off the screen are appended to the history ("hist", "append") with their absolute numbers
   And the page draws each frame in under 16 ms and follows the output while the view is at its end
+Scenario: AC-02 edge — Claude Code's redraw comes in parts further apart than the quiet
+  Given Claude Code's redraw takes the cursor up to its spinner row and back in two writes over 6 ms apart (the program stalled)
+  When a frame is caught between them
+  Then the page keeps the input box in its place and draws the cursor on the caret last seen in it (its row's text unchanged, terminum-terminal.md AC-40); above a box where no caret was seen, or whose caret's row changed, the cursor stays where it is
 Scenario: AC-02 edge — the pane prints while its history is read
   Given a frame said tmux's history holds h rows, and before the rows that scrolled off are read the pane prints 60 more (a coding agent's long result, over a host's ssh)
   Then terminumd's capture reaches 64 rows above the range (further once more when more scrolled) and comes with #{history_size} and #{pane_width} read before and after it, and the rows asked for are taken from where the rows that scrolled meanwhile moved them: the page gets the rows it numbered, never those 60 rows on shown in their place (a paragraph doubled, text out of its place); rows tmux no longer has are empty, never others
@@ -486,7 +490,7 @@ Scenario: AC-12 happy path — rules and live changes
   Then themes with a "light" variant switch (the page is told "dark": false); others stay
 Scenario: AC-12 happy path — a color scheme from the menu
   When the user presses one of the menu's 20 color swatches (Dracula, Solarized Dark and Light, Nord, Gruvbox Dark and Light, One Dark, Monokai, Tokyo Night, Catppuccin Mocha and Latte, GitHub Dark and Light, Tomorrow Night, Night Owl, Ayu Dark, Everforest Dark, Rosé Pine, Kanagawa and terminum's own light Paper: warm paper, soft pastel hues, its eight plain ANSI colors at least 4.5:1 on it)
-  Then the terminal, the page's chrome and the widgets take its background, text, cursor, selection and 16 ANSI colors at once over the session's theme (its font and size stay); the choice is kept in settings.json (page.colorScheme: the scheme's name) and every page, in every browser, shows it at once; "Theme" removes it, back to the session's theme; a scheme an older page kept in its own browser is not carried over (picked once again)
+  Then the terminal, the page's chrome and the widgets take its background, text, cursor, selection and 16 ANSI colors at once over the session's theme (its font and size stay); the choice is kept in settings.json (page.colorScheme: the scheme's name) and every page, the board's too, in every browser, shows it at once; "Theme" removes it, back to the session's theme; a scheme an older page kept in its own browser is not carried over (picked once again)
 Scenario: AC-12 error — a theme that does not parse
   Given "work.json" has a syntax error or a color that is not "#rrggbb"
   Then the page keeps the last good theme, shows "Theme work.json: line 7: expected a color" once as a toast, and terminumd logs it; a rule naming a missing theme uses the default and says so

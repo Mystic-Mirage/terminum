@@ -121,11 +121,13 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
         "lastlines" => {
             let id = s("id");
-            read(app, page, "lastlines", move |a, p| async move { crate::lastlines::show(&a, &p, &id).await });
+            let lane = lane_of(app, page, &msg);
+            read_in(app, page, "lastlines", &lane, move |a, p| async move { crate::lastlines::show(&a, &p, &id).await });
         }
         "diag" => {
             let id = s("id");
-            read(app, page, "diag", move |a, p| async move { super::diag::show(&a, &p, &id).await });
+            let lane = lane_of(app, page, &msg);
+            read_in(app, page, "diag", &lane, move |a, p| async move { super::diag::show(&a, &p, &id).await });
         }
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
@@ -180,13 +182,22 @@ where
     }
 }
 
-/// Runs a read in its lane (`reads`), one per kind and server; a full lane is said on the page.
+/// A read of the shown pane, in its server's lane.
 fn read<F, Fut>(app: &Shared, page: &Arc<Page>, kind: &'static str, work: F)
 where
     F: FnOnce(Shared, Arc<Page>) -> Fut,
     Fut: std::future::Future<Output = ()> + Send + 'static,
 {
-    if !super::reads::spawn(page, &format!("{kind} {}", shown_lane(page)), work(app.clone(), page.clone())) {
+    read_in(app, page, kind, &shown_lane(page), work);
+}
+
+/// Runs a read in its lane (`reads`), one per kind and server; a full lane is said on the page.
+fn read_in<F, Fut>(app: &Shared, page: &Arc<Page>, kind: &'static str, lane: &str, work: F)
+where
+    F: FnOnce(Shared, Arc<Page>) -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    if !super::reads::spawn(page, &format!("{kind} {lane}"), work(app.clone(), page.clone())) {
         error(page, "Too many reads of the history or folder are waiting; try again in a moment.", None);
     }
 }

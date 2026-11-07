@@ -29,7 +29,6 @@ let dragging = null;
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
 let loading = 0, changing = 0, chain = Promise.resolve();
-const BUILD = document.querySelector('meta[name="build"]').content;
 
 /** Above the board; a store set aside offers its way on, and only then is an empty one made (AC-119). */
 function banner(text) {
@@ -411,18 +410,6 @@ if (seen) { fit(); seen.addEventListener("resize", fit); }
 // A phone's page wakes: what it missed is read; its WebSocket says for itself when it is gone
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 
-let reloading = false;
-/** terminumd was upgraded: this page reloads when no window is open (a draft is kept anyway), once. */
-function buildCame(id) {
-  if (id === BUILD || reloading || sessionStorage.getItem("web.reloaded-for") === id) return;
-  reloading = true;
-  const go = () => {
-    if (document.querySelector("dialog[open]")) { setTimeout(go, 1000); return; }
-    try { sessionStorage.setItem("web.reloaded-for", id); } catch { /* private mode: at worst asks again */ }
-    location.reload();
-  };
-  go();
-}
 $("newtask").addEventListener("click", () => form.open());
 /** The columns are read again once a burst ends. */
 let readWait = 0, windowToo = false;
@@ -438,12 +425,12 @@ function listen() {
     readSoon();
   };
   signin.prove().then(() => {
-    const ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`, signin.protocols());
+    const ws = new WebSocket(signin.socketUrl(), signin.protocols());
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
       if (m.t === "taskchange") again(m.id);
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
-      else if (m.t === "build") buildCame(m.id);
+      else if (m.t === "build") signin.reloadOnce(m.id, () => document.querySelector("dialog[open]"));   // a draft is kept anyway
       else if (m.t === "taskmarks") { side.marks(m); needs.came(m); }
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
@@ -458,12 +445,8 @@ function listen() {
 }
 
 // the user's own stylesheet (terminum.md AC-19): the last one at once, the newest when it comes
-try { $("customcss").textContent = localStorage.getItem(signin.CSS_KEY) ?? ""; } catch { /* no storage: fetched below */ }
-fetch("/custom.css", { cache: "no-store" }).then((r) => (r.ok ? r.text() : null)).then((css) => {
-  if (css === null) return;
-  $("customcss").textContent = css;
-  try { localStorage.setItem(signin.CSS_KEY, css); } catch { /* no storage: fetched at every load */ }
-}).catch(() => {});
+signin.showKeptCss();
+signin.loadCss();
 await loadMeta();
 await load();
 listen();

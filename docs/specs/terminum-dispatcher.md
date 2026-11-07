@@ -299,6 +299,7 @@ Scenario: AC-123 failure — a turn failed
 Scenario: AC-123 failure — the agent died
   When the window command records another exit code, or the walk finds no agent in the pane's tree and no clean end came
   Then T-12 is FAILED with "The agent's process ended: exit <code>, last error <hook's error>"; no restart; RUN stays for the human
+  And its window holds the login shell at its prompt, with the terminal, whichever way the agent ended, a Ctrl-C too
   And an end Dispatcher caused (AC-126, AC-128) never counts: the status is written before the signal
 
 Scenario: AC-123 edge — only its sessions
@@ -694,10 +695,10 @@ GET /api/tasks/meta → {"agents": [{"id": "a81f", "project": "api-id", "name": 
 
 `kind` says whose screens and hooks the gate reads (§9); the command does not change that. The same `projects` message that tells pages of a project's change tells them of its agents'.
 
-**Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, in zsh, bash, fish or sh (csh's `-lic` is not taken: its run fails loud): `/bin/sh` goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, drops what the tty still holds so nothing meant for the agent reaches the shell, then stays as that shell. tmux gets each word apart and runs no shell of its own:
+**Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, in zsh, bash, fish or sh (csh's `-lic` is not taken: its run fails loud): `/bin/sh` runs with job control (`set -m`, so the terminal comes back to it however the agent ended) and survives the agent's Ctrl-C (`trap : INT`), goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, drops what the tty still holds so nothing meant for the agent reaches the shell, then stays as that shell. tmux gets each word apart and runs no shell of its own:
 
 ```sh
-new-window -d -a -t @7 -P -F '#{pane_id} #{session_name}:#{window_index}' /bin/sh -c 'd=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l' sh '/Users/alex/work/api' 'claude --model opus' tmux
+new-window -d -a -t @7 -P -F '#{pane_id} #{session_name}:#{window_index}' /bin/sh -c 'trap : INT; set -m; d=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l' sh '/Users/alex/work/api' 'claude --model opus' tmux
 ```
 
 Exit -1 is the folder's: no process exits with it. The target names the pane: `tmux set -p` without `-t` writes to the session's current pane.

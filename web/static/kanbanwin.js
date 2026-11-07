@@ -160,7 +160,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
     const wrap = el("section", "subtasks");
     const head = el("div", "edithead");
     head.append(el("span", null, t.subtasks ? `Subtasks ${t.subtasks_done}/${t.subtasks}` : "Subtasks"), button("textkey", "New subtask", () => newSubtask(t)));
-    const list = el("ul", "filelist");
+    const list = el("ul", "sublist");
     list.append(...t.children.map((k) => {
       const li = el("li");
       li.append(button("linklike", `${k.id} ${k.title}`, () => openTask(k.id)), el("small", null, k.archived_at ? `${k.status} · archived` : k.status));

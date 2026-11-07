@@ -3,6 +3,7 @@
 // AC-138, AC-140; terminum-kanban.md AC-139): kept, listed, changed and deleted by a human, refused with
 // words; tasks run on one by a press or a drop, several at once, at their project's place; a project's own window.
 // scripts/fake_agent.py speaks by the real hooks and tools.
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardKit } from "./boardkit.mjs";
@@ -412,7 +413,9 @@ async function projectWindowChecks(page, opts) {
   await page.fill("#projectdir", `/${"a".repeat(199)}`);
   check("AC-139 a folder of 200 characters reads whole", await page.$eval("#projectdir", (f) => f.scrollHeight <= f.clientHeight + 1 && f.scrollWidth <= f.clientWidth + 1),
     JSON.stringify(await page.$eval("#projectdir", (f) => [f.scrollHeight, f.clientHeight, f.clientWidth])));
-  const parent = work.replace(/\/[^/]+$/, ""), leaf = work.slice(parent.length + 1);
+  // a folder of its own: the temporary folder above holds more than a page
+  const parent = path.join(work, "picker"), leaf = "billing";
+  fs.mkdirSync(path.join(parent, leaf), { recursive: true });
   await page.fill("#projectdir", parent);
   await pressAt(page, "#projectpick");
   await page.waitForSelector("#folderbox[open]");
@@ -425,9 +428,10 @@ async function projectWindowChecks(page, opts) {
   await pressAt(page, "#projectpick");
   await until(async () => await page.textContent("#folderpath") === parent);
   await page.click(`#folderlist .folderrow:has-text("${leaf}")`);
-  await until(async () => await page.textContent("#folderpath") === work);
+  await until(async () => await page.textContent("#folderpath") === path.join(parent, leaf));
   await pressAt(page, "#folderok");
-  check("AC-139 Choose puts its path in the field", await until(async () => await page.inputValue("#projectdir") === work), await page.inputValue("#projectdir"));
+  check("AC-139 Choose puts its path in the field", await until(async () => await page.inputValue("#projectdir") === path.join(parent, leaf)), await page.inputValue("#projectdir"));
+  await page.fill("#projectdir", work);             // the session's folder: what follows starts there
   await page.fill("#projectname", "Fresher");
   await page.click("#projectok");
   await page.waitForSelector("#projectbox", { state: "hidden" });

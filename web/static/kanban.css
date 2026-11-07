@@ -189,10 +189,10 @@ dialog .markdown img { max-width: 100%; }
 #archivedlist { max-height: min(60dvh, 480px); overflow-y: auto; }
 #archivedlist li { align-items: center; }
 #archivedlist .linklike { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-.filelist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-label); }
-.filelist:empty { display: none; }
-.filelist li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; overflow-wrap: anywhere; }
-.filelist small { color: var(--muted); }
+:is(.filelist, .sublist) { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-label); }
+:is(.filelist, .sublist):empty { display: none; }
+:is(.filelist, .sublist) li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; overflow-wrap: anywhere; }
+:is(.filelist, .sublist) small { color: var(--muted); }
 .filelist .icon { --ik: var(--icon-key-list); margin-left: auto; }
 .linklike { font: inherit; padding: 0; color: var(--link, var(--accent)); text-decoration: underline; text-underline-offset: 2px; text-align: left; overflow-wrap: anywhere; }
 .history { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }

@@ -81,6 +81,9 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         project: app.projects.lock().of(&caller.key).map(|p| p.id.clone()),
         dir: if host.is_none() { dir } else { None },
     };
+    if tool == "get_file" && let Some(host) = host {
+        return match host_file(app, &host, who, args).await { Ok(text) => answer(&text, false), Err(e) => answer(&e, true) };
+    }
     let a = app.clone();
     let done = tokio::task::spawn_blocking(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await;
     match done {
@@ -93,6 +96,22 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         Ok(Err(e)) => answer(&e, true),
         Err(_) => answer("terminum could not answer the call.", true),
     }
+}
+
+/// A task's file for an agent on `host`: put in its ~/.terminum/tmp as a paste's file is, its path said
+/// (terminum-kanban.md AC-120).
+async fn host_file(app: &Shared, host: &str, who: crate::tasks::tools::Who, args: Value) -> Result<String, String> {
+    if !crate::remote::files_on(app, host) {
+        return Err("Files are off for this host".into());
+    }
+    let a = app.clone();
+    let (name, data) = tokio::task::spawn_blocking(move || {
+        let (name, path) = a.tasks.with(|tx| crate::tasks::tools::task_file(tx, &a.cfg.dir, &who, &args))?;
+        std::fs::read(&path).map(|d| (name, d)).map_err(|e| format!("The file could not be read: {e}"))
+    }).await.map_err(|_| "terminum could not answer the call.".to_string())??;
+    let stored = crate::page::upload::upload_name(&name, &data)?;      // a paste's name: its time, then its own
+    let there = crate::remote::paste(app, host, &stored, data.into()).await?;
+    Ok(format!("{}\n{there}", crate::tasks::tools::DATA))
 }
 
 fn answer(text: &str, error: bool) -> Json<Value> {

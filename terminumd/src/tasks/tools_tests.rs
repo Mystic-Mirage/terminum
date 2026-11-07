@@ -197,3 +197,33 @@ fn ac142_a_session_with_no_task_takes_one_and_writes_as_its_agent_of_the_pool() 
     let author: String = s.with(|tx| tx.query_row("SELECT u.name FROM events e JOIN users u ON u.id = e.author WHERE e.kind = 'comment' ORDER BY e.rowid DESC LIMIT 1", [], |r| r.get(0)).map_err(|e| e.to_string())).unwrap();
     assert_eq!(author, "Opus reviewer", "one agent, one name: the pool's");
 }
+
+#[test]
+fn ac120_a_long_get_task_comes_in_pages() {
+    let ((s, dir), w) = (fresh("tools-pages"), who(Some("api")));
+    let id = s.with(|tx| {
+        let t = ops::create(tx, HUMAN, NewTask { title: "long".into(), project: Some("api".into()), ..Default::default() }, 1)?;
+        for n in 0..HISTORY_PAGE + 5 {
+            ops::comment(tx, HUMAN, &t.id, &format!("comment {n}"), 2)?;
+        }
+        Ok(t.id)
+    }).unwrap();
+    let first = call(&s, &dir, &w, "get_task", json!({"id": id})).unwrap();
+    assert!(first.contains("page 1 of 2: get_task with page \"2\" for the next") && first.contains("comment 0") && !first.contains("comment 104"), "the first page says there is more");
+    let last = call(&s, &dir, &w, "get_task", json!({"id": id, "page": "2"})).unwrap();
+    assert!(last.contains("comment 104") && !last.contains("for the next"), "the last page");
+    assert_eq!(call(&s, &dir, &w, "get_task", json!({"id": id, "page": "3"})).unwrap_err(), "page is 1 to 2");
+    assert!(call(&s, &dir, &w, "get_task", json!({"id": id, "page": "x"})).is_err());
+}
+
+#[test]
+fn ac120_a_host_s_get_file_goes_through_its_link() {
+    let ((s, dir), w) = (fresh("tools-hostfile"), who(Some("api")));
+    let id = s.with(|tx| ops::create(tx, HUMAN, NewTask { title: "t".into(), project: Some("api".into()), ..Default::default() }, 1).map(|t| t.id)).unwrap();
+    call(&s, &dir, &w, "attach_file", json!({"task": id, "name": "log.txt", "text": "hello"})).unwrap();
+    assert!(call(&s, &dir, &w, "get_file", json!({"task": id, "name": "log.txt"})).unwrap_err().contains("through its link"), "the route sends it, not run");
+    let (name, path) = s.with(|tx| task_file(tx, &dir, &w, &json!({"task": id, "name": "log.txt"}))).unwrap();
+    assert_eq!((name.as_str(), std::fs::read_to_string(path).unwrap().as_str()), ("log.txt", "hello"));
+    assert!(s.with(|tx| task_file(tx, &dir, &w, &json!({"task": id, "name": "none.txt"}))).unwrap_err().contains("has no file none.txt"));
+    assert!(s.with(|tx| task_file(tx, &dir, &who(Some("web")), &json!({"task": id, "name": "log.txt"}))).unwrap_err().contains("outside"), "judged as get_task");
+}

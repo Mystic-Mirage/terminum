@@ -7,6 +7,9 @@ import { textForm } from "./render.js";
 export function read(key) { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } }
 export function write(key, v) { try { if (v) localStorage.setItem(key, JSON.stringify(v)); else localStorage.removeItem(key); } catch { /* private mode */ } }
 
+/** "1 task", "2 tasks". */
+export const plural = (n, one) => `${n} ${one}${n === 1 ? "" : "s"}`;
+
 export function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;

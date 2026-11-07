@@ -2,7 +2,7 @@
 // A task that needs a human (terminum-kanban.md AC-117): a line as a waiting agent's, on both pages,
 // and how many on Kanban in the page's head. terminumd says which; a closed line stays closed here.
 import { icon } from "./icons.js";
-import { el, iconButton, read, write } from "./listparts.js";
+import { el, iconButton, plural, read, write } from "./listparts.js";
 
 const SEEN = "tm.taskseen";
 
@@ -51,7 +51,7 @@ export function taskLines(box, open) {
         a.querySelector(".taskneed")?.remove();
         if (!m.need) continue;
         const n = el("span", "taskneed", m.need);
-        n.title = `${m.need} task${m.need === 1 ? "" : "s"} wait for you or failed`;
+        n.title = `${plural(m.need, "task")} wait for you or failed`;
         a.append(n);
       }
     },

@@ -12,7 +12,7 @@ import { closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
 import { inside, placeModal } from "./fabpane.js";
 import { floats } from "./fold.js";
-import { projectColor } from "./listparts.js";
+import { plural, projectColor } from "./listparts.js";
 import { groupKey, groupRows, taskMarksOf, tasksOfProject } from "./nav.js";
 import { newTaskUrl } from "./tasklink.js";
 import { lastLinesView } from "./lastlines.js";
@@ -219,7 +219,6 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     if (p.dir || dir) send({ t: "projectwindow", project: p.id, dir });
   }
 
-  function plural(n, one) { return n === 1 ? `1 ${one}` : `${n} ${one}s`; }
 
   /** Deleted only once asked (AC-110): nothing closes, nothing is lost. */
   async function deleteProject(p, sessions) {

@@ -70,13 +70,21 @@ fn told_answer<T: Serialize>(app: &Shared, id: &str, done: Result<T, String>) ->
 }
 
 /// Every open page hears a task changed ("": several); its window reads the history anew.
-pub fn change_heard(app: &Shared, task: &str) {
+fn change_heard(app: &Shared, task: &str) {
     app.pages.tell(&json!({"t": "taskchange", "id": task}).to_string());
+}
+
+/// Only its history changed: its window reads that anew, and a board has no card to read again.
+pub(super) fn history_heard(app: &Shared, task: &str) {
+    app.pages.tell(&json!({"t": "taskchange", "id": task, "history": true}).to_string());
 }
 
 /// A task's change: every page hears of it, and the session list of what it shows of tasks.
 pub fn told(app: &Shared, task: &str) {
     change_heard(app, task);
+    if !app.task_marks.ask() {
+        return;                                        // a read yet to begin sees this change too
+    }
     let a = app.clone();
     tokio::spawn(async move {
         let refreshed = tokio::task::spawn_blocking({
@@ -148,7 +156,8 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
     match done {
         Ok((tasks, counts, run_marks, on_agents)) => {
             let layout = app.layout.read();
-            let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
+            let linked = tasks.iter().any(|t| t.session.is_some());
+            let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter(|_| linked).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
             let shown: Vec<Value> = tasks.iter().map(|t| {
                 let mut v = with_session(t, t.session.as_deref().and_then(|k| rows.get(k).copied()));
                 if let Some(state) = run_marks.get(&t.key) {
@@ -160,7 +169,9 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                 v
             }).collect();
             let (counts, busy) = counts.unzip();
-            Json(json!({"tasks": shown, "counts": counts, "busy": busy})).into_response()
+            let mut page = json!({"counts": counts, "busy": busy});
+            page["tasks"] = Value::Array(shown);       // json! would copy every card
+            Json(page).into_response()
         }
         Err(e) => refuse(StatusCode::SERVICE_UNAVAILABLE, e),
     }

@@ -40,7 +40,7 @@ export function boardSessions({ chosen, openTask, send, narrow }) {
   function draw(anew = false) {
     if (reorder.dragging()) return;                // the next layout redraws it
     const picked = chosen(), marked = markedSessions(marks.values());
-    const now = JSON.stringify([st, picked, [...collapsed], $("filter").value, [...marked]]);
+    const now = JSON.stringify([st.projects, st.listOrder, picked, [...collapsed], $("filter").value, [...marked]]);   // terminumd sends a layout only when it differs
     if (!anew && now === drawn) return;
     drawn = now;
     renderNav(list, drawnGroups(), null, $("filter").value, openSession, collapsed, toggle, marked, tools.hostMenu, copy, tools.importTmux, {
@@ -65,7 +65,7 @@ export function boardSessions({ chosen, openTask, send, narrow }) {
     menus.seen(m);
     tools.seen(m);
     switch (m.t) {
-      case "layout": st.groups = m.groups ?? []; tools.layoutCame(st.groups); draw(); return;
+      case "layout": st.groups = m.groups ?? []; tools.layoutCame(st.groups); draw(true); return;
       case "projects": st.projects = m.items ?? []; st.listOrder = m.order ?? []; draw(); return;
       case "taskmarks": setTaskMarks(m); draw(true); return;
       case "marks": marks.clear(); for (const i of m.items ?? []) marks.set(i.id, i); draw(); return;

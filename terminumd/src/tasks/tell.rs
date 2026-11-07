@@ -2,7 +2,7 @@
 //! What waits for a pane's next hook that carries context: Dispatcher's words its agent could not take at once
 //! (`terminum-dispatcher.md` §9): fixed words with a T-number, never a title, text or comment.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use parking_lot::Mutex;
 use rusqlite::OptionalExtension;
@@ -34,16 +34,19 @@ impl Lines {
     }
 }
 
-fn say(app: &Shared, task: &str, text: String) {
-    let a = app.clone();
-    let id = task.to_string();
-    tokio::task::spawn_blocking(move || {
-        let done = a.tasks.with(|tx| ops::log(tx, &ops::key_of(tx, &id)?, DISPATCHER, "told", &text, None, ops::now()).map(|_| ()));
-        match done {
-            Ok(()) => super::api::change_heard(&a, &id),   // an open window shows it
-            Err(e) => tracing::warn!(event = "tasks.told", error = %e),
+/// Each line that went is said on its task, in one transaction; a task gone costs only its line.
+fn say_told(tx: &rusqlite::Transaction, tasks: &[String], at: i64) -> Result<HashSet<String>, String> {
+    let mut said = HashSet::new();
+    for id in tasks {
+        match ops::key_of(tx, id) {
+            Ok(key) => {
+                ops::log(tx, &key, DISPATCHER, "told", "Told the session", None, at)?;
+                said.insert(id.clone());
+            }
+            Err(e) => tracing::warn!(event = "tasks.told", task = %id, error = %e),
         }
-    });
+    }
+    Ok(said)
 }
 
 /// What a turn's end says of the task its session works on (AC-136), as hookstate read it: a turn
@@ -74,7 +77,7 @@ fn say_stopped(tx: &rusqlite::Transaction, key: &str, words: &str, at: i64) -> R
 fn said_stopped(app: &Shared, key: &str, words: String) {
     let (a, key) = (app.clone(), key.to_string());
     tokio::task::spawn_blocking(move || match a.tasks.with(|tx| say_stopped(tx, &key, &words, ops::now())) {
-        Ok(said) => said.iter().for_each(|id| super::api::change_heard(&a, id)),
+        Ok(said) => said.iter().for_each(|id| super::api::history_heard(&a, id)),
         Err(e) => tracing::warn!(event = "tasks.told", error = %e),
     });
 }
@@ -99,10 +102,13 @@ pub fn with_lines(app: &Shared, key: &str, remind: Option<String>) -> Option<Str
     if lines.is_empty() {
         return remind;
     }
-    for (task, _) in &lines {
-        say(app, task, "Told the session".to_string());
-    }
-    let words: Vec<String> = remind.into_iter().chain(lines.into_iter().map(|(_, l)| l)).collect();
+    let (tasks, lines): (Vec<String>, Vec<String>) = lines.into_iter().unzip();
+    let a = app.clone();
+    tokio::task::spawn_blocking(move || match a.tasks.with(|tx| say_told(tx, &tasks, ops::now())) {
+        Ok(said) => said.iter().for_each(|id| super::api::history_heard(&a, id)),   // an open window shows it
+        Err(e) => tracing::warn!(event = "tasks.told", error = %e),
+    });
+    let words: Vec<String> = remind.into_iter().chain(lines).collect();
     Some(words.join("\n"))
 }
 
@@ -133,6 +139,18 @@ mod tests {
         assert!(said("The agent stopped with this task open").is_empty(), "once in a row");
         assert_eq!(said("The agent stopped: rate_limit"), std::slice::from_ref(&t.id), "another word is said");
         assert_eq!(s.with(|tx| ops::get(tx, &t.id)).unwrap().status, "IN PROGRESS", "nothing moved");
+    }
+
+    #[test]
+    fn ac114_each_line_is_said_on_its_task_and_a_task_gone_costs_only_its_line() {
+        use crate::tasks::ops::{create, NewTask};
+        use crate::tasks::store::{Store, HUMAN};
+        let s = Store::open(crate::testutil::fresh_dir("tell-lines").join("kanban.sqlite"));
+        let t = s.with(|tx| create(tx, HUMAN, NewTask { title: "a".into(), ..Default::default() }, 1)).unwrap();
+        let said = s.with(|tx| say_told(tx, &[t.id.clone(), t.id.clone(), "T-9999".to_string()], 2)).unwrap();
+        assert_eq!(said, HashSet::from([t.id.clone()]), "each task once, the one gone not");
+        let told: i64 = s.with(|tx| tx.query_row("SELECT count(*) FROM events WHERE text = 'Told the session'", [], |r| r.get(0)).map_err(ops::sql)).unwrap();
+        assert_eq!(told, 2, "one event per line");
     }
 
     #[test]

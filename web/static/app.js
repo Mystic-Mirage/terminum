@@ -66,7 +66,7 @@ const store = {
 if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
-const tasks = pageTasks({ box: $("asks"), embedded, say: (...a) => toast(...a), show: (id) => { if (id !== st.sid) select(id); } });
+const tasks = pageTasks({ box: $("asks"), embedded, say: toast, show: (id) => { if (id !== st.sid) select(id); } });
 const st = {
   groups: [], sid: embedded ?? tasks.asked ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),

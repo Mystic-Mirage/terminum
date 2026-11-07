@@ -18,7 +18,7 @@ import { projectWindow } from "./kanbanproject.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
-import { el, iconButton, projectInk } from "./listparts.js";
+import { el, iconButton, plural, projectInk } from "./listparts.js";
 import { $, COLUMNS, agentChip, api, button, hasFiles, say } from "./kanbanutil.js";
 
 const PAGE = 200;
@@ -156,7 +156,7 @@ function card(t) {
   }
   if (!t.agent) foot.append(el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));   // on an agent, the agent says who
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
-  if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
+  if (t.files) foot.append(el("span", "cfiles", plural(t.files, "file")));
   showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
   showUsage(c, t.id);
@@ -308,7 +308,6 @@ function sessionsCame(groups) {
   meta.sessions = items.map((it) => ({ key: it.id, title: it.title }));
   liveRows = new Map(items.map((it) => [it.id, it]));
   agents.draw();
-  seeFolders(groups);
   const shown = new Map([...document.querySelectorAll(".card")].map((c) => [c.dataset.id, c]));
   for (const t of [...cards.values()].flat()) {
     const it = t.session && liveRows.get(t.session.key);
@@ -415,24 +414,27 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) load
 
 $("newtask").addEventListener("click", () => form.open());
 /** The columns are read again once a burst ends. */
-let readWait = 0, windowToo = false;
-function readSoon() {
+let readWait = 0, windowToo = false, columnsToo = false;
+function readSoon(columns = true) {
+  columnsToo ||= columns;
   clearTimeout(readWait);
-  readWait = setTimeout(() => { load(); if (windowToo) windowed.refresh(false, true); windowToo = false; }, 40);
+  readWait = setTimeout(() => { if (columnsToo) load(); if (windowToo) windowed.refresh(false, true); columnsToo = windowToo = false; }, 40);
 }
 
-/** Every page hears of a task's change; an open window reads again only when it shows that task. */
+/** Every page hears of a task's change; an open window reads again only when it shows that task; a change
+ *  to its `history` alone is on no card. The projects, but for `members`: a session's move comes with `layout`. */
+let projectsSaid = null;
 function listen() {
-  const again = (id) => {
+  const again = (id, history) => {
     windowToo ||= !id || windowed.shows(id);
-    readSoon();
+    readSoon(!history);
   };
   signin.prove().then(() => {
     const ws = socket = new WebSocket(signin.socketUrl(), signin.protocols());
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
       side.seen(m);
-      if (m.t === "taskchange") again(m.id);
+      if (m.t === "taskchange") again(m.id, m.history);
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
       else if (m.t === "build") signin.reloadOnce(m.id, () => document.querySelector("dialog[open]"));   // a draft is kept anyway
       else if (m.t === "taskmarks") needs.came(m);
@@ -444,7 +446,13 @@ function listen() {
       }
       else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
       else if (m.t === "boardtheme") { meta.theme = m.theme; colors(); }
-      else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
+      else if (m.t === "projects") {
+        const said = JSON.stringify((m.items ?? []).map(({ members: _, ...p }) => p));
+        if (said === projectsSaid) return;
+        projectsSaid = said;
+        clearTimeout(ws.wait);
+        ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500);
+      }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);
   });

@@ -7,6 +7,7 @@
 // text the agent wrote goes in as text (el's textContent): never HTML or Markdown.
 import { fabPane } from "./fabpane.js";
 import { icon } from "./icons.js";
+import { plural } from "./listparts.js";
 import { el } from "./marks.js";
 import { ageText, clock, etaLine, pctText, rowTitle, sourceText, statusIcon } from "./plans.js";
 import { taskUrl } from "./tasklink.js";
@@ -44,7 +45,7 @@ export function planPane({ send, sid, tasks }) {
     if (pane.open() && sid() !== of) pane.toggle(false);
     else if (pane.open() && waiting) ask();          // asked while terminumd was away (a restart): its next layout asks again
     fab.hidden = !plan && !open && !item?.agent;    // tasks alone, or a coding agent without a plan yet, still open the pane
-    const said = open ? `${open} task${open === 1 ? "" : "s"}` : "";
+    const said = open ? plural(open, "task") : "";
     fab.title = plan ? `Plan: ${rowTitle(plan, now())}${said && ` · ${said}`}` : said ? `Open: ${said}` : "Plan: none yet";
     fab.setAttribute("aria-label", fab.title);
     const pct = plan ? Math.round(Math.max(0, Math.min(100, plan.pct ?? 0))) : 0;
@@ -131,7 +132,7 @@ export function planPane({ send, sid, tasks }) {
     body.push(section("Tasks"));
     const kept = el("p", "plmeta plkept", open.length ? "" : "No task in this session.");
     for (const id of open) {
-      const a = el("a", "linkish", id);
+      const a = el("a", "", id);
       a.href = taskUrl(id);
       kept.append(a, " ");
     }

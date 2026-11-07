@@ -56,7 +56,11 @@ class Turn:
 
     def __enter__(self):
         self.file = self.path.open("w")   # not inherited: a build it starts holds nothing
-        fcntl.flock(self.file, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(self.file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("land: another tree's landing has its turn: waiting", flush=True)
+            fcntl.flock(self.file, fcntl.LOCK_EX)
         return self
 
     def __exit__(self, *_):

@@ -59,10 +59,11 @@ export class Blocks {
     this.park(rows, boxes);
     // The screen's empty rows below its last text and the cursor are not shown: after a clear a
     // prompt stands at the top and the view, kept at its end, showed only them.
-    let used = rows.findIndex((r) => r.el.querySelector(".cur"));
+    const cursor = rows.findIndex((r) => r.el.querySelector(".cur"));
+    let used = cursor;
     for (let i = rows.length - 1; i > used; i--) if (!blankRow(rows[i])) { used = i; break; }
     rows.forEach((r, i) => r.el.classList.toggle("spare", i > used));
-    const at = boxes ? this.findBox(rows, boxes) : null;
+    const at = boxes ? this.findBox(rows, boxes, cursor) : null;
     this.term.classList.toggle("hasbox", !!at);
     const groups = [{ kind: "", rows: [] }];
     rows.forEach((r, i) => {
@@ -98,8 +99,7 @@ export class Blocks {
   /** Rows the agent's input box and its footer take on the screen, 0 without one. */
   get boxHeight() { return this.box ? this.box.end - this.box.top + 1 : 0; }
 
-  findBox(rows, boxes) {
-    const cursor = rows.findIndex((r) => r.el.querySelector(".cur"));
+  findBox(rows, boxes, cursor) {
     let at = inputBox(boxes, cursor, (k) => this.histRow(k)) ?? codexBox(boxes, cursor);
     const was = this.box, rule = (i) => (i < 0 ? this.hist.at(i) : rows[i])?.el.classList.contains("rule");
     if (!at && cursor < 0 && was && was.end < rows.length && rule(was.top) && rule(was.bottom)) at = was;

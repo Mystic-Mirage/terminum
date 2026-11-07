@@ -126,6 +126,11 @@ fn of_row(r: &Row) -> rusqlite::Result<Run> {
     })
 }
 
+/// The one run `tail` finds, by a statement kept for the next call.
+fn one(tx: &Transaction, tail: &str, key: &str) -> rusqlite::Result<Run> {
+    tx.prepare_cached(&format!("{SELECT} WHERE {tail}"))?.query_row([key], of_row)
+}
+
 /// Every run whose session may still need Dispatcher.
 pub fn live(tx: &Transaction) -> Result<Vec<Run>, String> {
     rows(tx, &format!("{SELECT} WHERE {STILL} ORDER BY r.rowid"), [], of_row)
@@ -133,12 +138,12 @@ pub fn live(tx: &Transaction) -> Result<Vec<Run>, String> {
 
 /// The run in pane `key`, if any.
 pub fn in_pane(tx: &Transaction, key: &str) -> Result<Option<Run>, String> {
-    tx.query_row(&format!("{SELECT} WHERE r.pane_key = ?1 AND {STILL} ORDER BY r.rowid DESC LIMIT 1"), [key], of_row).optional().map_err(sql)
+    one(tx, &format!("r.pane_key = ?1 AND {STILL} ORDER BY r.rowid DESC LIMIT 1"), key).optional().map_err(sql)
 }
 
 /// Task `task`'s newest run.
 pub fn last_of(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
-    tx.query_row(&format!("{SELECT} WHERE r.id = (SELECT m.run FROM run_tasks m WHERE m.task = ?1 ORDER BY m.rowid DESC LIMIT 1)"), [task], of_row).optional().map_err(sql)
+    one(tx, "r.id = (SELECT m.run FROM run_tasks m WHERE m.task = ?1 ORDER BY m.rowid DESC LIMIT 1)", task).optional().map_err(sql)
 }
 
 /// What keeps agent `agent` busy but run `but`, if anything (AC-138): read in the transaction that adds
@@ -153,7 +158,7 @@ pub fn busy_agents(all: &[Run]) -> serde_json::Value {
 }
 
 pub(super) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
-    tx.query_row(&format!("{SELECT} WHERE r.id = ?1"), [id], of_row).map_err(sql)
+    one(tx, "r.id = ?1", id).map_err(sql)
 }
 
 /// The run as it stands, changed by `f` and written.

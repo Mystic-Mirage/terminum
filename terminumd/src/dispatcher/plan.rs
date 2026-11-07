@@ -119,7 +119,6 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         run.state = "gone".into();
         run.open_tools = 0;
         let how = match f.exit {
-            Some(0) => "exit 0".to_string(),
             Some(code) => format!("exit {code}"),
             None => "no exit recorded".to_string(),
         };

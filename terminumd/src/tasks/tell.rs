@@ -71,9 +71,7 @@ pub async fn human_moved(app: &Shared, task: &Task) {
         say(app, &task.id, why.to_string());
         return;
     }
-    let a = app.clone();
-    let user = tokio::task::spawn_blocking(move || a.tasks.with(|tx| ops::user_name(tx, super::store::HUMAN))).await;
-    let user = user.ok().and_then(Result::ok).unwrap_or_else(|| "the user".into());
+    let user = super::api::store(app, |tx| ops::user_name(tx, super::store::HUMAN)).await.unwrap_or_else(|_| "the user".into());
     app.task_lines.push(key, &task.id, line_of(&task.id, &task.status, &user));
     say(app, &task.id, "Waits for the session's next tool call".to_string());
 }

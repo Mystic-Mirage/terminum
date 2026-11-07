@@ -171,7 +171,7 @@ async fn end_agent(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str) {
     for _ in 0..3 {
         let said = server.run(format!("display -p -t {pane} '#{{@terminum-run}}\t#{{@terminum-exit}}\t#{{pane_pid}}'")).await.unwrap_or_default();
         let fields: Vec<&str> = said.first().map_or(Vec::new(), |l| l.split('\t').collect());
-        let ([mark, exit, root], true) = (<[&str; 3]>::try_from(fields.as_slice()).unwrap_or(["", "", ""]), !said.is_empty()) else { return };
+        let [mark, exit, root] = fields[..] else { return };
         if mark != run.id || !exit.is_empty() {
             return;                                    // it has gone by itself, or the pane is no more this run's
         }

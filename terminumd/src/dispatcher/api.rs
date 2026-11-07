@@ -54,7 +54,7 @@ fn prompt_of(tx: &rusqlite::Transaction, t: &Task) -> Result<String, String> {
 
 /// What the human saw: a press on other words is asked again (AC-121).
 fn rev_of(prompt: &str) -> String {
-    crate::auth::crypto::hex(&crate::auth::crypto::sha256(prompt.as_bytes()))
+    crate::auth::crypto::sha256_hex(prompt.as_bytes())
 }
 
 /// How a press goes on from where the task's session is.
@@ -252,7 +252,7 @@ fn project_of(app: &Shared, t: &Task) -> Option<(String, String)> {
     if t.project == DEFAULT_PROJECT {
         return None;
     }
-    app.projects.lock().list().iter().find(|p| p.id == t.project).map(|p| (p.id.clone(), p.name.clone()))
+    app.projects.lock().by_id(&t.project).map(|p| (p.id.clone(), p.name.clone()))
 }
 
 /// RUN goes on in its live session: every clock starts anew, a human's hold ends.

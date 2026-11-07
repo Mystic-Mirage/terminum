@@ -170,7 +170,7 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
 async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, project: &str, dir: &str) -> Result<(), String> {
     let (name, host, kept) = {
         let ps = app.projects.lock();
-        let p = ps.list().iter().find(|p| p.id == project).ok_or("That project is gone.")?;
+        let p = ps.by_id(project).ok_or("That project is gone.")?;
         (p.name.clone(), p.host.clone(), p.dir.clone())
     };
     let dir = if dir.is_empty() { kept } else { dir.to_string() };
@@ -185,7 +185,7 @@ async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, proje
     if server.is_local() && !std::path::Path::new(&dir).is_dir() {
         return Err(format!("The folder {dir} does not exist."));
     }
-    let session = args::check_session_name(&name.replace([':', '.'], "-"))?;
+    let session = args::project_session(&name)?;
     let exists = server.run(format!("has-session -t {}", args::quote(&format!("={session}")))).await.is_ok();
     let line = if exists {
         format!("new-window -t {} -c {} -P -F '#{{pane_id}}'", args::quote(&format!("={session}:")), args::format_arg(&dir))
@@ -196,12 +196,11 @@ async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, proje
     let pane = made.into_iter().next().unwrap_or_default();
     let (key, pid, a) = (server.key(&pane), project.to_string(), app.clone());
     let folder = dir.clone();
-    let joined = tokio::task::spawn_blocking(move || {
+    crate::http::off(move || {
         let mut ps = a.projects.lock();
         ps.set_dir(&pid, folder.clone())?;
         ps.add(&key, Some(&pid), None, host, folder, None).map(|_| ())
-    }).await.map_err(|e| e.to_string()).and_then(|r| r);
-    joined?;
+    }).await?;
     super::projects::tell(app);
     created(app, page, asked_on, &server, &pane, None).await;
     Ok(())

@@ -34,6 +34,15 @@ const NOT_ANSWERED: &str = "tmux did not answer";
 const NOT_CONNECTED: &str = "tmux is not connected";
 const NOT_KEEPING_UP: &str = "tmux is not keeping up: too many commands wait for it";
 
+/// A command's answer, or why none came.
+async fn answer_of(rx: oneshot::Receiver<Answer>) -> Answer {
+    match tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(1), rx).await {
+        Ok(Ok(a)) => a,
+        Ok(Err(_)) => Err(NOT_CONNECTED.into()),
+        Err(_) => Err(NOT_ANSWERED.into()),
+    }
+}
+
 /// stderr kept to say why a client ended (ssh's "Permission denied (publickey)").
 const STDERR_KEPT: usize = 4096;
 /// How long the reason waits for stderr's end once stdout ended (a child left holding it).
@@ -295,12 +304,7 @@ impl Control {
 
     /// One command and its answer.
     pub async fn run(&self, line: impl Into<String>) -> Answer {
-        let rx = self.send(line.into());
-        match tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(1), rx).await {
-            Ok(Ok(a)) => a,
-            Ok(Err(_)) => Err(NOT_CONNECTED.into()),
-            Err(_) => Err(NOT_ANSWERED.into()),
-        }
+        answer_of(self.send(line.into())).await
     }
 
     /// Several commands written at once (one round trip), answered in order.
@@ -308,11 +312,7 @@ impl Control {
         let waiting: Vec<_> = lines.into_iter().map(|l| self.send(l)).collect();
         let mut out = Vec::with_capacity(waiting.len());
         for rx in waiting {
-            out.push(match tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(1), rx).await {
-                Ok(Ok(a)) => a,
-                Ok(Err(_)) => Err(NOT_CONNECTED.into()),
-                Err(_) => Err(NOT_ANSWERED.into()),
-            });
+            out.push(answer_of(rx).await);
         }
         out
     }

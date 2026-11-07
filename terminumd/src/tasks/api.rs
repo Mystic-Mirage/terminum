@@ -112,7 +112,7 @@ fn card(app: &Shared, t: &Task) -> Value {
 
 /// What a text is compared by: a save says which it began from (AC-133).
 fn text_rev(text: &str) -> String {
-    crate::auth::crypto::hex(&crate::auth::crypto::sha256(text.as_bytes()))
+    crate::auth::crypto::sha256_hex(text.as_bytes())
 }
 
 fn csv(q: &HashMap<String, String>, key: &str) -> Vec<String> {

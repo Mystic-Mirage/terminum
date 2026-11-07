@@ -144,6 +144,10 @@ impl Projects {
         Ok(())
     }
 
+    pub fn by_id(&self, id: &str) -> Option<&Project> {
+        self.list.iter().find(|p| p.id == id)
+    }
+
     fn find(&mut self, id: &str) -> Result<&mut Project, String> {
         self.list.iter_mut().find(|p| p.id == id).ok_or_else(|| "That project is gone.".to_string())
     }
@@ -408,12 +412,9 @@ pub async fn restarted(app: &Shared, prefix: &str, panes: &[(String, String)]) {
 
 /// Tasks' links changed with a server (AC-113): the board and the rows' marks hear of it.
 async fn links_changed(app: &Shared, f: impl FnOnce(&rusqlite::Transaction, i64) -> Result<usize, String> + Send + 'static) {
-    let a = app.clone();
-    let done = tokio::task::spawn_blocking(move || a.tasks.with(|tx| f(tx, crate::tasks::ops::now()))).await;
-    match done {
-        Ok(Ok(0)) => {}
-        Ok(Ok(_)) => crate::tasks::api::told(app, ""),
-        Ok(Err(e)) => tracing::warn!(event = "tasks.links", error = %e),
+    match crate::tasks::api::store(app, move |tx| f(tx, crate::tasks::ops::now())).await {
+        Ok(0) => {}
+        Ok(_) => crate::tasks::api::told(app, ""),
         Err(e) => tracing::warn!(event = "tasks.links", error = %e),
     }
 }

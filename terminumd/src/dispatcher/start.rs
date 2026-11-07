@@ -47,7 +47,7 @@ async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, 
     let fmt = "-P -F '#{pane_id} #{session_name}:#{window_index}'";
     let last = project.and_then(|(id, _)| {
         let ps = app.projects.lock();
-        ps.list().iter().find(|p| p.id == id).and_then(|p| p.members.iter().rev().filter_map(|k| app.tmux.resolve(k)).find(|(s, _)| Arc::ptr_eq(s, server)).map(|(_, pane)| pane))
+        ps.by_id(id).and_then(|p| p.members.iter().rev().filter_map(|k| app.tmux.resolve(k)).find(|(s, _)| Arc::ptr_eq(s, server)).map(|(_, pane)| pane))
     });
     let window = match &last {
         Some(pane) => crate::page::sessions::window_of(server, pane).await.ok(),
@@ -59,7 +59,7 @@ async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, 
         // a host shows only the session terminumd holds there (terminum-remote.md OQ-81)
         format!("new-window -d -t {} {fmt} {cmd}", args::quote(&format!("={HOST_SESSION}:")))
     } else {
-        let wanted = args::check_session_name(&project.map_or("tasks".to_string(), |(_, name)| name.replace([':', '.'], "-")))?;
+        let wanted = args::project_session(project.map_or("tasks", |(_, name)| name))?;
         let sessions = server.run("list-sessions -F '#{session_name}'").await.unwrap_or_default();
         let target = if sessions.contains(&wanted) { Some(wanted.clone()) } else if project.is_none() { sessions.first().cloned() } else { None };
         match target {

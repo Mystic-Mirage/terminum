@@ -46,8 +46,7 @@ def check_spec(name, text):
     if re.search(r"^\| \d+\.\d+\.\d+ \||^Change log", parts[0][1], re.M):
         problems.append(f"{name}: a change log in section 0: a spec is a snapshot, git holds its history")
     tags, dropped = {}, set()
-    for row in re.findall(r"^\| AC-(\d{2,3}) \|(.*)$", parts[4][1], re.M):
-        number, rest = row
+    for number, rest in re.findall(r"^\| AC-(\d{2,3}) \|(.*)$", parts[4][1], re.M):
         if number in tags or number in dropped:
             problems.append(f"{name}: AC-{number} twice in section 4")
         if "[DROPPED" in rest:
@@ -58,8 +57,8 @@ def check_spec(name, text):
             problems.append(f"{name}: AC-{number} has the tag {tag!r}; allowed: {', '.join(sorted(TAGS))}")
         tags[number] = tag
     headings = dict(re.findall(r"^### AC-(\d{2,3}) — .*?(\[[^\]]+\])\s*$", parts[5][1], re.M))
-    blocks = re.split(r"^### AC-\d{2,3} — .*$", parts[5][1], flags=re.M)[1:]
-    for number, block in zip(re.findall(r"^### AC-(\d{2,3}) — ", parts[5][1], re.M), blocks):
+    cases = re.split(r"^### AC-(\d{2,3}) — .*$", parts[5][1], flags=re.M)[1:]
+    for number, block in zip(cases[::2], cases[1::2]):
         if "Scenario" not in block:
             problems.append(f"{name}: AC-{number} has no scenario")
     for number, tag in tags.items():

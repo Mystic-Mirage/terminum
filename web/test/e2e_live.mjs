@@ -132,7 +132,8 @@ const screenText = (page) => page.evaluate(() => document.getElementById("screen
 
 async function wide(browser, name) {
   runningIn(`${name} 1400×900`);
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  // reduced motion: a window stands where a press lands (e2e_motion.mjs checks the motion)
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   const errors = [];
   // WebKit reports a load that failed as the page's error, "Fetch API cannot load … due to access control
@@ -246,7 +247,7 @@ async function wide(browser, name) {
   }, null, { timeout: 5000 }));
   fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));
   // a color scheme picked in one browser is every browser's (settings.json page.colorScheme)
-  const other = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+  const other = await browser.newContext({ viewport: { width: 1000, height: 700 }, reducedMotion: "reduce" });
   const page2 = await other.newPage();
   await signIn(page2);
   const bg = (p) => p.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim());
@@ -324,7 +325,7 @@ async function wide(browser, name) {
 
 async function phone(browser, name) {
   runningIn(`${name} 390×844`);
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await signIn(page);
   if (BOARD_ALONE) {

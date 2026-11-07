@@ -8,7 +8,6 @@ window there, the gate types there, the walk's `ps` and the ending's signals go 
 """
 import json
 import os
-import re
 import subprocess
 import sys
 
@@ -26,30 +25,10 @@ def until(fn, timeout=25):
     return wait_for(fn, bool, timeout, 0.2, last=True)
 
 
-def shown_on(socket, pane, fmt):
-    return tmux_on(socket, "display", "-p", "-t", pane, fmt).strip()
-
-
 def holds_terminal(pid):
     """The pane's shell is its terminal's foreground: at a prompt, not waiting for the terminal (spinning, as macOS's bash does)."""
     group, foreground = subprocess.run(["ps", "-o", "pgid=,tpgid=", "-p", pid], capture_output=True, text=True).stdout.split()
     return group == foreground
-
-
-def window_on_dash():
-    """The window command under the `sh` of Debian and Alpine, where macOS has it (AC-123): a Ctrl-C leaves the window and its shell."""
-    with open(os.path.join(HERE, "..", "terminumd", "src", "dispatcher", "start.rs"), encoding="utf8") as f:
-        wrapper = re.search(r'const WRAPPER: &str = r#"(.*?)"#;', f.read(), re.S).group(1)
-    socket = own("tm-test-tdash")
-    tmux_on(socket, "-f", "/dev/null", "new-session", "-d", "-x", "80", "-y", "24", "sleep 300")
-    try:
-        pane = tmux_on(socket, "new-window", "-d", "-P", "-F", "#{pane_id}", "/bin/dash", "-c", wrapper, "sh", "/", "sleep 300", "tmux").strip()
-        check("AC-123 under dash the agent runs", until(lambda: shown_on(socket, pane, "#{pane_current_command}") == "sleep", 10), shown_on(socket, pane, "#{pane_current_command}"))
-        tmux_on(socket, "send-keys", "-t", pane, "C-c")
-        check("AC-123 under dash a Ctrl-C is recorded and the window stays", until(lambda: shown_on(socket, pane, "#{@terminum-exit}") == "130", 10), shown_on(socket, pane, "#{@terminum-exit}"))
-        check("AC-123 and its shell holds the terminal", until(lambda: holds_terminal(shown_on(socket, pane, "#{pane_pid}")), 10))
-    finally:
-        tmux_on(socket, "kill-server")
 
 
 def main():
@@ -86,7 +65,13 @@ def main():
         run = lambda i: call(f"/api/tasks/{i}/run", "POST", {"agent": agent})  # noqa: E731
 
         host = lambda: next((h for h in unix_request(t.sock, "GET", "/hosts")[1].get("hosts", []) if h["name"] == "devbox"), {})  # noqa: E731
-        shown = lambda pane, fmt: shown_on(REMOTE_SOCKET, pane, fmt)  # noqa: E731
+        shown = lambda pane, fmt: tmux_on(REMOTE_SOCKET, "display", "-p", "-t", pane, fmt).strip()  # noqa: E731
+        pane_of = lambda i: call(f"/api/tasks/{i}")[1]["session"]["key"].rsplit(":", 1)[1]  # noqa: E731
+
+        def window_holds_shell(i):
+            pid = shown(pane_of(i), "#{pane_pid}")   # the wrapper execs its shell: the same pid
+            return until(lambda: holds_terminal(pid))
+
         attached = until(lambda: host().get("state") == "attached")
         check("setup: the host is attached", attached)
 
@@ -108,16 +93,14 @@ def main():
         check("AC-125 its start says where", "on devbox." in history(done), history(done))
         key = call(f"/api/tasks/{done}")[1]["session"]["key"]
         check("AC-130 its pane is the host's", key.startswith("tmux:devbox:"), key)
-        pane = key.rsplit(":", 1)[1]
-        mark = shown(pane, "#{@terminum-run}")
+        mark = shown(pane_of(done), "#{@terminum-run}")
         check("AC-125 marked on the host's tmux", bool(mark), mark)
 
         # the walk reads the agent's end by the host's ps and exit
         dies = task("dies there DIES")
         run(dies)
         check("AC-130 an agent dead on the host: FAILED with its exit", until(lambda: status(dies) == "FAILED" and "exit 3" in history(dies)), history(dies))
-        dkey = call(f"/api/tasks/{dies}")[1]["session"]["key"].rsplit(":", 1)[1]
-        check("AC-123 its window holds a shell at its prompt, with the terminal", until(lambda: holds_terminal(shown(dkey, "#{pane_pid}"))), shown(dkey, "#{pane_pid}"))
+        check("AC-123 its window holds a shell at its prompt, with the terminal", window_holds_shell(dies))
 
         # the limit: SIGTERM over the link, by pid and start time
         timed = task("runs long there WORKS")
@@ -125,12 +108,10 @@ def main():
         check("setup: a budget", st == 200, said)
         run(timed)
         check("AC-130 at the limit the task is FAILED", until(lambda: status(timed) == "FAILED"), history(timed))
-        tkey = call(f"/api/tasks/{timed}")[1]["session"]["key"].rsplit(":", 1)[1]
+        tkey = pane_of(timed)
         ended = until(lambda: shown(tkey, "#{@terminum-exit}"), 10)
         check("AC-130 its agent is ended over the host's link", bool(ended), ended)
-        check("AC-123 so does the window of an agent ended", until(lambda: holds_terminal(shown(tkey, "#{pane_pid}"))), shown(tkey, "#{pane_pid}"))
-        if os.path.exists("/bin/dash"):
-            window_on_dash()
+        check("AC-123 so does the window of an agent ended", window_holds_shell(timed))
     finally:
         t.cleanup()
         subprocess.run(["tmux", "-L", REMOTE_SOCKET, "kill-server"], stderr=subprocess.DEVNULL, check=False)

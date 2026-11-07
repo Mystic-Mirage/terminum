@@ -767,7 +767,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
-- [x] AC-123 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs` with the test clock
+- [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::start`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-126 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals

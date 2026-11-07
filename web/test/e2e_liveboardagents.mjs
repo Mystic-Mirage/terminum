@@ -115,11 +115,9 @@ export async function liveBoardAgents(page, opts) {
   await backToSessions();
 }
 
-/** A press where a window opened over another modal one reports "element is inert" on some Playwrights.
-    At rest first: a window flies in (motion.css), and a button measured in flight has moved by the press. */
+/** A press where a window opened over another modal one reports "element is inert" on some Playwrights. */
 const pressAt = async (page, sel) => {
   await page.waitForSelector(sel, { state: "visible" });
-  await page.$eval(sel, (e) => Promise.allSettled(e.closest("dialog").getAnimations({ subtree: true }).map((a) => a.finished)));
   const b = await (await page.$(sel)).boundingBox();
   await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
 };

@@ -284,3 +284,38 @@ pub async fn respawn(app: &Shared, server: &Arc<Server>, pane: &str, old: &str, 
     }
     server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::Tmux;
+
+    fn until(mut ok: impl FnMut() -> bool) -> bool {
+        let end = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < end {
+            if ok() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        false
+    }
+
+    /// Under the `sh` of Debian, where a Mac has it too: with job control it dies of its job's Ctrl-C.
+    #[test]
+    fn ac123_a_ctrl_c_under_dash_is_recorded_and_the_window_keeps_a_shell() {
+        if !std::path::Path::new("/bin/dash").exists() {
+            return;
+        }
+        let Some(s) = Tmux::start("wrapper-dash", (80, 24), "/bin/sh") else { return };
+        let pane = s.read(&["new-window", "-d", "-P", "-F", "#{pane_id}", "/bin/dash", "-c", WRAPPER, "sh", "/", "sleep 300", "tmux"]);
+        let pane = pane.trim();
+        let shown = |what: &str| s.read(&["display", "-p", "-t", pane, what]).trim().to_string();
+        assert!(until(|| shown("#{pane_current_command}") == "sleep"), "{}", shown("#{pane_current_command}"));
+        s.tmux(&["send-keys", "-t", pane, "C-c"]);
+        assert!(until(|| shown("#{@terminum-exit}") == "130"), "exit {:?}", shown("#{@terminum-exit}"));
+        let pid = shown("#{pane_pid}");
+        let groups = || String::from_utf8_lossy(&std::process::Command::new("ps").args(["-o", "pgid=,tpgid=", "-p", &pid]).output().unwrap().stdout).split_whitespace().map(str::to_string).collect::<Vec<_>>();
+        assert!(until(|| { let g = groups(); g.len() == 2 && g[0] == g[1] }), "its shell does not hold the terminal: {:?}", groups());
+    }
+}

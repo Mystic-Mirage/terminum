@@ -203,7 +203,7 @@ async fn watching(app: &Shared, id: &str) {
         if !r.is_starting() {
             return;
         }
-        let Some((server, pane)) = r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)) else {
+        let Some((server, pane)) = r.place(app) else {
             return did_not_start(app, &r, None, "its window is gone").await;
         };
         if let Some(code) = exit_of(&server, &pane).await {

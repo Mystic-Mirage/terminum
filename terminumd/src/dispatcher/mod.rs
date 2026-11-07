@@ -3,6 +3,7 @@
 //! session on a human's RUN, watches it by hooks' events and a walk on a fixed beat, moves the task
 //! as the session lives, and closes what it started. All its clocks and facts are in the store.
 
+mod acts;
 pub mod api;
 mod press;
 mod gate;

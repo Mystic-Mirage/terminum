@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use super::gate::{self, Miss};
 use super::runs::{self, Run};
 use super::press::{also_of, prompt_of, refused_busy, rev_of, shown_of, way, ways, Asked, Way};
-use super::{move_one, move_task, procs, say, start, store, walk};
+use super::{acts, move_one, move_task, procs, say, start, store, walk};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
@@ -105,7 +105,7 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(body): Js
 
 /// Where a run's pane is.
 fn pane_of(app: &Shared, r: &Run) -> Result<(Arc<Server>, String), String> {
-    r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)).ok_or_else(|| "Its session is gone.".to_string())
+    r.place(app).ok_or_else(|| "Its session is gone.".to_string())
 }
 
 async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
@@ -391,7 +391,7 @@ pub fn budget_changed(app: &Shared, task: &Task) {
             runs::change(tx, &r.id, |now| now.warned = false).map(Some)
         }).await else { return };
         if let Some((server, pane)) = app.tmux.resolve(&key) {
-            walk::tell(&app, &r, &server, &pane, words, "The new budget").await;
+            acts::tell(&app, &r, &server, &pane, words, "The new budget").await;
         }
     });
 }

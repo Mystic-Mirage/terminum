@@ -52,6 +52,11 @@ pub struct Run {
 }
 
 impl Run {
+    /// Its pane's server and pane, while its key resolves.
+    pub(super) fn place(&self, app: &crate::app::Shared) -> Option<(std::sync::Arc<crate::tmux::Server>, String)> {
+        self.pane_key.as_deref().and_then(|k| app.tmux.resolve(k))
+    }
+
     /// Before its prompt is taken: its start is being watched.
     pub fn is_starting(&self) -> bool {
         matches!(self.state.as_str(), "starting" | "asking" | "typed")

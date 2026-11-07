@@ -69,7 +69,7 @@ pub struct Server {
     printed: Mutex<HashMap<String, u64>>,
     pub list: crate::lists::ServerList,
     /// the list must be read again (a window, pane, session or layout changed)
-    pub dirty: Arc<Notify>,
+    pub changed: Arc<Notify>,
     /// a control client ended (the manager reconnects or reports)
     pub ended: Arc<Notify>,
     pub status: Mutex<Status>,
@@ -98,8 +98,8 @@ pub struct Server {
 }
 
 impl Server {
-    /// `dirty`: told when tmux says this server's list changed (lists.rs).
-    pub fn new(name: &str, socket: &str, link: Link, dirty: Arc<Notify>) -> Arc<Server> {
+    /// `changed`: told when tmux says this server's list changed (lists.rs).
+    pub fn new(name: &str, socket: &str, link: Link, changed: Arc<Notify>) -> Arc<Server> {
         Arc::new(Server {
             name: name.to_string(),
             socket: socket.to_string(),
@@ -109,7 +109,7 @@ impl Server {
             wakes: Mutex::default(),
             printed: Mutex::default(),
             list: Default::default(),
-            dirty,
+            changed,
             ended: Arc::new(Notify::new()),
             status: Mutex::new(Status::Connecting),
             generation: AtomicU64::new(0),

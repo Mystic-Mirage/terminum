@@ -49,15 +49,17 @@ export async function liveDispatcher(page, opts) {
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
   await page.click("#rungo");
   check("AC-121 the window closes on the press", await until(async () => !(await page.$("#runbox[open]"))));
+  // read while it stands: after DONE the test's fast clock closes the session soon (AC-125)
+  let key;
+  await until(async () => (key = (await j(`/api/tasks/${first}`)).session?.key));
+  check("AC-121 its pane is marked as the run's", await until(() => tmux("display", "-p", "-t", key.split(":").pop(), "#{@terminum-run}").trim().length > 0));
+  check("AC-121 it is a member of the project", await until(() => page.isVisible(`#sessions section.project[data-pid="${project}"] .item[data-id="${key}"]`)));
   check("AC-121 the agent takes it: IN PROGRESS", await hasStatus(first, "IN PROGRESS", 15000) || await status(first) === "DONE", await status(first));
   check("AC-123 finish_task is DONE", await hasStatus(first, "DONE", 15000), await history(first));
   const h = await history(first);
   check("AC-125 its start is on the task", /Session started: claude in window Runs:\d+, on this Mac\./.test(h), h);
   check("AC-121 the owner is the agent", (await j(`/api/tasks/${first}`)).owner_name === "claude · Runs", (await j(`/api/tasks/${first}`)).owner_name);
   check("AC-121 the task's history says Dispatcher moved it", /Dispatcher moved it from TODO to IN PROGRESS/.test(h), h);
-  const key = (await j(`/api/tasks/${first}`)).session?.key;
-  check("AC-121 its pane is marked as the run's", tmux("display", "-p", "-t", key.split(":").pop(), "#{@terminum-run}").trim().length > 0);
-  check("AC-121 it is a member of the project", await until(() => page.isVisible(`#sessions section.project[data-pid="${project}"] .item[data-id="${key}"]`)));
 
   // AC-121: the same project's next run starts with the last chosen picked; a project with no agents says so
   const alone = (await j("/api/task-projects", "POST", { name: "NoAgents" })).id;

@@ -44,14 +44,16 @@ export async function webScreen(browser, name) {
     check("AC-13 size: the first key after a pause sends the size as typing, once a second at most",
       typing.length === 1 && typing[0].typing === true, JSON.stringify(typing));
     await page.click("#menubtn");
+    const changed = Date.now();
     await page.evaluate(() => { document.getElementById("bigger").click(); document.getElementById("bigger").click(); });   // two changes at once
     await page.keyboard.press("Escape");
     await pause(page, 150);
     const early = sizes().length;
+    const inTime = Date.now() - changed < 300;   // on a busy machine this pause outlasts the wait: then early says nothing
     await pause(page, slack(400));
     const bigger = sizes().at(-1);
     check("AC-13 size: a bigger text size sends the smaller grid, 300 ms after the last change",
-      early === n0 + 1 && sizes().length === n0 + 2 && bigger.cols < first.cols && bigger.typing === false, JSON.stringify({ early, bigger }));
+      (early === n0 + 1 || !inTime) && sizes().length === n0 + 2 && bigger.cols < first.cols && bigger.typing === false, JSON.stringify({ early, inTime, bigger }));
 
     // a full-screen program on the alternate screen: its grid alone, and back
     frame({ alt: true });

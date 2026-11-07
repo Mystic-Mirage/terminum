@@ -180,7 +180,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             }
             let server = server_of(app, r.host.as_deref())?;
             let new = next_run(app, &r, &t, again).await?;
-            let project = project_of(app, &t);
+            let project = project_named(app, &t.project);
             start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind }).await?;
             start::watch(app, &new);
             Ok(json!({"run": new}))
@@ -253,10 +253,6 @@ async fn could_not_continue(app: &Shared, r: &Run, why: &str) -> Result<Value, S
     store(app, move |tx| if super::plan::finished(&run.status) { say(tx, &run, &words) } else { move_task(tx, &run, "FAILED", &words) }).await?;
     super::told_all(app, r);
     Err(format!("{why}: use Run from scratch."))
-}
-
-fn project_of(app: &Shared, t: &Task) -> Option<(String, String)> {
-    project_named(app, &t.project)
 }
 
 /// A project's id and name for its sessions' place in the list; Default stands for none.
@@ -364,27 +360,38 @@ async fn session(app: &Shared, project: &str, agent: String) -> Result<Value, St
         if let Some(full) = pool::check(tx, Some(&ag), &p, None)? {
             return Err(full.words);
         }
-        runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host, folder: f, project: p, ..Default::default() }, &[], ops::now())
+        runs::add(tx, &Run::of(&ag, host, f, p, None), &[], ops::now())
     }).await?;
-    let named = project_named(app, project);
-    let opening = start::Opening { server: &server, project: named.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &dir, command: &a.line, run: &run, tasks: &[], program: &a.kind };
-    let key = match start::open(app, opening).await {
-        Ok(key) => key,
-        Err(e) => {
-            let r = run.clone();
-            let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = "closed".into()).map(drop)).await;
-            return Err(e);
-        }
-    };
-    start::watch(app, &run);
+    let key = launch(app, &run, &server, project, &dir, &a, &[]).await?;
     Ok(json!({"run": run, "key": key}))
+}
+
+/// The window of a run just added: opened at its place and watched; one that does not open closes its run. Its key.
+async fn launch(app: &Shared, run: &str, server: &Arc<Server>, project: &str, dir: &str, a: &Agent, tasks: &[String]) -> Result<String, String> {
+    let named = project_named(app, project);
+    let opening = start::Opening { server, project: named.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: dir, command: &a.line, run, tasks, program: &a.kind };
+    match start::open(app, opening).await {
+        Ok(key) => {
+            start::watch(app, run);
+            Ok(key)
+        }
+        Err(e) => {
+            let r = run.to_string();
+            let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = "closed".into()).map(drop)).await;
+            Err(e)
+        }
+    }
 }
 
 /// The human lets go of a session Dispatcher holds: its open tasks fail, its slot frees, its window stays (AC-142).
 async fn let_go(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    let done = store(&app, move |tx| runs::let_go(tx, &id)).await;
+    let_go_of(&app, store(&app, move |tx| runs::let_go(tx, &id)).await)
+}
+
+/// What a run let go of says, and every page hears of its tasks.
+fn let_go_of(app: &Shared, done: Result<Run, String>) -> Response {
     if let Ok(r) = &done {
-        super::told_all(&app, r);
+        super::told_all(app, r);
     }
     answer(done.map(|r| json!({"ok": true, "ids": r.ids})))
 }
@@ -429,30 +436,19 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
                 runs::change(tx, &old.id, |r| r.state = "left".into())?;
             }
         }
-        runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host, folder: f, project, prompt: Some(prompt), ..Default::default() }, &keys, ops::now())
+        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, ops::now())
     }).await?;
-    let project = project_of(app, t);
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
-    let opening = start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &dir, command: &a.line, run: &run, tasks: &ids, program: &a.kind };
-    if let Err(e) = start::open(app, opening).await {
-        let r = run.clone();
-        let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = "closed".into()).map(drop)).await;
-        return Err(e);
-    }
+    launch(app, &run, &server, &t.project, &dir, &a, &ids).await?;
     for id in &ids {
         told(app, id);
     }
-    start::watch(app, &run);
     Ok(json!({"run": run}))
 }
 
 /// The human gives up on a run they cannot reach or no longer want (AC-138).
 async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    let done = store(&app, move |tx| { let key = ops::key_of(tx, &id)?; runs::give_up(tx, &key) }).await;
-    if let Ok(r) = &done {
-        super::told_all(&app, r);
-    }
-    answer(done.map(|r| json!({"ok": true, "ids": r.ids})))
+    let_go_of(&app, store(&app, move |tx| { let key = ops::key_of(tx, &id)?; runs::give_up(tx, &key) }).await)
 }
 
 /// A human changed the budget on a running task: it holds at once, and the agent is told as the last

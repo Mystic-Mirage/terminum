@@ -137,3 +137,16 @@ fn ac139_a_folder_is_one_line_from_the_root_or_home() {
     assert_eq!(crate::tasks::projects::check_folder("work/api").unwrap_err(), "A folder starts with / or ~.");
     assert_eq!(crate::tasks::projects::check_folder("/a\nb").unwrap_err(), "A folder is one line of 1000 characters at most, with no control or invisible characters.");
 }
+
+#[test]
+fn ac137_what_an_agent_wrote_stands_under_its_new_name() {
+    open("agents-rename").with(|tx| {
+        let id = add(tx, &opus())?;
+        let user = crate::tasks::ops::pool_user(tx, &id, "Opus reviewer")?;
+        change(tx, &id, &Given { name: "Opus critic".into(), ..opus() })?;
+        assert_eq!(crate::tasks::ops::user_name(tx, &user)?, "Opus critic");
+        assert_eq!(crate::tasks::ops::pool_user(tx, &id, "Opus reviewer")?, user, "a run's old copy of the name renames nothing");
+        assert_eq!(crate::tasks::ops::user_name(tx, &user)?, "Opus critic");
+        Ok(())
+    }).unwrap();
+}

@@ -137,6 +137,8 @@ fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
 
 fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
     given.fits(tx, id)?;
+    // what it wrote stays under its name, the new one (AC-137)
+    tx.execute("UPDATE users SET name = ?2 WHERE id = ?1", (super::ops::pool_user_id(id), &given.name)).map_err(sql)?;
     match tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5, at_once = ?6 WHERE id = ?1", (id, &given.name, &given.kind, &given.command, &given.effort, given.at_once)).map_err(sql)? {
         0 => Err("That agent is gone.".into()),
         _ => Ok(()),

@@ -224,7 +224,7 @@ async fn watching(app: &Shared, id: &str) {
             match gate::read(&server, &pane, &r.kind).await.unwrap_or(Screen::Unknown) {
                 Screen::Asks if r.state != "asking" => now_asking(app, &r).await,
                 Screen::Asks => {}
-                Screen::Empty if r.prompt.is_none() => {
+                Screen::Empty if r.ad_hoc() => {
                     // + Session's: its box stands, nothing is typed: the human's from here (AC-142)
                     let id = r.id.clone();
                     let _ = store(app, move |tx| runs::change(tx, &id, |now| if now.is_starting() { now.state = "working".into(); }).map(drop)).await;

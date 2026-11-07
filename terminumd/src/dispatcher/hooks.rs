@@ -206,7 +206,7 @@ mod tests {
         let d = crate::dispatcher::Dispatcher::default();
         let run = store.with(|tx| {
             let t = crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
-            let like = runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), ..Default::default() };
+            let like = runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() };
             runs::add(tx, &like, std::slice::from_ref(&t.key), 1)
         }).unwrap();
         store.with(|tx| d.read_runs(tx)).unwrap();

@@ -374,13 +374,15 @@ async function runMade(t, agent) {
  *  agent last used there first, the only one at once. */
 async function newSession(p) {
   if (!p.dir) return askFolder(p.id, `${p.name} has no folder: set it in its window.`);
-  const all = meta.agents, last = meta.last_agents?.[p.id];
-  if (!all.length) return agents.add();
+  const last = meta.last_agents?.[p.id], all = meta.agents.filter((a) => !slots.full.includes(a.id));
+  if (!meta.agents.length) return agents.add();
+  if (slots.full_projects.includes(p.id) || !all.length) return say(slots.full_projects.includes(p.id) ? `${p.name} is at its limit of agents at once.` : "Every agent is at its limit.");
   const ordered = [...all.filter((a) => a.id === last), ...all.filter((a) => a.id !== last)];
   const agent = ordered.length === 1 ? ordered[0].id : await choose(`A session in ${p.name}`, "Which agent? Nothing is typed in it: it is yours.", ordered.map((a) => [a.id, a.name]));
   if (!agent) return;
   try {
     const { key } = await api(`/api/task-projects/${p.id}/session`, { method: "POST", body: { agent } });
+    (meta.last_agents ??= {})[p.id] = agent;
     location.href = sessionUrl(key);
   } catch (e) { say(e.message); }
 }

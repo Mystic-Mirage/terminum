@@ -131,7 +131,7 @@ mod tests {
     /// A run on `a` in `p`, working, its task open.
     fn working(tx: &Transaction, a: &str, p: &str) -> (String, ops::Task) {
         let t = ops::create(tx, HUMAN, NewTask { title: format!("t in {p}"), project: Some(p.into()), ..Default::default() }, 1).unwrap();
-        let id = runs::add(tx, &Run { agent_id: a.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), ..Default::default() }, std::slice::from_ref(&t.key), 1).unwrap();
+        let id = runs::add(tx, &Run { agent_id: a.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: p.into(), ..Default::default() }, std::slice::from_ref(&t.key), 1).unwrap();
         runs::change(tx, &id, |r| { r.state = "working".into(); r.pane_key = Some(format!("tmux:local:t:%{id}")); }).unwrap();
         (id, t)
     }

@@ -454,7 +454,8 @@ async fn walk(app: &Shared) {
             memory,
             ..Default::default()
         };
-        if facts.alive {
+        // + Session's is the human's: nothing is typed in it, about its subagents either (AC-142)
+        if facts.alive && !r.ad_hoc() {
             subagents.push((r.clone(), server.clone(), pane.clone(), key, busy));
         }
         reads.push(Read { id: r.id.clone(), facts, ended });

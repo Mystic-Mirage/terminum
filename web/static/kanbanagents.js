@@ -4,7 +4,7 @@
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
-import { $, agentColor, api, el, fillSelect, iconButton } from "./kanbanutil.js";
+import { $, button, agentColor, api, el, fillSelect, iconButton } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -182,11 +182,9 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     const list = $("agentsessions"), mine = a ? slots(a) : [];
     list.replaceChildren(...mine.map((s) => {
       const li = el("li");
-      const go = el("button", null, "Let go");
-      go.type = "button";
-      go.addEventListener("click", async () => {
+      const go = button(null, "Let go", async () => {
         if (!await askConfirm(`Let go of ${s.tasks || "this session"}? Its open tasks fail; the window stays.`, "Let go")) return;
-        try { await api(`/api/runs/${s.run}/let-go`, { method: "POST" }); await reload(); showSessions(a); } catch (e) { say(e.message); }
+        try { await api(`/api/runs/${s.run}/let-go`, { method: "POST" }); li.remove(); list.hidden = !list.children.length; } catch (e) { say(e.message); }
       });
       li.append(el("span", null, [s.tasks || "+ Session", getMeta().projects.find((p) => p.id === s.project)?.name].filter(Boolean).join(" · ")), go);
       return li;

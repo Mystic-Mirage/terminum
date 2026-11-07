@@ -128,7 +128,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                     return Err(format!("{id} has a session already."));
                 }
                 // what a human ran here is what this session does (terminum-dispatcher.md AC-138)
-                if crate::dispatcher::runs::in_pane(tx, &who.key)?.is_some_and(|r| r.busy() && !r.ad_hoc()) {
+                if crate::dispatcher::runs::in_pane(tx, &who.key)?.is_some_and(|r| r.busy()) {
                     return Err(format!("This session runs what the human gave it: finish that first. {id} can be commented on."));
                 }
                 let me = me()?;

@@ -64,7 +64,12 @@ impl Run {
 
     /// Its run still holds its tasks (AC-138): starting, a task open, or still in a turn after its last.
     pub fn busy(&self) -> bool {
-        !self.is_over() && (self.is_starting() || !self.open.is_empty() || (self.state == "working" && !self.turn_ended))
+        !self.ad_hoc() && !self.is_over() && (self.is_starting() || !self.open.is_empty() || (self.state == "working" && !self.turn_ended))
+    }
+
+    /// A run about to start `agent` in a project's place, nothing of it yet (AC-140, AC-141).
+    pub fn of(agent: &crate::tasks::agents::Agent, host: Option<String>, folder: String, project: String, prompt: Option<String>) -> Run {
+        Run { agent_id: agent.id.clone(), agent_name: agent.name.clone(), agent_color: agent.color, kind: agent.kind.clone(), command: agent.line.clone(), host, folder, project, prompt, ..Default::default() }
     }
 
     /// + Session's: no task, no prompt; Dispatcher only watches it (AC-142).
@@ -169,11 +174,11 @@ pub fn change(tx: &Transaction, id: &str, f: impl FnOnce(&mut Run)) -> Result<Ru
 }
 
 /// A new run of `tasks` (keys, the first the one it starts from; none: + Session's), starting, as `like` says: its fields
-/// but its id and clocks; its project `like`'s, else its first task's. Its id.
+/// but its id and clocks. Its id.
 pub fn add(tx: &Transaction, like: &Run, tasks: &[String], at: i64) -> Result<String, String> {
     let id = crate::auth::crypto::random_hex::<8>();
     tx.execute("INSERT INTO runs (id, task, project, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk)
-                VALUES (?1, ?2, COALESCE(NULLIF(?3, ''), (SELECT project FROM tasks WHERE id = ?2), 'default'), ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13)",
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13)",
                rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at]).map_err(sql)?;
     for task in tasks {
         tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, task)).map_err(sql)?;

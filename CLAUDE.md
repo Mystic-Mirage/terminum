@@ -117,7 +117,7 @@ independent review before merging: changes to architecture, dependencies, securi
 plans: order, dependencies, exit criteria; !effort estimates
 
 ### 8. Definition of done
-**a task in a tree is finished = all of:** asked work implemented; affected docs and spec updated; `/simplify` run over it; all committed on its branch; targeted checks green; every finding on its work fixed or rejected with reasons (§7; unrelated: §3; a release: §10); merged to `origin/main` (`make land`, §9); then its tree clean and deleted (nothing to land: deleted only; a process holding it: say so, the sweep takes it). !say done before that; red: still open, fix the cause, land again; a step blocked on a decision or access: say which, the task stays open
+**a task in a tree is finished = all of:** asked work implemented; affected docs and spec updated; `/simplify` run over it; all committed on its branch; targeted checks green; every finding on its work fixed or rejected with reasons (§7; unrelated: §3; a release: §10); merged to `origin/main` (`make land`, §9); then its tree clean and deleted (nothing to land: deleted only; a process holding it: say so; a landed tree the sweep takes once free, one with no commits of its own stays for `scripts/delete_worktree.sh`). !say done before that; red: still open, fix the cause, land again; a step blocked on a decision or access: say which, the task stays open
 targeted checks: `python3 scripts/check_changed.py` (AC-104): build, tests of what changed, tests citing the cases it touches, critical functions
 new behavior: tests written from its acceptance cases, citing their `AC-nn`
 iterating: only the changed area's checks (`cargo test <module>`, `node web/test/e2e_all.mjs <check…>`)

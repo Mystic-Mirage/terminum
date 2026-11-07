@@ -46,7 +46,8 @@ export async function webScreen(browser, name) {
     await page.click("#menubtn");
     const changed = Date.now();
     await page.evaluate(() => { document.getElementById("bigger").click(); document.getElementById("bigger").click(); });   // two changes at once
-    await page.keyboard.press("Escape");
+    // the menu closed as Escape closes it, but no key: one reaching the terminal a second after "ab" sizes as typing
+    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     await pause(page, 150);
     const early = sizes().length;
     const inTime = Date.now() - changed < 300;   // on a busy machine this pause outlasts the wait: then early says nothing

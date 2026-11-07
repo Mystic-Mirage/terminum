@@ -101,6 +101,7 @@ struct Read {
     id: String,
     facts: Facts,
     ended: bool,
+    used: i64,
 }
 
 /// What the transaction left to do outside it.
@@ -109,10 +110,13 @@ struct Later {
     act: Act,
 }
 
+/// What a beat's transaction leaves: acts, tasks changed, tasks whose minutes a card shows.
+type Walked = (Vec<Later>, Vec<String>, Vec<String>);
+
 /// In one transaction: every run as it stands now, its clocks, what `plan` says. Moves and words are
 /// done here; what is not written is not done (AC-131).
-fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<(Vec<Later>, Vec<String>), String> {
-    let (mut later, mut changed) = (Vec::new(), Vec::new());
+fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<Walked, String> {
+    let (mut later, mut changed, mut minutes) = (Vec::new(), Vec::new(), Vec::new());
     let live: HashMap<String, Run> = runs::live(tx)?.into_iter().map(|r| (r.id.clone(), r)).collect();
     for read in reads {
         let Some(mut r) = live.get(&read.id).cloned() else { continue };
@@ -134,6 +138,10 @@ fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<
         if seen > GAP {
             acts.push(Act::Say(format!("Clocks paused {} minutes: no walk saw them pass", seen / 60)));
         }
+        // a card shows the time used: every page hears once a minute
+        if r.budget.is_some() && (r.budget_used / 60) != (read.used / 60) {
+            minutes.push(r.task_id.clone());
+        }
         runs::save(tx, &r)?;
         if facts.pane && !facts.marked {
             ops::link(tx, super::DISPATCHER, &r.task_id, None, now)?;   // a stale link drops (AC-125)
@@ -153,7 +161,7 @@ fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<
             }
         }
     }
-    Ok((later, changed))
+    Ok((later, changed, minutes))
 }
 
 /// Closes the pane: its mark checked just before; with no result the screen's last 200 rows stay on
@@ -187,10 +195,93 @@ async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words:
     }
 }
 
+/// The agent and what runs under it, by (pid, start time) read just before: SIGTERM, then after
+/// 10 s SIGKILL to those still the same; the pane's own shell is spared (AC-126). This Mac's.
+async fn end_agent(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str) {
+    if start::is_marked(server, pane, &run.id).await.is_err() || !server.is_local() {
+        let r = run.clone();
+        let _ = store(app, move |tx| say(tx, &r, "The agent could not be ended from here.")).await;
+        return;
+    }
+    let Ok(said) = server.run(format!("display -p -t {pane} '#{{pane_pid}}'")).await else { return };
+    let Some(root) = said.first().cloned() else { return };
+    let targets = under_with_start(&root).await;
+    for (pid, _) in &targets {
+        signal(pid, libc::SIGTERM);
+    }
+    tokio::time::sleep((Duration::from_secs(10) / scale() as u32).max(Duration::from_millis(500))).await;
+    let now = under_with_start(&root).await;
+    for found in targets.iter().filter(|t| now.contains(t)) {
+        signal(&found.0, libc::SIGKILL);
+    }
+}
+
+fn signal(pid: &str, sig: i32) {
+    if let Ok(pid) = pid.parse::<i32>().map(|p| p as libc::pid_t) {
+        // the only process signals are by pid, read just before, of what the run started
+        unsafe { libc::kill(pid, sig) };
+    }
+}
+
+/// What runs under `root`, each by its pid and start time; deepest first, so an agent's children go first.
+async fn under_with_start(root: &str) -> Vec<(String, String)> {
+    let Ok(out) = tokio::process::Command::new("ps").args(["-Ao", "pid=,ppid=,lstart="]).output().await else { return Vec::new() };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let rows: Vec<(String, String, String)> = text.lines().filter_map(|l| {
+        let mut f = l.split_whitespace();
+        Some((f.next()?.to_string(), f.next()?.to_string(), f.collect::<Vec<_>>().join(" ")))
+    }).collect();
+    let (mut found, mut stack) = (Vec::new(), vec![root.to_string()]);
+    while let Some(p) = stack.pop() {
+        for (pid, _, start) in rows.iter().filter(|(_, ppid, _)| *ppid == p) {
+            found.push((pid.clone(), start.clone()));
+            stack.push(pid.clone());
+        }
+    }
+    found.reverse();
+    found
+}
+
+/// The last warning: on the agent's next tool call while it works, through the gate while it idles.
+async fn warn(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, left: i64) {
+    let total = run.budget.unwrap_or(0) / 60;
+    let minutes = (left.max(0) + 59) / 60;
+    let text = format!("[terminum Dispatcher] {}: {minutes} minutes of the {total}-minute budget are left. Write the result with finish_task and end your subagents now. Then the agent is ended and unsaved work is lost.", run.task_id);
+    let key = server.key(pane);
+    let words = if app.hooks.working(&key) || run.open_tools > 0 {
+        app.task_lines.push(&key, &run.task_id, text);
+        "The last warning waits for the agent's next tool call.".to_string()
+    } else {
+        match gate::deliver(app, run, server, pane, &text, false).await {
+            Ok(()) => "The last warning was given.".to_string(),
+            Err(why) => {
+                app.task_lines.push(&key, &run.task_id, text);
+                format!("The last warning waits for the agent's next tool call: {why}.")
+            }
+        }
+    };
+    let r = run.clone();
+    let _ = store(app, move |tx| say(tx, &r, &words)).await;
+}
+
 async fn do_later(app: &Shared, l: Later) {
     let Some((server, pane)) = l.run.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)) else { return };
     let task = l.run.task_id.clone();
     let done = match l.act {
+        Act::Warn(left) => {
+            warn(app, &l.run, &server, &pane, left).await;
+            Ok(())
+        }
+        Act::End => {
+            let key = server.key(&pane);
+            if !app.task_lines.take(&key).is_empty() {
+                let r = l.run.clone();
+                let _ = store(app, move |tx| say(tx, &r, "The last warning could not reach the agent before the limit.")).await;
+            }
+            let (a, r, s, p) = (app.clone(), l.run.clone(), server.clone(), pane.clone());
+            tokio::spawn(async move { end_agent(&a, &r, &s, &p).await });
+            Ok(())
+        }
         Act::Nudge => {
             let text = format!("[terminum Dispatcher] {task} is still open and you stopped. Call finish_task with the result, or ask what you need.");
             match gate::deliver(app, &l.run, &server, &pane, &text, false).await {
@@ -262,15 +353,18 @@ async fn walk(app: &Shared) {
             program,
             ..Default::default()
         };
-        reads.push(Read { id: r.id.clone(), facts, ended });
+        reads.push(Read { id: r.id.clone(), facts, ended, used: r.budget_used });
     }
     let now = ops::now();
-    let (later, changed) = match store(app, move |tx| walk_store(tx, reads, now)).await {
+    let (later, changed, minutes) = match store(app, move |tx| walk_store(tx, reads, now)).await {
         Ok(done) => done,
         Err(e) => return tracing::warn!(event = "dispatcher.walk", error = %e),
     };
     for task in changed.into_iter().collect::<HashSet<_>>() {
         crate::tasks::api::told(app, &task);
+    }
+    for task in minutes {
+        crate::tasks::api::change_heard(app, &task);
     }
     for l in later {
         do_later(app, l).await;

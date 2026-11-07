@@ -15,6 +15,8 @@ pub struct Run {
     pub task_id: String,
     pub status: String,
     pub project: String,
+    /// its task's time budget
+    pub budget: Option<i64>,
     pub agent_id: String,
     pub kind: String,
     pub command: String,
@@ -64,19 +66,21 @@ impl Run {
         self.again_said = false;
         self.idle_for = 0;
         self.closing_for = 0;
+        self.budget_used = 0;                          // AC-122: the budget starts anew
+        self.warned = false;
     }
 }
 
-const SELECT: &str = "SELECT r.id, r.task, 'T-' || t.number, t.status, t.project, r.agent_id, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
+const SELECT: &str = "SELECT r.id, r.task, 'T-' || t.number, t.status, t.project, t.budget_seconds, r.agent_id, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
     r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.held, r.wait_moved, r.no_result_wait, r.result, r.again_said, r.close_tried, r.last_walk
     FROM runs r JOIN tasks t ON t.id = r.task";
 const STILL: &str = "r.state NOT IN ('closed', 'left')";
 
 fn of_row(r: &Row) -> rusqlite::Result<Run> {
     Ok(Run {
-        id: r.get(0)?, task: r.get(1)?, task_id: r.get(2)?, status: r.get(3)?, project: r.get(4)?, agent_id: r.get(5)?, kind: r.get(6)?, command: r.get(7)?, host: r.get(8)?, folder: r.get(9)?,
-        pane_key: r.get(10)?, agent_session: r.get(11)?, state: r.get(12)?, prompt: r.get(13)?, turn_ended: r.get(14)?, open_tools: r.get(15)?, idle_for: r.get(16)?, waited_for: r.get(17)?,
-        closing_for: r.get(18)?, budget_used: r.get(19)?, nudged: r.get(20)?, nudge_turn: r.get(21)?, warned: r.get(22)?, held: r.get(23)?, wait_moved: r.get(24)?, no_result_wait: r.get(25)?, result: r.get(26)?, again_said: r.get(27)?, close_tried: r.get(28)?, last_walk: r.get(29)?,
+        id: r.get(0)?, task: r.get(1)?, task_id: r.get(2)?, status: r.get(3)?, project: r.get(4)?, budget: r.get(5)?, agent_id: r.get(6)?, kind: r.get(7)?, command: r.get(8)?, host: r.get(9)?, folder: r.get(10)?,
+        pane_key: r.get(11)?, agent_session: r.get(12)?, state: r.get(13)?, prompt: r.get(14)?, turn_ended: r.get(15)?, open_tools: r.get(16)?, idle_for: r.get(17)?, waited_for: r.get(18)?,
+        closing_for: r.get(19)?, budget_used: r.get(20)?, nudged: r.get(21)?, nudge_turn: r.get(22)?, warned: r.get(23)?, held: r.get(24)?, wait_moved: r.get(25)?, no_result_wait: r.get(26)?, result: r.get(27)?, again_said: r.get(28)?, close_tried: r.get(29)?, last_walk: r.get(30)?,
     })
 }
 
@@ -136,6 +140,11 @@ pub fn finished(tx: &Transaction, task: &str) -> Result<(), String> {
 /// The agent last chosen for a project's run, if any.
 pub fn last_agent(tx: &Transaction, project: &str) -> Result<Option<String>, String> {
     tx.query_row("SELECT r.agent_id FROM runs r JOIN tasks t ON t.id = r.task WHERE t.project = ?1 ORDER BY r.rowid DESC LIMIT 1", [project], |r| r.get(0)).optional().map_err(sql)
+}
+
+/// The seconds a live run has used, by task: a card shows them against its budget (AC-126).
+pub fn budgets_used(tx: &Transaction) -> Result<HashMap<String, i64>, String> {
+    Ok(rows(tx, "SELECT r.task, r.budget_used FROM runs r JOIN tasks t ON t.id = r.task WHERE r.state NOT IN ('closed', 'left') AND t.budget_seconds IS NOT NULL", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
 /// What a card says of its task's run: starting, asking, or `no_result`: DONE with no result from the agent (AC-123).

@@ -179,3 +179,54 @@ fn ac131_no_clock_gains_a_gap() {
     step(&mut d, &up(0));
     assert_eq!(d.closing_for, 0);
 }
+
+#[test]
+fn ac126_only_in_progress_counts_and_never_a_wait() {
+    let mut r = run("IN PROGRESS");
+    r.budget = Some(3600);
+    step(&mut r, &up(600));
+    assert_eq!(r.budget_used, 600);
+    step(&mut r, &Facts { waiting: Some("Approve".into()), ..up(600) });
+    assert_eq!(r.budget_used, 600, "a wait for an answer stops it");
+    let mut held = run("WAIT FOR HUMAN");
+    held.budget = Some(3600);
+    step(&mut held, &up(600));
+    assert_eq!(held.budget_used, 0, "outside IN PROGRESS it does not count");
+    let mut slept = run("IN PROGRESS");
+    slept.budget = Some(3600);
+    step(&mut slept, &up(0));
+    assert_eq!(slept.budget_used, 0, "a gap adds nothing (AC-131)");
+}
+
+#[test]
+fn ac126_the_last_warning_is_three_percent_at_least_two_minutes() {
+    assert_eq!(warn_at(3600), 120);
+    assert_eq!(warn_at(12000), 360);
+    let mut r = run("IN PROGRESS");
+    r.budget = Some(3600);
+    r.budget_used = 3400;
+    assert!(step(&mut r, &up(70)).is_empty());
+    assert_eq!(step(&mut r, &up(10)), vec![Act::Warn(120)]);
+    assert!(step(&mut r, &up(10)).is_empty(), "once");
+}
+
+#[test]
+fn ac126_at_the_limit_the_task_fails_first_then_the_agent_ends() {
+    let mut r = run("IN PROGRESS");
+    r.budget = Some(3600);
+    r.budget_used = 3590;
+    r.warned = true;
+    let acts = step(&mut r, &up(30));
+    assert_eq!(acts, vec![Act::Move { to: "FAILED", words: "Time budget of 60 minutes used: the agent was ended.".into() }, Act::End]);
+    assert_eq!(r.state, "gone");
+    r.status = "FAILED".into();
+    let acts = step(&mut r, &Facts { exit: Some(143), alive: false, ..up(30) });
+    assert_eq!(moved(&acts), None, "the end Dispatcher caused counts for nothing");
+}
+
+#[test]
+fn ac126_no_budget_no_clock() {
+    let mut r = run("IN PROGRESS");
+    step(&mut r, &up(600));
+    assert_eq!(r.budget_used, 0);
+}

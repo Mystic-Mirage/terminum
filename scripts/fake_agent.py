@@ -3,11 +3,12 @@
 """A coding agent as Dispatcher sees it, for web/test/e2e_livedispatcher.mjs: the measured input box of
 Claude Code or Codex (terminum-dispatcher.md AS-125), hooks by `terminum hook`, finish_task by `terminum
 mcp`; no model. What it does with a prompt is in the prompt's words:
-FINISHES, STOPS, ASKS, LIMIT, DIES, CLEAN, SILENT. `--start trust`: a question before its box; `--start
+FINISHES, WORKS, ASKS, LIMIT, DIES, CLEAN, SILENT; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
 none`: never a box; `--start fast`: exits at once with 7."""
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import termios
@@ -43,6 +44,8 @@ def main():
                  rpc(2, "tools/call", {"name": "finish_task", "arguments": {"id": task, "result": "All done."}})]
         subprocess.run([cli, "mcp"], input="\n".join(lines) + "\n", text=True, capture_output=True, timeout=8)
 
+    if "--stubborn" in args:
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
     if start == "fast":
         sys.exit(7)
     if start == "none":
@@ -93,6 +96,8 @@ def main():
                 sys.exit(0)
             elif "ASKS" in prompt:
                 hook("Notification", notification_type="permission_prompt", message="Approve Bash")
+            elif "WORKS" in prompt:
+                hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop
             elif "FINISHES" in prompt:
                 hook("PostToolUse", tool_name="Read", tool_input={}, tool_response={})
                 finish(task)

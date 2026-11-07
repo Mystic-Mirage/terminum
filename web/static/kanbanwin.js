@@ -60,6 +60,21 @@ export function taskWindow({ getMeta, runs }) {
     return line;
   }
 
+  /** The time a RUN's agent has, in minutes; empty: none (terminum-dispatcher.md AC-126). */
+  function budgetField(t) {
+    const line = el("label", "fieldrow", "Budget, minutes");
+    const f = el("input", "field");
+    f.type = "number";
+    f.min = "5";
+    f.step = "5";
+    f.value = t.budget_seconds ? String(t.budget_seconds / 60) : "";
+    f.placeholder = "None";
+    f.title = "Only for a session RUN started: 5 minutes to 7 days";
+    f.addEventListener("change", () => patch(t.id, { budget_minutes: f.value ? Number(f.value) : null }));
+    line.append(f);
+    return line;
+  }
+
   function fields(t) {
     const meta = getMeta(), grid = el("div", "fieldgrid");
     const key = t.session?.key ?? "";
@@ -72,7 +87,8 @@ export function taskWindow({ getMeta, runs }) {
       select("Severity", SEVERITIES.map((s) => [s, s]), t.severity, (severity) => patch(t.id, { severity })),
       select("Owner", owners, t.owner, (owner) => patch(t.id, { owner })),
       select("Project", meta.projects.map((p) => [p.id, p.name]), t.project, (project) => patch(t.id, { project })),
-      select("Session", sessions, key, (session) => patch(t.id, { session: session || null })));
+      select("Session", sessions, key, (session) => patch(t.id, { session: session || null })),
+      budgetField(t));
     return grid;
   }
 

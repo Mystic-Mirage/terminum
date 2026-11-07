@@ -6,7 +6,7 @@ Sibling of `terminum-kanban.md` (tasks and the board). This spec holds Dispatche
 
 | Field | Value |
 |---|---|
-| Status | approved; Stage 1 built |
+| Status | approved; Stages 1 and 2 built |
 
 A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
@@ -560,7 +560,8 @@ sequenceDiagram
 | AC-125 | A real host's walk has no `ps`: a job behind its shell is not seen there. | `terminumd/src/dispatcher/walk.rs` |
 | AC-131 | §9's walk budget has no bench yet (`scripts/bench_board.py`). | `terminumd/src/dispatcher/walk.rs` |
 | AC-121 | A real Codex's hooks need its own trust (AS-124), not checked here beyond its failure's words. | `terminumd/src/dispatcher/start.rs` |
-| AC-126, AC-127, AC-128, AC-129, AC-130 | Not built. | `terminumd/src/dispatcher/plan.rs` |
+| AC-126 | A subagent in a pane of its own is not ended with its agent: its pane is not tied to its hook ID (AS-126); a host's agent is not ended from here (AC-130). | `terminumd/src/dispatcher/walk.rs` |
+| AC-127, AC-128, AC-129, AC-130 | Not built. | `terminumd/src/dispatcher/plan.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -679,7 +680,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-123 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs` with the test clock
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
-- [ ] AC-126 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
+- [x] AC-126 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
 - [ ] AC-127 — `cargo test dispatcher::subagents`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-128 — `cargo test dispatcher::limits`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-129 — `cargo test cli::hook` with fixtures of both agents' files

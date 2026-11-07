@@ -134,15 +134,18 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
     };
     let with_counts = q.get("counts").is_some_and(|c| c == "1");
-    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }, crate::dispatcher::runs::card_marks(tx)?))).await;
+    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }, crate::dispatcher::runs::card_marks(tx)?, crate::dispatcher::runs::budgets_used(tx)?))).await;
     match done {
-        Ok((tasks, counts, run_marks)) => {
+        Ok((tasks, counts, run_marks, budgets)) => {
             let layout = app.layout.read();
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
             let shown: Vec<Value> = tasks.iter().map(|t| {
                 let mut v = with_session(t, t.session.as_deref().and_then(|k| rows.get(k).copied()));
                 if let Some(state) = run_marks.get(&t.key) {
                     v["run"] = json!(state);
+                }
+                if let Some(used) = budgets.get(&t.key) {
+                    v["budget_used"] = json!(used);
                 }
                 v
             }).collect();
@@ -257,6 +260,8 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     let reorder = before.is_some() || body.get("order_end").is_some();
     let before = before.and_then(Value::as_str).map(str::to_string);
     let session = body.get("session").cloned();
+    let budget = body.get("budget_minutes").map(Value::as_i64);
+    let budget_changed = budget.is_some();
     let done = store(&app, move |tx| {
         let at = ops::now();
         let was = ops::get(tx, &wanted)?;
@@ -277,6 +282,9 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
             ops::link(tx, HUMAN, &wanted, s.as_str(), at)?;
         }
         ops::edit(tx, HUMAN, &wanted, edit, at)?;
+        if let Some(minutes) = budget {
+            ops::set_budget(tx, HUMAN, &wanted, minutes, at)?;
+        }
         if let Some(status) = &to_status {
             ops::move_to(tx, HUMAN, &wanted, status, at)?;
             crate::dispatcher::runs::hold(tx, &was.key)?;   // it stands until RUN or their own prompt (AC-124)
@@ -298,6 +306,9 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     if moved_to.is_some() && was.status != task.status {
         super::tell::human_moved(&app, &task).await;
         crate::dispatcher::api::human_moved(&app, &task);
+    }
+    if budget_changed {
+        crate::dispatcher::api::budget_changed(&app, &task);
     }
     told(&app, &task.id);
     let mut answered = card(&app, &task);

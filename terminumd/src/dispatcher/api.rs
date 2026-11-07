@@ -45,6 +45,9 @@ fn prompt_of(tx: &rusqlite::Transaction, t: &Task) -> Result<String, String> {
     if let Some(parent) = &t.parent {
         parts.push(format!("Its parent task: {parent}"));
     }
+    if let Some(total) = t.budget_seconds {
+        parts.push(format!("You have {} minutes for this task. Before they end, write the result with finish_task and end your subagents: at the limit the agent is ended and unsaved work is lost.", total / 60));
+    }
     parts.push("When it is done, call finish_task with the result. If you need a human, ask.".to_string());
     Ok(parts.join("\n\n"))
 }
@@ -333,17 +336,45 @@ pub fn human_moved(app: &Shared, task: &Task) {
         if r.state != "working" || !matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
             return;
         }
-        let lines = app.task_lines.take(&key);
+        deliver_lines(&app, &r, &server, &pane, &key).await;
+    });
+}
+
+/// What waits for the session's next context goes in now, if the gate lets it; a miss leaves it there.
+async fn deliver_lines(app: &Shared, r: &Run, server: &Server, pane: &str, key: &str) {
+    {
+        let lines = app.task_lines.take(key);
         if lines.is_empty() {
             return;
         }
         let text = lines.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>().join(" ");
-        if let Err(why) = gate::deliver(&app, &r, &server, &pane, &text, false).await {
+        if let Err(why) = gate::deliver(app, r, server, pane, &text, false).await {
             for (task, line) in lines {
-                app.task_lines.push(&key, &task, line);
+                app.task_lines.push(key, &task, line);
             }
             let run = r.clone();
-            let _ = store(&app, move |tx| say(tx, &run, &format!("Not delivered: {why}"))).await;
+            let _ = store(app, move |tx| say(tx, &run, &format!("Not delivered: {why}"))).await;
+        }
+    }
+}
+
+/// A human changed the budget on a running task: it holds at once, and the agent is told as the last
+/// warning is (AC-126).
+pub fn budget_changed(app: &Shared, task: &Task) {
+    let Some(key) = task.session.clone().filter(|k| app.dispatcher.has_run(k)) else { return };
+    let (app, id, words) = (app.clone(), task.id.clone(), task.budget_seconds.map_or_else(
+        || format!("[terminum Dispatcher] {}: its time budget is off.", task.id),
+        |s| format!("[terminum Dispatcher] {}: its time budget is now {} minutes.", task.id, s / 60)));
+    tokio::spawn(async move {
+        let k = key.clone();
+        let Ok(Some(r)) = store(&app, move |tx| {
+            let Some(r) = runs::in_pane(tx, &k)? else { return Ok(None) };
+            runs::change(tx, &r.id, |now| now.warned = false).map(Some)
+        }).await else { return };
+        app.task_lines.push(&key, &id, words);
+        let Some((server, pane)) = app.tmux.resolve(&key) else { return };
+        if r.state == "working" && matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
+            deliver_lines(&app, &r, &server, &pane, &key).await;
         }
     });
 }

@@ -50,6 +50,8 @@ pub struct Task {
     pub files: i64,
     pub subtasks_done: i64,
     pub subtasks: i64,
+    /// the time a RUN's agent has for it (terminum-dispatcher.md AC-126)
+    pub budget_seconds: Option<i64>,
     /// the row's key and place in its column: the rules', never shown
     #[serde(skip)]
     pub(crate) key: String,
@@ -61,7 +63,7 @@ pub(super) const TASK: &str = "SELECT t.number, t.project, (SELECT 'T-' || p.num
     t.owner, u.name, u.kind, t.by_agent, t.session_key,
     (SELECT count(*) FROM files f WHERE f.task = t.id),
     (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.status = 'DONE'),
-    (SELECT count(*) FROM tasks s WHERE s.parent = t.id), t.id, t.rank
+    (SELECT count(*) FROM tasks s WHERE s.parent = t.id), t.id, t.rank, t.budget_seconds
     FROM tasks t JOIN users u ON u.id = t.owner";
 
 pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
@@ -80,6 +82,7 @@ pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
         files: r.get(11)?,
         subtasks_done: r.get(12)?,
         subtasks: r.get(13)?,
+        budget_seconds: r.get(16)?,
         key: r.get(14)?,
         rank: r.get(15)?,
     })
@@ -267,6 +270,18 @@ pub fn reorder(tx: &Transaction, id: &str, before: Option<&str>, at: i64) -> Res
         }
     };
     tx.execute("UPDATE tasks SET rank = ?1, updated_at = ?2 WHERE id = ?3", (rank, at, key)).map(|_| ()).map_err(sql)
+}
+
+/// A task's time budget (AC-126): 5 minutes to 7 days; none takes it off.
+pub fn set_budget(tx: &Transaction, author: &str, id: &str, minutes: Option<i64>, at: i64) -> Result<(), String> {
+    if minutes.is_some_and(|m| !(5..=7 * 24 * 60).contains(&m)) {
+        return Err("Budget: 5 minutes to 7 days".to_string());
+    }
+    let key = key_of(tx, id)?;
+    tx.execute("UPDATE tasks SET budget_seconds = ?1, updated_at = ?2 WHERE id = ?3", (minutes.map(|m| m * 60), at, &key)).map_err(sql)?;
+    let who = user_name(tx, author)?;
+    let said = minutes.map_or(format!("{who} took its budget off"), |m| format!("{who} set its budget to {m} minutes"));
+    log(tx, &key, author, "edit", &said, None, at).map(|_| ())
 }
 
 /// A project's name and folder.

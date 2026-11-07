@@ -46,8 +46,17 @@ pub enum Act {
     Say(String),
     /// Asks the agent once for its result, through the gate.
     Nudge,
+    /// Gives the agent the last warning: seconds left of the budget (AC-126).
+    Warn(i64),
+    /// Ends the agent: the task was moved first, so its end counts for nothing (AC-123).
+    End,
     /// Closes the pane; `keep` keeps the screen's last rows on the task first. The run is closed when tmux did it.
     Close { words: String, keep: bool },
+}
+
+/// When the last warning goes: 3% of the budget left, at least 2 minutes (AC-126).
+pub fn warn_at(total: i64) -> i64 {
+    (total * 3 / 100).max(120)
 }
 
 pub fn finished(status: &str) -> bool {
@@ -133,6 +142,26 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         let open_for_nothing = run.status == "IN PROGRESS" || (run.status == "WAIT FOR HUMAN" && run.no_result_wait);
         if open_for_nothing && run.idle_for >= NOTHING {
             acts.push(Act::Move { to: "DONE", words: "Dispatcher closed it: no activity for 60 minutes and no result from the agent.".into() });
+        }
+    }
+    // the budget: only IN PROGRESS counts, never a wait for an answer (AC-126)
+    if let Some(total) = run.budget.filter(|_| alive && run.status == "IN PROGRESS") {
+        if f.waiting.is_none() {
+            run.budget_used += f.dt;
+        }
+        let left = total - run.budget_used;
+        if left <= 0 && !run.held {
+            run.state = "gone".into();
+            if !run.warned {
+                acts.push(Act::Say("No warning could be given before the limit.".into()));
+            }
+            acts.push(Act::Move { to: "FAILED", words: format!("Time budget of {} minutes used: the agent was ended.", total / 60) });
+            acts.push(Act::End);
+            return acts;
+        }
+        if !run.warned && left <= warn_at(total) {
+            run.warned = true;
+            acts.push(Act::Warn(left));
         }
     }
     // closing after DONE or FAILED (AC-125): any activity starts the 2 hours again, a human's at its

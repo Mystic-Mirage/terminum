@@ -195,6 +195,34 @@ export async function liveDispatcher(page, opts) {
   const stale = await run(changed, { agent: plain, prompt_rev: seen.prompt_rev });
   check("AC-121 a press on other words is asked again, and nothing starts", /text changed/.test(stale.error) && await status(changed) === "TODO", JSON.stringify(stale));
 
+  // AC-126 the budget
+  const refusedBudget = await j(`/api/tasks/${(await task("short budget"))}`, "PATCH", { budget_minutes: 3 });
+  check("AC-126 under 5 minutes is refused with its words", refusedBudget.error === "Budget: 5 minutes to 7 days", JSON.stringify(refusedBudget));
+  const timed = await task("timed WORKS");
+  await j(`/api/tasks/${timed}`, "PATCH", { budget_minutes: 62 });   // its last 2 minutes: one tick of this clock
+  check("AC-126 the prompt says the budget", /You have 62 minutes for this task/.test((await j(`/api/tasks/${timed}/run`)).prompt));
+  await run(timed);
+  check("AC-126 at the limit the task is FAILED", await hasStatus(timed, "FAILED", 25000) && await said(timed, "Time budget of 62 minutes used: the agent was ended."), await history(timed));
+  check("AC-126 the last warning went first", /last warning/.test(await history(timed)), await history(timed));
+  const timedPane = await paneOf(timed);
+  check("AC-126 the agent ended: SIGTERM, recorded", await until(() => tmux("display", "-p", "-t", timedPane, "#{@terminum-exit}").trim() !== "", 8000), tmux("display", "-p", "-t", timedPane, "#{@terminum-exit}"));
+  check("AC-126 its pane and shell stay", tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(timedPane));
+  await nap(1500);
+  check("AC-123 the end it caused counts for nothing", await status(timed) === "FAILED");
+  const stubborn = await agent("Stubborn", "--stubborn");
+  const hard = await task("stubborn WORKS");
+  await j(`/api/tasks/${hard}`, "PATCH", { budget_minutes: 5 });
+  await run(hard, { agent: stubborn });
+  check("AC-126 one that ignores SIGTERM is ended by SIGKILL", await hasStatus(hard, "FAILED", 25000) && await until(async () => /^(137|-?\d+)$/.test(tmux("display", "-p", "-t", await paneOf(hard), "#{@terminum-exit}").trim()), 10000), tmux("display", "-p", "-t", await paneOf(hard), "#{@terminum-exit}"));
+  const changing = await task("budget changes STOPS");
+  await run(changing);
+  await hasStatus(changing, "IN PROGRESS", 15000);
+  await j(`/api/tasks/${changing}`, "PATCH", { budget_minutes: 60 });
+  check("AC-126 changed in flight: the agent is told", await until(async () => /budget is now 60 minutes/.test(tmux("capture-pane", "-p", "-S", "-40", "-t", await paneOf(changing))) || (await history(changing)).includes("set its budget"), 6000), await history(changing));
+  await page.goto(`${base}/kanban/?project=${project}`);
+  await page.waitForSelector('.col[data-status="TODO"]');
+  check("AC-126 the card shows the time used and the budget", await until(async () => /\d+ of 60 min/.test(await page.textContent(card(changing)).catch(() => "")), 6000), await page.textContent(card(changing)).catch(() => ""));
+
   // AC-125 closing, with the screen kept when there is no result
   const closes = await task("closes CLEAN");
   await run(closes);

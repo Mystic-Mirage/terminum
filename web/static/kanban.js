@@ -129,6 +129,7 @@ function card(t) {
   foot.append(proj, el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
+  if (t.budget_seconds && t.budget_used !== undefined) foot.append(el("span", "cbudget", `${Math.floor(t.budget_used / 60)} of ${t.budget_seconds / 60} min`));
   showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
   showSession(c, t);

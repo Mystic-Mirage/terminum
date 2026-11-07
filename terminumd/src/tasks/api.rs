@@ -160,7 +160,7 @@ async fn meta(State(app): State<Shared>) -> Response {
         ))).unwrap_or_default();
         (users, agents, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
-    Json(json!({"projects": projects, "agents": agents, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {

@@ -6,6 +6,7 @@ import * as signin from "./signin.js";
 import "./press.js";
 import "./pop.js";
 import { pageColors } from "./contrast.js";
+import { withScheme } from "./schemes.js";
 import { askConfirm, askName } from "./dialogs.js";
 import { takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
@@ -305,10 +306,13 @@ function newProject() {
   return b;
 }
 
+// the page's theme with the color scheme every page shows over it (AC-12)
+const colors = () => { if (meta.theme) pageColors(withScheme(meta.theme, meta.scheme)); };
+
 async function loadMeta() {
   try {
     meta = await api("/api/tasks/meta");
-    if (meta.theme) pageColors(meta.theme);
+    colors();
     const gone = filters().project.filter((p) => !meta.projects.some((x) => x.id === p));
     if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); bar.setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
     bar.draw();
@@ -409,6 +413,7 @@ function listen() {
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
       else if (m.t === "build") buildCame(m.id);
       else if (m.t === "taskmarks") side.marks(m);
+      else if (m.t === "settings") { meta.scheme = m.page?.colorScheme ?? null; colors(); }
       else if (m.t === "projects") { side.projects(m.items ?? [], m.order ?? []); clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);

@@ -185,5 +185,5 @@ fn ac137_a_store_of_the_first_schema_gains_the_agents_and_keeps_its_tasks() {
     assert!(path.with_file_name("kanban.sqlite.bak-1").exists(), "a copy before the change");
     drop(s);
     let version: i64 = Connection::open(&path).unwrap().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, MIGRATIONS.len() as i64);
 }

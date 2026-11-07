@@ -3,6 +3,8 @@
 //! from `capture-pane -e`, as only the colors tell a placeholder from a draft. It fails closed: what
 //! it does not know is not empty, so a new version's changed screen delays words and never types.
 
+use crate::screen::sgr::{parse_line, Style, FAINT};
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Screen {
     /// A known input box with nothing in it.
@@ -15,27 +17,28 @@ pub enum Screen {
     Unknown,
 }
 
-/// A row with its SGR sequences gone; `None` when it holds any other escape.
-fn plain(row: &str) -> Option<String> {
-    let mut out = String::with_capacity(row.len());
-    let mut chars = row.chars();
-    while let Some(c) = chars.next() {
-        if c != '\u{1b}' {
-            out.push(c);
-            continue;
+/// A row as text: all of it, and what is at full strength: dim is a placeholder or ghost text, no one's words.
+struct Row {
+    text: String,
+    strong: String,
+}
+
+/// Whether every escape in `row` is a color: anything else is a screen it does not know.
+fn only_colors(row: &str) -> bool {
+    let mut parts = row.split('\u{1b}');
+    parts.next();
+    parts.all(|p| p.strip_prefix('[').is_some_and(|rest| rest.find('m').is_some_and(|m| rest[..m].chars().all(|c| c.is_ascii_digit() || c == ';' || c == ':'))))
+}
+
+fn row_of(raw: &str) -> Row {
+    let (mut text, mut strong, mut style, mut link) = (String::new(), String::new(), Style::default(), None);
+    parse_line(raw, &mut style, &mut link, |c, st, _| {
+        text.push(c);
+        if st.flags & FAINT == 0 {
+            strong.push(c);
         }
-        if chars.next() != Some('[') {
-            return None;
-        }
-        loop {
-            match chars.next()? {
-                'm' => break,
-                '0'..='9' | ';' | ':' => {}
-                _ => return None,
-            }
-        }
-    }
-    Some(out)
+    });
+    Row { text, strong }
 }
 
 fn is_rule(row: &str) -> bool {
@@ -43,70 +46,40 @@ fn is_rule(row: &str) -> bool {
 }
 
 /// A choice or its footer: what a question that replaces the box shows, in both agents.
-fn is_question(rows: &[String]) -> bool {
+fn is_question(rows: &[Row]) -> bool {
     const SAID: [&str; 5] = ["Enter to confirm", "Esc to cancel", "enter continue", "esc skip", "Press Enter to continue"];
-    rows.iter().any(|r| SAID.iter().any(|s| r.contains(s)))
+    rows.iter().any(|r| SAID.iter().any(|s| r.text.contains(s)))
         || rows.iter().any(|r| {
-            let t = r.trim_start().trim_start_matches(['\u{276f}', '\u{203a}', '>']).trim_start();
-            r.trim_start().starts_with(['\u{276f}', '\u{203a}']) && t.starts_with(|c: char| c.is_ascii_digit()) && t.contains(". ")
+            let t = r.text.trim_start().trim_start_matches(['\u{276f}', '\u{203a}']).trim_start();
+            r.text.trim_start().starts_with(['\u{276f}', '\u{203a}']) && t.starts_with(|c: char| c.is_ascii_digit()) && t.contains(". ")
         })
-}
-
-/// A row's characters drawn at full strength: dim ones are a placeholder or ghost text, no one's words.
-fn at_full_strength(row: &str) -> String {
-    let (mut out, mut dim, mut chars) = (String::new(), false, row.chars());
-    while let Some(c) = chars.next() {
-        if c != '\u{1b}' {
-            if !dim {
-                out.push(c);
-            }
-            continue;
-        }
-        chars.next();
-        let mut code = String::new();
-        for x in chars.by_ref() {
-            if x == 'm' {
-                break;
-            }
-            code.push(x);
-        }
-        for part in code.split(';') {
-            match part {
-                "2" => dim = true,
-                "0" | "22" | "" => dim = false,
-                _ => {}
-            }
-        }
-    }
-    out
 }
 
 /// Claude Code's box: a rule, `❯ ` and what is typed, a rule; empty holds only its cursor's reverse
 /// cell, or a suggestion in dim (with no terminal focus, neither shows its cursor).
-fn claude(raw: &[String], rows: &[String]) -> Screen {
-    if let Some(bottom) = rows.iter().rposition(|r| is_rule(r))
-        && let Some(top) = rows[..bottom].iter().rposition(|r| is_rule(r))
-        && rows[top + 1].trim_start().starts_with('\u{276f}') {
-        let strong: Vec<String> = raw[top + 1..bottom].iter().map(|r| at_full_strength(r)).collect();
-        let first = strong[0].trim_start().trim_start_matches('\u{276f}').to_string();
-        let typed: Vec<&str> = std::iter::once(first.as_str()).chain(strong[1..].iter().map(String::as_str)).map(|r| r.trim_matches(|c: char| c.is_whitespace() || c == '\u{a0}')).filter(|r| !r.is_empty()).collect();
+fn claude(rows: &[Row]) -> Screen {
+    if let Some(bottom) = rows.iter().rposition(|r| is_rule(&r.text))
+        && let Some(top) = rows[..bottom].iter().rposition(|r| is_rule(&r.text))
+        && rows[top + 1].text.trim_start().starts_with('\u{276f}') {
+        let first = rows[top + 1].strong.trim_start().trim_start_matches('\u{276f}');
+        let typed: Vec<&str> = std::iter::once(first).chain(rows[top + 2..bottom].iter().map(|r| r.strong.as_str())).map(|r| r.trim_matches(|c: char| c.is_whitespace() || c == '\u{a0}')).filter(|r| !r.is_empty()).collect();
         return if typed.is_empty() { Screen::Empty } else { Screen::Holds(typed.join(" ")) };
     }
     if is_question(rows) { Screen::Asks } else { Screen::Unknown }
 }
 
 /// Codex's composer: `› ` and, empty, its placeholder in dim.
-fn codex(raw: &[String], rows: &[String]) -> Screen {
+fn codex(rows: &[Row]) -> Screen {
     const PLACEHOLDER: &str = "Ask Codex to do anything";
     if is_question(rows) {
         return Screen::Asks;
     }
-    let Some(at) = rows.iter().rposition(|r| r.trim_start().starts_with('\u{203a}')) else { return Screen::Unknown };
-    let typed = rows[at].trim_start().trim_start_matches('\u{203a}').trim();
-    if typed == PLACEHOLDER && raw[at].contains("\u{1b}[2m") {
+    let Some(at) = rows.iter().rposition(|r| r.text.trim_start().starts_with('\u{203a}')) else { return Screen::Unknown };
+    if rows[at].text.trim_start().trim_start_matches('\u{203a}').trim() == PLACEHOLDER && rows[at].strong.trim_start().trim_start_matches('\u{203a}').trim().is_empty() {
         return Screen::Empty;
     }
-    let more: Vec<&str> = rows[at + 1..].iter().map(|r| r.trim()).take_while(|r| !r.is_empty()).collect();
+    let typed = rows[at].text.trim_start().trim_start_matches('\u{203a}').trim();
+    let more: Vec<&str> = rows[at + 1..].iter().map(|r| r.text.trim()).take_while(|r| !r.is_empty()).collect();
     if typed.is_empty() && more.is_empty() {
         return Screen::Unknown;
     }
@@ -115,10 +88,13 @@ fn codex(raw: &[String], rows: &[String]) -> Screen {
 
 /// The screen of `kind`'s agent, as `capture-pane -e -p` gave it.
 pub fn read(kind: &str, raw: &[String]) -> Screen {
-    let Some(rows) = raw.iter().map(|r| plain(r)).collect::<Option<Vec<String>>>() else { return Screen::Unknown };
+    if !raw.iter().all(|r| only_colors(r)) {
+        return Screen::Unknown;
+    }
+    let rows: Vec<Row> = raw.iter().map(|r| row_of(r)).collect();
     match kind {
-        "claude" => claude(raw, &rows),
-        "codex" => codex(raw, &rows),
+        "claude" => claude(&rows),
+        "codex" => codex(&rows),
         _ => Screen::Unknown,
     }
 }

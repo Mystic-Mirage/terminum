@@ -55,7 +55,7 @@ impl Marks {
         let held = self.held.lock();
         let lines: Vec<_> = held.attention.iter().filter(|a| a.2).map(|(id, status, _, why)| {
             let first = why.lines().next().unwrap_or("");
-            json!({"id": id, "words": if status == "FAILED" { format!("{id} failed: {first}") } else { format!("{id} waits for you") }})
+            json!({"id": id, "failed": status == "FAILED", "words": if status == "FAILED" { format!("{id} failed: {first}") } else { format!("{id} waits for you") }})
         }).collect();
         json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "need": held.attention.len(), "lines": lines}).to_string()
     }

@@ -87,7 +87,7 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 /* RUN's window: what will start, where, with what words */
 .runfacts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); margin: 0; font-size: var(--fs-label); }
 .runfacts dt { color: var(--muted); }
-.runfacts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--mono, ui-monospace, Menlo, monospace); }
+.runfacts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--term-font); }
 .runprompt { margin: 0; max-height: 240px; overflow: auto; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-label); white-space: pre-wrap; overflow-wrap: anywhere; }
 .runmarked { margin: 0; font-size: var(--fs-label); color: var(--waiting); }
 #runadd, #runjust, #runfresh { margin-right: auto; }

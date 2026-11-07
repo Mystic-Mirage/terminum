@@ -3,7 +3,6 @@
 CREATE TABLE runs (
   id TEXT PRIMARY KEY,
   task TEXT NOT NULL REFERENCES tasks,
-  number INTEGER NOT NULL,
   agent_id TEXT NOT NULL,
   kind TEXT NOT NULL,
   command TEXT NOT NULL,
@@ -13,7 +12,6 @@ CREATE TABLE runs (
   agent_session TEXT,
   state TEXT NOT NULL,
   prompt TEXT,
-  hooked INTEGER NOT NULL DEFAULT 0,
   turn_ended INTEGER NOT NULL DEFAULT 0,
   open_tools INTEGER NOT NULL DEFAULT 0,
   idle_for INTEGER NOT NULL DEFAULT 0,
@@ -27,9 +25,10 @@ CREATE TABLE runs (
   wait_moved INTEGER NOT NULL DEFAULT 0,
   no_result_wait INTEGER NOT NULL DEFAULT 0,
   result INTEGER NOT NULL DEFAULT 0,
-  ended_said INTEGER NOT NULL DEFAULT 0,
-  last_walk INTEGER NOT NULL DEFAULT 0,
-  started_at INTEGER NOT NULL
+  again_said INTEGER NOT NULL DEFAULT 0,
+  close_tried INTEGER NOT NULL DEFAULT 0,
+  last_walk INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX runs_task ON runs (task, number);
+CREATE INDEX runs_task ON runs (task);
+CREATE INDEX events_kind ON events (task, kind, at);
 CREATE INDEX runs_pane ON runs (pane_key, state);

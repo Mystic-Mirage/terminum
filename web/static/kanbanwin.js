@@ -190,7 +190,6 @@ export function taskWindow({ getMeta, runs }) {
       write(filesKey, null);
       tryClose();
     });
-    run.dataset.run = t.id;
     onSend(area, () => close.click());
     close.title = "Keep the comment and close: nothing moves, the session hears nothing";
     wrap.append(area, row(run, close));

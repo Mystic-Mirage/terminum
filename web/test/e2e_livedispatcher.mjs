@@ -2,12 +2,23 @@
 // Dispatcher against a real private terminumd and tmux (e2e_live.mjs; terminum-dispatcher.md AC-121 to
 // AC-125, AC-131, AC-137; terminum-kanban.md AC-117): scripts/fake_agent.py draws the measured input box
 // and speaks by the real hooks and tools; the clock runs 300 times as fast (TM_TEST_CLOCK_SCALE).
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardKit, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
+
+const taskKit = (j) => {
+  const status = async (id) => (await j(`/api/tasks/${id}`)).status;
+  return {
+    status,
+    history: async (id) => (await j(`/api/tasks/${id}`)).history.map((e) => e.text ?? "").join(" | "),
+    paneOf: async (id) => (await j(`/api/tasks/${id}`)).session?.key?.split(":").pop(),
+    hasStatus: (id, s, ms = 8000) => until(async () => await status(id) === s, ms),
+  };
+};
 
 export async function liveDispatcher(page, opts) {
   const { base, tmux, work, shots, stop, start } = opts;
@@ -17,11 +28,8 @@ export async function liveDispatcher(page, opts) {
   const plain = await agent("Plain");
   const task = async (title, text = "") => (await j("/api/tasks", "POST", { title, text, project })).id;
   const run = (id, body = { agent: plain }) => j(`/api/tasks/${id}/run`, "POST", body);
-  const status = async (id) => (await j(`/api/tasks/${id}`)).status;
-  const history = async (id) => (await j(`/api/tasks/${id}`)).history.map((e) => e.text ?? "").join(" | ");
-  const hasStatus = (id, s, ms = 8000) => until(async () => await status(id) === s, ms);
+  const { status, history, paneOf, hasStatus } = taskKit(j);
   const said = (id, words, ms = 8000) => until(async () => (await history(id)).includes(words), ms);
-  const paneOf = async (id) => (await j(`/api/tasks/${id}`)).session?.key?.split(":").pop();
 
   // AC-121 happy path, through the page: a drag asks which agent, the last chosen picked, one press
   const first = await task("Fix the retry loop FINISHES", "Its text.");
@@ -168,6 +176,25 @@ export async function liveDispatcher(page, opts) {
   check("AC-122 RUN just after an exit starts anew in its pane", !!pressed.run, JSON.stringify(pressed));
   check("AC-122 and it ends", await until(async () => (await history(justEnded)).includes("All done."), 15000), await history(justEnded));
 
+  // what the tty holds when its agent has gone never reaches the shell it leaves (§9 Window command)
+  const nothing = path.join(work, "typed-into-the-shell");
+  const sleepy = (await j(`/api/task-projects/${project}/agents`, "POST", { name: "Sleepy", kind: "claude", command: "sleep 2" })).id;
+  const drained = await task("drained");
+  await run(drained, { agent: sleepy });
+  const drainedPane = await until(() => paneOf(drained)) && await paneOf(drained);
+  tmux("send-keys", "-t", drainedPane, "-l", `touch ${nothing}`);
+  tmux("send-keys", "-t", drainedPane, "Enter");
+  check("AC-121 an agent's end with text in its tty: FAILED", await hasStatus(drained, "FAILED", 15000));
+  await nap(1000);
+  check("§9 what was typed for it does not run in its shell", !fs.existsSync(nothing));
+
+  // RUN sends what the human saw: an agent may change the task's text meanwhile (AC-121)
+  const changed = await task("the text changes", "as it was");
+  const seen = await j(`/api/tasks/${changed}/run`);
+  await j(`/api/tasks/${changed}`, "PATCH", { text: "as an agent left it" });
+  const stale = await run(changed, { agent: plain, prompt_rev: seen.prompt_rev });
+  check("AC-121 a press on other words is asked again, and nothing starts", /text changed/.test(stale.error) && await status(changed) === "TODO", JSON.stringify(stale));
+
   // AC-125 closing, with the screen kept when there is no result
   const closes = await task("closes CLEAN");
   await run(closes);
@@ -207,14 +234,10 @@ export async function liveDispatcher(page, opts) {
  *  whole way: box, gate, prompt, hook, finish_task, the exit, the resume. */
 export async function liveDispatcherReal(page, opts) {
   const { work } = opts;
-  const { j, tool: _unused, cli: _cli } = boardKit(page, opts);
-  const dir = process.env.TM_TEST_REAL_DIR ?? work;
-  const project = (await j("/api/task-projects", "POST", { name: "RealRuns", dir })).id;
+  const { j } = boardKit(page, opts);
+  const project = (await j("/api/task-projects", "POST", { name: "RealRuns", dir: work })).id;
   const add = async (name, kind, command) => (await j(`/api/task-projects/${project}/agents`, "POST", { name, kind, command })).id;
-  const status = async (id) => (await j(`/api/tasks/${id}`)).status;
-  const history = async (id) => (await j(`/api/tasks/${id}`)).history.map((e) => e.text ?? "").join(" | ");
-  const paneOf = async (id) => (await j(`/api/tasks/${id}`)).session?.key?.split(":").pop();
-  const hasStatus = (id, s, ms) => until(async () => await status(id) === s, ms);
+  const { status, history, paneOf, hasStatus } = taskKit(j);
   const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__finish_task");
   const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result ok", project })).id;
   const ran = await j(`/api/tasks/${t}/run`, "POST", { agent: claude });
@@ -226,7 +249,7 @@ export async function liveDispatcherReal(page, opts) {
   opts.tmux("send-keys", "-t", pane, "-l", "/exit");
   opts.tmux("send-keys", "-t", pane, "Enter");
   check("AC-123 real Claude Code: /exit records its exit code", await until(() => opts.tmux("display", "-p", "-t", pane, "#{@terminum-exit}").trim() === "0", 30000), opts.tmux("display", "-p", "-t", pane, "#{@terminum-exit}"));
-  await new Promise((r) => setTimeout(r, 2000));
+  await nap(2000);
   const again = await j(`/api/tasks/${t}/run`, "POST", { comment: "Reply with the word ok again, then call finish_task with the result ok again" });
   check("AC-122 real Claude Code: the resume starts in its pane", !!again.run, JSON.stringify(again));
   check("AC-122 real Claude Code: the conversation goes on: the agent took it again", await until(async () => (await history(t)).split("The agent took it.").length === 3, 90000), await history(t));

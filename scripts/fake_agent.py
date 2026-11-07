@@ -19,9 +19,8 @@ RULE = "\x1b[37m" + "─" * 60 + "\x1b[0m"
 def main():
     args = sys.argv[1:]
     cli = args[0]
-    kind = args[args.index("--kind") + 1] if "--kind" in args else "claude"
-    start = args[args.index("--start") + 1] if "--start" in args else ""
-    session = (args[args.index("--resume") + 1] if "--resume" in args else f"fake-{os.getpid()}")
+    opt = lambda name, default: args[args.index(name) + 1] if name in args else default
+    kind, start, session = opt("--kind", "claude"), opt("--start", ""), opt("--resume", f"fake-{os.getpid()}")
     typed = ""
 
     def hook(event, **more):
@@ -83,7 +82,8 @@ def main():
             if kind == "codex":
                 hook("SessionStart", source="startup")
             hook("UserPromptSubmit", prompt=prompt)
-            task = (re.search(r"T-\d+", prompt) or [""])[0] if re.search(r"T-\d+", prompt) else ""
+            named = re.search(r"T-\d+", prompt)
+            task = named[0] if named else ""
             if "LIMIT" in prompt:
                 hook("StopFailure", error="rate_limit")
             elif "DIES" in prompt:

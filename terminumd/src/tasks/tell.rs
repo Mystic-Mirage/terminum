@@ -21,7 +21,7 @@ pub struct Lines(Mutex<HashMap<String, Vec<(String, String)>>>);
 
 impl Lines {
     /// The newest few of a pane: a session with no next hook never holds many.
-    fn push(&self, key: &str, task: &str, line: String) {
+    pub(crate) fn push(&self, key: &str, task: &str, line: String) {
         const KEPT: usize = 20;
         let mut all = self.0.lock();
         let lines = all.entry(key.to_string()).or_default();

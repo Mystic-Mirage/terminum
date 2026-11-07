@@ -43,7 +43,7 @@ fn bare(s: &str) -> bool {
 }
 
 /// The shell's name as the bridge reports the pane's job ("-zsh", "/bin/bash" → "zsh", "bash").
-fn shell_name(job: &str) -> &str {
+pub(crate) fn shell_name(job: &str) -> &str {
     job.rsplit('/').next().unwrap_or("").trim_start_matches('-')
 }
 

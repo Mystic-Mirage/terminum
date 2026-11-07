@@ -1,62 +1,50 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! What an agent's hook event means to its run (`terminum-dispatcher.md` AC-121 to AC-124): acted on
-//! at once, written when it changes. A hook's fields are data: only a shape-checked ID is kept.
+//! at once, written when it changes. A hook's fields are data: any process of the user can post one,
+//! so only a shape-checked ID is kept, and its words are cleaned.
 
 use serde_json::Value;
 
 use super::runs::{self, Run};
-use super::{heard_change, move_task, say, write};
+use super::{move_task, store};
 use crate::app::Shared;
+use crate::plans::rules;
 use crate::tasks::ops;
 
-/// The shape a session ID must have to reach a shell (§9 Resume).
+/// The shape a session ID must have to reach a command line (§9 Resume): no flag.
 pub fn good_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 100 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    id.len() <= 100 && id.starts_with(|c: char| c.is_ascii_alphanumeric()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
 
-/// What the event changes in `run`; what is to be said on its task. Pure of tmux; `typed`: this prompt
-/// is what terminum typed.
-pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: bool, active: &mut bool) -> Result<bool, String> {
+/// What the event changes in `r`: whether it moved the task, whether it was activity. `typed`: this
+/// prompt is what terminum typed.
+pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: bool) -> Result<(bool, bool), String> {
     let event = ev["event"].as_str().unwrap_or("");
-    let session = ev["session"].as_str().unwrap_or("");
-    let quiet = r.nudge_turn;                          // the turn our request started is no new work (AC-123)
+    let session = ev["session"].as_str().filter(|s| good_id(s));
     let mut moved = false;
+    let mut active = !r.nudge_turn;                    // the turn our request started is no new work (AC-123)
     match event {
         "SessionStart" => {
-            r.hooked = true;
-            if good_id(session) {
-                r.agent_session = Some(session.to_string());
-            }
+            r.agent_session = session.map(str::to_string).or(r.agent_session.take());
+            active = false;
         }
-        "UserPromptSubmit" if matches!(r.state.as_str(), "starting" | "asking" | "typed") => {
+        "UserPromptSubmit" if r.is_starting() => {
             r.state = "working".into();
             r.prompt = None;
-            r.hooked = true;
-            r.idle_for = 0;
-            r.turn_ended = false;
-            r.wait_moved = false;
-            if good_id(session) {
-                r.agent_session = Some(session.to_string());
-            }
-            let project: String = tx.query_row("SELECT p.name FROM projects p JOIN tasks t ON t.project = p.id WHERE t.id = ?1", [&r.task], |x| x.get(0)).map_err(ops::sql)?;
-            let owner = ops::agent_user(tx, &r.kind, &project)?;
-            tx.execute("UPDATE tasks SET owner = ?1 WHERE id = ?2", (&owner, &r.task)).map_err(ops::sql)?;
+            r.new_work();
+            r.agent_session = session.map(str::to_string).or(r.agent_session.take());
+            let project = ops::project_row(tx, &r.project)?.0;
+            ops::set_owner(tx, &r.task, &ops::agent_user(tx, &r.kind, &project)?, ops::now())?;
             if r.status != "IN PROGRESS" {
                 move_task(tx, r, "IN PROGRESS", "The agent took it.")?;
                 moved = true;
             }
         }
-        "UserPromptSubmit" if typed => {}
+        "UserPromptSubmit" if typed => active = false,
         "UserPromptSubmit" => {
             // a human's own prompt: new work (AC-122)
-            *active = true;
-            r.nudge_turn = false;
-            r.nudged = false;
-            r.no_result_wait = false;
-            r.wait_moved = false;
-            r.turn_ended = false;
-            r.held = false;
-            r.closing_for = 0;
+            active = true;
+            r.new_work();
             if r.status != "IN PROGRESS" {
                 move_task(tx, r, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
                 moved = true;
@@ -66,43 +54,41 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.turn_ended = true;
             r.open_tools = 0;
             r.nudge_turn = false;
-            *active = !quiet;
         }
         "StopFailure" => {
             r.turn_ended = true;
             r.open_tools = 0;
-            *active = true;
+            active = true;
             if !r.held && !super::plan::finished(&r.status) {
-                let why = ev["error"].as_str().unwrap_or("an error");
+                let why: String = rules::clean(ev["error"].as_str().unwrap_or("an error")).chars().take(60).collect();
                 move_task(tx, r, "FAILED", &format!("The agent's turn failed: {why}"))?;
                 moved = true;
             }
         }
-        "PreToolUse" => {
-            r.open_tools += 1;
-            *active = !quiet;
-        }
-        "PostToolUse" | "PostToolUseFailure" => {
-            r.open_tools = (r.open_tools - 1).max(0);
-            *active = !quiet;
-        }
-        "SessionEnd" => {}
-        _ => *active = !quiet,
+        "PreToolUse" => r.open_tools += 1,
+        "PostToolUse" | "PostToolUseFailure" => r.open_tools = (r.open_tools - 1).max(0),
+        "SessionEnd" => active = false,
+        _ => {}
     }
-    Ok(moved)
+    Ok((moved, active))
 }
 
-/// Pane `key`'s agent spoke: its run, if Dispatcher started it.
+/// Pane `key`'s agent spoke: its run, if Dispatcher started it. A pane with none costs a set's lookup.
 pub fn heard(app: &Shared, key: &str, ev: &Value) {
+    if !app.dispatcher.has_run(key) {
+        return;
+    }
     let (app, key, ev) = (app.clone(), key.to_string(), ev.clone());
     tokio::spawn(async move {
         let typed = ev["event"] == "UserPromptSubmit" && ev["prompt"].as_str().is_some_and(|p| app.dispatcher.was_typed(&key, p));
         let (k, e) = (key.clone(), ev.clone());
-        let done = write(&app, move |tx| {
+        let done = store(&app, move |tx| {
             let Some(mut r) = runs::in_pane(tx, &k)? else { return Ok(None) };
-            let mut active = false;
-            let moved = apply(tx, &mut r, &e, typed, &mut active)?;
-            runs::save(tx, &r)?;
+            let was = r.clone();
+            let (moved, active) = apply(tx, &mut r, &e, typed)?;
+            if r != was {
+                runs::save(tx, &r)?;
+            }
             Ok(Some((r.task_id.clone(), moved, active)))
         }).await;
         match done {
@@ -111,7 +97,7 @@ pub fn heard(app: &Shared, key: &str, ev: &Value) {
                     app.dispatcher.touched(&key);
                 }
                 if moved {
-                    heard_change(&app, &task);
+                    crate::tasks::api::told(&app, &task);
                 }
             }
             Ok(None) => return,
@@ -122,9 +108,4 @@ pub fn heard(app: &Shared, key: &str, ev: &Value) {
             app.dispatcher.soon.notify_one();
         }
     });
-}
-
-/// Says on the task that words did not reach its session, once for what was missed.
-pub(super) fn not_delivered(tx: &rusqlite::Transaction, r: &Run, why: &str) -> Result<(), String> {
-    say(tx, r, &format!("Not delivered: {why}"))
 }

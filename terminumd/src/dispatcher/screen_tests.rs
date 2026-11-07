@@ -33,6 +33,11 @@ fn as125_claude_a_draft_is_not_empty() {
 }
 
 #[test]
+fn as125_a_draft_in_a_colour_of_its_own_is_a_draft() {
+    assert_eq!(read("claude", &claude_box("\u{1b}[39m❯\u{a0}\u{1b}[38;2;200;100;2mmy draft\u{1b}[0m")), Screen::Holds("my draft".into()), "a 2 in a colour is no dim");
+}
+
+#[test]
 fn as125_claude_a_multi_line_draft_is_held() {
     let screen = rows(&format!("{RULE}\n\u{1b}[39m❯\u{a0}pasted line one\n  pasted line two\n{RULE}"));
     assert_eq!(read("claude", &screen), Screen::Holds("pasted line one pasted line two".into()));

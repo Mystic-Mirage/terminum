@@ -227,7 +227,7 @@ async fn split(app: &Shared, page: &Page, asked_on: Option<&str>, id: &str, how:
     Ok(())
 }
 
-pub(super) async fn window_of(server: &Server, pane: &str) -> Result<String, String> {
+pub(crate) async fn window_of(server: &Server, pane: &str) -> Result<String, String> {
     server.run(format!("display -p -t {pane} '#{{window_id}}'")).await.ok().and_then(|l| l.into_iter().next()).filter(|w| w.starts_with('@')).ok_or_else(|| super::CLOSED.to_string())
 }
 

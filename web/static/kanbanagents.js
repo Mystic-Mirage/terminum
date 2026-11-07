@@ -4,10 +4,9 @@
 import { askConfirm } from "./dialogs.js";
 import { projectInk } from "./listparts.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
-import { $, api, el, fillSelect, iconButton } from "./kanbanutil.js";
+import { $, THIS_MAC, api, el, fillSelect, iconButton } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
-const THIS_MAC = "This Mac";
 
 /** `chosen()`: the projects shown, none for all; `getMeta()`: terminumd's projects, agents and hosts. */
 export function agentsSection({ getMeta, chosen, reload }) {

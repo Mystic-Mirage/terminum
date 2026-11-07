@@ -38,12 +38,12 @@ pub fn routes() -> Router<Shared> {
 }
 
 /// Runs `f` in one transaction off the async workers.
-pub(super) async fn store<T: Send + 'static>(app: &Shared, f: impl FnOnce(&Transaction) -> Result<T, String> + Send + 'static) -> Result<T, String> {
+pub(crate) async fn store<T: Send + 'static>(app: &Shared, f: impl FnOnce(&Transaction) -> Result<T, String> + Send + 'static) -> Result<T, String> {
     let a = app.clone();
     off(move || a.tasks.with(f)).await
 }
 
-pub(super) fn answer<T: Serialize>(done: Result<T, String>) -> Response {
+pub(crate) fn answer<T: Serialize>(done: Result<T, String>) -> Response {
     match done {
         Ok(v) => Json(v).into_response(),
         Err(e) => refuse(StatusCode::BAD_REQUEST, e),
@@ -134,15 +134,14 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
     };
     let with_counts = q.get("counts").is_some_and(|c| c == "1");
-    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }, crate::dispatcher::runs::marks(tx)?))).await;
+    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }, crate::dispatcher::runs::card_marks(tx)?))).await;
     match done {
-        Ok((tasks, counts, starting)) => {
+        Ok((tasks, counts, run_marks)) => {
             let layout = app.layout.read();
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
-            let starting: HashMap<String, String> = starting.into_iter().collect();
             let shown: Vec<Value> = tasks.iter().map(|t| {
                 let mut v = with_session(t, t.session.as_deref().and_then(|k| rows.get(k).copied()));
-                if let Some(state) = starting.get(&t.key) {
+                if let Some(state) = run_marks.get(&t.key) {
                     v["run"] = json!(state);
                 }
                 v
@@ -298,7 +297,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     };
     if moved_to.is_some() && was.status != task.status {
         super::tell::human_moved(&app, &task).await;
-        crate::dispatcher::api::human_moved(&app, &task).await;
+        crate::dispatcher::api::human_moved(&app, &task);
     }
     told(&app, &task.id);
     let mut answered = card(&app, &task);

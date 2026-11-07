@@ -99,31 +99,56 @@ fn ac124_a_human_s_move_stands_against_every_signal() {
 
 #[test]
 fn ac125_it_closes_two_hours_after_the_end_only_when_idle() {
+    let ended = |dt| Facts { exit: Some(0), alive: false, dt, ..up(0) };
     let mut r = run("DONE");
     r.state = "gone".into();
-    assert!(step(&mut r, &Facts { exit: Some(0), alive: false, dt: 7199, ..up(0) }).is_empty());
-    let acts = step(&mut r, &Facts { exit: Some(0), alive: false, dt: 1, ..up(0) });
+    assert!(step(&mut r, &ended(7199)).is_empty());
+    let acts = step(&mut r, &ended(1));
     assert_eq!(acts, vec![Act::Close { words: "Session ended: closed 2 hours after DONE.".into(), keep: true }]);
-    assert_eq!(r.state, "closed");
+    assert_eq!(r.state, "gone", "closed only when tmux did it");
     let mut r = run("DONE");
     r.result = true;
+    r.turn_ended = true;
     let acts = step(&mut r, &up(7200));
     assert!(matches!(&acts[0], Act::Close { keep: false, .. }), "with a result no screen is kept");
 }
 
 #[test]
-fn ac125_activity_starts_the_two_hours_again_once_said() {
+fn ac125_activity_starts_the_two_hours_again_said_once() {
     let mut r = run("DONE");
     step(&mut r, &up(7000));
     let acts = step(&mut r, &Facts { active: true, ..up(30) });
-    assert_eq!(acts, vec![Act::Say("The 2 hours before closing start again: the agent is active.".into())]);
+    assert_eq!(acts, vec![Act::Say("The 2 hours before closing start again: there is activity in the session.".into())]);
     assert_eq!(r.closing_for, 0);
-    assert!(step(&mut r, &Facts { active: true, ..up(30) }).is_empty());
+    step(&mut r, &up(30));
+    assert!(step(&mut r, &Facts { active: true, ..up(30) }).is_empty(), "once");
+}
+
+#[test]
+fn ac125_a_human_at_the_shell_keeps_it_open() {
+    let mut r = run("DONE");
+    r.state = "gone".into();
+    let shell = |dt, active| Facts { exit: Some(0), alive: false, active, dt, ..up(0) };
+    step(&mut r, &shell(7000, false));
+    step(&mut r, &shell(30, true));
+    assert_eq!(r.closing_for, 0, "their keys start the clock again");
+    assert!(step(&mut r, &shell(7199, false)).is_empty());
+}
+
+#[test]
+fn ac125_an_agent_still_working_is_never_closed() {
+    // its start failed by our reading (a Codex with hooks not trusted): it runs on, no turn's end heard
+    let mut r = run("FAILED");
+    r.state = "gone".into();
+    assert!(step(&mut r, &up(9000)).is_empty());
+    r.turn_ended = true;
+    assert!(matches!(&step(&mut r, &up(30))[0], Act::Close { .. }), "once its turn is over");
 }
 
 #[test]
 fn ac125_other_tasks_and_a_human_s_program_keep_it_open() {
     let mut r = run("DONE");
+    r.turn_ended = true;
     assert!(step(&mut r, &Facts { others_open: true, ..up(9000) }).is_empty());
     let acts = step(&mut r, &Facts { program: Some("vim".into()), ..up(30) });
     assert_eq!(acts, vec![Act::Say("Session left open: vim runs in it".into())]);
@@ -136,6 +161,10 @@ fn ac125_a_pane_not_this_run_s_is_never_acted_on() {
     let acts = step(&mut r, &Facts { pane: true, marked: false, alive: true, dt: 30, ..Default::default() });
     assert_eq!(moved(&acts).unwrap(), ("FAILED", "Its pane is no longer this run's: the link is dropped.".to_string()));
     assert_eq!((r.state.as_str(), r.pane_key), ("closed", None));
+    let mut gone = run("IN PROGRESS");
+    gone.pane_key = Some("tmux:local:s:%1".into());
+    step(&mut gone, &Facts::default());
+    assert_eq!(gone.pane_key.as_deref(), Some("tmux:local:s:%1"), "a closed window's key stays: RUN goes on by the resume");
     let mut r = run("DONE");
     assert!(matches!(&step(&mut r, &Facts::default())[0], Act::Say(_)), "a closed window of a finished task is only said");
 }

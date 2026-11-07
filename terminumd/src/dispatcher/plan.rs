@@ -46,7 +46,7 @@ pub enum Act {
     Say(String),
     /// Asks the agent once for its result, through the gate.
     Nudge,
-    /// Closes the pane; `keep` keeps the screen's last rows on the task first.
+    /// Closes the pane; `keep` keeps the screen's last rows on the task first. The run is closed when tmux did it.
     Close { words: String, keep: bool },
 }
 
@@ -58,11 +58,14 @@ pub fn finished(status: &str) -> bool {
 pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     let mut acts = Vec::new();
     let free = !run.held;                              // a human's move stands (AC-124)
+    let movable = free && !finished(&run.status);
     if !f.pane || !f.marked {
         run.state = "closed".into();
-        run.pane_key = None;
+        if f.pane {
+            run.pane_key = None;
+        }
         let words = if f.pane { "Its pane is no longer this run's: the link is dropped." } else { "Its window was closed." };
-        if !finished(&run.status) && free {
+        if movable {
             acts.push(Act::Move { to: "FAILED", words: words.to_string() });
         } else {
             acts.push(Act::Say(format!("Session ended: {}", words.to_lowercase())));
@@ -70,14 +73,15 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         return acts;
     }
     // the agent's end: its exit code tells a clean one from a signal (AS-127)
-    if run.state != "gone" && (f.exit.is_some() || !f.alive) {
+    if run.state != "gone" && !f.alive {
         run.state = "gone".into();
+        run.open_tools = 0;
         let how = match f.exit {
             Some(0) => "exit 0".to_string(),
             Some(code) => format!("exit {code}"),
             None => "no exit recorded".to_string(),
         };
-        if !finished(&run.status) && free {
+        if movable {
             if f.exit == Some(0) {
                 acts.push(Act::Move { to: "DONE", words: "The session ended without finish_task.".into() });
             } else {
@@ -88,7 +92,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         }
     }
     let alive = run.state != "gone";
-    if alive && !finished(&run.status) && free && let Some(why) = &f.failed {
+    if alive && movable && let Some(why) = &f.failed {
         acts.push(Act::Move { to: "FAILED", words: format!("The agent's turn failed: {why}") });
         return acts;
     }
@@ -131,22 +135,24 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             acts.push(Act::Move { to: "DONE", words: "Dispatcher closed it: no activity for 60 minutes and no result from the agent.".into() });
         }
     }
-    // closing after DONE or FAILED (AC-125): any activity starts the 2 hours again
+    // closing after DONE or FAILED (AC-125): any activity starts the 2 hours again, a human's at its
+    // shell too; only an agent ended, or its turn over, is closed under no one
     if finished(&run.status) {
-        if f.active && alive {
-            if run.closing_for > 0 {
-                acts.push(Act::Say("The 2 hours before closing start again: the agent is active.".into()));
+        if f.active {
+            if !run.again_said && run.closing_for > 0 {
+                run.again_said = true;
+                acts.push(Act::Say("The 2 hours before closing start again: there is activity in the session.".into()));
             }
             run.closing_for = 0;
         } else {
             run.closing_for += f.dt;
         }
-        if run.closing_for >= CLOSE && !f.others_open && f.waiting.is_none() {
+        let idle = f.exit.is_some() || (f.alive && run.turn_ended);
+        if run.closing_for >= CLOSE && !f.others_open && f.waiting.is_none() && idle {
             if let Some(program) = &f.program {
                 run.state = "left".into();
                 acts.push(Act::Say(format!("Session left open: {program} runs in it")));
             } else {
-                run.state = "closed".into();
                 acts.push(Act::Close { words: format!("Session ended: closed 2 hours after {}.", run.status), keep: !run.result });
             }
         }

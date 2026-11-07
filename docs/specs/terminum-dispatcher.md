@@ -557,6 +557,8 @@ sequenceDiagram
 | AC-122 | New work on an archived task does not return it: there is no archive yet (`terminum-kanban.md` AC-118). | `terminumd/src/dispatcher/hooks.rs` |
 | AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |
 | AC-131 | A restored tmux server's new pane is not followed: its run says its window was closed. | `terminumd/src/dispatcher/plan.rs` |
+| AC-125 | A real host's walk has no `ps`: a job behind its shell is not seen there. | `terminumd/src/dispatcher/walk.rs` |
+| AC-131 | §9's walk budget has no bench yet (`scripts/bench_board.py`). | `terminumd/src/dispatcher/walk.rs` |
 | AC-121 | A real Codex's hooks need its own trust (AS-124), not checked here beyond its failure's words. | `terminumd/src/dispatcher/start.rs` |
 | AC-126, AC-127, AC-128, AC-129, AC-130 | Not built. | `terminumd/src/dispatcher/plan.rs` |
 
@@ -581,12 +583,11 @@ One task inside terminumd, fed by hooks' events and a 30 s walk, its clocks in t
 **Runs.** One row per RUN, in the store of `terminum-kanban.md`:
 
 ```sql
-CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, number INTEGER NOT NULL, agent_id TEXT NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL,
-  host TEXT, folder TEXT NOT NULL, pane_key TEXT, agent_session TEXT, state TEXT NOT NULL, prompt TEXT,
-  hooked INTEGER NOT NULL DEFAULT 0, turn_ended INTEGER NOT NULL DEFAULT 0, open_tools INTEGER NOT NULL DEFAULT 0,
+CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, agent_id TEXT NOT NULL, kind TEXT NOT NULL, command TEXT NOT NULL,
+  host TEXT, folder TEXT NOT NULL, pane_key TEXT, agent_session TEXT, state TEXT NOT NULL, prompt TEXT, turn_ended INTEGER NOT NULL DEFAULT 0, open_tools INTEGER NOT NULL DEFAULT 0,
   idle_for INTEGER NOT NULL DEFAULT 0, waited_for INTEGER NOT NULL DEFAULT 0, closing_for INTEGER NOT NULL DEFAULT 0, budget_used INTEGER NOT NULL DEFAULT 0,
   nudged INTEGER NOT NULL DEFAULT 0, nudge_turn INTEGER NOT NULL DEFAULT 0, warned INTEGER NOT NULL DEFAULT 0, held INTEGER NOT NULL DEFAULT 0,
-  wait_moved INTEGER NOT NULL DEFAULT 0, no_result_wait INTEGER NOT NULL DEFAULT 0, result INTEGER NOT NULL DEFAULT 0, ended_said INTEGER NOT NULL DEFAULT 0, last_walk INTEGER NOT NULL DEFAULT 0, started_at INTEGER NOT NULL);
+  wait_moved INTEGER NOT NULL DEFAULT 0, no_result_wait INTEGER NOT NULL DEFAULT 0, result INTEGER NOT NULL DEFAULT 0, again_said INTEGER NOT NULL DEFAULT 0, close_tried INTEGER NOT NULL DEFAULT 0, last_walk INTEGER NOT NULL DEFAULT 0);
 ```
 
 `state`: `starting`, `asking` (its own question before the box), `typed` (the prompt is in, not yet taken), `working`, `gone` (only the shell remains), `left` (a human's program runs there), `closed`. Its clocks are seconds seen to pass, added walk by walk, so a gap adds nothing (AC-131). A restart reads them, and every other fact here, from the store. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so; a restarted server's pane has none. A run keeps the command it started with, so an agent's later change holds for its next run.
@@ -606,22 +607,22 @@ GET /api/tasks/meta → {"agents": [{"id": "a81f", "project": "api-id", "name": 
 
 `kind` says whose screens and hooks the gate reads (§9); the command does not change that. The same `projects` message that tells pages of a project's change tells them of its agents'.
 
-**Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, whatever the user's shell is: `/bin/sh` goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, then stays as that shell. tmux gets each word apart and runs no shell of its own:
+**Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, in zsh, bash, fish or sh (csh's `-lic` is not taken: its run fails loud): `/bin/sh` goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, drops what the tty still holds so nothing meant for the agent reaches the shell, then stays as that shell. tmux gets each word apart and runs no shell of its own:
 
 ```sh
-new-window -d -a -t @7 -P -F '#{pane_id} #{session_name}:#{window_index}' /bin/sh -c 'd=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd "$d"; then "$s" -lic "$c"; e=$?; else e=126; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; exec "$s" -l' sh '/Users/alex/work/api' 'claude --model opus' tmux
+new-window -d -a -t @7 -P -F '#{pane_id} #{session_name}:#{window_index}' /bin/sh -c 'd=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l' sh '/Users/alex/work/api' 'claude --model opus' tmux
 ```
 
-Exit 126 is the folder's. The target names the pane: `tmux set -p` without `-t` writes to the session's current pane.
+Exit -1 is the folder's: no process exits with it. The target names the pane: `tmux set -p` without `-t` writes to the session's current pane.
 
-**Resume.** The run's own command then `--resume <id>` (Claude Code) or `resume <id>` (Codex), in the run's first folder; `<id>` must match `[A-Za-z0-9-]{1,100}` and is shell-quoted as well: a hook's field can be posted by any process of the user or a broken host.
+**Resume.** The run's own command then `--resume <id>` (Claude Code) or `resume <id>` (Codex), in the run's first folder; `<id>` must match `[A-Za-z0-9][A-Za-z0-9-]{0,99}`, so it is no flag and no shell word: a hook's field can be posted by any process of the user or a broken host.
 
 **The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>":
 
 1. The pane's `@terminum-run` is this run's.
-2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart; Codex's box read empty twice), with no newer event; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
+2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
 3. The screen reads as a known, empty input box of that kind (AS-125). Anything else, a new version's changed screen included, is not empty.
-4. Paste with `paste-buffer -p`, no Enter.
+4. Paste with `paste-buffer -p`, no Enter; tmux itself reads the mark and the exit in the same command (`if-shell -F`), so an agent ending just before leaves nothing on its shell's line.
 5. Read the screen again: the text or Claude's fold marker stands in the box, with no dialog.
 6. Enter.
 

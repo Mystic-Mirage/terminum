@@ -68,12 +68,7 @@ impl Given {
         if has_control(&self.command) {
             return Err("An agent's command is one line, with no control or invisible characters.".into());
         }
-        if !self.dir.is_empty() && !(self.dir.starts_with('/') || self.dir.starts_with('~')) {
-            return Err("A folder starts with / or ~.".into());
-        }
-        if self.dir.chars().count() > MOST_LINE || has_control(&self.dir) {
-            return Err(format!("A folder is one line of {MOST_LINE} characters at most, with no control or invisible characters."));
-        }
+        check_folder(&self.dir)?;
         if let Some(host) = self.host.as_ref().filter(|h| !hosts.contains(h)) {
             return Err(format!("The server {host} is not one of this terminum's hosts."));
         }
@@ -94,11 +89,27 @@ impl Given {
     }
 }
 
+/// `dir` as a run or an agent may have it (AC-121, AC-137).
+pub fn check_folder(dir: &str) -> Result<(), String> {
+    if !dir.is_empty() && !(dir.starts_with('/') || dir.starts_with('~')) {
+        return Err("A folder starts with / or ~.".into());
+    }
+    if dir.chars().count() > MOST_LINE || has_control(dir) {
+        return Err(format!("A folder is one line of {MOST_LINE} characters at most, with no control or invisible characters."));
+    }
+    Ok(())
+}
+
 /// Every project's, as they were added.
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
     rows(tx, "SELECT id, project, name, kind, host, dir, command FROM project_agents ORDER BY rowid", [], |r| {
         Ok(Agent { id: r.get(0)?, project: r.get(1)?, name: r.get(2)?, kind: r.get(3)?, host: r.get(4)?, dir: r.get(5)?, command: r.get(6)? })
     })
+}
+
+/// One project's.
+pub fn of_project(tx: &Transaction, project: &str) -> Result<Vec<Agent>, String> {
+    Ok(list(tx)?.into_iter().filter(|a| a.project == project).collect())
 }
 
 /// Keeps a new one. Its id.

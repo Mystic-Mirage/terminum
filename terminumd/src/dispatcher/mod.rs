@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
-use crate::app::Shared;
+use crate::tasks::api::store;
 use crate::tasks::ops;
 use crate::tasks::store::DISPATCHER;
 
@@ -35,6 +35,8 @@ const TYPED_FOR: Duration = Duration::from_secs(300);
 pub struct Dispatcher {
     /// panes with activity since the last walk
     active: Mutex<HashSet<String>>,
+    /// panes with a live run: the others' hook events cost nothing here
+    panes: Mutex<HashSet<String>>,
     /// what terminum typed, by pane
     typed: Mutex<Vec<(String, String, Instant)>>,
     /// runs whose start is being watched
@@ -46,17 +48,19 @@ pub struct Dispatcher {
 }
 
 impl Dispatcher {
-    fn touched(&self, key: &str) {
-        self.active.lock().insert(key.to_string());
+    /// Activity in pane `key` (§9): a hook's event, a character a human typed.
+    pub fn touched(&self, key: &str) {
+        if self.has_run(key) {
+            self.active.lock().insert(key.to_string());
+        }
     }
 
     fn take_active(&self, key: &str) -> bool {
         self.active.lock().remove(key)
     }
 
-    /// A human typed in pane `key`: activity (§9). Their keys are never what terminum typed.
-    pub fn human_key(&self, key: &str) {
-        self.touched(key);
+    fn has_run(&self, key: &str) -> bool {
+        self.panes.lock().contains(key)
     }
 
     fn remember_typed(&self, key: &str, text: &str) {
@@ -65,12 +69,13 @@ impl Dispatcher {
         t.push((key.to_string(), text.to_string(), Instant::now()));
     }
 
-    /// Whether `prompt` in pane `key` is what terminum typed there: once.
+    /// Whether `prompt` in pane `key` is what terminum typed there, on its first 20,000 characters (§9): once.
     fn was_typed(&self, key: &str, prompt: &str) -> bool {
-        let same = |a: &str, b: &str| a.split_whitespace().take(400).eq(b.split_whitespace().take(400));
+        let first = |s: &str| s.chars().filter(|c| !c.is_whitespace()).take(20_000).collect::<String>();
+        let wanted = first(prompt);
         let mut t = self.typed.lock();
         t.retain(|(_, _, at)| at.elapsed() < TYPED_FOR);
-        match t.iter().position(|(k, text, _)| k == key && same(text, prompt)) {
+        match t.iter().position(|(k, text, _)| k == key && first(text) == wanted) {
             Some(at) => { t.remove(at); true }
             None => false,
         }
@@ -80,16 +85,6 @@ impl Dispatcher {
 /// The test clock (§9 Times): only with a test's own app folder.
 pub fn scale() -> i64 {
     std::env::var("TM_APP_DIR").ok().and_then(|_| std::env::var("TM_TEST_CLOCK_SCALE").ok()).and_then(|s| s.parse().ok()).filter(|s: &i64| *s > 0).unwrap_or(1)
-}
-
-fn scaled(d: Duration) -> Duration {
-    d / scale().max(1) as u32
-}
-
-/// A store's change by Dispatcher, off the async workers; every page hears, and the rows' marks follow.
-async fn write<T: Send + 'static>(app: &Shared, f: impl FnOnce(&rusqlite::Transaction) -> Result<T, String> + Send + 'static) -> Result<T, String> {
-    let a = app.clone();
-    crate::http::off(move || a.tasks.with(f)).await
 }
 
 /// Moves `run`'s task and says why, as Dispatcher.
@@ -102,8 +97,4 @@ fn move_task(tx: &rusqlite::Transaction, run: &runs::Run, to: &str, words: &str)
 /// Says `words` on `run`'s task, as Dispatcher.
 fn say(tx: &rusqlite::Transaction, run: &runs::Run, words: &str) -> Result<(), String> {
     ops::log(tx, &run.task, DISPATCHER, "told", words, None, ops::now()).map(|_| ())
-}
-
-fn heard_change(app: &Shared, task: &str) {
-    crate::tasks::api::told(app, task);
 }

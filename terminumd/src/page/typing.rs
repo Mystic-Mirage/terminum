@@ -213,8 +213,11 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
             server.arm_copy(&pane, copied_to(&page, &key));
         }
         let mut result = Ok(());
-        let held = server.typing.lock().await;
-        app.dispatcher.human_key(&key);
+        let queue = server.typing(&pane);
+        let held = queue.lock().await;
+        if keys {
+            app.dispatcher.touched(&key);
+        }
         for run in runs(&batch) {
             result = match run {
                 Run::Keys(data) => send(&app, &client, &server, &pane, &data).await,
@@ -312,10 +315,17 @@ async fn send(app: &Shared, client: &crate::tmux::control::Control, server: &Ser
 
 /// A paste through a tmux buffer: a 0600 file and `load-buffer` on this Mac, `set-buffer`
 /// in parts on a host; then `paste-buffer -p` (bracketed, the buffer deleted).
-pub(crate) async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Control, server: &Server, pane: &str, text: &str) -> Result<(), String> {
+async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Control, server: &Server, pane: &str, text: &str) -> Result<(), String> {
     if text.is_empty() {
         return Ok(());                                 // tmux makes no buffer of nothing ("no buffer tm-…")
     }
+    let name = load_buffer(app, client, server, text).await?;
+    client.run(format!("paste-buffer -p -d -b {name} -t {pane}")).await.map_err(|e| format!("tmux did not take the paste: {e}"))?;
+    Ok(())
+}
+
+/// `text` in a tmux buffer of its own: its name.
+pub(crate) async fn load_buffer(app: &Shared, client: &crate::tmux::control::Control, server: &Server, text: &str) -> Result<String, String> {
     if text.len() > PASTE_MAX {
         return Err(PASTE_TOO_LARGE.into());
     }
@@ -338,8 +348,7 @@ pub(crate) async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Co
             client.run(format!("set-buffer {append}-b {name} -- {}", double_quoted(part))).await.map_err(|e| format!("tmux did not take the paste: {e}"))?;
         }
     }
-    client.run(format!("paste-buffer -p -d -b {name} -t {pane}")).await.map_err(|e| format!("tmux did not take the paste: {e}"))?;
-    Ok(())
+    Ok(name)
 }
 
 /// Text in tmux's double quotes, where `\n`, `\t`, `\r` escape and `$` would expand.

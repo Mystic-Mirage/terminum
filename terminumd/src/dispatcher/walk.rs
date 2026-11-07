@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Dispatcher's walk (`terminum-dispatcher.md` AC-131): every beat it reads its runs, tmux's panes
-//! and one `ps`, adds what time it saw pass to each run's clocks, and does what `plan` says.
+//! Dispatcher's walk (`terminum-dispatcher.md` AC-131): every beat it reads tmux's panes and one `ps`,
+//! then in one transaction adds the time it saw pass to each run's clocks and does what `plan` says,
+//! so what came meanwhile (a human's move, a hook) stands. Typing and closing come after it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use super::plan::{self, Act, Facts};
 use super::runs::{self, Run};
-use super::{gate, hooks, move_task, say, scale, scaled, start, write, BEAT, GAP};
+use super::{gate, move_task, say, scale, start, store, BEAT, GAP};
 use crate::app::Shared;
 use crate::tasks::{files, ops};
-use crate::tmux::{args, Server};
+use crate::tmux::Server;
 
 /// CPU seconds in a beat over which an agent's tree counts as active (§9 Activity, AS-127).
 const CPU_ACTIVE: f64 = 3.0;
+/// How long one server's list is waited for: a slow host delays only itself.
+const LIST_WAIT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug, Default)]
 struct Pane {
@@ -25,7 +28,7 @@ struct Pane {
 }
 
 async fn panes_of(server: &Server) -> Option<HashMap<String, Pane>> {
-    let lines = server.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}\t#{pane_current_command}'").await.ok()?;
+    let lines = tokio::time::timeout(LIST_WAIT, server.run("list-panes -a -F '#{pane_id}\t#{@terminum-run}\t#{@terminum-exit}\t#{pane_pid}\t#{pane_current_command}'")).await.ok()?.ok()?;
     Some(lines.iter().filter_map(|l| {
         let f: Vec<&str> = l.split('\t').collect();
         (f.len() == 5).then(|| (f[0].to_string(), Pane { mark: f[1].to_string(), exit: f[2].parse().ok(), pid: f[3].to_string(), command: f[4].to_string() }))
@@ -33,7 +36,7 @@ async fn panes_of(server: &Server) -> Option<HashMap<String, Pane>> {
 }
 
 /// This Mac's processes: children by parent, each with its CPU seconds; arguments are never read (§9).
-type Tree = HashMap<String, Vec<(String, f64)>>;
+pub(super) type Tree = HashMap<String, Vec<(String, f64)>>;
 
 fn parse_time(t: &str) -> f64 {
     t.split([':', '-']).fold(0.0, |sum, part| sum * 60.0 + part.parse::<f64>().unwrap_or(0.0))
@@ -50,13 +53,13 @@ fn read_tree(out: &str) -> Tree {
     tree
 }
 
-async fn local_tree() -> Option<Tree> {
+pub(super) async fn local_tree() -> Option<Tree> {
     let out = tokio::process::Command::new("ps").args(["-Ao", "pid=,ppid=,time="]).output().await.ok()?;
     out.status.success().then(|| read_tree(&String::from_utf8_lossy(&out.stdout)))
 }
 
 /// Whether anything runs under `pid`, and the CPU seconds of what does.
-fn below(tree: &Tree, pid: &str) -> (bool, f64) {
+pub(super) fn below(tree: &Tree, pid: &str) -> (bool, f64) {
     let (mut any, mut sum, mut stack) = (false, 0.0, vec![pid.to_string()]);
     while let Some(p) = stack.pop() {
         for (kid, cpu) in tree.get(&p).into_iter().flatten() {
@@ -68,54 +71,95 @@ fn below(tree: &Tree, pid: &str) -> (bool, f64) {
     (any, sum)
 }
 
-fn is_shell(name: &str) -> bool {
-    matches!(name.trim_start_matches('-').rsplit('/').next().unwrap_or(""), "sh" | "bash" | "zsh" | "fish" | "dash" | "ksh" | "tcsh" | "csh" | "nu" | "login")
+pub(super) fn is_shell(name: &str) -> bool {
+    let name = crate::termtext::shell_name(name);
+    name == "login" || crate::tmux::titles::SHELLS.contains(&name)
 }
 
-/// The list's row of `key`: what it waits for, why it failed, and whether its turn ended: an
-/// interrupt fires no Stop, its screen says so (AC-123).
-fn listed(app: &Shared, key: &str) -> (Option<String>, Option<String>, bool) {
+/// What the list says of a pane.
+enum Listed {
+    Waiting(String),
+    Failed(String),
+    /// its turn ended: an interrupt fires no Stop, its screen says so (AC-123)
+    TurnEnded,
+    Other,
+}
+
+fn listed(app: &Shared, key: &str) -> Listed {
     let item = crate::page::marks::find_item(&app.layout.read(), key);
-    let why = item.as_ref().and_then(|it| it["why"].as_str().or(it["tool"].as_str())).unwrap_or("").to_string();
+    let why = || item.as_ref().and_then(|it| it["why"].as_str().or(it["tool"].as_str())).unwrap_or("").to_string();
     match item.as_ref().and_then(|it| it["state"].as_str()) {
-        Some("waiting") => (Some(why), None, false),
-        Some("failed") => (None, Some(why), false),
-        Some("done") => (None, None, true),
-        _ => (None, None, false),
+        Some("waiting") => Listed::Waiting(why()),
+        Some("failed") => Listed::Failed(why()),
+        Some("done") => Listed::TurnEnded,
+        _ => Listed::Other,
     }
 }
 
-async fn do_acts(app: &Shared, run: &Run, acts: Vec<Act>, server: &Arc<Server>, pane: &str) {
-    let changed = !acts.is_empty();
-    for act in acts {
-        let r = run.clone();
-        let done = match act {
-            Act::Move { to, words } => write(app, move |tx| move_task(tx, &r, to, &words)).await,
-            Act::Say(words) => write(app, move |tx| say(tx, &r, &words)).await,
-            Act::Nudge => {
-                let text = format!("[terminum Dispatcher] {} is still open and you stopped. Call finish_task with the result, or ask what you need.", run.task_id);
-                match gate::deliver(app, run, server, pane, &text, false).await {
-                    Ok(()) => Ok(()),
-                    Err(why) => write(app, move |tx| hooks::not_delivered(tx, &r, &why)).await,
-                }
-            }
-            Act::Close { words, keep } => close(app, run, server, pane, &words, keep).await,
+/// What is read of one run's pane before the transaction.
+struct Read {
+    id: String,
+    facts: Facts,
+    ended: bool,
+}
+
+/// What the transaction left to do outside it.
+struct Later {
+    run: Run,
+    act: Act,
+}
+
+/// In one transaction: every run as it stands now, its clocks, what `plan` says. Moves and words are
+/// done here; what is not written is not done (AC-131).
+fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<(Vec<Later>, Vec<String>), String> {
+    let (mut later, mut changed) = (Vec::new(), Vec::new());
+    let live: HashMap<String, Run> = runs::live(tx)?.into_iter().map(|r| (r.id.clone(), r)).collect();
+    for read in reads {
+        let Some(mut r) = live.get(&read.id).cloned() else { continue };
+        if r.is_starting() {
+            continue;
+        }
+        let seen = now - r.last_walk;
+        let dt = if seen > (GAP / scale()).max(1) { 0 } else { seen.max(0) * scale() };
+        let mut facts = read.facts;
+        facts.dt = dt;
+        facts.active |= r.open_tools > 0;
+        r.turn_ended |= read.ended;
+        facts.others_open = match r.pane_key.as_deref().filter(|_| plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) {
+            Some(key) => tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks WHERE session_key = ?1 AND id != ?2 AND status NOT IN ('DONE', 'FAILED') AND archived_at IS NULL)", (key, &r.task), |x| x.get(0)).map_err(ops::sql)?,
+            None => false,
         };
-        if let Err(e) = done {
-            tracing::warn!(event = "dispatcher.act", task = %run.task_id, error = %e);
+        r.last_walk = now;
+        let mut acts = plan::step(&mut r, &facts);
+        if seen > GAP {
+            acts.push(Act::Say(format!("Clocks paused {} minutes: no walk saw them pass", seen / 60)));
+        }
+        runs::save(tx, &r)?;
+        if facts.pane && !facts.marked {
+            ops::link(tx, super::DISPATCHER, &r.task_id, None, now)?;   // a stale link drops (AC-125)
+        }
+        for act in acts {
+            match act {
+                Act::Move { to, words } => {
+                    move_task(tx, &r, to, &words)?;
+                    r.status = to.to_string();
+                    changed.push(r.task_id.clone());
+                }
+                Act::Say(words) => {
+                    say(tx, &r, &words)?;
+                    changed.push(r.task_id.clone());
+                }
+                act => later.push(Later { run: r.clone(), act }),
+            }
         }
     }
-    if changed {
-        super::heard_change(app, &run.task_id);
-    }
+    Ok((later, changed))
 }
 
-/// Closes the pane: its mark checked just before; with no result the screen's last 200 rows stay on the task.
+/// Closes the pane: its mark checked just before; with no result the screen's last 200 rows stay on
+/// the task. tmux refusing: one more try at the next beat, then it stays and says so (AC-125).
 async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words: &str, keep: bool) -> Result<(), String> {
-    let mine = server.run(format!("display -p -t {pane} '#{{@terminum-run}}'")).await.map_err(|e| e.to_string())?;
-    if mine.first().map(String::as_str) != Some(run.id.as_str()) {
-        return Err("its pane is not this run's".into());
-    }
+    start::is_marked(server, pane, &run.id).await?;
     if keep {
         let rows = server.run(format!("capture-pane -p -S -200 -t {pane}")).await.unwrap_or_default();
         let text = crate::sent::redact(&rows.join("\n"));
@@ -130,84 +174,106 @@ async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words:
             }
         }
     }
-    let r = run.clone();
-    let closed = server.run(format!("kill-pane -t {}", args::word(pane))).await;
-    let words = match closed {
-        Ok(_) => words.to_string(),
-        Err(e) => format!("Session not closed: {e}"),
+    let (id, words) = (run.id.clone(), words.to_string());
+    match server.run(format!("kill-pane -t {pane}")).await {
+        Ok(_) => store(app, move |tx| {
+            let r = runs::change(tx, &id, |r| r.state = "closed".into())?;
+            say(tx, &r, &words)
+        }).await,
+        Err(e) => store(app, move |tx| {
+            let r = runs::change(tx, &id, |r| if r.close_tried { r.state = "left".into(); } else { r.close_tried = true; })?;
+            if r.state == "left" { say(tx, &r, &format!("Session not closed: {e}. It stays open.")) } else { Ok(()) }
+        }).await,
+    }
+}
+
+async fn do_later(app: &Shared, l: Later) {
+    let Some((server, pane)) = l.run.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)) else { return };
+    let task = l.run.task_id.clone();
+    let done = match l.act {
+        Act::Nudge => {
+            let text = format!("[terminum Dispatcher] {task} is still open and you stopped. Call finish_task with the result, or ask what you need.");
+            match gate::deliver(app, &l.run, &server, &pane, &text, false).await {
+                Ok(()) => Ok(()),
+                Err(why) => {
+                    let r = l.run.clone();
+                    store(app, move |tx| say(tx, &r, &format!("Not delivered: {why}"))).await
+                }
+            }
+        }
+        Act::Close { words, keep } => close(app, &l.run, &server, &pane, &words, keep).await,
+        _ => Ok(()),
     };
-    write(app, move |tx| say(tx, &r, &words)).await
+    if let Err(e) = done {
+        tracing::warn!(event = "dispatcher.act", task = %task, error = %e);
+    }
+    crate::tasks::api::told(app, &task);
 }
 
 /// One beat.
 async fn walk(app: &Shared) {
-    let Ok(all) = write(app, runs::live).await else { return };
+    let Ok(all) = store(app, runs::live).await else { return };
+    *app.dispatcher.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
     if all.is_empty() {
         return;
     }
-    let now = ops::now();
     let tree = local_tree().await;
-    let mut panes: HashMap<String, Option<HashMap<String, Pane>>> = HashMap::new();
-    for mut r in all {
-        if matches!(r.state.as_str(), "starting" | "asking" | "typed") {
+    let servers: HashMap<String, Arc<Server>> = all.iter().filter_map(|r| r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k))).map(|(s, _)| (s.id(), s)).collect();
+    let lists = futures_util::future::join_all(servers.values().map(|s| async move { (s.id(), panes_of(s).await) })).await;
+    let lists: HashMap<String, Option<HashMap<String, Pane>>> = lists.into_iter().collect();
+    let mut reads = Vec::new();
+    for r in &all {
+        if r.is_starting() {
             start::watch(app, &r.id);
             continue;
         }
-        let Some((server, pane)) = r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)) else {
-            // no server for its key: it says nothing of the pane, and no clock runs (AC-130)
-            r.last_walk = now;
-            let saved = r.clone();
-            let _ = write(app, move |tx| runs::save(tx, &saved)).await;
-            continue;
-        };
-        if let std::collections::hash_map::Entry::Vacant(place) = panes.entry(server.id()) {
-            place.insert(panes_of(&server).await);
-        }
-        let Some(read) = panes.get(&server.id()).and_then(|p| p.as_ref()) else { continue };   // out of reach: nothing is known (AC-130)
+        // no server for its key, or out of reach: nothing is known of its pane, and no clock runs (AC-130)
+        let Some((server, pane)) = r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)) else { continue };
+        let Some(Some(list)) = lists.get(&server.id()) else { continue };
         let key = server.key(&pane);
-        let p = read.get(&pane).cloned();
-        let seen = now - r.last_walk;
-        let dt = if seen > (GAP / scale()).max(1) { 0 } else { seen.max(0) * scale() };
-        let (alive, cpu) = match (&tree, &p) {
+        let p = list.get(&pane);
+        let (under, cpu) = match (&tree, p) {
             (Some(t), Some(p)) if server.is_local() => below(t, &p.pid),
-            _ => (p.as_ref().is_some_and(|p| p.exit.is_none()), 0.0),
+            _ => (p.is_some_and(|p| p.exit.is_none()), 0.0),
         };
         let busy = {
             let mut last = app.dispatcher.cpu.lock();
             let was = last.insert(r.id.clone(), cpu).unwrap_or(cpu);
             cpu - was >= CPU_ACTIVE / scale() as f64
         };
-        let (waiting, failed, ended) = listed(app, &key);
-        r.turn_ended |= ended;
-        let (task, k) = (r.task.clone(), key.clone());
-        let others_open: bool = write(app, move |tx| {
-            tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks WHERE session_key = ?1 AND id != ?2 AND status NOT IN ('DONE', 'FAILED') AND archived_at IS NULL)", (&k, &task), |x| x.get(0)).map_err(ops::sql)
-        }).await.unwrap_or(true);
-        let human_program = p.as_ref().filter(|p| p.exit.is_some() && !is_shell(&p.command)).map(|p| p.command.clone());
+        let (waiting, failed, ended) = match listed(app, &key) {
+            Listed::Waiting(why) => (Some(why), None, false),
+            Listed::Failed(why) => (None, Some(why), false),
+            Listed::TurnEnded => (None, None, true),
+            Listed::Other => (None, None, false),
+        };
+        // after its agent, anything running there is a human's: in front, or stopped behind the shell
+        let program = p.filter(|p| p.exit.is_some()).and_then(|p| {
+            if !is_shell(&p.command) { Some(p.command.clone()) } else if under { Some("a job of its shell".to_string()) } else { None }
+        });
         let facts = Facts {
             pane: p.is_some(),
-            marked: p.as_ref().is_some_and(|p| p.mark == r.id),
-            exit: p.as_ref().and_then(|p| p.exit),
-            alive: alive && p.as_ref().is_some_and(|p| p.exit.is_none()),
+            marked: p.is_some_and(|p| p.mark == r.id),
+            exit: p.and_then(|p| p.exit),
+            alive: under && p.is_some_and(|p| p.exit.is_none()),
             waiting,
             failed,
-            active: app.dispatcher.take_active(&key) || busy || r.open_tools > 0,
-            program: human_program,
-            others_open,
-            dt,
+            active: app.dispatcher.take_active(&key) || busy,
+            program,
+            ..Default::default()
         };
-        r.last_walk = now;
-        let mut acts = plan::step(&mut r, &facts);
-        if seen > GAP {
-            acts.push(Act::Say(format!("Clocks paused {} minutes: no walk saw them pass", seen / 60)));
-        }
-        let saved = r.clone();
-        if let Err(e) = write(app, move |tx| runs::save(tx, &saved)).await {
-            // what it could not write it does not do (AC-131)
-            tracing::warn!(event = "dispatcher.walk", task = %r.task_id, error = %e);
-            continue;
-        }
-        do_acts(app, &r, acts, &server, &pane).await;
+        reads.push(Read { id: r.id.clone(), facts, ended });
+    }
+    let now = ops::now();
+    let (later, changed) = match store(app, move |tx| walk_store(tx, reads, now)).await {
+        Ok(done) => done,
+        Err(e) => return tracing::warn!(event = "dispatcher.walk", error = %e),
+    };
+    for task in changed.into_iter().collect::<HashSet<_>>() {
+        crate::tasks::api::told(app, &task);
+    }
+    for l in later {
+        do_later(app, l).await;
     }
 }
 
@@ -223,7 +289,7 @@ pub async fn run(app: Shared) {
             app.pages.tell(&serde_json::json!({"t": "note", "msg": "Dispatcher's walk failed: see terminumd's log. It goes on at the next beat."}).to_string());
         }
         tokio::select! {
-            () = tokio::time::sleep(scaled(BEAT).max(Duration::from_millis(200))) => {}
+            () = tokio::time::sleep((BEAT / scale() as u32).max(Duration::from_millis(200))) => {}
             () = app.dispatcher.soon.notified() => {}
         }
     }

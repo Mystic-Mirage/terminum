@@ -8,6 +8,7 @@ import { toast } from "./toast.js";
 export { el, iconButton };
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
+export const THIS_MAC = "This Mac";
 export const $ = (id) => document.getElementById(id);
 
 /** A page with no sign-in goes to /sessions/, whose form signs in. */

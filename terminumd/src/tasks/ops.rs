@@ -269,6 +269,16 @@ pub fn reorder(tx: &Transaction, id: &str, before: Option<&str>, at: i64) -> Res
     tx.execute("UPDATE tasks SET rank = ?1, updated_at = ?2 WHERE id = ?3", (rank, at, key)).map(|_| ()).map_err(sql)
 }
 
+/// A project's name and folder.
+pub(crate) fn project_row(tx: &Transaction, project: &str) -> Result<(String, String), String> {
+    tx.query_row("SELECT name, dir FROM projects WHERE id = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)
+}
+
+/// Its owner, with no line in its history: Dispatcher's run says who took it.
+pub(crate) fn set_owner(tx: &Transaction, key: &str, owner: &str, at: i64) -> Result<(), String> {
+    tx.execute("UPDATE tasks SET owner = ?1, updated_at = ?2 WHERE id = ?3", (owner, at, key)).map(|_| ()).map_err(sql)
+}
+
 /// What a human may change in a task's window; absent keeps.
 #[derive(Default)]
 pub struct Edit {

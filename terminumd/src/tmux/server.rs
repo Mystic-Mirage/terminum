@@ -62,8 +62,8 @@ pub struct Server {
     /// the socket part of a pane key: the -L name locally, "default" on a host
     pub socket: String,
     pub link: Link,
-    /// A human's keys wait behind the typing gate (terminum-dispatcher.md §9).
-    pub typing: tokio::sync::Mutex<()>,
+    /// Each pane's typing queue: a human's keys wait behind the typing gate (terminum-dispatcher.md §9).
+    typing: Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     inner: Mutex<Inner>,
     wakes: Mutex<HashMap<String, watch::Sender<()>>>,
     printed: Mutex<HashMap<String, u64>>,
@@ -104,7 +104,7 @@ impl Server {
             name: name.to_string(),
             socket: socket.to_string(),
             link,
-            typing: tokio::sync::Mutex::new(()),
+            typing: Mutex::default(),
             inner: Mutex::default(),
             wakes: Mutex::default(),
             printed: Mutex::default(),
@@ -179,6 +179,13 @@ impl Server {
     pub fn bulk(&self) -> Option<Arc<Control>> {
         let inner = self.inner.lock();
         inner.bulk.clone().filter(|c| c.alive()).or_else(|| inner.sessions.values().find(|c| c.alive()).cloned())
+    }
+
+    /// Pane `pane`'s typing queue; those nobody holds go, so a closed pane's does not stay.
+    pub fn typing(&self, pane: &str) -> Arc<tokio::sync::Mutex<()>> {
+        let mut all = self.typing.lock();
+        all.retain(|_, lock| Arc::strong_count(lock) > 1);
+        all.entry(pane.to_string()).or_default().clone()
     }
 
     /// Runs one command on the bulk client.

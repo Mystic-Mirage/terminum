@@ -2,6 +2,7 @@
 // A task that needs a human (terminum-kanban.md AC-117): a line as a waiting agent's, on both pages,
 // and how many on Kanban in the page's head. terminumd says which; a closed line stays closed here.
 import { icon } from "./icons.js";
+import { el, iconButton } from "./listparts.js";
 
 const SEEN = "tm.taskseen";
 
@@ -16,29 +17,15 @@ export function taskLines(box, open) {
   const said = (l) => `${l.id}|${l.words}`;
 
   function line(l) {
-    const c = document.createElement("div");
-    c.className = "ask taskline";
+    const c = el("div", "ask taskline");
     c.dataset.task = l.id;
-    const go = document.createElement("button");
+    const go = el("button", "go"), mark = el("span", `state ${l.failed ? "failed" : "waiting"}`);
     go.type = "button";
-    go.className = "go";
-    const failed = l.words.includes(" failed");
-    const mark = document.createElement("span");
-    mark.className = `state ${failed ? "failed" : "waiting"}`;
-    mark.append(icon(failed ? "triangle-alert" : "circle-help", 14));
-    const text = document.createElement("span");
-    text.className = "what";
-    text.textContent = l.words;
-    go.append(mark, text);
+    mark.append(icon(l.failed ? "triangle-alert" : "circle-help", 14));
+    go.append(mark, el("span", "what", l.words));
     go.title = `Open ${l.id}`;
     go.addEventListener("click", () => { shut(l); open(l.id); });
-    const x = document.createElement("button");
-    x.type = "button";
-    x.className = "x";
-    x.setAttribute("aria-label", "Close this line");
-    x.append(icon("x", 14));
-    x.addEventListener("click", () => shut(l));
-    c.append(go, x);
+    c.append(go, iconButton("x", "x", "Close this line", "Close this line", () => shut(l)));
     return c;
   }
 
@@ -67,9 +54,7 @@ export function taskLines(box, open) {
       for (const a of document.querySelectorAll('a[href="/kanban/"]')) {
         a.querySelector(".taskneed")?.remove();
         if (!m.need) continue;
-        const n = document.createElement("span");
-        n.className = "taskneed";
-        n.textContent = String(m.need);
+        const n = el("span", "taskneed", m.need);
         n.title = `${m.need} task${m.need === 1 ? "" : "s"} wait for you or failed`;
         a.append(n);
       }

@@ -84,6 +84,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click(`${card(second)} .cmove`);
   await page.click('#moverows button:has-text("WAIT FOR HUMAN")');
   check("AC-107 Move to… moves it", await until(async () => (await inColumn("WAIT FOR HUMAN")).includes(second)));
+  await page.waitForTimeout(300);   // the move's own read is in: a drag begun on a column being rebuilt is lost
   await page.dragAndDrop(card(urgent), '.col[data-status="DONE"]');
   check("AC-107 a drag across columns moves it", await until(async () => (await inColumn("DONE")).includes(urgent)));
   await page.click(card(second));

@@ -349,3 +349,15 @@ fn notices_of_a_url_and_a_teammates_permission_wait() {
         assert_eq!(h.view(K, "2.1.318", t).unwrap().state, State::Waiting, "{kind}");
     }
 }
+
+#[test]
+fn ac39_a_lease_says_when_it_ends_so_a_page_out_of_sight_does_not_leave_a_turn_waiting() {
+    let h = Hooks::default();
+    let t = Instant::now();
+    assert_eq!(h.lease_ends_in(t), None, "no hooks, no lease");
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    assert_eq!(h.lease_ends_in(t + Duration::from_secs(10)), Some(LEASE - Duration::from_secs(10)));
+    assert_eq!(h.lease_ends_in(t + LEASE + Duration::from_secs(1)), None, "over: no wake-up again and again");
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
+    assert_eq!(h.lease_ends_in(t), None, "Claude Code's done holds with no lease");
+}

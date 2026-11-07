@@ -350,7 +350,10 @@ pub async fn run(app: Shared) {
         let asked = tokio::time::Instant::now();
         loop {
             let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_in_sight() { EVERY } else { Duration::from_secs(30) };
-            let wait = app.hooks.subs_due_in(Instant::now()).map_or(wait, |d| wait.min(d));   // a Stop's subagents, also out of sight (AC-39)
+            // a Stop's subagents, a lease's end: also out of sight (AC-39)
+            let now = Instant::now();
+            let due = app.hooks.subs_due_in(now).into_iter().chain(app.hooks.lease_ends_in(now)).min();
+            let wait = due.map_or(wait, |d| wait.min(asked.elapsed() + d));
             tokio::select! {
                 _ = app.dirty.notified() => {
                     tokio::time::sleep(Duration::from_millis(100)).await;

@@ -53,6 +53,22 @@ def tmux_on(socket_name, *args):
     return subprocess.run(["tmux", "-L", socket_name, *args], capture_output=True, text=True).stdout
 
 
+def end_tmux(socket_name):
+    """Ends the private server `socket_name` and its panes' programs: a login shell of macOS's bash
+    can outlive kill-server, its terminal gone, ignoring SIGHUP and spinning (a Dispatcher's window)."""
+    pids = [int(p) for p in tmux_on(socket_name, "list-panes", "-a", "-F", "#{pane_pid}").split() if p.isdigit()]
+    subprocess.run(["tmux", "-L", socket_name, "kill-server"], stderr=subprocess.DEVNULL, check=False)
+    end = time.monotonic() + 2
+    while pids and time.monotonic() < end:
+        time.sleep(0.1)
+        pids = [p for p in pids if subprocess.run(["ps", "-o", "stat=", "-p", str(p)], capture_output=True, text=True).stdout.strip()[:1] not in ("", "Z")]
+    for p in pids:
+        try:
+            os.kill(p, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
 def wait_for(read, predicate, seconds=15, every=0.1, last=False):
     """read() until predicate(value) holds; its value, else an error with the last one (`last`: that one, for the caller to judge)."""
     end = time.monotonic() + seconds

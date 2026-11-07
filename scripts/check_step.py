@@ -17,6 +17,7 @@ import time
 
 SETTLE_S = 15   # what ends by itself gets this long: terminumd's tmutil takes seconds on a busy Mac
 LEFT = 3   # the exit status of a check that passed but left something
+KILL_AFTER_S = 2   # a leftover still there this long after SIGTERM gets SIGKILL
 
 
 def own_processes(folder, group):
@@ -72,6 +73,10 @@ def main(command):
             left += 1
             print(f"LEFT process {pid}: {name}", file=sys.stderr)
             os.kill(pid, signal.SIGTERM)
+        if processes:   # an interactive shell ignores SIGTERM; one spinning on a terminal gone, SIGHUP too
+            time.sleep(KILL_AFTER_S)
+            for pid, _ in own_processes(folder, group):
+                os.kill(pid, signal.SIGKILL)
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)

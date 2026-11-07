@@ -312,6 +312,12 @@ export async function liveDispatcherReal(page, opts) {
   const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result ok", project })).id;
   const ran = await j(`/api/tasks/${t}/run`, "POST", { agent: claude });
   check("AC-121 real Claude Code: RUN starts", !!ran.run, JSON.stringify(ran));
+  // a folder it does not know: Dispatcher waits for the human's answer, which leaves that folder's trust entry in ~/.claude.json
+  await until(async () => {
+    const pane = await paneOf(t), screen = pane ? opts.tmux("capture-pane", "-p", "-t", pane) : "";
+    if (/trust this folder/.test(screen) && /❯ No/.test(screen)) opts.tmux("send-keys", "-t", pane, "Down", "Enter");
+    return /[❯>] *$/m.test(screen) || ["IN PROGRESS", "DONE"].includes(await status(t));
+  }, 30000);
   check("AC-121 real Claude Code: the gate reads its box, the hook says it took the prompt", await until(async () => ["IN PROGRESS", "DONE"].includes(await status(t)), 90000), await history(t));
   check("AC-123 real Claude Code: finish_task is DONE", await hasStatus(t, "DONE", 180000), await history(t));
   await page.goto(`${opts.base}/kanban/?project=${project}`);

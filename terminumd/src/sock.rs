@@ -120,12 +120,12 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     if server.session_of(pane).is_none() {
         return StatusCode::NO_CONTENT.into_response();  // a pane it does not list: nothing is made up
     }
+    let key = server.key(pane);
     if ev["event"] == "Tokens" {
-        app.dispatcher.heard_tokens(&server.key(pane), &ev);   // terminum-dispatcher.md AC-129: asked for below
+        app.dispatcher.heard_tokens(&key, &ev);   // terminum-dispatcher.md AC-129: asked for below
         return StatusCode::NO_CONTENT.into_response();
     }
     let _dispatch = app.hooks.dispatch.lock();
-    let key = server.key(pane);
     let Some(changed) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
         return StatusCode::NO_CONTENT.into_response();
     };

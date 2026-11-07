@@ -228,8 +228,9 @@ impl Control {
             if exit_reason.is_none() {
                 let _ = tokio::time::timeout(STDERR_WAIT, stderr_done).await;
             }
-            let quiet = if via_ssh && !att.load(Ordering::Relaxed) { SSH_NO_ANSWER } else { "tmux exited" };
-            let said_nothing = hung_up.load(Ordering::Relaxed) && via_ssh && !att.load(Ordering::Relaxed);
+            let unseen = via_ssh && !att.load(Ordering::Relaxed);
+            let quiet = if unseen { SSH_NO_ANSWER } else { "tmux exited" };
+            let said_nothing = hung_up.load(Ordering::Relaxed) && unseen;
             let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).filter(|_| !said_nothing).unwrap_or_else(|| quiet.into());
             for w in p.lock().drain(..) {
                 let _ = w.reply.send(Err(why.clone()));

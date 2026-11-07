@@ -59,12 +59,16 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
         return;
     }
     // the project: the pane's host ("local" for every server of this Mac) and folder
-    let (key, host, path) = match &at {
-        None => return { page.send_json(&json!({"t": "sentone", "error": "No pane is shown."})); },
-        Some((key, server, pane)) => match super::client::cwd_of(server, pane).await {
-            Ok(path) => (key.clone(), server.name.clone(), path),
-            Err(e) => return { page.send_json(&json!({"t": "sentone", "error": e})); },
-        },
+    let got = match &at {
+        None => Err("No pane is shown.".to_string()),
+        Some((key, server, pane)) => super::client::cwd_of(server, pane).await.map(|path| (key.clone(), server.name.clone(), path)),
+    };
+    let (key, host, path) = match got {
+        Ok(got) => got,
+        Err(e) => {
+            page.send_json(&json!({"t": "sentone", "error": e}));
+            return;
+        }
     };
     if t == "askno" {
         let (a, h, p, k) = (app.clone(), host.clone(), path.clone(), key.clone());

@@ -116,7 +116,7 @@ fn linkless(app: &Shared, server: &Arc<Server>) -> Got {
     let why = format!("{}: {}", server.name, g["why"].as_str().unwrap_or_default());
     let mut gs = vec![g];
     gs.extend(crate::attach::host_waiting(server, &why));
-    if matches!(*server.status.lock(), crate::tmux::server::Status::Off) { Got::Gone(gs) } else { Got::Down(gs) }
+    if matches!(*server.status.lock(), Status::Off) { Got::Gone(gs) } else { Got::Down(gs) }
 }
 
 /// One server's groups and pane keys.
@@ -173,8 +173,10 @@ async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
             tracing::warn!(event = "tmux.error", server = %server.name, cmd = "list-panes", msg = e);
             if server.connected() {
                 Got::Unread                          // a timeout on a link up: its rows stay as last read
+            } else if local {
+                Got::Gone(Vec::new())
             } else {
-                if local { Got::Gone(Vec::new()) } else { linkless(app, &server) }
+                linkless(app, &server)
             }
         }
     };
@@ -394,9 +396,9 @@ mod tests {
         let (root, app) = crate::testutil::app("linkless");
         let link = crate::tmux::server::Link::Ssh { ssh: "unused".into(), args: Vec::new() };
         let host = Server::new("devbox", "default", link, app.changed.clone());
-        *host.status.lock() = crate::tmux::server::Status::Reconnecting { why: String::new(), retry_s: 1 };
+        *host.status.lock() = Status::Reconnecting { why: String::new(), retry_s: 1 };
         assert!(matches!(linkless(&app, &host), Got::Down(gs) if gs[0]["state"] == "reconnecting" && gs[0]["agents"].is_string()));
-        *host.status.lock() = crate::tmux::server::Status::Off;
+        *host.status.lock() = Status::Off;
         assert!(matches!(linkless(&app, &host), Got::Gone(gs) if gs[0]["state"] == "off"));
         drop(app);
         std::fs::remove_dir_all(root).unwrap();

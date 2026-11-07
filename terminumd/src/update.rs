@@ -142,10 +142,7 @@ impl Updates {
             ("skip", Some(t)) if version(t).is_some() => crate::settings::write_atomic(&self.dir.join(SKIP), t.as_bytes()),
             ("skip", _) => return Err("Skip needs a release such as v0.4.0".into()),
             ("off", _) => crate::settings::write_atomic(&self.dir.join(OFF), b""),
-            ("on", _) => match fs::remove_file(self.dir.join(OFF)) {
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                r => r,
-            },
+            ("on", _) => crate::config::remove_if_there(&self.dir.join(OFF)),
             _ => return Err("skip a version, or switch checking off or on".into()),
         };
         if action == "on" {

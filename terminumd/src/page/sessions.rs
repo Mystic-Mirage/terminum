@@ -96,8 +96,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
     match result {
         Ok(()) if matches!(t, "rename" | "renamegroup" | "reorder" | "move" | "kill") => {
             // its server's list alone: nothing else changed
-            let server = msg["id"].as_str().and_then(|id| app.tmux.resolve(id)).or_else(|| msg["group"].as_str().and_then(|g| group(app, g)));
-            match server {
+            match about(app, msg) {
                 Some((server, _)) => { crate::lists::request(app, &server); }
                 None => crate::lists::request_all(app),
             }
@@ -105,6 +104,11 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
         Ok(()) => {}
         Err(e) => error(page, e, None),
     }
+}
+
+/// The server a message names: its pane's, else its group's.
+pub(super) fn about(app: &Shared, msg: &Value) -> Option<(Arc<Server>, String)> {
+    msg["id"].as_str().and_then(|id| app.tmux.resolve(id)).or_else(|| msg["group"].as_str().and_then(|g| group(app, g)))
 }
 
 async fn new_window(app: &Shared, page: &Page, at: Option<&(String, Arc<Server>, String)>, wid: &str) -> Result<(), String> {

@@ -33,12 +33,10 @@ pub(super) fn like_escaped(text: &str) -> String {
 /// An agent's reach, over `tasks t`: tasks of this pane, linked or made there, and of its project;
 /// never by a session's title, which two sessions can share (AC-110, AC-115).
 fn reach_sql(pane: &str, project: Option<&str>, args: &mut Vec<String>) -> String {
-    args.push(pane.to_string());
-    let n = args.len();
-    let mut any = format!("t.session_key = ?{n} OR t.made_in = ?{n}");
+    let n = bind(args, pane);
+    let mut any = format!("t.session_key = {n} OR t.made_in = {n}");
     if let Some(p) = project {
-        args.push(p.to_string());
-        any.push_str(&format!(" OR t.project = ?{}", args.len()));
+        any.push_str(&format!(" OR t.project = {}", bind(args, p)));
     }
     any
 }
@@ -50,19 +48,24 @@ pub fn within_reach(tx: &Transaction, number: i64, pane: &str, project: Option<&
     tx.query_row(&format!("SELECT count(*) FROM tasks t WHERE t.number = ?1 AND ({reach})"), rusqlite::params_from_iter(args.iter()), |r| r.get::<_, i64>(0)).map(|n| n > 0).map_err(sql)
 }
 
+/// `v` as the next argument: its mark in the statement.
+fn bind(args: &mut Vec<String>, v: impl Into<String>) -> String {
+    args.push(v.into());
+    format!("?{}", args.len())
+}
+
 /// `WHERE …` of what `q` asks, over `tasks t JOIN users u`, and its arguments.
 fn filter_of(q: &Query) -> (String, Vec<String>) {
     let mut text = String::from(if q.archived { " WHERE t.archived_at IS NOT NULL" } else { " WHERE t.archived_at IS NULL" });
     let mut args: Vec<String> = Vec::new();
     for (column, values) in [("t.project", &q.projects), ("t.severity", &q.severities), ("t.status", &q.statuses)] {
         if !values.is_empty() {
-            let marks = values.iter().map(|v| { args.push(v.clone()); format!("?{}", args.len()) }).collect::<Vec<_>>().join(", ");
+            let marks = values.iter().map(|v| bind(&mut args, v)).collect::<Vec<_>>().join(", ");
             text.push_str(&format!(" AND {column} IN ({marks})"));
         }
     }
     if let Some(n) = q.number {
-        args.push(n.to_string());
-        text.push_str(&format!(" AND t.number = ?{}", args.len()));
+        text.push_str(&format!(" AND t.number = {}", bind(&mut args, n.to_string())));
     }
     if let Some((pane, project)) = &q.reach {
         let any = reach_sql(pane, project.as_deref(), &mut args);
@@ -71,16 +74,12 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
     match q.owner.as_deref() {
         Some("agents") => text.push_str(" AND u.kind = 'agent'"),
         Some("humans") => text.push_str(" AND u.kind = 'human'"),
-        Some(o) => {
-            args.push(o.to_string());
-            text.push_str(&format!(" AND t.owner = ?{}", args.len()));
-        }
+        Some(o) => text.push_str(&format!(" AND t.owner = {}", bind(&mut args, o))),
         None => {}
     }
     if let Some(found) = q.text.as_deref().filter(|t| !t.is_empty()) {
-        args.push(format!("%{}%", like_escaped(found)));
-        let n = args.len();
-        text.push_str(&format!(" AND (t.title LIKE ?{n} ESCAPE '\\' OR t.body LIKE ?{n} ESCAPE '\\' OR 'T-' || t.number LIKE ?{n} ESCAPE '\\')"));
+        let n = bind(&mut args, format!("%{}%", like_escaped(found)));
+        text.push_str(&format!(" AND (t.title LIKE {n} ESCAPE '\\' OR t.body LIKE {n} ESCAPE '\\' OR 'T-' || t.number LIKE {n} ESCAPE '\\')"));
     }
     if !q.with_subtasks {
         text.push_str(" AND t.parent IS NULL");

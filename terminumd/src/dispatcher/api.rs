@@ -207,8 +207,7 @@ async fn what_runs(app: &Shared, server: &Server, pane: &str) -> Result<Option<S
 /// Only its shell remains: the agent starts there anew, by the resume when a conversation is known;
 /// the pane's queue held from the look to the start, so no key starts anything between (AC-122).
 async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, again: String, t: &Task) -> Result<Value, String> {
-    let queue = server.typing(pane);
-    let _held = queue.lock().await;
+    let _held = server.typing(pane).lock_owned().await;
     if let Some(program) = what_runs(app, server, pane).await? {
         return Err(format!("{program} runs in its pane."));
     }

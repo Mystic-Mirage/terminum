@@ -82,16 +82,14 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         dir: if host.is_none() { dir } else { None },
     };
     let a = app.clone();
-    let done = tokio::task::spawn_blocking(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await;
-    match done {
-        Ok(Ok((text, changed))) => {
+    match crate::http::off(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await {
+        Ok((text, changed)) => {
             for task in &changed {
                 crate::tasks::api::told(app, task);
             }
             answer(&text, false)
         }
-        Ok(Err(e)) => answer(&e, true),
-        Err(_) => answer("terminum could not answer the call.", true),
+        Err(e) => answer(&e, true),
     }
 }
 

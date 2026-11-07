@@ -160,10 +160,7 @@ fn lane_of(app: &Shared, page: &Page, msg: &Value) -> String {
     if matches!(msg["t"].as_str(), Some("newsession" | "restore")) {
         return app.tmux.local.id();
     }
-    if let Some((server, _)) = msg["id"].as_str().and_then(|id| app.tmux.resolve(id)) {
-        return server.id();
-    }
-    if let Some((server, _)) = msg["group"].as_str().and_then(|g| super::sessions::group(app, g)) {
+    if let Some((server, _)) = super::sessions::about(app, msg) {
         return server.id();
     }
     msg["server"].as_str().map_or_else(|| shown_lane(page), str::to_string)

@@ -87,10 +87,13 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
     (text, args)
 }
 
-/// In severity order, then by hand. `limit` at most 200.
+/// The most a list holds.
+pub(crate) const LIST_MOST: i64 = 200;
+
+/// In severity order, then by hand. `limit` at most LIST_MOST.
 pub fn list(tx: &Transaction, q: &Query) -> Result<Vec<Task>, String> {
     let (filter, args) = filter_of(q);
-    let limit = if q.limit <= 0 { 200 } else { q.limit.min(200) };
+    let limit = if q.limit <= 0 { LIST_MOST } else { q.limit.min(LIST_MOST) };
     rows(tx, &format!("{TASK}{filter} ORDER BY t.severity, t.rank LIMIT {limit} OFFSET {}", q.after.max(0)), rusqlite::params_from_iter(args.iter()), task_of)
 }
 

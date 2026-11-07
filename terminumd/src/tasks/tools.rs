@@ -63,7 +63,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
         let me = || ops::agent_user(tx, &who.agent, &who.title);
         match tool {
             "create_task" => {
-                let title: String = rules::clean(arg(args, "title")?).chars().take(200).collect();
+                let title: String = rules::clean(arg(args, "title")?).chars().take(super::ops::TITLE_MOST).collect();
                 let project = who.project.clone().unwrap_or_else(|| DEFAULT_PROJECT.to_string());
                 if let Some(same) = super::query::repeat_of(tx, &project, &title)? {
                     return Err(format!("Not kept: {same} already says this. Read it with get_task, and comment if you have more."));
@@ -149,7 +149,7 @@ fn list_tasks(store: &Store, who: &Who, args: &Value) -> Result<String, String> 
         ..Default::default()
     };
     let tasks = store.with(|tx| query::list(tx, &q))?;
-    let more = if tasks.len() == 200 { "\nThe first 200: ask by status or severity for others." } else { "" };
+    let more = if tasks.len() as i64 == super::query::LIST_MOST { "\nThe first 200: ask by status or severity for others." } else { "" };
     Ok(format!("{DATA}\n{}{more}", json!(tasks)))
 }
 

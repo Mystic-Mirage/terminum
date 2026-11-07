@@ -14,7 +14,7 @@ use super::store::{DEFAULT_PROJECT, HUMAN};
 
 pub const COLUMNS: [&str; 5] = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 pub const SEVERITIES: [&str; 4] = ["P0", "P1", "P2", "P3"];
-const TITLE_MOST: usize = 200;
+pub(crate) const TITLE_MOST: usize = 200;
 pub const TEXT_MOST: usize = 1 << 20;
 pub const COMMENT_MOST: usize = 256 << 10;
 /// Open tasks by agents in one project (AC-115).

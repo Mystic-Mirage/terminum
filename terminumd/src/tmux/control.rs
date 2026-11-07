@@ -34,11 +34,6 @@ const NOT_ANSWERED: &str = "tmux did not answer";
 const NOT_CONNECTED: &str = "tmux is not connected";
 const NOT_KEEPING_UP: &str = "tmux is not keeping up: too many commands wait for it";
 
-/// Whether an answer's error says the link failed, not tmux: nothing is known of what was asked (AC-132).
-pub fn no_answer(error: &str) -> bool {
-    [NOT_ANSWERED, NOT_CONNECTED, NOT_KEEPING_UP].contains(&error)
-}
-
 /// stderr kept to say why a client ended (ssh's "Permission denied (publickey)").
 const STDERR_KEPT: usize = 4096;
 /// How long the reason waits for stderr's end once stdout ended (a child left holding it).
@@ -257,6 +252,12 @@ impl Control {
         });
 
         Ok(Control { lines: tx, queued, alive, ended, attached, clean, pid, pending })
+    }
+
+    /// Whether an answer's error says the link failed, not tmux: nothing is known of what was
+    /// asked (AC-132). A client that ended fails what waited with its reason, whatever that says.
+    pub fn no_answer(&self, error: &str) -> bool {
+        !self.alive() || [NOT_ANSWERED, NOT_CONNECTED, NOT_KEEPING_UP].contains(&error)
     }
 
     pub fn alive(&self) -> bool {

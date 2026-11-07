@@ -72,10 +72,13 @@ async fn a_killed_server_ends_the_client_and_its_waiters() {
     let Some(s) = Tmux::start("ctl-end", (40, 10), "/bin/sh") else { return };
     let (c, _n, done) = attach(&s);
     c.run("display -p x").await.unwrap();
+    let said = c.run("display -p -t %999 x").await.err().unwrap_or_default();
+    assert!(!c.no_answer(&said), "AC-132: tmux answered, with an error: {said}");
     let _ = s.tmux(&["kill-server"]);
     let why = tokio::time::timeout(Duration::from_secs(5), done).await.expect("ended").unwrap();
     assert!(!why.is_empty());
     assert!(!c.alive());
+    assert!(c.no_answer(&why), "AC-132: the client's end is no answer, whatever its reason says: {why}");
     assert!(c.clean.load(Ordering::Relaxed), "kill-server is an exit on purpose");
     assert!(c.run("display -p y").await.is_err(), "no answer from a dead client");
 }

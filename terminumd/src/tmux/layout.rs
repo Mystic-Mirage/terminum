@@ -361,7 +361,7 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
     let answers = client.run_all(lines).await;
     for (p, a) in due.iter().zip(answers) {
         let key = server.key(&p.pane_id);
-        let unanswered = a.as_ref().err().is_some_and(|e| super::control::no_answer(e));
+        let unanswered = a.as_ref().err().is_some_and(|e| client.no_answer(e));
         let rows = a.ok();
         let mut g = states.lock();
         if unanswered {

@@ -50,18 +50,18 @@ mod tests {
     fn every_field_has_its_tmux_name_and_a_short_answer_leaves_the_rest_empty() {
         let n = names();
         assert_eq!(n.len(), FIELDS.matches("#{").count());
-        assert_eq!((n[0], n[2], n[16]), ("cursor_x", "alternate_on", "pane_current_path"));
-        let f = fields("3\t7\t1\t120\t80\t24\t1\t1\t12000\t1\t@2\t0\t1\t1\t4242\tclaude\t/Users/alex/api", "/Users/alex");
+        assert_eq!((n[0], n[2], n[18]), ("cursor_x", "alternate_on", "pane_current_path"));
+        let f = fields("3\t7\t1\t120\t80\t24\t1\t1\t12000\t1\t@2\t0\t1\t1\t4242\t129\t68\tclaude\t/Users/alex/api", "/Users/alex");
         assert_eq!((f["alternate_on"].as_str(), f["pane_width"].as_str(), f["pane_current_command"].as_str()), (Some("1"), Some("80"), Some("claude")));
         assert_eq!(f["pane_current_path"], "~/api", "the home folder as ~");
-        assert_eq!(fields("0\t0\t0\t0\t80\t24\t0\t0\t0\t0\t@1\t0\t1\t1\t1\tsh\t/srv/app", "/Users/alex")["pane_current_path"], "/srv/app");
+        assert_eq!(fields("0\t0\t0\t0\t80\t24\t0\t0\t0\t0\t@1\t0\t1\t1\t1\t80\t24\tsh\t/srv/app", "/Users/alex")["pane_current_path"], "/srv/app");
         let short = fields("3\t7", "/Users/alex");
         assert_eq!((short["cursor_y"].as_str(), short["pane_current_path"].as_str()), (Some("7"), Some("")));
     }
 
     #[test]
     fn a_value_never_carries_a_control_character() {
-        let f = fields("0\t0\t0\t0\t80\t24\t0\t0\t0\t0\t@1\t0\t1\t1\t1\tvi\x1b[31m\t/tmp", "");
+        let f = fields("0\t0\t0\t0\t80\t24\t0\t0\t0\t0\t@1\t0\t1\t1\t1\t80\t24\tvi\x1b[31m\t/tmp", "");
         assert!(!f["pane_current_command"].as_str().unwrap().contains('\x1b'));
     }
 }

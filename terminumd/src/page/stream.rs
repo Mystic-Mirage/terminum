@@ -76,6 +76,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
     let mut said_not_closed = false;
     let mut server_pid: Option<u32> = None;
     let mut stale = false;              // control clients changed or screens were off: everything is sent anew
+    let mut zoom_pace = super::zoom::ZoomPace::default();
     loop {
         if page.is_closed() {
             return;
@@ -164,6 +165,9 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             if super::sizing::opening(&app, &page).await {
                 continue;
             }
+        }
+        if !f.whole() && super::zoom::zoom_shown(&app, &page, &server, &pane, &f, &mut zoom_pace).await {
+            continue;
         }
         super::timing::captured(&page, started);
         let screen = rows::screen_rows(&capture.join("\n"), f.width, f.height);

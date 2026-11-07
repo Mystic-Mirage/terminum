@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-04 and AC-13 against a real private terminumd (e2e_live.mjs): a window split under the shown
-// pane (as Claude Code's teammates do) is not resized and nothing is drawn over the terminal; a
-// line tmux wrapped at the narrow pane's width re-flows to the view's width at the chosen text
-// size, with no sideways scrolling; docked Files follows quick switches back to the pane's
-// folder (AC-70).
+// pane (as Claude Code's teammates do) has the pane zoomed to the view, nothing drawn over the
+// terminal. With a tmux client attached by hand on that window the layout stays: a line tmux wrapped
+// at the narrow pane's width re-flows to the view's width at the chosen text size, with no sideways
+// scrolling. Docked Files follows quick switches, which move the zoom, back to the pane's folder (AC-70).
+import { spawn } from "node:child_process";
 import { check, within } from "./check.mjs";
 
 const LINE = Array.from({ length: 41 }, (_, i) => 1000 + i).join(" ");   // 204 characters: wider than any pane here
@@ -35,7 +36,7 @@ const drawn = (page) => page.evaluate((line) => {
     banner: !!document.getElementById("splitnote") };
 }, LINE);
 
-export async function liveSplit(page, { tmux, work }) {
+export async function liveSplit(page, { tmux, work, socket }) {
   const panes = () => tmux("list-panes", "-a", "-F", "#{pane_id} #{window_id} #{pane_current_path}").split("\n").filter(Boolean).map((l) => l.split(" "));
   const [pane, win] = panes().find((p) => p[2] === work) ?? [];
   const of = (fmt) => tmux("display", "-p", "-t", pane, fmt);
@@ -49,6 +50,20 @@ export async function liveSplit(page, { tmux, work }) {
     before = now;
   }
   tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane);
+  const zoomed = () => of("#{window_zoomed_flag} #{pane_active} #{pane_width} #{window_width}").split(" ");
+  await within("AC-13 a split under the shown pane: it is zoomed to the whole window", async () => {
+    for (let t = 0; t < 5000; t += 50) { const z = zoomed(); if (z[0] === "1" && z[1] === "1" && z[2] === z[3]) return; await page.waitForTimeout(50); }
+    throw new Error(JSON.stringify(zoomed()));
+  });
+  check("AC-13 the zoom keeps the view's size", of("#{window_width}") === before, `${before} → ${of("#{window_width}")}`);
+  const flat = await page.evaluate(() => { const t = document.getElementById("term"); return { reflow: t.classList.contains("reflow"), banner: !!document.getElementById("splitnote") }; });
+  check("AC-13 zoomed, the pane is drawn as the program laid it out, nothing over the terminal", !flat.reflow && !flat.banner, JSON.stringify(flat));
+  for (const [id, w] of panes()) if (w === win && id !== pane) tmux("kill-pane", "-t", id);
+  // a client attached by hand with this window on its screen: the layout stays its own
+  tmux("select-window", "-t", win);
+  const hand = spawn("tmux", ["-L", socket, "-C", "attach", "-t", of("#{session_name}")], { stdio: ["pipe", "ignore", "ignore"] });
+  await page.waitForTimeout(300);
+  tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane);
   const mate = panes().find((p) => p[1] === win && p[0] !== pane)?.[0];
   tmux("send-keys", "-t", pane, "clear; seq -s ' ' 1000 1040", "Enter");   // the command itself is short: only its output is LINE
   let d = null;
@@ -60,7 +75,12 @@ export async function liveSplit(page, { tmux, work }) {
   check("AC-04 it fills the view's width, not the pane's", d.widest > paneW * cell * 1.2 && d.widest <= d.view + 1, JSON.stringify({ ...d, paneW }));
   check("AC-04 at the chosen text size, with no sideways scrolling", d.size === d.chosen && !d.scrolls, JSON.stringify(d));
   check("AC-13 nothing is drawn over the terminal for the split", !d.banner);
-  check("AC-13 the split window is not resized by the page (its layout is its maker's)", of("#{window_width}") === before, `${before} → ${of("#{window_width}")}`);
+  check("AC-13 by a client attached by hand the window is neither resized nor zoomed", of("#{window_width}") === before && zoomed()[0] === "0", `${before} → ${zoomed()}`);
+  hand.stdin.end();
+  await within("AC-13 that client gone: the pane is zoomed", async () => {
+    for (let t = 0; t < 5000; t += 50) { if (zoomed()[0] === "1") return; await page.waitForTimeout(50); }
+    throw new Error(JSON.stringify(zoomed()));
+  });
   // a quick switch away and back: Files shows the pane's folder again (WebKit stayed blank)
   for (const id of [mate, pane, mate, pane]) { await page.click(`#sessions .item[data-id$=":${id}"]`); await page.waitForTimeout(250); }
   const files = () => page.evaluate(() => { const f = document.getElementById("files");

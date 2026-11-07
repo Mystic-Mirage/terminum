@@ -182,7 +182,7 @@ async function wide(browser, name) {
   const size = tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}");
   check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
   await liveQuick(page, { tmux, work: WORK });
-  await liveSplit(page, { tmux, work: WORK });
+  await liveSplit(page, { tmux, work: WORK, socket: SOCKET });
   // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
   const byhandName = `byhand-${name}`;
   tmux("new-window", "-d", "-n", byhandName);

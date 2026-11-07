@@ -28,6 +28,7 @@ pub mod typing;
 pub mod unread;
 pub mod upload;
 pub mod ws;
+pub mod zoom;
 
 use std::collections::HashMap;
 use std::sync::Arc;

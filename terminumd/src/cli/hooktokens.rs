@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::io::{BufRead, Seek, SeekFrom};
 use std::time::{Duration, Instant};
 
+use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 /// Past these it says nothing rather than overrun the hook's 3 s.
@@ -25,26 +27,50 @@ fn int(v: &Value, key: &str) -> u64 {
 }
 
 /// Each line holding `needle`, parsed, to `each`; past `until`: None.
-fn each_line(reader: impl BufRead, until: Instant, needle: &str, mut each: impl FnMut(usize, &Value)) -> Option<()> {
-    for (at, line) in reader.lines().enumerate() {
-        let line = line.ok()?;
+fn each_line<T: DeserializeOwned>(mut reader: impl BufRead, until: Instant, needle: &str, mut each: impl FnMut(usize, T)) -> Option<()> {
+    let (mut line, mut at) = (String::new(), 0);
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).ok()? == 0 {
+            return Some(());
+        }
         if Instant::now() >= until {
             return None;
         }
-        if line.contains(needle) && let Ok(v) = serde_json::from_str::<Value>(&line) {
-            each(at, &v);
+        if line.contains(needle) && let Ok(v) = serde_json::from_str(&line) {
+            each(at, v);
         }
+        at += 1;
     }
-    Some(())
+}
+
+/// Of a Claude Code line only these are parsed: a message's text is skipped unread.
+#[derive(Deserialize)]
+struct ClaudeLine {
+    message: ClaudeMessage,
+}
+
+#[derive(Deserialize)]
+struct ClaudeMessage {
+    id: Option<String>,
+    usage: Option<ClaudeUsage>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeUsage {
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    cache_read_input_tokens: Option<u64>,
+    cache_creation_input_tokens: Option<u64>,
 }
 
 /// Claude Code's lines: `message.usage` per message; a message comes in several lines, the last stands.
 fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
     let mut by_message: HashMap<String, Sum> = HashMap::new();
-    each_line(reader, until, "\"usage\"", |at, v| {
-        if let Some(u) = v.pointer("/message/usage") {
-            let id = v.pointer("/message/id").and_then(Value::as_str).map_or_else(|| at.to_string(), str::to_string);
-            by_message.insert(id, Sum { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cached: int(u, "cache_read_input_tokens") + int(u, "cache_creation_input_tokens") });
+    each_line(reader, until, "\"usage\"", |at, line: ClaudeLine| {
+        if let Some(u) = line.message.usage {
+            let cached = u.cache_read_input_tokens.unwrap_or(0) + u.cache_creation_input_tokens.unwrap_or(0);
+            by_message.insert(line.message.id.unwrap_or_else(|| at.to_string()), Sum { input: u.input_tokens.unwrap_or(0), output: u.output_tokens.unwrap_or(0), cached });
         }
     })?;
     (!by_message.is_empty()).then(|| by_message.values().fold(Sum::default(), |a, s| Sum { input: a.input + s.input, output: a.output + s.output, cached: a.cached + s.cached }))
@@ -53,7 +79,7 @@ fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
 /// Codex's lines: a `token_count` event holds the session's total; the last stands.
 fn codex(reader: impl BufRead, until: Instant) -> Option<Sum> {
     let mut last = None;
-    each_line(reader, until, "token_count", |_, v| {
+    each_line(reader, until, "token_count", |_, v: Value| {
         if let Some(u) = v.pointer("/payload/info/total_token_usage") {
             last = Some(Sum { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cached: int(u, "cached_input_tokens") });
         }
@@ -104,6 +130,17 @@ mod tests {
             r#"{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":3,"output_tokens":4}}}"#, "\n"));
         let got = of_event("claude", &json!({"transcript_path": p})).unwrap();
         assert_eq!(got, json!({"input": 13, "output": 11, "cached": 7}), "three integers: no text, no path");
+    }
+
+    #[test]
+    fn ac129_claude_a_line_is_read_for_its_id_and_usage_only() {
+        let p = written("tokens-claude-typed", concat!(
+            r#"{"type":"user","message":{"content":[{"text":"the word \"usage\" in a prompt"}]}}"#, "\n",
+            r#"{"type":"summary","message":"\"usage\" in a string"}"#, "\n",
+            r#"{"message":{"content":[{"type":"text","text":"long"}],"usage":{"input_tokens":2,"output_tokens":1,"cache_read_input_tokens":null,"cache_creation":{"ephemeral_5m_input_tokens":9}}}}"#, "\n",
+            r#"{"message":{"usage":{"input_tokens":3,"output_tokens":1}}}"#, "\n"));
+        let got = of_event("claude", &json!({"transcript_path": p})).unwrap();
+        assert_eq!(got, json!({"input": 5, "output": 2, "cached": 0}), "no id: each line its own; no usage: not counted");
     }
 
     #[test]

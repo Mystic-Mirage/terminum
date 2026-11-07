@@ -63,7 +63,6 @@ const ICONS = {
   clipboard: ["M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2", "M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"],
   "undo-2": ["M9 14 4 9l5-5", "M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"],
   "redo-2": ["m15 14 5-5-5-5", "M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"],
-  ungroup: ["M6 4h6a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z", "M12 14h6a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z"],
   // a split of the terminal: the window, its divider and the new pane filled (terminum's own, on Lucide's grid)
   "split-bottom": [FRAME, "M3 12h18", { fill: "M3 12h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" }],
   "split-right": [FRAME, "M12 3v18", { fill: "M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7z" }],

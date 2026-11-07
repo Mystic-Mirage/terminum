@@ -53,7 +53,7 @@ step clippy bash -c 'cd terminumd && cargo clippy --locked --all-targets -- -D w
 step panel bash -c 'cd ui && node test/e2e_panel.mjs'
 step live bash -c 'cd terminumd && cargo build --locked && cd .. && node web/test/e2e_live.mjs'
 # every e2e script but Docker's, which take built binaries as arguments: their own step
-step e2e bash -c 'for f in scripts/e2e_*.py; do case $f in *remote_sshd*) ;; *) python3 "$f" || exit 1 ;; esac; done'
+step e2e bash -c 'rc=0; for f in scripts/e2e_*.py; do case $f in *remote_sshd*) ;; *) python3 "$f" || { echo "FAIL $f"; rc=1; } ;; esac; done; exit $rc'
 step docker python3 scripts/check_docker.py "$id"
 [ ! -f ".checks/$id.docker-skip" ] || echo "SKIP docker: $(cat ".checks/$id.docker-skip")"
 step install env TERMINUMD_BIN=terminumd/target/debug/terminumd bash scripts/e2e_install.sh

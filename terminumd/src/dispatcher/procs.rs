@@ -79,17 +79,12 @@ pub fn under(tree: &Tree, root: &str) -> Under {
 
 /// `words` run on `server`'s machine, within WAIT: on this Mac, or by one ssh command with its recipe.
 async fn run(app: &Shared, server: &Server, words: &[&str]) -> Option<String> {
-    let mut c = if server.is_local() {
-        let mut c = tokio::process::Command::new(words[0]);
-        c.args(&words[1..]);
-        c
-    } else {
+    if !server.is_local() {
         let recipe = crate::hosts::recipe_of(app, &server.name)?;
-        let mut c = crate::hosts::ssh_command(crate::hosts::ssh_bin(), &recipe, &["-o", "ControlPath=none"]);
-        crate::hosts::recipe::with_command(&mut c, &recipe, &words.join(" "));
-        c
-    };
-    c.stdin(std::process::Stdio::null()).kill_on_drop(true);
+        return crate::hosts::tunnel::ssh(&recipe, &["-o", "ControlPath=none"], &words.join(" "), None, WAIT).await.ok();
+    }
+    let mut c = tokio::process::Command::new(words[0]);
+    c.args(&words[1..]).stdin(std::process::Stdio::null()).kill_on_drop(true);
     let out = tokio::time::timeout(WAIT, c.output()).await.ok()?.ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }

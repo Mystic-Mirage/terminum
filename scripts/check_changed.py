@@ -13,8 +13,10 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_docs import AC  # noqa: E402
+
 REPO = Path(__file__).resolve().parent.parent
-AC = re.compile(r"\bAC-(\d{2,3})\b")
 HEAD_LINES = 6  # a source file names its cases at its top
 # what breaks everything when it breaks: signing in, the tmux client, a pane's page
 CRITICAL_CARGO = ["auth::", "tmux::", "page::client"]
@@ -68,9 +70,10 @@ def page_checks(root):
 
 
 def test_files(root):
+    """Files that hold tests: a Rust file only if it is a test module."""
     found = []
     for pattern in ("web/test/*.mjs", "ui/test/*.mjs", "scripts/e2e_*.py", "scripts/tests/*.py", "terminumd/src/**/*.rs"):
-        found += [p for p in root.glob(pattern) if p.is_file()]
+        found += [p for p in root.glob(pattern) if p.is_file() and (p.suffix != ".rs" or "_tests" in p.name or "/tests/" in str(p))]
     return found
 
 
@@ -79,8 +82,7 @@ def citing(cases, root):
     if not cases:
         return []
     wanted = re.compile(r"\bAC-(?:" + "|".join(sorted(cases)) + r")\b")
-    return sorted(str(p.relative_to(root)) for p in test_files(root)
-                  if (not p.suffix == ".rs" or "_tests" in p.name or "/tests/" in str(p)) and wanted.search(p.read_text(errors="replace")))
+    return sorted(str(p.relative_to(root)) for p in test_files(root) if wanted.search(p.read_text(errors="replace")))
 
 
 def new_cases(diff):
@@ -90,7 +92,7 @@ def new_cases(diff):
 
 def uncited(cases, root):
     """Those of `cases` no test cites: new behavior comes with tests from its acceptance cases."""
-    tests = "\n".join(p.read_text(errors="replace") for p in test_files(root) if p.suffix != ".rs" or "_tests" in p.name or "/tests/" in str(p))
+    tests = "\n".join(p.read_text(errors="replace") for p in test_files(root))
     return sorted(c for c in cases if not re.search(rf"\bAC-{c}\b", tests))
 
 
@@ -170,7 +172,7 @@ def main(argv):
     if untested and not args.only_print:
         print("targeted: FAIL new cases no test cites: " + " ".join(f"AC-{c}" for c in untested))
         return 1
-    if args.only_print or not steps:
+    if args.only_print:
         for name, command in steps:
             print(f"  {name}: {command}")
         return 0

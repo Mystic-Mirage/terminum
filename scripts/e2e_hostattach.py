@@ -22,7 +22,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 PORT, LOCAL, REMOTE = free_port(), own("tm-test-hal"), own("tm-test-hrem")
 remote = partial(tmux_on, REMOTE)
 
@@ -107,7 +106,7 @@ def main():
     home = os.path.join(t.root, "remote-home")
     os.makedirs(home)
     pids = os.path.join(t.root, "ssh-pids")
-    t.env.update(TM_SSH=os.path.join(HERE, "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=REMOTE, FAKE_SSH_PIDS=pids)
+    t.through_fake_ssh(home, REMOTE, pids)
     remote("kill-server")
     for s in ("work", "api"):
         remote("-f", "/dev/null", "new-session", "-d", "-s", s, "-c", home, "-x", "90", "-y", "30")

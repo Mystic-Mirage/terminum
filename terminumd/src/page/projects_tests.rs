@@ -38,6 +38,16 @@ fn ac110_projects_json_is_copied_once_and_left_in_place() {
 }
 
 #[test]
+fn ac110_a_key_an_older_projects_json_lacks_reads_as_empty() {
+    let (store, json) = stored("projects-partial");
+    std::fs::write(&json, json!({"order": ["g:local/main"], "newer": 1}).to_string()).unwrap();
+    let ps = reloaded(&store, &json);
+    assert!(ps.list().is_empty() && ps.servers.is_empty());
+    assert_eq!(ps.list_order(), ["g:local/main"]);
+    assert!(!json.with_extension("json.bak").exists(), "nothing wrong with it: not set aside");
+}
+
+#[test]
 fn ac110_an_unreadable_projects_json_is_set_aside_and_the_store_starts_empty() {
     for malformed in [json!({"projects": {}}), json!({"projects": [], "servers": []}), json!([])] {
         let (store, json) = stored("projects-schema");
@@ -51,8 +61,8 @@ fn ac110_an_unreadable_projects_json_is_set_aside_and_the_store_starts_empty() {
 fn ac110_every_change_reaches_the_store() {
     let (store, json) = stored("projects-saved");
     let mut ps = reloaded(&store, &json);
-    let p1 = ps.add(A, None, None, Some("devbox.example".into()), "/a".into(), Some("API")).unwrap();
-    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
+    let p1 = ps.add_new(A, Some("API"), Some("devbox.example".into()), "/a".into()).unwrap();
+    ps.add_to(B, &p1, None).unwrap();
     let p2 = ps.create("Billing", None, String::new()).unwrap();
     ps.order(&[format!("p:{p2}"), "g:local/main".into(), format!("p:{p1}")]).unwrap();
     ps.members(&p1, &[B.into(), A.into()]).unwrap();
@@ -80,8 +90,8 @@ fn project_of_task(store: &Store, number: i64) -> String {
 fn ac110_deleting_a_project_moves_its_tasks_to_default_and_says_so() {
     let (store, json) = stored("projects-delete");
     let mut ps = reloaded(&store, &json);
-    let p1 = ps.add(A, None, None, None, "/a".into(), Some("Billing")).unwrap();
-    let p2 = ps.add(B, None, None, None, "/b".into(), None).unwrap();
+    let p1 = ps.add_new(A, Some("Billing"), None, "/a".into()).unwrap();
+    let p2 = ps.add_new(B, None, None, "/b".into()).unwrap();
     task_in(&store, &p1, 1);
     task_in(&store, &p2, 2);
     ps.delete(&p1).unwrap();
@@ -97,7 +107,7 @@ fn ac110_deleting_a_project_moves_its_tasks_to_default_and_says_so() {
 fn ac110_a_project_is_not_lost_when_the_store_refuses_its_deletion() {
     let (store, json) = stored("projects-refused");
     let mut ps = reloaded(&store, &json);
-    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
+    let p1 = ps.add_new(A, None, None, "/a".into()).unwrap();
     store.with(|tx| tx.execute_batch("CREATE TRIGGER no BEFORE DELETE ON projects BEGIN SELECT RAISE(ABORT, 'refused'); END;").map_err(|e| e.to_string())).unwrap();
     assert!(ps.delete(&p1).is_err());
     assert!(ps.of(A).is_some(), "nothing changed");
@@ -108,7 +118,7 @@ fn ac119_projects_are_never_written_over_a_store_that_could_not_be_read() {
     use std::os::unix::fs::PermissionsExt;
     let (store, json) = stored("projects-failed");
     let mut ps = reloaded(&store, &json);
-    ps.add(A, None, None, None, "/a".into(), Some("Keep me")).unwrap();
+    ps.add_new(A, Some("Keep me"), None, "/a".into()).unwrap();
     ps.seen("tmux:local:terminum:", Some("m1"), &[A].into_iter().collect());
     ps.save().unwrap();
     let path = json.with_file_name("kanban.sqlite");
@@ -132,7 +142,7 @@ fn ac119_projects_are_never_written_over_a_store_that_could_not_be_read() {
 fn ac119_a_change_the_store_refuses_stays_out_of_memory() {
     let (store, json) = stored("projects-refused-change");
     let mut ps = reloaded(&store, &json);
-    let p = ps.add(A, None, None, None, "/a".into(), Some("One")).unwrap();
+    let p = ps.add_new(A, Some("One"), None, "/a".into()).unwrap();
     store.with(|tx| tx.execute_batch("CREATE TRIGGER no BEFORE UPDATE ON projects BEGIN SELECT RAISE(ABORT, 'refused'); END;").map_err(|e| e.to_string())).unwrap();
     assert!(ps.rename(&p, "Two").is_err());
     assert_eq!(ps.list()[0].name, "One");
@@ -174,47 +184,47 @@ fn ac110_a_project_made_with_no_session_stands_and_takes_its_folder_later() {
 #[test]
 fn a_new_project_is_named_and_colored_apart_from_the_others() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/Users/alex/api".into(), None).unwrap();
-    let p2 = ps.add(B, None, None, None, "/Users/alex/web".into(), None).unwrap();
+    let p1 = ps.add_new(A, None, None, "/Users/alex/api".into()).unwrap();
+    let p2 = ps.add_new(B, None, None, "/Users/alex/web".into()).unwrap();
     let names: Vec<_> = ps.list().iter().map(|p| (p.name.clone(), p.color, p.dir.clone())).collect();
     assert_eq!(names, [("Group 1".to_string(), 0, "/Users/alex/api".to_string()), ("Group 2".into(), 1, "/Users/alex/web".into())]);
     ps.delete(&p1).unwrap();
-    let p3 = ps.add(A, None, None, None, "/tmp".into(), None).unwrap();
+    let p3 = ps.add_new(A, None, None, "/tmp".into()).unwrap();
     let p = ps.list().iter().find(|p| p.id == p3).unwrap();
     assert_eq!((p.name.as_str(), p.color), ("Group 1", 0), "the lowest free name and color again");
-    let p4 = ps.add(C, None, None, None, "/c".into(), Some("  API  ")).unwrap();
+    let p4 = ps.add_new(C, Some("  API  "), None, "/c".into()).unwrap();
     assert_eq!(ps.list().iter().find(|p| p.id == p4).unwrap().name, "API", "named as it is made");
-    assert!(ps.add(B, None, None, None, "/c".into(), Some("a\u{7}")).is_err());
+    assert!(ps.add_new(B, Some("a\u{7}"), None, "/c".into()).is_err());
     assert_ne!(p2, p3);
 }
 
 #[test]
 fn ac110_a_pane_is_in_one_project_and_an_empty_one_stays() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
-    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
-    let p2 = ps.add(B, None, None, None, "/b".into(), None).unwrap();
+    let p1 = ps.add_new(A, None, None, "/a".into()).unwrap();
+    ps.add_to(B, &p1, None).unwrap();
+    let p2 = ps.add_new(B, None, None, "/b".into()).unwrap();
     assert_eq!(ps.of(B).unwrap().id, p2, "moved, not copied");
     assert_eq!(ps.of(A).unwrap().members, [A]);
     ps.remove(A).unwrap();
     let empty = ps.list().iter().find(|p| p.id == p1).unwrap();
     assert!(empty.members.is_empty(), "its last session left: the project stays");
-    assert!(ps.add(A, Some("nope"), None, None, "/".into(), None).is_err());
+    assert!(ps.add_to(A, "nope", None).is_err());
 }
 
 #[test]
 fn order_members_rename_and_after() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
-    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
-    ps.add(C, Some(&p1), Some(A), None, "/a".into(), None).unwrap();
+    let p1 = ps.add_new(A, None, None, "/a".into()).unwrap();
+    ps.add_to(B, &p1, None).unwrap();
+    ps.add_to(C, &p1, Some(A)).unwrap();
     assert_eq!(ps.of(A).unwrap().members, [A, C, B], "a clone goes right after its session");
     ps.members(&p1, &[B.into(), A.into()]).unwrap();
     assert_eq!(ps.of(A).unwrap().members, [B, A, C]);
     ps.rename(&p1, "  API  ").unwrap();
     assert_eq!(ps.of(A).unwrap().name, "API");
     assert!(ps.rename(&p1, " ").is_err() && ps.rename(&p1, "a\u{7}").is_err());
-    let p2 = ps.add("tmux:local:terminum:%9", None, None, None, "/z".into(), None).unwrap();
+    let p2 = ps.add_new("tmux:local:terminum:%9", None, None, "/z".into()).unwrap();
     ps.order(&[format!("p:{p2}"), "g:local/main".to_string(), format!("p:{p1}")]).unwrap();
     assert_eq!(ps.list_order(), [format!("p:{p2}"), "g:local/main".to_string(), format!("p:{p1}")], "the projects and groups together");
     assert!(ps.order(&vec!["g:x".to_string(); ORDER_MOST + 1]).is_err() && ps.order(&["g:".to_string() + &"x".repeat(ORDER_ID)]).is_err(), "what a page sends is bounded");
@@ -224,8 +234,8 @@ fn order_members_rename_and_after() {
 #[test]
 fn closed_panes_leave_when_their_server_is_read() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
-    ps.add(C, Some(&p1), None, None, "/a".into(), None).unwrap();
+    let p1 = ps.add_new(A, None, None, "/a".into()).unwrap();
+    ps.add_to(C, &p1, None).unwrap();
     let live: HashSet<&str> = [B].into_iter().collect();
     assert!(ps.seen("tmux:local:terminum:", Some("m1"), &live).0, "the first read adopts the server");
     assert_eq!(ps.of(A).unwrap().members, [A, C], "added just now: spared (a read on its way may not have it)");
@@ -243,8 +253,8 @@ fn closed_panes_leave_when_their_server_is_read() {
 #[test]
 fn a_server_started_anew_keeps_projects_only_through_its_restore() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
-    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
+    let p1 = ps.add_new(A, None, None, "/a".into()).unwrap();
+    ps.add_to(B, &p1, None).unwrap();
     ps.fresh.clear();
     let both: HashSet<&str> = [A, B].into_iter().collect();
     ps.seen("tmux:local:terminum:", Some("m1"), &both);
@@ -264,8 +274,8 @@ fn a_server_started_anew_keeps_projects_only_through_its_restore() {
 #[test]
 fn a_restore_again_keeps_the_running_sessions() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
-    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
+    let p1 = ps.add_new(A, None, None, "/a".into()).unwrap();
+    ps.add_to(B, &p1, None).unwrap();
     ps.restarted("tmux:local:terminum:", &[("%9".into(), "%12".into()), ("%1".into(), "%1".into()), ("%2".into(), "%2".into())]);
     assert_eq!(ps.of(A).unwrap().members, [A, B]);
 }
@@ -275,7 +285,7 @@ fn a_restore_again_keeps_the_running_sessions() {
 #[test]
 fn a_fresh_member_the_list_lost_is_read_again_when_it_stops_being_fresh() {
     let mut ps = store();
-    ps.add(A, None, None, None, "/a".into(), None).unwrap();
+    ps.add_new(A, None, None, "/a".into()).unwrap();
     let none: HashSet<&str> = HashSet::new();
     ps.seen("tmux:local:terminum:", Some("m1"), &none);
     assert!(ps.of(A).is_some(), "kept: added a moment ago");

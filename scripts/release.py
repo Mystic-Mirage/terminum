@@ -15,7 +15,7 @@ for macOS and Linux and holds the release key; only on the maintainer's request 
   4. tag HEAD and push the tag; a draft release gets the package, install.sh, SHA256SUMS
      and SHA256SUMS.sig, and is published only then
 
-    python3 scripts/release.py v0.15.0
+Only through scripts/release_turn.py (`make release`, `make rehearse`), which hands it the commit the full checks saw.
 """
 import os
 import re
@@ -174,9 +174,9 @@ def check_settings():
         sys.exit("TM_CODESIGN_IDENTITY is not set: a release is signed with the maintainer's Developer ID (docs/RELEASING.md)")
 
 
-def check_gate(head):
+def check_gate(head, gate_head):
     """The commit is the one the full checks saw (release_turn.py), however long they took."""
-    if os.environ.get("TM_GATE_HEAD", head) != head:
+    if gate_head != head:
         sys.exit("HEAD moved since the full checks (another session's make install?): nothing is public; release again")
 
 
@@ -189,29 +189,21 @@ def build(tag):
             sys.exit(f"the package has no {platform} terminumd (run make toolchain): not released")
 
 
-def main(argv):
-    rehearsing = argv[:1] == ["--rehearse"]
-    argv = argv[1:] if rehearsing else argv
-    if len(argv) != 1 or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", argv[0]):
-        sys.exit("usage: release.py [--rehearse] vX.Y.Z")
-    tag = argv[0]
-    check_settings()
+def main(tag, gate_head, said="", rehearsing=False):
+    """`gate_head`: the commit the full checks saw; `said`: what they could not run. The source is looked
+    at again: tags, origin/main and the tree may have moved during those checks."""
     head = check_source(tag)
-    check_gate(head)
+    check_gate(head, gate_head)
     if rehearsing:   # as far as nothing is public: no release key, no gh, no tag, no push
         build(tag)
         check_unmoved(head)
         print(f"{tag}: rehearsal passed on {head[:9]}: no release signature, not tagged, not pushed, not published")
         return
     notes = release_notes(tag)
-    if os.environ.get("TM_GATE_SAID"):   # what the gate could not run (release_turn.py)
-        notes = f"{notes.rstrip()}\n\n**Not verified:** {os.environ['TM_GATE_SAID']}\n"
+    if said:
+        notes = f"{notes.rstrip()}\n\n**Not verified:** {said}\n"
     draft = check_unpublished(tag)
     build(tag)
     sign(package.OUT / "SHA256SUMS")
     check_unmoved(head)
     print(f"{tag}: {publish(tag, draft, notes, head)}")  # only now does anything become public
-
-
-if __name__ == "__main__":
-    main(sys.argv[1:])

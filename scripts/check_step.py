@@ -46,8 +46,7 @@ def files_in(folder):
 
 def run(command, folder):
     """The check's (exit status, process group), in a group of its own; a signal here ends it too."""
-    env = {**os.environ, "TMPDIR": folder, "TMUX_TMPDIR": folder, "NODE_DISABLE_COMPILE_CACHE": "1",
-           "TM_USER_TMPDIR": tempfile.gettempdir()}   # for what must keep one path across runs (e2e_liveprogs.mjs)
+    env = {**os.environ, "TMPDIR": folder, "TMUX_TMPDIR": folder, "NODE_DISABLE_COMPILE_CACHE": "1"}
     child = subprocess.Popen(command, env=env, start_new_session=True)
 
     def forward(number, _frame):
@@ -64,10 +63,12 @@ def main(command):
     try:
         status, group = run(command, folder)
         end = time.monotonic() + SETTLE_S
-        while (files_in(folder) or own_processes(folder, group)) and time.monotonic() < end:
-            time.sleep(0.2)
+        processes = own_processes(folder, group)   # it reads every process's environment: once for a clean step
+        while (files_in(folder) or processes) and time.monotonic() < end:
+            time.sleep(1)
+            processes = own_processes(folder, group)
         left = 0
-        for pid, name in own_processes(folder, group):
+        for pid, name in processes:
             left += 1
             print(f"LEFT process {pid}: {name}", file=sys.stderr)
             os.kill(pid, signal.SIGTERM)

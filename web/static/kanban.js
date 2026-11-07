@@ -11,8 +11,6 @@ import { askConfirm } from "./dialogs.js";
 import { sessionUrl, takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
-import { projectInk } from "./listparts.js";
-import { seeFolders } from "./nav.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
 import { boardSessions, sessionStrip } from "./kanbanside.js";
 import { agentsSection } from "./kanbanagents.js";
@@ -20,7 +18,8 @@ import { projectWindow } from "./kanbanproject.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
-import { $, COLUMNS, agentChip, api, button, el, iconButton, say } from "./kanbanutil.js";
+import { el, iconButton, plural, projectInk } from "./listparts.js";
+import { $, COLUMNS, agentChip, api, button, hasFiles, say } from "./kanbanutil.js";
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -34,7 +33,6 @@ let busy = {};                                     // what each busy agent does
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
 let loading = 0, changing = 0, chain = Promise.resolve();
-const BUILD = document.querySelector('meta[name="build"]').content;
 
 /** Above the board; a store set aside offers its way on, and only then is an empty one made (AC-119). */
 function banner(text) {
@@ -103,7 +101,7 @@ function sessionLine(t) {
 }
 
 /** What its session uses and what stands idle in it (terminum-dispatcher.md AC-127 to AC-129): as of the last walk. */
-function usageWords(id) {
+function usageWords(id, budget) {
   const u = usage[id];
   if (!u) return "";
   const words = u.not_measured ? [u.not_measured] : [`CPU ${u.cpu}%`, `${u.gib} GiB`, `${u.minutes} min`];
@@ -115,7 +113,7 @@ function usageWords(id) {
 }
 
 function showUsage(c, id) {
-  const words = usageWords(id), line = c.querySelector(".cusage");
+  const words = usageWords(id, Number(c.dataset.budget)), line = c.querySelector(".cusage");
   if (line?.textContent === words) return;
   line?.remove();
   if (words) c.querySelector(".cfoot").append(el("span", "cusage", words));
@@ -140,6 +138,7 @@ function showSession(c, t) {
 function card(t) {
   const c = el("article", `card sev-${t.severity}${picked.has(t.id) ? " picked" : ""}`);
   c.dataset.id = t.id;
+  c.dataset.budget = t.budget_seconds ?? "";
   c.draggable = true;
   c.tabIndex = 0;
   c.rowDrawn = "";
@@ -157,7 +156,7 @@ function card(t) {
   }
   if (!t.agent) foot.append(el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));   // on an agent, the agent says who
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
-  if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
+  if (t.files) foot.append(el("span", "cfiles", plural(t.files, "file")));
   showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
   showUsage(c, t.id);
@@ -309,7 +308,6 @@ function sessionsCame(groups) {
   meta.sessions = items.map((it) => ({ key: it.id, title: it.title }));
   liveRows = new Map(items.map((it) => [it.id, it]));
   agents.draw();
-  seeFolders(groups);
   const shown = new Map([...document.querySelectorAll(".card")].map((c) => [c.dataset.id, c]));
   for (const t of [...cards.values()].flat()) {
     const it = t.session && liveRows.get(t.session.key);
@@ -396,7 +394,6 @@ $("taskbox").addEventListener("close", () => {
 });
 
 // A file dropped anywhere never takes the page away: on the board it starts a new task (AC-133)
-const hasFiles = (e) => e.dataTransfer?.types.includes("Files");
 document.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
 document.addEventListener("drop", (e) => {
   if (!hasFiles(e) || e.defaultPrevented) return;
@@ -415,40 +412,30 @@ if (seen) { fit(); seen.addEventListener("resize", fit); }
 // A phone's page wakes: what it missed is read; its WebSocket says for itself when it is gone
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
 
-let reloading = false;
-/** terminumd was upgraded: this page reloads when no window is open (a draft is kept anyway), once. */
-function buildCame(id) {
-  if (id === BUILD || reloading || sessionStorage.getItem("web.reloaded-for") === id) return;
-  reloading = true;
-  const go = () => {
-    if (document.querySelector("dialog[open]")) { setTimeout(go, 1000); return; }
-    try { sessionStorage.setItem("web.reloaded-for", id); } catch { /* private mode: at worst asks again */ }
-    location.reload();
-  };
-  go();
-}
 $("newtask").addEventListener("click", () => form.open());
 /** The columns are read again once a burst ends. */
-let readWait = 0, windowToo = false;
-function readSoon() {
+let readWait = 0, windowToo = false, columnsToo = false;
+function readSoon(columns = true) {
+  columnsToo ||= columns;
   clearTimeout(readWait);
-  readWait = setTimeout(() => { load(); if (windowToo) windowed.refresh(); windowToo = false; }, 40);
+  readWait = setTimeout(() => { if (columnsToo) load(); if (windowToo) windowed.refresh(false, true); columnsToo = windowToo = false; }, 40);
 }
 
-/** Every page hears of a task's change; an open window reads again only when it shows that task. */
+/** Every page hears of a task's change; an open window reads again only when it shows that task; a change
+ *  to its `history` alone is on no card. */
 function listen() {
-  const again = (id) => {
+  const again = (id, history) => {
     windowToo ||= !id || windowed.shows(id);
-    readSoon();
+    readSoon(!history);
   };
   signin.prove().then(() => {
-    const ws = socket = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`, signin.protocols());
+    const ws = socket = new WebSocket(signin.socketUrl(), signin.protocols());
     ws.onmessage = (ev) => {
       const m = JSON.parse(ev.data);
       side.seen(m);
-      if (m.t === "taskchange") again(m.id);
+      if (m.t === "taskchange") again(m.id, m.history);
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
-      else if (m.t === "build") buildCame(m.id);
+      else if (m.t === "build") signin.reloadOnce(m.id, () => document.querySelector("dialog[open]"));   // a draft is kept anyway
       else if (m.t === "taskmarks") needs.came(m);
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
@@ -457,6 +444,7 @@ function listen() {
         for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
       }
       else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
+      else if (m.t === "boardtheme") { meta.theme = m.theme; colors(); }
       else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);
@@ -464,12 +452,8 @@ function listen() {
 }
 
 // the user's own stylesheet (terminum.md AC-19): the last one at once, the newest when it comes
-try { $("customcss").textContent = localStorage.getItem(signin.CSS_KEY) ?? ""; } catch { /* no storage: fetched below */ }
-fetch("/custom.css", { cache: "no-store" }).then((r) => (r.ok ? r.text() : null)).then((css) => {
-  if (css === null) return;
-  $("customcss").textContent = css;
-  try { localStorage.setItem(signin.CSS_KEY, css); } catch { /* no storage: fetched at every load */ }
-}).catch(() => {});
+signin.showKeptCss();
+signin.loadCss();
 await loadMeta();
 await load();
 listen();

@@ -106,6 +106,13 @@ fn s(ev: &Value, k: &str) -> String {
     ev[k].as_str().unwrap_or("").to_string()
 }
 
+impl Rec {
+    /// How long a working state holds: longer once a Stop waits for its background subagents.
+    fn working_lease(&self) -> Duration {
+        if self.stopped.is_some() && !self.subs.is_empty() { BG_LEASE } else { LEASE }
+    }
+}
+
 impl Hooks {
     /// Applies event `ev` (cli/hook.rs's fields) to pane `key`; true when what the list shows changed.
     #[cfg(test)]
@@ -240,9 +247,8 @@ impl Hooks {
             _ => {}
         }
         let state = r.state?;
-        let lease = if r.stopped.is_some() && !r.subs.is_empty() { BG_LEASE } else { LEASE };
         let held = match state {
-            State::Working => now.duration_since(r.at) < lease,
+            State::Working => now.duration_since(r.at) < r.working_lease(),
             State::Waiting => r.waits || now.duration_since(r.at) < WAIT_LEASE,
             State::Done => r.agent == "claude",
             State::Failed => true,
@@ -284,6 +290,19 @@ impl Hooks {
     pub fn subs_due_in(&self, now: Instant) -> Option<Duration> {
         self.recs.lock().values().filter(|r| !r.subs.is_empty()).filter_map(|r| r.stopped_at)
             .map(|at| (at + GHOST_AFTER).checked_duration_since(now).unwrap_or(GHOST_EVERY)).min()
+    }
+
+    /// How long until a hook's lease on a state runs out, also with no page in sight: a turn with
+    /// no Stop ends by the read after it, which the list's slow beat must not leave waiting (AC-39).
+    pub fn lease_ends_in(&self, now: Instant) -> Option<Duration> {
+        self.recs.lock().values().filter_map(|r| {
+            let lease = match r.state? {
+                State::Working => r.working_lease(),
+                State::Waiting if !r.waits => WAIT_LEASE,
+                _ => return None,
+            };
+            (r.at + lease).checked_duration_since(now)
+        }).min()
     }
 
     /// The panes whose turn ended and was not told yet, taken.

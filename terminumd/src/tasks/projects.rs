@@ -5,30 +5,28 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use rusqlite::Transaction;
-use serde_json::{json, Value};
+use rusqlite::{OptionalExtension, Transaction};
+use serde::Deserialize;
+use serde_json::Value;
 
 use super::ops::{log, rows, sql};
 use super::store::{Store, DEFAULT_PROJECT, DISPATCHER, HUMAN};
 use crate::page::projects::Project;
 
 /// What the session list's projects hold.
-#[derive(Default, Clone, Debug, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq, Deserialize)]
+#[serde(default)]
 pub struct Saved {
+    #[serde(rename = "projects")]
     pub list: Vec<Project>,
     pub servers: BTreeMap<String, String>,
     pub order: Vec<String>,
 }
 
 fn read(tx: &Transaction) -> Result<Saved, String> {
-    let mut members = tx.prepare("SELECT pane_key FROM project_members WHERE project = ?1 ORDER BY place").map_err(sql)?;
-    let mut projects = tx.prepare("SELECT id, name, color, host, dir FROM projects WHERE is_default = 0 ORDER BY place").map_err(sql)?;
-    let found = projects.query_map([], |r| Ok(Project { id: r.get(0)?, name: r.get(1)?, color: r.get::<_, i64>(2)? as usize, host: r.get(3)?, dir: r.get(4)?, members: Vec::new() })).map_err(sql)?;
-    let mut list = Vec::new();
-    for p in found {
-        let mut p = p.map_err(sql)?;
-        p.members = members.query_map([&p.id], |r| r.get(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
-        list.push(p);
+    let mut list = rows(tx, "SELECT id, name, color, host, dir FROM projects WHERE is_default = 0 ORDER BY place", [], |r| Ok(Project { id: r.get(0)?, name: r.get(1)?, color: r.get::<_, i64>(2)? as usize, host: r.get(3)?, dir: r.get(4)?, members: Vec::new() }))?;
+    for p in &mut list {
+        p.members = rows(tx, "SELECT pane_key FROM project_members WHERE project = ?1 ORDER BY place", [&p.id], |r| r.get(0))?;
     }
     let servers = rows(tx, "SELECT start, terminum_id FROM servers", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect();
     let order = rows(tx, "SELECT part FROM list_order ORDER BY place", [], |r| r.get(0))?;
@@ -122,10 +120,7 @@ fn legacy(path: &Path) -> Saved {
         if !v.is_object() {
             return Err("expected a projects object".into());
         }
-        let list = serde_json::from_value(v.get("projects").cloned().unwrap_or_else(|| json!([]))).map_err(|e| e.to_string())?;
-        let servers = serde_json::from_value(v.get("servers").cloned().unwrap_or_else(|| json!({}))).map_err(|e| e.to_string())?;
-        let order = serde_json::from_value(v.get("order").cloned().unwrap_or_else(|| json!([]))).map_err(|e| e.to_string())?;
-        Ok(Saved { list, servers, order })
+        serde_json::from_value(v).map_err(|e| e.to_string())
     }).unwrap_or_default()
 }
 
@@ -133,11 +128,7 @@ fn legacy(path: &Path) -> Saved {
 /// once, and the file left in place for an older terminum (AC-110).
 pub fn load(store: &Store, projects_json: &Path) -> Result<Saved, String> {
     store.with(|tx| {
-        let imported: Option<String> = match tx.query_row("SELECT value FROM meta WHERE key = 'projects_imported'", [], |r| r.get(0)) {
-            Ok(v) => Some(v),
-            Err(rusqlite::Error::QueryReturnedNoRows) => None,
-            Err(e) => return Err(sql(e)),
-        };
+        let imported: Option<String> = tx.query_row("SELECT value FROM meta WHERE key = 'projects_imported'", [], |r| r.get(0)).optional().map_err(sql)?;
         if imported.is_none() {
             write(tx, &legacy(projects_json))?;
             tx.execute("INSERT INTO meta (key, value) VALUES ('projects_imported', '1')", []).map_err(sql)?;

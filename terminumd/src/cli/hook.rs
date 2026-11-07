@@ -40,7 +40,8 @@ pub fn main(agent: &str) -> i32 {
     }
     let (Ok(input), Ok(tmux), Ok(pane)) = (serde_json::from_slice::<Value>(&kept), std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return 0 };
     if let Some(ev) = event(agent, &input, &tmux, &pane) {
-        let answers = super::sinks::post_all(&super::sinks::all(), "/hook", &ev, BUDGET);
+        let sinks = super::sinks::all();
+        let answers = super::sinks::post_all(&sinks, "/hook", &ev, BUDGET);
         if let Some(line) = first_reminder(&ev, &answers) {
             // a closed stdout is the agent's choice: never a panic, still 0
             let _ = writeln!(std::io::stdout().lock(), "{line}");
@@ -51,7 +52,7 @@ pub fn main(agent: &str) -> i32 {
             let mut said = ev.clone();
             said["event"] = json!("Tokens");
             said["tokens"] = tokens;
-            let _ = super::sinks::post_all(&super::sinks::all(), "/hook", &said, BUDGET);
+            let _ = super::sinks::post_all(&sinks, "/hook", &said, BUDGET);
         }
     }
     0

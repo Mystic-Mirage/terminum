@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The page's two small questions, on the session page and the board: a yes or no, and a name.
+// The page's small questions, on the session page and the board: a yes or no, one of several, and a name.
+import { el } from "./listparts.js";
+
 const $ = (id) => document.getElementById(id);
 
 // Every dialog's ×, as Esc: a dialog that refuses Esc (the bookmark's while it saves) refuses it too.
@@ -8,18 +10,43 @@ for (const x of document.querySelectorAll("dialog.dlg .dhead .x:not([id])")) {
   x.onclick = () => { const d = x.closest("dialog"); if (d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel"); };
 }
 
+/** The yes-or-no dialog, open with this title and text. */
+function openConfirm(title, more) {
+  const box = $("confirmbox");
+  $("confirmtitle").textContent = title;
+  $("confirmtext").textContent = more ?? "";
+  $("confirmtext").hidden = !more;
+  box.returnValue = "";
+  box.showModal();
+  return box;
+}
+
 /** Asks `text` with a dialog: true when the user pressed `yes` (else Cancel, ×, Esc). Its question
  *  ("Close the session api?") is the title, what follows it the text. */
 export function askConfirm(text, yes) {
-  const box = $("confirmbox"), [, title = text, more = ""] = /^(.+?\?)\s+(.+)$/s.exec(text) ?? [];
-  $("confirmtitle").textContent = title;
-  $("confirmtext").textContent = more;
-  $("confirmtext").hidden = !more;
+  const [, title = text, more = ""] = /^(.+?\?)\s+(.+)$/s.exec(text) ?? [];
   $("confirmok").textContent = yes;
-  box.returnValue = "";
-  box.showModal();
+  const box = openConfirm(title, more);
   $("confirmok").focus();
   return new Promise((resolve) => box.addEventListener("close", () => resolve(box.returnValue === "ok"), { once: true }));
+}
+
+/** Several ways on: the value of the button pressed, or null for Cancel and Esc. */
+export function choose(title, more, options) {
+  $("confirmok").hidden = true;
+  const added = options.map(([value, label]) => {
+    const b = el("button", null, label);
+    b.type = "submit";
+    b.value = value;
+    return b;
+  });
+  $("confirmacts").append(...added);
+  const box = openConfirm(title, more);
+  return new Promise((resolve) => box.addEventListener("close", () => {
+    $("confirmok").hidden = false;
+    added.forEach((b) => b.remove());
+    resolve(box.returnValue && box.returnValue !== "cancel" ? box.returnValue : null);
+  }, { once: true }));
 }
 
 /** Asks for a name with a dialog: the text typed (trimmed), or null for Cancel and Esc; `yes`

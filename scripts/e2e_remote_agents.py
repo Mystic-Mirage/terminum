@@ -27,7 +27,6 @@ from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 PORT, LOCAL_SOCKET, REMOTE_SOCKET = free_port(), own("tm-test-alocal"), own("tm-test-aremote")
 STUB = """#!/bin/sh
 echo "$*" >> "$HOME/claude-argv"
@@ -79,25 +78,20 @@ def host_rec(t, name="devbox"):
 
 
 def until(fn, pred, timeout):
-    end, v = time.time() + timeout, None
-    while time.time() < end:
-        v = fn()
-        if pred(v):
-            return v
-        time.sleep(0.3)
-    return v
+    return e2e_ws.wait_for(fn, pred, timeout, 0.3, last=True)
 
 
 def hooks_known(sock, target, evdir, hb):
     """Whether terminum remembers the pane's hooks: get_session_plan through `terminum-host mcp`
-    says HOOKS_OFF once its hook state is dropped."""
+    says HOOKS_OFF once its hook state is dropped. Behind the shell: a walk seeing another program
+    in the pane's foreground drops its hook state, which a child in the agent's process group does not."""
     call = {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "get_session_plan", "arguments": {}}}
     open(os.path.join(evdir, "get.in"), "w").write(json.dumps(mcp_lines()[0]) + "\n" + json.dumps(mcp_lines()[1]) + "\n" + json.dumps(call) + "\n")
     out = os.path.join(evdir, "get.out")
     if os.path.exists(out):
         os.unlink(out)
-    done = f"get-done-{time.time():.0f}"   # the screen still shows the marker of an earlier call
-    in_pane(sock, target, f"{hb} mcp < get.in > get.out 2>&1; echo {done}", done)
+    stamp = f"{time.time():.0f}"           # the screen still shows the marker of an earlier call
+    in_pane(sock, target, f'({hb} mcp < get.in > get.out 2>&1; echo "get-done-"{stamp}) &', f"get-done-{stamp}")
     answers = [json.loads(x) for x in open(out) if x.startswith("{")]
     said = next((a for a in answers if a.get("id") == 2), {}).get("result", {})
     return said.get("isError") is False and "hooks are not running" not in json.dumps(said)
@@ -112,7 +106,7 @@ def agents_only(t, home, hb, pane):
     up = until(lambda: host_rec(t), lambda h: h.get("agents") == "up", 15)
     check("setup: agents on, files off, the link up", st == 200 and up.get("agents") == "up" and up.get("files") is None, (body, up))
     evdir = os.path.join(home, "proj")
-    in_pane(REMOTE_SOCKET, pane, f'cd {evdir}; {hb} hook claude < ev0.json; echo "hook-rc=$?"', "hook-rc=")
+    in_pane(REMOTE_SOCKET, pane, f'cd {evdir}; ({hb} hook claude < ev0.json; echo "hook-rc=$?") &', "hook-rc=0")
     check("AC-99 agents only: the pane's hook state is known", hooks_known(REMOTE_SOCKET, pane, evdir, hb), open(os.path.join(evdir, "get.out")).read()[-400:])
     alog = os.path.join(home, ".terminum", "logs", "agent.log")
     lines = lambda: open(alog).read()   # noqa: E731
@@ -152,7 +146,7 @@ def main():
     open(stub, "w").write(STUB)
     os.chmod(stub, stat.S_IRWXU)
     pids = os.path.join(t.root, "ssh-pids")
-    t.env.update(TM_SSH=os.path.join(HERE, "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=REMOTE_SOCKET, FAKE_SSH_PIDS=pids)
+    t.through_fake_ssh(home, REMOTE_SOCKET, pids)
     os.system(f"tmux -L {REMOTE_SOCKET} kill-server 2>/dev/null")
     other = None
     try:
@@ -257,7 +251,7 @@ def main():
                           lambda r: r[0] == 200 and r[1].get("status") == "ready", 5)
         check("AC-99 files still work with the forward refused", st2 == 200 and body.get("status") == "ready"
               and any(e["n"] == "proj" for e in body.get("entries", [])), body)
-        out = in_pane(REMOTE_SOCKET, pane, f'{hb} hook claude < ev0.json; echo "rc=$?"', "rc=")
+        out = in_pane(REMOTE_SOCKET, pane, f'{hb} hook claude < ev0.json; echo "rc=$?"', "rc=0")
         check("AC-99 the hook with no link exits 0 silently", "rc=0" in out, out[-300:])
         t.env.pop("FAKE_SSH_REFUSE_R")
 

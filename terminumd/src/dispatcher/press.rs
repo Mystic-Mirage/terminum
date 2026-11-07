@@ -63,7 +63,7 @@ pub(super) fn shown_of(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Str
 
 /// What the human saw: a press on other words is asked again (AC-121).
 pub(super) fn rev_of(shown: &str) -> String {
-    crate::auth::crypto::hex(&crate::auth::crypto::sha256(shown.as_bytes()))
+    crate::auth::crypto::sha256_hex(shown.as_bytes())
 }
 
 /// How a press goes on from where the task's session is.

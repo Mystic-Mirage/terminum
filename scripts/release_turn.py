@@ -7,6 +7,7 @@ problem clearing leftovers, or a runner that could not run them, is said. `--reh
 runs the same chain with no mark and stops before anything is signed or public."""
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -40,8 +41,8 @@ def mac_checks(repo):
         time.sleep(BUSY_RETRY_S)
 
 
-def chain(repo, argv):
-    """Leftovers, the full checks, the Mac test runner's, then scripts/release.py with these arguments."""
+def chain(repo, tag, rehearsing):
+    """Leftovers, the full checks, the Mac test runner's, then scripts/release.py."""
     subprocess.run([sys.executable, "scripts/leftovers.py", "--end"], cwd=repo)
     head = release.run("git", "rev-parse", "HEAD", cwd=repo)
     if subprocess.run(["bash", "scripts/check_all.sh"], cwd=repo).returncode:
@@ -52,17 +53,19 @@ def chain(repo, argv):
         print("release: failing tests on the Mac test runner stop it: nothing is public", file=sys.stderr)
         return 1
     said = f"the Mac test runner's checks did not run: {why}" if why else ""
-    env = {**os.environ, "TM_GATE_HEAD": head, "TM_GATE_SAID": said}
-    done = subprocess.run([sys.executable, "scripts/release.py", *argv], cwd=repo, env=env).returncode
-    if said:
-        print(f"release: {said}")
-    return done
+    try:
+        release.main(tag, head, said, rehearsing)
+    finally:
+        if said:
+            print(f"release: {said}")
+    return 0
 
 
 def main(argv):
     rehearsing = argv[:1] == ["--rehearse"]
-    if len(argv) != 1 + rehearsing:
+    if len(argv) != 1 + rehearsing or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", argv[-1]):
         sys.exit("usage: release_turn.py [--rehearse] vX.Y.Z")
+    tag = argv[-1]
     repo = Path(__file__).resolve().parent.parent
     if rehearsing:
         if primary_of(repo) == repo:   # its build replaces ui/dist and dist/package under other sessions
@@ -70,14 +73,14 @@ def main(argv):
         if releasing(repo):
             sys.exit("a release is running: rehearse after it")
     release.check_settings()   # before the long run: none of these is any test's fault
-    release.check_source(argv[-1])
+    release.check_source(tag)
     if rehearsing:
-        return chain(repo, argv)
-    release.release_notes(argv[0])
+        return chain(repo, tag, True)
+    release.release_notes(tag)
     mark = mark_path(repo)
     mark.write_text(f"{os.getpid()}\n")
     try:
-        return chain(repo, argv)
+        return chain(repo, tag, False)
     finally:
         mark.unlink(missing_ok=True)
 

@@ -11,12 +11,12 @@ const PIN_WAIT = 15000;      // ms it waits for that first frame at most
 /** term: the scrolling terminal; toBottom(): the view to its end. {pin, pinned, unpin, drawn}. */
 export function openEnd({ term, toBottom }) {
   let until = 0, first = false, ticking = false;
-  const pinned = () => until > performance.now();
+  const chosen = () => !(getSelection()?.isCollapsed ?? true);   // text selected: the reader's place, at once, not from the next frame
+  const pinned = () => until > performance.now() && !chosen();
   const unpin = () => { until = 0; };
   for (const ev of ["wheel", "touchmove", "pointerdown", "keydown"]) document.addEventListener(ev, unpin, { capture: true, passive: true });
-  const chosen = () => !(getSelection()?.isCollapsed ?? true);   // text selected: the reader's place
   const tick = () => {
-    if (chosen()) unpin();
+    if (chosen()) unpin();                         // for good: the selection going later does not pin it again
     if (!pinned()) { ticking = false; return; }
     if (term.scrollHeight - term.scrollTop - term.clientHeight >= 1) toBottom();
     requestAnimationFrame(tick);

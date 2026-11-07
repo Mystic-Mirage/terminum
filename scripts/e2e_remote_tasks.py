@@ -10,10 +10,9 @@ import json
 import os
 import subprocess
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, tmux_on, unix_request  # noqa: E402
+from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_for  # noqa: E402
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
@@ -23,13 +22,13 @@ STUB = "#!/bin/sh\nexit 0\n"
 
 
 def until(fn, timeout=25):
-    end = time.time() + timeout
-    while time.time() < end:
-        v = fn()
-        if v:
-            return v
-        time.sleep(0.2)
-    return fn()
+    return wait_for(fn, bool, timeout, 0.2, last=True)
+
+
+def holds_terminal(pid):
+    """The pane's shell is its terminal's foreground: at a prompt, not waiting for the terminal (spinning, as macOS's bash does)."""
+    group, foreground = subprocess.run(["ps", "-o", "pgid=,tpgid=", "-p", pid], capture_output=True, text=True).stdout.split()
+    return group == foreground
 
 
 def main():
@@ -41,7 +40,7 @@ def main():
     with open(stub, "w", encoding="utf8") as f:
         f.write(STUB)
     os.chmod(stub, 0o700)
-    t.env.update(TM_SSH=os.path.join(HERE, "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=REMOTE_SOCKET, FAKE_SSH_PIDS=os.path.join(t.root, "ssh-pids"))
+    t.through_fake_ssh(home, REMOTE_SOCKET, os.path.join(t.root, "ssh-pids"))
     subprocess.run(["tmux", "-L", REMOTE_SOCKET, "kill-server"], stderr=subprocess.DEVNULL, check=False)
     try:
         t.start()
@@ -67,6 +66,12 @@ def main():
 
         host = lambda: next((h for h in unix_request(t.sock, "GET", "/hosts")[1].get("hosts", []) if h["name"] == "devbox"), {})  # noqa: E731
         shown = lambda pane, fmt: tmux_on(REMOTE_SOCKET, "display", "-p", "-t", pane, fmt).strip()  # noqa: E731
+        pane_of = lambda i: call(f"/api/tasks/{i}")[1]["session"]["key"].rsplit(":", 1)[1]  # noqa: E731
+
+        def window_holds_shell(i):
+            pid = shown(pane_of(i), "#{pane_pid}")   # the wrapper execs its shell: the same pid
+            return until(lambda: holds_terminal(pid))
+
         attached = until(lambda: host().get("state") == "attached")
         check("setup: the host is attached", attached)
 
@@ -88,14 +93,14 @@ def main():
         check("AC-125 its start says where", "on devbox." in history(done), history(done))
         key = call(f"/api/tasks/{done}")[1]["session"]["key"]
         check("AC-130 its pane is the host's", key.startswith("tmux:devbox:"), key)
-        pane = key.rsplit(":", 1)[1]
-        mark = shown(pane, "#{@terminum-run}")
+        mark = shown(pane_of(done), "#{@terminum-run}")
         check("AC-125 marked on the host's tmux", bool(mark), mark)
 
         # the walk reads the agent's end by the host's ps and exit
         dies = task("dies there DIES")
         run(dies)
         check("AC-130 an agent dead on the host: FAILED with its exit", until(lambda: status(dies) == "FAILED" and "exit 3" in history(dies)), history(dies))
+        check("AC-123 its window holds a shell at its prompt, with the terminal", window_holds_shell(dies))
 
         # the limit: SIGTERM over the link, by pid and start time
         timed = task("runs long there WORKS")
@@ -104,11 +109,12 @@ def main():
         run(timed)
         # its start takes its real time before the test clock's budget begins: a loaded machine needs longer
         check("AC-130 at the limit the task is FAILED", until(lambda: status(timed) == "FAILED", 60), history(timed))
-        tkey = call(f"/api/tasks/{timed}")[1]["session"]["key"].rsplit(":", 1)[1]
+        tkey = pane_of(timed)
         ended = until(lambda: shown(tkey, "#{@terminum-exit}"), 10)
         check("AC-130 its agent is ended over the host's link", bool(ended), ended)
+        check("AC-123 so does the window of an agent ended", window_holds_shell(timed))
     finally:
-        t.stop()
+        t.cleanup()
         subprocess.run(["tmux", "-L", REMOTE_SOCKET, "kill-server"], stderr=subprocess.DEVNULL, check=False)
     return summary()
 

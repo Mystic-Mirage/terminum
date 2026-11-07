@@ -2,14 +2,14 @@
 // RUN's window (terminum-dispatcher.md AC-121, AC-122, AC-138): which of the project's free agents starts
 // the tasks, where, by what command and with what message; the agent dropped on, or the last chosen, already
 // picked: one press. Several tasks go by their numbers; what each says shows here first.
-import { $, THIS_MAC, api, fillAgents, onSend } from "./kanbanutil.js";
+import { $, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
 
 /** `addAgent(project)` opens the agents' window; `done()` after a run started. */
 export function runWindow({ addAgent, done }) {
   const box = $("runbox");
   let tasks = [], offer = null, attached = [], fresh = false, dropped = null, answer = () => {};
 
-  const say = (text) => { $("runerror").textContent = text; $("runerror").hidden = !text; };
+  const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
   const free = () => offer.agents.filter((a) => !a.busy);
 

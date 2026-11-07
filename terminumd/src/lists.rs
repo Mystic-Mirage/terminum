@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use tokio::sync::watch;
 
 use crate::app::Shared;
-use crate::tmux::server::{Server, Status};
+use crate::tmux::server::Server;
 
 /// Rows not read for this long, on a link still up, dim (AC-132).
 const STALE_AFTER: Duration = Duration::from_secs(30);
@@ -49,14 +49,16 @@ struct State {
     tried: bool,
     /// None until something was read
     told: Option<Told>,
-    last_good: Vec<Value>,
+    last_good: Arc<Vec<Value>>,
     read_at: Option<Instant>,
+    /// `told` holds `last_good` dimmed: nothing to do again while it goes on unread
+    dimmed: bool,
 }
 
 /// What the pages are told of this server.
 #[derive(Clone, Default)]
 pub struct Told {
-    pub groups: Vec<Value>,
+    pub groups: Arc<Vec<Value>>,
     /// shown after every server's rows
     pub absent: Vec<Value>,
     pub keys: Vec<String>,
@@ -76,7 +78,12 @@ impl ServerList {
         self.changed.store(true, Ordering::Relaxed);
     }
 
-    /// What the pages are told of it; None until it was read.
+    /// `f` over what the pages are told of it, None until it was read; no list clone is forced.
+    pub fn with_told<R>(&self, f: impl FnOnce(Option<&Told>) -> R) -> R {
+        f(self.state.lock().told.as_ref())
+    }
+
+    #[cfg(test)]
     pub fn told(&self) -> Option<Told> {
         self.state.lock().told.clone()
     }
@@ -87,34 +94,35 @@ impl ServerList {
     }
 
     /// Keeps what a read found; true when it is this server's own list, fresh (a turn may settle by it).
-    fn store(&self, got: Got, now: Instant, off: bool) -> bool {
+    fn store(&self, got: Got, now: Instant) -> bool {
         let mut st = self.state.lock();
         st.tried = true;
+        let dimmed = std::mem::take(&mut st.dimmed);
         match got {
             Got::Read(told) => {
                 let ok = told.ok;
                 if ok {
-                    st.last_good.clone_from(&told.groups);
+                    st.last_good = told.groups.clone();
                     st.read_at = Some(now);
                 }
                 st.told = Some(told);
                 ok
             }
             Got::Down(groups) => {
-                if off {
-                    st.last_good.clear();
-                }
-                let groups = kept_rows(groups, &st.last_good);
+                let groups = Arc::new(kept_rows(groups, &st.last_good));
                 st.told = Some(Told { groups, ..Default::default() });
                 false
             }
             Got::Gone(groups) => {
-                st.told = Some(Told { groups, ..Default::default() });
+                st.last_good = Arc::default();
+                st.told = Some(Told { groups: Arc::new(groups), ..Default::default() });
                 false
             }
             Got::Unread => {
                 let stale = st.read_at.is_none_or(|t| now.duration_since(t) >= STALE_AFTER);
-                let groups = if stale { stale_rows(&st.last_good) } else { st.last_good.clone() };
+                let again = stale && dimmed;
+                st.dimmed = stale;
+                let groups = if again { Arc::default() } else if stale { Arc::new(stale_rows(&st.last_good)) } else { st.last_good.clone() };
                 if let Some(t) = st.told.as_mut() {
                     t.ok = false;
                     if !groups.is_empty() {
@@ -146,6 +154,22 @@ pub fn request_all(app: &Shared) {
     }
 }
 
+/// News about one pane: its server's list alone (AC-132); no such server, all of them.
+pub fn pane_changed(app: &Shared, key: &str) {
+    match app.tmux.resolve(key) {
+        Some((server, _)) => server.list_changed(),
+        None => app.dirty.notify_one(),
+    }
+}
+
+/// News about one host: its list alone (AC-132); no such host, all of them.
+pub fn host_changed(app: &Shared, host: &str) {
+    match app.tmux.host(host) {
+        Some(server) => server.list_changed(),
+        None => app.dirty.notify_one(),
+    }
+}
+
 /// The servers tmux said changed are read again; the others are left alone.
 pub fn request_changed(app: &Shared) {
     for s in app.tmux.all() {
@@ -167,8 +191,7 @@ async fn run(app: Shared, server: Weak<Server>) {
         let Some(s) = server.upgrade() else { return };
         let target = s.list.state.lock().requested;
         let got = crate::manager::read_one(&app, &s).await;
-        let off = matches!(*s.status.lock(), Status::Off);
-        let fresh = s.list.store(got, Instant::now(), off);
+        let fresh = s.list.store(got, Instant::now());
         crate::manager::publish(&app, &s, fresh).await;
         s.list.done.send_replace(target);
         let mut st = s.list.state.lock();

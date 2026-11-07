@@ -30,7 +30,7 @@ pub const HOOKS_OFF: &str = "terminum's hooks are not running in this session (C
 pub const OTHER_SESSION: &str = "Not applied: this call comes from another session than the pane's main agent (a subagent's). Only the main agent calls update_session_plan; report to it instead.";
 
 /// The answer to a note tool of an agent started before the upgrade (AC-98).
-pub const NOTES_GONE: &str = "This tool is gone. Use create_task for what must not get lost.";
+pub const NOTES_GONE: &str = "This tool is gone. Use create_task for what must not get lost. If your tools do not list it, this session started before the upgrade: say so and put the text in your report; the user's /mcp reconnect or a new session brings it.";
 
 pub async fn agent(State(app): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
     let server = crate::links::resolve(&app, crate::links::Via::Local, &body).await;
@@ -65,14 +65,14 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     if plan_changed {
         crate::plans::save(&app);
         crate::page::plans::tell(&app.pages, std::slice::from_ref(&key));
-        app.dirty.notify_one();
+        crate::lists::pane_changed(&app, &key);
     }
     answer(&text, error)
 }
 
 /// A task tool (AC-115): every page hears of what it changed.
 async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> Json<Value> {
-    let row = crate::page::marks::find_item(&app.layout.read(), &caller.key).unwrap_or_default();
+    let row = crate::page::marks::find_item(&app.layout.read(), &caller.key).cloned().unwrap_or_default();
     let (host, dir) = crate::page::marks::project_of(&row);
     let who = crate::tasks::tools::Who {
         key: caller.key.clone(),
@@ -82,16 +82,14 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         dir: if host.is_none() { dir } else { None },
     };
     let a = app.clone();
-    let done = tokio::task::spawn_blocking(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await;
-    match done {
-        Ok(Ok((text, changed))) => {
+    match crate::http::off(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await {
+        Ok((text, changed)) => {
             for task in &changed {
                 crate::tasks::api::told(app, task);
             }
             answer(&text, false)
         }
-        Ok(Err(e)) => answer(&e, true),
-        Err(_) => answer("terminum could not answer the call.", true),
+        Err(e) => answer(&e, true),
     }
 }
 

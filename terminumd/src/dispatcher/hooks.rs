@@ -151,7 +151,7 @@ pub async fn hearing(app: Shared) {
     let told = app.clone();
     in_turn(events, move |(key, ev)| one_event(app.clone(), key, ev), move |e| {
         tracing::error!(event = "dispatcher.panic", error = %e);
-        super::walk::note(&told, "Dispatcher could not take an agent's event: see terminumd's log. It goes on with the next.".to_string());
+        super::acts::note(&told, "Dispatcher could not take an agent's event: see terminumd's log. It goes on with the next.".to_string());
     }).await;
 }
 

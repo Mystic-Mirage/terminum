@@ -33,7 +33,7 @@ const buttons = (page) => page.evaluate(() => ({ marks: document.getElementById(
 const waves = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#sessions .item")].map((r) =>
   [r.dataset.id.split(":").pop(), `${r.querySelector(".wave.mark") ? "m" : ""}${r.querySelector(".wave.remind") ? "r" : ""}`])));
 const toast = (page) => page.evaluate(() => (document.getElementById("toast").hidden ? "" : document.getElementById("toast").textContent));
-const links = (page) => page.evaluate(() => [...document.querySelectorAll("#planbody .plkept a.linkish")].map((a) => `${a.textContent}=${a.getAttribute("href")}`).join());
+const links = (page) => page.evaluate(() => [...document.querySelectorAll("#planbody .plkept a")].map((a) => `${a.textContent}=${a.getAttribute("href")}`).join());
 const planOpen = (page) => page.waitForFunction(() => document.querySelector("#planbody .plkept"), null, { timeout: 3000 });
 
 export async function webMarksScope(browser, name) {

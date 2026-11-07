@@ -422,7 +422,6 @@ Scenario: AC-104 edge — several worktrees land at once
   When one lands while two's checks run
   Then two merges what one landed, and its checks run again only if both changed the same file
   And only the last look at origin/main and the push take turns, so neither waits for the other's tests
-  And what every run shares takes turns too: the real Claude Code's folder and its one trust entry, waited for up to 10 minutes, then a visible SKIP
 
 Scenario: AC-104 failure — others' code breaks the merged build
   Given one tree renamed a function and another, touching other files, added a caller of it

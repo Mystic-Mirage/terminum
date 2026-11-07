@@ -291,7 +291,7 @@ Scenario: AC-98 happy path — what is kept stays
 Scenario: AC-98 edge — an agent of an older session
   Given an agent started before the upgrade, holding the old tool list
   When it calls add_notes_for_user
-  Then it is answered: "This tool is gone. Use create_task for what must not get lost." and nothing is kept
+  Then it is answered: "This tool is gone. Use create_task for what must not get lost. If your tools do not list it, this session started before the upgrade: say so and put the text in your report; the user's /mcp reconnect or a new session brings it." and nothing is kept
 ```
 
 ## 6. Flow and sequence diagrams

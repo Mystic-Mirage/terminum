@@ -5,7 +5,8 @@
 // profile, titles). That last part gives way first, then the folder, down to a few letters each.
 // In a narrow window a tap on the title slides the buttons aside for 3 s and shows the session's
 // full name and path (peek.css).
-import { agentMark, el, folderBar, metaLine, shownState, stateIcon } from "./nav.js";
+import { el } from "./listparts.js";
+import { agentMark, folderBar, metaLine, shownState, stateIcon } from "./nav.js";
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
 import { following } from "./follow.js";

@@ -71,7 +71,7 @@ impl Place {
 
 /// A host record's attached sessions.
 pub fn names_of(rec: &Value) -> Vec<String> {
-    rec["attach"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default()
+    crate::config::strings(&rec["attach"])
 }
 
 /// The socket file tmux uses for `-L <socket>`: `$TMUX_TMPDIR` (else /tmp)/tmux-<uid>/<socket>.

@@ -3,6 +3,7 @@
 //! by project, for the dialog of Delete Project (AC-110). Told to pages only when they change.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
 use serde_json::json;
@@ -25,12 +26,20 @@ pub struct Marks {
     held: Mutex<Held>,
     /// one read at a time: a slow one never stands over a newer; `held` stays free meanwhile
     turn: Mutex<()>,
+    /// a read is asked for and has not begun: a burst of changes costs one
+    asked: AtomicBool,
 }
 
 impl Marks {
+    /// A change came: whether its caller must start a `refresh`; else one yet to begin will see it.
+    pub fn ask(&self) -> bool {
+        !self.asked.swap(true, Ordering::AcqRel)
+    }
+
     /// Reads them from the store: whether they changed. Off the async workers.
     pub fn refresh(&self, store: &Store) -> bool {
         let _turn = self.turn.lock();
+        self.asked.store(false, Ordering::Release);
         let read = store.with(|tx| {
             let counts = rows(tx, "SELECT project, count(*) FROM tasks WHERE archived_at IS NULL GROUP BY project", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect();
             let mut sessions: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -81,6 +90,16 @@ mod tests {
     use super::*;
     use crate::tasks::ops::{create, move_to, NewTask};
     use crate::tasks::store::HUMAN;
+
+    #[test]
+    fn ac113_a_burst_of_changes_asks_for_one_read_and_one_that_began_asks_anew() {
+        let store = Store::open(crate::testutil::fresh_dir("marks-ask").join("kanban.sqlite"));
+        let marks = Marks::default();
+        assert!(marks.ask(), "the first starts a read");
+        assert!(!marks.ask(), "a read yet to begin sees this one too");
+        marks.refresh(&store);
+        assert!(marks.ask(), "what comes after a read began needs another");
+    }
 
     #[test]
     fn ac113_marks_hold_open_tasks_and_say_when_they_changed() {

@@ -172,3 +172,22 @@ fn ac113_a_session_s_other_task_is_refused_unless_one_run_gave_both() {
         Ok(())
     }).unwrap();
 }
+
+#[tokio::test]
+async fn ac121_a_walk_during_the_opening_of_its_window_does_not_fail_the_run() {
+    let (root, mut app) = crate::testutil::app("runs-opening");
+    std::sync::Arc::get_mut(&mut app).unwrap().tasks = std::sync::Arc::new(store("runs-opening-store"));
+    let id = app.tasks.with(|tx| {
+        let t = task(tx, "one");
+        add(tx, &Run { agent_id: "a".into(), agent_name: "A".into(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), ..Default::default() }, &[t.key], 2)
+    }).unwrap();
+    crate::dispatcher::start::watch(&app, &id);
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let r = app.tasks.with(|tx| by_id(tx, &id)).unwrap();
+    assert!(r.is_starting() && r.status != "FAILED", "still waiting for its pane: {} {}", r.state, r.status);
+    app.tasks.with(|tx| change(tx, &id, |r| r.state = "closed".into())).unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    assert!(!app.dispatcher.starting.lock().contains(&id), "the watch ended with the run");
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}

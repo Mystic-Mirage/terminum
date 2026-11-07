@@ -46,8 +46,7 @@ def files_in(folder):
 
 def run(command, folder):
     """The check's (exit status, process group), in a group of its own; a signal here ends it too."""
-    env = {**os.environ, "TMPDIR": folder, "TMUX_TMPDIR": folder, "NODE_DISABLE_COMPILE_CACHE": "1",
-           "TM_USER_TMPDIR": tempfile.gettempdir()}   # for what must keep one path across runs (e2e_liveprogs.mjs)
+    env = {**os.environ, "TMPDIR": folder, "TMUX_TMPDIR": folder, "NODE_DISABLE_COMPILE_CACHE": "1"}
     child = subprocess.Popen(command, env=env, start_new_session=True)
 
     def forward(number, _frame):

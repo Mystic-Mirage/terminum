@@ -78,8 +78,8 @@ pub async fn zoom_shown(app: &Shared, page: &Arc<Page>, server: &Server, pane: &
         return false;
     }
     {
-        let (me, look) = { let st = page.state.lock(); (page.id, st.look) };
         let mut g = app.sizes.0.lock();
+        let (me, look) = (page.id, page.state.lock().look);   // under the lock: pause is set before a handover (sizing::resize)
         let win = g.entry((server.id(), f.window.clone())).or_default();
         let holder = win.by.and_then(|id| viewers(app, server, &f.window).into_iter().find(|v| v.id == id)).map(|v| v.state.lock().look);
         if look == Look::Hidden || !may_take(me, look == Look::On, win.by, holder) {

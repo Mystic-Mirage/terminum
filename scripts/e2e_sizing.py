@@ -123,11 +123,16 @@ def until_filling(pane, seconds=3):
 
 
 def teammate(pane):
-    """A split as Claude Code's teammates make: the pane, the layout, the leader's share."""
-    mate = tmux("split-window", "-h", "-d", "-l", "70%", "-t", pane, "-P", "-F", "#{pane_id}").strip()
+    """Claude Code's first teammate: the leader alone in its window gives it 70%."""
+    return tmux("split-window", "-d", "-t", pane, "-h", "-l", "70%", "-P", "-F", "#{pane_id}").strip()
+
+
+def second_teammate(pane, mate):
+    """Its next: a sibling is split, then the layout and the leader's share are set again."""
+    made = tmux("split-window", "-d", "-t", mate, "-v", "-P", "-F", "#{pane_id}").strip()
     tmux("select-layout", "-t", pane, "main-vertical")
     tmux("resize-pane", "-t", pane, "-x", "30%")
-    return mate
+    return made
 
 
 def split(t, pid, pane):
@@ -138,8 +143,15 @@ def split(t, pid, pane):
     narrow = ws.until(lambda m: m["t"] == "screen" and m.get("cols") != 130, 1)
     check("AC-13 no frame goes out at the narrow width", narrow is None, narrow and narrow.get("cols"))
     check("AC-13 a split under the shown pane: it is zoomed and fills the window", until_filling(pane), tmux("list-panes", "-t", pane, "-F", "#{pane_id} #{pane_width}"))
+    third = second_teammate(pane, mate)
+    narrow = ws.until(lambda m: m["t"] == "screen" and m.get("cols") != 130, 1)
+    check("AC-13 a second teammate: the zoom comes back, no frame at the narrow width", narrow is None and until_filling(pane), narrow and narrow.get("cols"))
     layout = tmux("display", "-p", "-t", pane, "#{window_layout}")
-    check("AC-13 the window's layout stays its maker's (restore reads it)", "{" in layout or "[" in layout, layout)
+    check("AC-13 the window's layout stays its maker's: the leader's 30% (restore reads it)", "39x40" in layout and layout != tmux("display", "-p", "-t", pane, "#{window_visible_layout}"), layout)
+    tmux("kill-pane", "-t", third)
+    until_filling(pane)
+    border(ws, pane)
+    same_pane(t, ws, pid, pane)
     ws.send({"t": "fit", "cols": 48, "rows": 20})
     ws.send({"t": "screenmode", "mode": "always"})
     time.sleep(1.5)
@@ -154,6 +166,31 @@ def split(t, pid, pane):
     by_hand(ws, pane)
     ws.close()
     time.sleep(0.5)
+
+
+def border(ws, pane):
+    """A border status makes a zoomed pane a row short of its window: the size still settles (AC-13)."""
+    tmux("set-option", "-w", "-t", pane, "pane-border-status", "top")
+    time.sleep(0.5)
+    short = tmux("display", "-p", "-t", pane, "#{pane_height} #{window_height}").split()
+    ws.send({"t": "size", "cols": 130, "rows": 40, "typing": False})
+    again = ws.until(lambda m: m["t"] == "sized", 1.5)
+    check("AC-13 a zoomed pane a row short of its window: the same grid resizes nothing", short == ["39", "40"] and again is None, (short, again))
+    tmux("set-option", "-w", "-u", "-t", pane, "pane-border-status")
+    time.sleep(0.3)
+
+
+def same_pane(t, ws, pid, pane):
+    """A page that only looks leaves the window its holder's: the holder's wider view still sizes it (AC-13)."""
+    other = t.page()
+    other.send({"t": "sub", "id": pid, "cols": 48, "rows": 20})
+    time.sleep(1)
+    check("AC-13 a phone opens the zoomed pane: nothing shrinks", window_of(pane) == "130x40", window_of(pane))
+    ws.send({"t": "size", "cols": 140, "rows": 45, "typing": False})
+    check("AC-13 the page that sized it still sizes it", settle(pane, "140x45") == "140x45", window_of(pane))
+    other.close()
+    ws.send({"t": "size", "cols": 130, "rows": 40, "typing": True})
+    settle(pane, "130x40")
 
 
 def away(ws, pane):
@@ -181,6 +218,15 @@ def two_pages(t, ws, pid, pane):
     check("AC-13 the first page does not take it back by itself", filling(mate), tmux("list-panes", "-t", pane, "-F", "#{pane_id} #{pane_active}"))
     other.send({"t": "size", "cols": 48, "rows": 20, "typing": True})
     check("AC-13 typing shrinks it to the typing page's grid", settle(pane, "48x20") == "48x20", window_of(pane))
+    other.send({"t": "size", "cols": 60, "rows": 25, "typing": True})
+    settle(pane, "60x25")
+    time.sleep(1.1)
+    other.send({"t": "size", "cols": 60, "rows": 26, "typing": True})    # takes the second
+    time.sleep(0.1)
+    other.send({"t": "size", "cols": 70, "rows": 30, "typing": False})   # waits for it
+    time.sleep(0.1)
+    other.send({"t": "size", "cols": 48, "rows": 20, "typing": True})    # left to the one waiting
+    check("AC-13 a key while a view's size waits: that one shrinks the window", settle(pane, "48x20") == "48x20", window_of(pane))
     ws.send({"t": "size", "cols": 130, "rows": 40, "typing": True})
     check("AC-13 the first page types: the zoom and the size come back", settle(pane, "130x40") == "130x40" and until_filling(pane), window_of(pane))
     other.close()

@@ -44,6 +44,8 @@ pub struct State {
     pub queue: super::typing::Queue,
     /// the window this page last resized and when (a window at most once a second, AC-13)
     pub resized_at: Option<((String, String), Instant)>,
+    /// a key came while a resize waits for its second: that resize is for typing (AC-13)
+    pub typed_waiting: bool,
 }
 
 /// How a page is looked at: `On` is the active page (in sight and, on a computer, focused), which

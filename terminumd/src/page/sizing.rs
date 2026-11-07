@@ -94,8 +94,10 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
         let now = Instant::now();
         let last = st.resized_at.as_ref().filter(|(w, _)| why != Why::Open && *w == window).map(|(_, t)| *t);
         if last.is_some_and(|t| t > now) {
+            st.typed_waiting |= why == Why::Typed;
             return false; // one is waiting: it will do what this one would
         }
+        st.typed_waiting = false;
         let wait = last.map(|t| EVERY.saturating_sub(t.elapsed())).filter(|w| !w.is_zero());
         st.resized_at = Some((window, now + wait.unwrap_or_default()));
         wait
@@ -103,7 +105,11 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
     if let Some(w) = wait {
         tokio::time::sleep(w).await;
     }
-    let (view, inactive) = { let st = page.state.lock(); (st.view, !st.active()) };
+    let (view, inactive, why) = {
+        let mut st = page.state.lock();
+        let typed = std::mem::take(&mut st.typed_waiting);
+        (st.view, !st.active(), if typed { Why::Typed } else { why })
+    };
     if inactive {
         return false; // hidden while it waited: a hidden page sizes nothing
     }
@@ -128,7 +134,11 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
         }
         win.manual = true;
     }
-    win.by = Some(page.id);
+    // a claim that changed nothing and is not this page's grid (a split window only grows) leaves
+    // the window its holder's: else its holder's next view would be refused
+    if f.window_size != (cols, rows) || !f.whole() || (cols, rows) == (grid.0 as usize, grid.1 as usize) {
+        win.by = Some(page.id);
+    }
     {
         let mut g = app.sizes.0.lock();
         if !page.state.lock().active() {
@@ -179,12 +189,13 @@ async fn claim(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
         return false;
     }
     let key = (server.id(), f.window.clone());
-    let by = app.sizes.0.lock().get(&key).and_then(|w| w.by);
+    let win = app.sizes.0.lock().get(&key).cloned().unwrap_or_default();
+    let (by, manual) = (win.by, win.manual);
     let mine = by == Some(page.id);
     // free: nobody sizes it, or the page that does no longer shows it or is hidden (a locked phone, a tab in the background)
     let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && v.state.lock().active()));
     let view = page.state.lock().view.map(|(c, r)| (c as usize, r as usize));
-    if mine && f.whole() && view == Some(f.window_size) {
+    if mine && manual && f.whole() && view == Some(f.window_size) {
         return false;                                         // it has this page's grid already: the once-a-second slot stays free
     }
     (why != Why::View || free || mine) && resize(app, page, why).await

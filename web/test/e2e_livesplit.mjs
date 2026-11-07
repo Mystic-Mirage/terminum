@@ -62,21 +62,25 @@ export async function liveSplit(page, { tmux, work, socket }) {
   // a client attached by hand with this window on its screen: the layout stays its own
   tmux("select-window", "-t", win);
   const hand = spawn("tmux", ["-L", socket, "-C", "attach", "-t", of("#{session_name}")], { stdio: ["pipe", "ignore", "ignore"] });
-  await page.waitForTimeout(300);
-  tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane);
-  const mate = panes().find((p) => p[1] === win && p[0] !== pane)?.[0];
-  tmux("send-keys", "-t", pane, "clear; seq -s ' ' 1000 1040", "Enter");   // the command itself is short: only its output is LINE
-  let d = null;
-  await within("AC-04 a line tmux wrapped in the split's narrow pane is drawn re-flowed", async () => {
-    for (let t = 0; t < 5000; t += 100) { d = await drawn(page); if (d.joined) return; await page.waitForTimeout(100); }
-    throw new Error(JSON.stringify({ d, pane: of("#{pane_width}"), rows: await page.evaluate(() => [...document.querySelectorAll("#screen .ln")].slice(0, 14).map((r) => `${r.classList.contains("eol") ? "|" : " "}${r.textContent}`)) }));
-  });
-  const cell = Number.parseFloat(d.size) * 0.6, paneW = Number(of("#{pane_width}"));
-  check("AC-04 it fills the view's width, not the pane's", d.widest > paneW * cell * 1.2 && d.widest <= d.view + 1, JSON.stringify({ ...d, paneW }));
-  check("AC-04 at the chosen text size, with no sideways scrolling", d.size === d.chosen && !d.scrolls, JSON.stringify(d));
-  check("AC-13 nothing is drawn over the terminal for the split", !d.banner);
-  check("AC-13 by a client attached by hand the window is neither resized nor zoomed", of("#{window_width}") === before && zoomed()[0] === "0", `${before} → ${zoomed()}`);
-  hand.stdin.end();
+  let mate;
+  try {
+    await page.waitForTimeout(300);
+    tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane);
+    mate = panes().find((p) => p[1] === win && p[0] !== pane)?.[0];
+    tmux("send-keys", "-t", pane, "clear; seq -s ' ' 1000 1040", "Enter");   // the command itself is short: only its output is LINE
+    let d = null;
+    await within("AC-04 a line tmux wrapped in the split's narrow pane is drawn re-flowed", async () => {
+      for (let t = 0; t < 5000; t += 100) { d = await drawn(page); if (d.joined) return; await page.waitForTimeout(100); }
+      throw new Error(JSON.stringify({ d, pane: of("#{pane_width}"), rows: await page.evaluate(() => [...document.querySelectorAll("#screen .ln")].slice(0, 14).map((r) => `${r.classList.contains("eol") ? "|" : " "}${r.textContent}`)) }));
+    });
+    const cell = Number.parseFloat(d.size) * 0.6, paneW = Number(of("#{pane_width}"));
+    check("AC-04 it fills the view's width, not the pane's", d.widest > paneW * cell * 1.2 && d.widest <= d.view + 1, JSON.stringify({ ...d, paneW }));
+    check("AC-04 at the chosen text size, with no sideways scrolling", d.size === d.chosen && !d.scrolls, JSON.stringify(d));
+    check("AC-13 nothing is drawn over the terminal for the split", !d.banner);
+    check("AC-13 by a client attached by hand the window is neither resized nor zoomed", of("#{window_width}") === before && zoomed()[0] === "0", `${before} → ${zoomed()}`);
+  } finally {
+    hand.stdin.end();
+  }
   await within("AC-13 that client gone: the pane is zoomed", async () => {
     for (let t = 0; t < 5000; t += 50) { if (zoomed()[0] === "1") return; await page.waitForTimeout(50); }
     throw new Error(JSON.stringify(zoomed()));

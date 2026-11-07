@@ -125,6 +125,23 @@ async function quit(tmux, pane) {
   return SHELLS.test(tmux("display", "-p", "-t", pane, "#{pane_current_command}"));
 }
 
+/** A teammate's split under real Claude Code, as it makes its first: 70% of the leader's window (AC-13):
+ *  its pane is zoomed and it lays its input box out across the whole window; the box still takes keys. */
+async function teammate(tmux, pane, tui) {
+  const mate = tmux("split-window", "-d", "-t", pane, "-h", "-l", "70%", "-P", "-F", "#{pane_id}");
+  const say = () => tmux("display", "-p", "-t", pane, "#{window_zoomed_flag} #{pane_active} #{pane_width} #{window_width}").split(" ");
+  const zoomed = await until(() => { const z = say(); return z[0] === "1" && z[1] === "1" && z[2] === z[3]; }, 5000);
+  check(`AC-13 real claude (${tui}): a teammate's split: its pane is zoomed to the window`, zoomed, say().join(" "));
+  const rule = () => Math.max(0, ...tmux("capture-pane", "-p", "-t", pane).split("\n").map((l) => (l.match(/─+/) ?? [""])[0].length));
+  const across = await until(() => rule() >= Number(say()[3]) - 2, 5000);
+  check(`AC-13 real claude (${tui}): its input box runs across the window`, across, `${rule()} of ${say()[3]}`);
+  tmux("send-keys", "-t", pane, "-l", "zoomkeys");
+  const keys = await until(() => tmux("capture-pane", "-p", "-t", pane).includes("zoomkeys"), 5000);
+  check(`AC-13 real claude (${tui}): zoomed, it takes keys`, keys);
+  tmux("send-keys", "-t", pane, "C-u");
+  tmux("kill-pane", "-t", mate);
+}
+
 /** A paste of three lines from the page: all in Claude Code's input, none sent. */
 async function pasted(page, tmux, pane, tui) {
   await page.evaluate((t) => {
@@ -261,6 +278,7 @@ async function claudeDefault(page, ctx) {
   check("real claude (default): the page's own selection copies the row's words as shown",
     got === "Safe mode: all customizations", JSON.stringify({ at, got, sel: await page.evaluate(() => String(getSelection())) }));
   await page.evaluate(() => getSelection().removeAllRanges());
+  await teammate(tmux, pane, "default");
   check("real claude (default): Ctrl-C twice ends it", await quit(tmux, pane));
   close(tmux, pane);
 }
@@ -294,6 +312,7 @@ async function claudeFullscreen(page, ctx) {
       !!copied.trim() && times === 1, String(quote).replace(/\s+/g, " ").slice(0, 120));
     await page.keyboard.press("Escape"); await page.waitForTimeout(200);
   }
+  await teammate(tmux, pane, "fullscreen");
   check("real claude (fullscreen): Ctrl-C twice ends it", await quit(tmux, pane));
   close(tmux, pane);
   fs.rmSync(path.dirname(stubLog), { recursive: true, force: true });

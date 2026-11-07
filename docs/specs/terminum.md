@@ -524,7 +524,7 @@ Scenario: AC-13 edge — the page that sized it is put away
 Scenario: AC-13 edge — a window of several panes
   Given %3's window holds three panes (split by an agent such as Claude Code's teammates, or restored, terminum-lifecycle.md AC-15) and %3 is 31 of its 45 columns
   When a page in sight shows %3 (focused or not)
-  Then terminumd zooms %3 ("resize-pane -Z") before the next frame goes out, so the program lays itself out for the whole window, and the window is then sized as a window of one pane; nothing is drawn over the terminal
+  Then terminumd zooms %3 ("resize-pane -Z") before the next frame goes out, so the program lays itself out for the whole window, and the window is then sized for the page; nothing is drawn over the terminal
   When a split, a closed pane or a program's layout command takes the zoom away
   Then terminumd zooms %3 again at once, at most ten times a second; the window's layout stays its maker's (restore keeps it, terminum-lifecycle.md AC-15), and when the page stops showing %3 the zoom stays until another pane of the window is shown or tmux ends it
   And a size reaches the panes the zoom hides too, which keep their share of the window and re-wrap, so while it has several panes a window grows for any page but shrinks only for a page that types: a phone that only looks draws the pane re-flowed (AC-04)
@@ -537,7 +537,7 @@ Scenario: AC-13 edge — a split window that stays as it is
   When its session is of the user's own tmux (AC-89), or a tmux client attached by hand has this window on its screen, or no page in sight shows a pane of it
   Then no page zooms it or resizes it, and nothing is drawn over the terminal: %3 is drawn as a pane of another width (AC-04)
   And prose Claude Code wrapped at 31 columns re-joins and fills the view; a line it laid out for 31 columns (a table, a box) stays as it was drawn
-  And a window whose shown pane the user's own tmux zoomed ("resize-pane -Z") is sized as a window of one pane
+  And a window whose shown pane the user's own tmux zoomed ("resize-pane -Z") is sized as a split window whose pane terminumd zoomed
 Scenario: AC-13 edge — another tmux client is attached
   Given the user ran "tmux -L terminum attach -t main" in Terminal.app, or "tmux -CC -L terminum attach" in a terminal with a control mode
   Then terminumd's control client is attached with "-f ignore-size" (AS-02) and "window-size manual" on the windows it sizes: both clients see the size terminumd set; a window no page shows keeps tmux's own policy (latest) for that client
@@ -831,6 +831,7 @@ stateDiagram-v2
 | AC | Gap | Evidence |
 |---|---|---|
 | AC-13 | A window no page in sight shows is not zoomed: an agent working unseen lays out what it prints for its share of the window while a teammate runs, and that stays when its pane is opened. | `terminumd/src/page/stream.rs` (only a shown pane's stream zooms) |
+| AC-13 | Two terminumds on one host's tmux, whose pages show different panes of a split window, take the zoom from each other about ten times a second: who holds it is known per terminumd, and each sees the other's clients as its own kind. | `terminumd/src/page/zoom.rs` `may_take` |
 | AC-88 | A dragged quick shell's floor is 12 % of the view, not 6 rows or 20 columns: a 600 px high view leaves about 4 rows. | `web/static/quick.js:11` |
 | AC-01 | A tmux older than 3.2 gets no message of terminum's: there is no version check, and "tmux 3.2 or newer is needed" is in no code. Only a missing tmux is said. | `terminumd/src/tmux/server.rs:30` |
 | AC-20 | `/health` has `pages` and `rss_mb` but not `frames_sent`, `frame_ms_p95`, `tmux_errors`, `client_restarts` or `panes_shown`, so nothing can alert on them. | `terminumd/src/sock.rs:256` |

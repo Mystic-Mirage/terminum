@@ -121,6 +121,7 @@
     <div id="picks">
       <details id="fseverity" class="pick" name="picks"><summary class="textkey">Severity</summary><div class="box menurows" role="group" aria-label="Severity"></div></details>
       <details id="fowner" class="pick" name="picks"><summary class="textkey">Owner</summary><div class="box menurows" role="group" aria-label="Owner"></div></details>
+      <button id="fsubtasks" class="textkey" type="button" aria-pressed="false" title="Subtasks as cards of their own; off, they show in their parent's window">Show subtasks</button>
       <button id="farchived" class="textkey" type="button" aria-pressed="false" title="The archived tasks instead of the board's">Archived</button>
       <button id="clearfilters" class="textkey" type="button" hidden>Clear filters</button>
     </div>
@@ -255,7 +256,7 @@
       </div>
     </div>
     <section id="projectagents" aria-label="Agents" hidden>
-      <div class="edithead"><span>Agents</span><span class="agentkeys"><button id="projectlimits" class="textkey" type="button">Memory limits…</button><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
+      <div class="edithead"><span>Agents</span><span class="agentkeys"><button id="projectarchived" class="textkey" type="button">Archived…</button><button id="projectlimits" class="textkey" type="button">Memory limits…</button><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
       <div id="projectagentlist" class="agentlist"></div>
     </section>
     <p id="projecterror" role="alert" hidden></p>
@@ -263,6 +264,19 @@
       <button id="projectdelete" type="button" hidden>Delete project</button>
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="projectok" type="button" class="primary">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="archivedbox" class="box dlg" aria-labelledby="archivedhead">
+  <form method="dialog">
+    <div class="dhead"><h2 id="archivedhead">Archived</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <input id="archivedfind" class="field" type="search" placeholder="Find" aria-label="Find archived tasks" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <ul id="archivedlist" class="filelist"></ul>
+    <p id="archivednone" class="colempty" hidden>Nothing here.</p>
+    <div class="actions">
+      <button id="archivedmore" type="button" hidden>More</button>
+      <button value="cancel" type="submit" formnovalidate>Close</button>
     </div>
   </form>
 </dialog>

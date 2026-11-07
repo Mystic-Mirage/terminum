@@ -91,6 +91,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (hover: hover) { .card:hover { background: var(--surface-4); } }
 .chead { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
 .cid { font-variant-numeric: tabular-nums; }
+.cparent { font-size: var(--fs-small); color: var(--muted); }
 .csev { padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); line-height: 16px; font-variant-numeric: tabular-nums; background: var(--surface-1); }
 .csev.P0 { color: var(--danger-ink); background: var(--danger-fill); }
 .csev.P1 { color: var(--danger-ink); background: var(--warn-fill); }
@@ -168,6 +169,11 @@ section.droparea { border-radius: var(--r-sm); }
 #newtext { width: 100%; box-sizing: border-box; }
 dialog .markdown { font-family: var(--ui); font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; min-width: 0; }
 dialog .markdown img { max-width: 100%; }
+.subtasks { display: flex; flex-direction: column; gap: var(--sp-1); }
+.subof { margin: 0; font-size: var(--fs-small); color: var(--muted); }
+#archivedlist { max-height: min(60dvh, 480px); overflow-y: auto; }
+#archivedlist li { align-items: center; }
+#archivedlist .linklike { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .filelist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-label); }
 .filelist:empty { display: none; }
 .filelist li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; overflow-wrap: anywhere; }

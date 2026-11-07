@@ -65,6 +65,7 @@ Open questions: none.
 | AC-113 | [MUST / P0] | A task has at most one session, a session one IN PROGRESS task at most; moving a task across projects asks about its session; a closed session is said on the card. |
 | AC-114 | [MUST / P0] | [DROPPED — a human no longer moves a task across the board: AC-107] |
 | AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks: all on the agent's own, read and comment on the project's others, a free task can be taken. |
+| AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity and what is needed to act on it. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task through the new-task window; the record goes once the task is kept. |
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
@@ -282,13 +283,15 @@ Scenario: AC-111 edge — nothing left
 
 ```gherkin
 Scenario: AC-112 happy path — one level
-  When the user picks New subtask in T-12
-  Then T-13 is a full task of T-12's project with its own status, owner, severity and session, and T-12's card shows "0/1"
-  And Show subtasks in the head makes subtasks cards of their own; off, they show only in their parent's window
+  When the user presses New subtask in T-12's window
+  Then the new-task window says "New subtask of T-12", its project fixed, with a draft of its own
+  And T-13 is a full task of T-12's project with its own status, owner, severity and session, and T-12's card shows "0/1"
+  And T-12's window lists its subtasks, a press opening each, and T-13's says "Subtask of T-12"
+  And Show subtasks in the head makes subtasks cards of their own, each saying "in T-12"; off, they show only in their parent's window
 
 Scenario: AC-112 edge — the parent
-  When T-12 moves to DONE with T-13 open
-  Then it asks "T-13 is still open. Move T-12 to DONE?"; the parent's status never changes by itself
+  When T-12 ends in DONE with T-13 open
+  Then T-13 stays open and T-12's card still shows "0/1"; the parent's status never changes by itself, nor a subtask's by its parent's
   When T-12 moves to another project
   Then its subtasks move with it in one transaction
 
@@ -366,6 +369,28 @@ Scenario: AC-115 failure — no store or no pane
   Then it answers the same errors as terminum-agents.md AC-97's tools
 ```
 
+### AC-145 — What is left to do [MUST / P0]
+
+```gherkin
+Scenario: AC-145 happy path
+  Given an agent in a session of project api finds a bug outside what it was given
+  When it calls create_task {title: "Bug: the retry loop drops the last item", severity: "P1", text: "lib/retry.rs: ..., reproduced by ..."}
+  Then T-30 stands in TODO of api, by that agent, with that severity
+  And `terminum mcp`'s instructions say: only what must be done, fixed or finished, no progress and no findings of no consequence, each with what is needed to act on it
+
+Scenario Outline: AC-145 failure — refused with what to do
+  When it calls create_task with <what>
+  Then it is refused, "<words>", and nothing is kept
+  Examples:
+    | what | words |
+    | a title with no such word | Start the title with Bug:, Feat: or Debt:. |
+    | no severity | Give it a severity: P0, P1, P2 or P3. |
+
+Scenario: AC-145 edge — a human's
+  When a human makes a task in the new-task window
+  Then neither rule applies
+```
+
 ### AC-116 — A record becomes a task [SHOULD / P1]
 
 ```gherkin
@@ -413,14 +438,16 @@ Scenario: AC-118 happy path — by hand and by time
   Then it archives itself with its subtasks that are DONE; the history says "Archived by Dispatcher"
 
 Scenario: AC-118 happy path — Archived
-  When the user opens Archived in a project's menu on the board
-  Then its archived tasks list newest first, 200 a page, with Find
+  When the user opens Archived in a project's window on the board
+  Then its archived tasks list newest first, subtasks too, 200 a page, with Find
   When the user picks Return on one
   Then it stands in the column it had
 
 Scenario: AC-118 edge — a subtask still open
   Given a parent DONE for 2 days with a subtask open
   Then the parent stays on the board until its subtasks are DONE or archived
+  Given a task DONE for 2 days that a run still holds with another task open, or one brought back from Archived
+  Then it stays: the run ends first, and a return starts the 2 days again
 
 Scenario: AC-118 edge — a live session
   When a task with a live session is archived
@@ -672,27 +699,39 @@ Scenario: AC-135 failure — sessions not read
 
 ```gherkin
 Scenario: AC-139 happy path — a new project
-  When the user presses + Project, types Billing and a folder, and presses Create
-  Then the project stands, empty, chosen on the board, and the window stays, now with its Agents
-  When the user presses Add agent and Add
-  Then the agent stands in the window and over the columns; a second one's name is free: "Claude Code 2"
+  When the user presses + Project, types Billing, chooses its server, sets its folder and presses Create
+  Then the project stands, empty, chosen on the board, and the window stays, now with the pool and its keys
 
 Scenario: AC-139 happy path — changing it
   When the user presses the pencil on Billing's row in the project menu
-  Then its window shows its name, server, folder, agents and Memory limits…
-  When the user changes the name and folder and presses Done
-  Then both are kept at once and every page shows them
+  Then its window shows its name, server, folder, Agents at once, the pool's agents, Archived… and Memory limits…
+  When the user changes the name, folder and Agents at once and presses Done
+  Then all are kept at once and every page shows them
+
+Scenario: AC-139 happy path — its folder
+  Given a folder path of 200 characters
+  Then the window is wide enough to read it whole, on a line of its own; on a phone it wraps
+  When the user presses the folder key beside it
+  Then a picker lists the project's server's folders, as Files draws them, from the folder set or the home folder, going up and in
+  When the user presses Choose
+  Then the path stands in the field; Cancel leaves it
 
 Scenario: AC-139 edge — Default
   When the user opens Default's window
-  Then only its agents and limits show: it is no real project
+  Then its name, server and folder (~) cannot change; the rest can
 
 Scenario: AC-139 edge — its server
   Then a project's server is chosen when it is made and stays: its sessions are there
 
+Scenario: AC-139 edge — no folder
+  Given a project with no folder
+  Then its window says "No agent can start here until it has a folder." and its row "no folder"
+
 Scenario: AC-139 failure — refused
   When the name is taken, empty or over 40 characters, or the folder is not one line starting with / or ~
   Then the window stays and says terminumd's words: "A project is already named Billing"; nothing changes, in part or at all
+  When the picker's server does not answer, or its files are off
+  Then the picker says so and the field can still be typed in
 
 Scenario: AC-139 edge — deleting it
   When the user presses Delete project
@@ -738,11 +777,11 @@ Comments and history are one table, `events`: a window lists them in one order. 
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-112 | Subtasks are kept and counted; no window makes one and Show subtasks is not there. | `terminumd/src/tasks/ops.rs`, `web/static/kanbanwin.js` |
 | AC-116 | No record offers Make a task. | `web/static/marks.js` |
-| AC-118 | Archive and Archived are by hand, the whole board's by a key in the head; DONE does not archive itself, no project has its own list. | `terminumd/src/tasks/query.rs`, `web/static/kanbanwin.js` |
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
+| AC-145 | create_task takes any title, and a severity is optional. | `terminumd/src/tasks/tools.rs` |
+| AC-139 | The window is narrow, its folder a short field with no picker; no Agents at once. | `web/static/kanban.html` |
 | AC-120 | A host's agent lists, reads and writes tasks over its link; get_file says it cannot yet, and a long get_task is not paged. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
@@ -816,7 +855,7 @@ Pages hear over the page's WebSocket: `taskchange {id}` (`""` for several: a ser
 
 | Stage | Cases | What a user can do |
 |---|---|---|
-| Stage 2 | AC-112, AC-116, AC-118, AC-120 | Subtasks, records into tasks, archive, agents on hosts in full. |
+| Stage 2 | AC-112, AC-116, AC-118, AC-120, AC-145 | Subtasks, records into tasks, archive, agents on hosts in full. |
 
 Depends on: nothing more.
 
@@ -829,16 +868,17 @@ Depends on: nothing more.
 - [x] AC-109 — `cargo test tasks::files`, `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
 - [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
-- [ ] AC-112 — `cargo test tasks::ops` for the rules; the window to come
+- [x] AC-112 — `cargo test tasks::ops`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-113 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
 - [ ] AC-116 — to come
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`
-- [ ] AC-118 — to come
+- [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`
 - [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
-- [x] AC-139 — `cargo test page::projects`, `web/test/e2e_liveboardagents.mjs`
+- [ ] AC-139 — its folder and Agents at once to come; `cargo test page::projects`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
 - [ ] AC-120 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py` for what is built
+- [ ] AC-145 — to come: `cargo test tasks::tools`, `cargo test cli::mcp`

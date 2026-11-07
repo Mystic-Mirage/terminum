@@ -376,7 +376,7 @@ pub fn archive(tx: &Transaction, author: &str, id: &str, on: bool, at: i64) -> R
     let key = key_of(tx, id)?;
     tx.execute("UPDATE tasks SET archived_at = CASE WHEN ?1 THEN ?2 END, updated_at = ?2 WHERE id = ?3", (on, at, &key)).map_err(sql)?;
     let who = user_name(tx, author)?;
-    log(tx, &key, author, "archive", &format!("{who} {}", if on { "archived it" } else { "brought it back" }), None, at).map(|_| ())
+    log(tx, &key, author, "archive", &if on { format!("Archived by {who}") } else { format!("{who} brought it back") }, None, at).map(|_| ())
 }
 
 /// A human moves a task to `project` (AC-113): a session goes with it (`choice` "move") unless it

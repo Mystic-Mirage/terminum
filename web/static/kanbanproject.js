@@ -3,8 +3,8 @@
 // folder, agents and memory limits. terminumd checks what is kept and says what is wrong.
 import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
 
-/** `agents`: the agents' section; `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown. */
-export function projectWindow({ getMeta, reload, agents, deleteProject, chosen }) {
+/** `agents`: the agents' section; `archived`: its Archived list (AC-118); `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown. */
+export function projectWindow({ getMeta, reload, agents, archived, deleteProject, chosen }) {
   const box = $("projectbox");
   let shown = null;
 
@@ -56,6 +56,7 @@ export function projectWindow({ getMeta, reload, agents, deleteProject, chosen }
   });
   $("projectaddagent").addEventListener("click", () => agents.addTo(shown.id));
   $("projectlimits").addEventListener("click", () => agents.openLimits(shown.id));
+  $("projectarchived").addEventListener("click", () => archived.open(shown));
   $("projectdelete").addEventListener("click", () => { box.close(); deleteProject(shown.id); });
   /** What terminumd now says of its agents. */
   const refresh = () => { if (box.open && shown) drawAgents(); };

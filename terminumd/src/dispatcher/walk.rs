@@ -499,6 +499,14 @@ async fn walk(app: &Shared) {
     }
 }
 
+/// What has been DONE for 2 days leaves the board (terminum-kanban.md AC-118): it is tried again at the next beat.
+async fn archive_due(app: &Shared) {
+    match store(app, |tx| crate::tasks::archiving::due(tx, ops::now())).await {
+        Ok(gone) => gone.iter().for_each(|task| crate::tasks::api::told(app, task)),
+        Err(e) => tracing::warn!(event = "dispatcher.archive", error = %e),
+    }
+}
+
 /// The supervised walk: a walk still running makes the next wait; a panic is said and takes nothing down.
 pub async fn run(app: Shared) {
     if app.cfg.agent {
@@ -506,7 +514,7 @@ pub async fn run(app: Shared) {
     }
     loop {
         let a = app.clone();
-        if let Err(e) = tokio::spawn(async move { walk(&a).await }).await {
+        if let Err(e) = tokio::spawn(async move { archive_due(&a).await; walk(&a).await }).await {
             tracing::error!(event = "dispatcher.panic", error = %e);
             note(&app, "Dispatcher's walk failed: see terminumd's log. It goes on at the next beat.".to_string());
         }

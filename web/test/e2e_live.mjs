@@ -37,6 +37,7 @@ import { liveBoard, liveBoardPhone } from "./e2e_liveboard.mjs";
 import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
 import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
+import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -128,6 +129,7 @@ const signIn = async (page) => {
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 30000 });
 };
 const BOARD_ALONE = process.argv.includes("board");
+const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a task's family and its end
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
@@ -148,12 +150,17 @@ async function wide(browser, name) {
     await liveDispatcherReal(page, { base: BASE, tmux, work: process.env.TM_TEST_REAL_DIR ?? WORK, bin: BIN, home: HOME, app: APP });
     return ctx;
   }
+  if (TASKS_ALONE) {
+    await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    return ctx;
+  }
   if (BOARD_ALONE) {
     await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
     await liveBoard(page, { base: BASE, tmux, work: WORK, shots: process.env.TM_TEST_SHOTS });
     await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
     await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
     await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
+    await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
     await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS });
     return ctx;
   }
@@ -221,6 +228,7 @@ async function wide(browser, name) {
   await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
   await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
   await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+  await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
   await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");

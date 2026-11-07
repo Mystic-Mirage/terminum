@@ -74,7 +74,7 @@ fn ac115_a_session_in_default_reaches_only_its_own_and_what_it_made() {
     let mine = task(&s, "default", Some(KEY));
     let others = task(&s, "default", Some(OTHER));
     let free = task(&s, "default", None);
-    let made = call(&s, &dir, &w, "create_task", json!({"title": "a gap"})).unwrap();
+    let made = call(&s, &dir, &w, "create_task", json!({"title": "Bug: a gap", "severity": "P2"})).unwrap();
     let made = made.trim_start_matches("Kept as ").trim_end_matches(", in TODO.").to_string();
     let listed = call(&s, &dir, &w, "list_tasks", json!({})).unwrap();
     for (id, seen) in [(&mine, true), (&made, true), (&others, false), (&free, false)] {
@@ -88,7 +88,7 @@ fn ac110_two_default_sessions_of_one_title_share_nothing() {
     let (s, dir) = fresh("tt-same-title");
     let a = who(None);
     let b = Who { key: OTHER.into(), ..who(None) };
-    let made = call(&s, &dir, &a, "create_task", json!({"title": "a's gap"})).unwrap();
+    let made = call(&s, &dir, &a, "create_task", json!({"title": "Debt: a's gap", "severity": "P3"})).unwrap();
     let id = made.trim_start_matches("Kept as ").trim_end_matches(", in TODO.").to_string();
     assert!(call(&s, &dir, &a, "get_task", json!({"id": id})).is_ok());
     assert!(call(&s, &dir, &b, "get_task", json!({"id": id})).is_err(), "the same title gives no reach");
@@ -136,12 +136,12 @@ fn ac115_a_free_task_can_be_taken_one_with_a_session_cannot() {
 fn ac115_a_new_task_is_marked_cleaned_and_not_kept_twice() {
     let (s, dir) = fresh("tt-new");
     let w = who(Some("api"));
-    let said = call(&s, &dir, &w, "create_task", json!({"title": "Gap\u{202e} in\u{7} retry", "text": "API_TOKEN=abc123 here", "severity": "P1"})).unwrap();
+    let said = call(&s, &dir, &w, "create_task", json!({"title": "Bug: Gap\u{202e} in\u{7} retry", "text": "API_TOKEN=abc123 here", "severity": "P1"})).unwrap();
     let id = said.trim_start_matches("Kept as ").trim_end_matches(", in TODO.").to_string();
     let (t, text) = s.with(|tx| Ok((ops::get(tx, &id)?, ops::text_of(tx, &id)?))).unwrap();
-    assert_eq!((t.title.as_str(), t.by_agent, t.session.clone(), t.status.as_str(), t.project.as_str(), t.severity.as_str()), ("Gap in retry", true, None, "TODO", "api", "P1"));
+    assert_eq!((t.title.as_str(), t.by_agent, t.session.clone(), t.status.as_str(), t.project.as_str(), t.severity.as_str()), ("Bug: Gap in retry", true, None, "TODO", "api", "P1"));
     assert!(text.contains("[redacted]") && !text.contains("abc123"), "{text}");
-    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "gap in  RETRY."})).unwrap_err(), format!("Not kept: {id} already says this. Read it with get_task, and comment if you have more."));
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Bug: gap in  RETRY.", "severity": "P1"})).unwrap_err(), format!("Not kept: {id} already says this. Read it with get_task, and comment if you have more."));
     assert_eq!(call(&s, &dir, &w, "create_task", json!({})).unwrap_err(), "title is required");
 }
 
@@ -171,4 +171,14 @@ fn ac109_an_agent_s_file_stays_inside_its_folder_or_comes_as_text() {
     let big = "x".repeat(TEXT_FILE_MOST + 1);
     assert!(call(&s, &dir, &w, "attach_file", json!({"task": id, "name": "big.txt", "text": big})).unwrap_err().contains("at most"));
     assert!(call(&s, &dir, &w, "get_file", json!({"task": id, "name": "note.txt"})).unwrap_err().contains("host"));
+}
+
+#[test]
+fn ac145_what_is_left_to_do_says_its_kind_and_severity() {
+    let ((s, dir), w) = (fresh("tools-left"), who(Some("api")));
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "a gap", "severity": "P2"})).unwrap_err(), "Start the title with Bug:, Feat: or Debt:.");
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Feat: a gap"})).unwrap_err(), "Give it a severity: P0, P1, P2 or P3.");
+    for title in ["Bug: drops a BOM", "Feat: paging", "Debt: two copies of a rule"] {
+        assert!(call(&s, &dir, &w, "create_task", json!({"title": title, "severity": "P2"})).unwrap().starts_with("Kept as"), "{title}");
+    }
 }

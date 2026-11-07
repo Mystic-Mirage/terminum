@@ -57,7 +57,7 @@ def mcp_lines(n0=1):
     return [{"jsonrpc": "2.0", "id": n0, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             call(n0 + 1, "update_session_plan", {"items": [{"text": "one", "status": "completed"}], "doing": "Checking the host", "eta_minutes": 30}),
-            call(n0 + 2, "create_task", {"title": "host parser drops a BOM", "text": "The host's parser drops a BOM."})]
+            call(n0 + 2, "create_task", {"title": "Bug: host parser drops a BOM", "severity": "P2", "text": "The host's parser drops a BOM."})]
 
 
 def in_pane(sock, target, cmd, done, timeout=20):
@@ -227,7 +227,7 @@ def main():
             tasks = db.execute("SELECT title, by_agent FROM tasks").fetchall()
         finally:
             db.close()
-        check("AC-99 terminum-kanban.md AC-120 the host agent's task stands in the Mac's store, by an agent", ("host parser drops a BOM", 1) in tasks, tasks)
+        check("AC-99 terminum-kanban.md AC-120 the host agent's task stands in the Mac's store, by an agent", ("Bug: host parser drops a BOM", 1) in tasks, tasks)
         metas = [json.load(open(m)) | {"_dir": os.path.dirname(m)} for m in glob.glob(os.path.join(t.home, "sessions", "*", "meta.json"))]
         kept = [m for m in metas if "plan the host check" in open(os.path.join(m["_dir"], "sent.jsonl")).read()] if metas else []
         check("AC-99 the sent history keeps the prompt under the host, not local", kept and all(m.get("host") == "devbox" for m in kept), metas)

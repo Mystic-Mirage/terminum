@@ -176,7 +176,7 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
             let args = match t {
                 "update_session_plan" => json!({"items": [{"text": "a", "status": "pending"}]}),
                 "list_tasks" | "get_session_plan" => json!({}),
-                "create_task" => json!({"title": "t"}),
+                "create_task" => json!({"title": "Bug: t", "severity": "P2"}),
                 "move_task" => json!({"id": "T-1", "to": "DONE"}),
                 "add_comment" => json!({"id": "T-1", "text": "a"}),
                 "finish_task" => json!({"id": "T-1", "result": "a"}),

@@ -485,12 +485,16 @@ Scenario: AC-12 happy path — defaults
   And the text size is the theme's (settings.json's page.textSize over it; on a phone 14 at most); the menu's − and + step from it, a step remembered per browser, so a theme's new size still shows
 Scenario: AC-12 happy path — rules and live changes
   When the user writes {"hosts": {"devbox": "work"}, "sessions": {"notes": "paper"}} into settings.json and a "work.json" theme
-  Then within 1 s (the folder is watched) panes of devbox wear "work", session "notes" wears "paper", others as before; every page redraws without reload
+  Then within 1 s (the folder is watched) panes of devbox wear "work", session "notes" wears "paper", others as before; every page redraws without reload, the board too, which wears the default theme
   When the system switches to light mode
   Then themes with a "light" variant switch (the page is told "dark": false); others stay
 Scenario: AC-12 happy path — a color scheme from the menu
   When the user presses one of the menu's 20 color swatches (Dracula, Solarized Dark and Light, Nord, Gruvbox Dark and Light, One Dark, Monokai, Tokyo Night, Catppuccin Mocha and Latte, GitHub Dark and Light, Tomorrow Night, Night Owl, Ayu Dark, Everforest Dark, Rosé Pine, Kanagawa and terminum's own light Paper: warm paper, soft pastel hues, its eight plain ANSI colors at least 4.5:1 on it)
   Then the terminal, the page's chrome and the widgets take its background, text, cursor, selection and 16 ANSI colors at once over the session's theme (its font and size stay); the choice is kept in settings.json (page.colorScheme: the scheme's name) and every page, the board's too, in every browser, shows it at once; "Theme" removes it, back to the session's theme; a scheme an older page kept in its own browser is not carried over (picked once again)
+Scenario: AC-12 error — a swatch pressed while the link is down
+  Given terminumd cannot be reached
+  When the user presses a swatch
+  Then the toast says "Not connected: the colors stay as they were", the colors and the marked swatch stay, and settings.json is not changed
 Scenario: AC-12 error — a theme that does not parse
   Given "work.json" has a syntax error or a color that is not "#rrggbb"
   Then the page keeps the last good theme, shows "Theme work.json: line 7: expected a color" once as a toast, and terminumd logs it; a rule naming a missing theme uses the default and says so

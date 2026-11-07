@@ -274,6 +274,10 @@ async function wide(browser, name) {
     await bgIs(board, boardOwn);
   });
   await page.keyboard.press("Escape");
+  fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#203040" }));
+  await within("AC-12 a changed theme file reaches an open board without a reload", () => bgIs(board, "#203040"));
+  fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));
+  await bgIs(board, "#102030");
   await other.close();
   check("AC-08 terminumd marks the tmux server it started with its own executable",
     tmux("show-options", "-gqv", "@terminum-started-by") === fs.realpathSync(BIN), tmux("show-options", "-gqv", "@terminum-started-by"));
@@ -288,9 +292,20 @@ async function wide(browser, name) {
   await page.click("#menubtn");
   await page.click('#schemes .swatch[data-scheme="Nord"]');
   await page.keyboard.press("Escape");
+  const shownPane = await page.evaluate(() => document.querySelector("#sessions .item.on").dataset.id.split(":").pop());
   await stop();
+  await page.waitForFunction(() => { const s = document.getElementById("status"); return !s.hidden && s.innerText.includes("not running"); }, null, { timeout: 8000 });
+  await page.click("#menubtn");
+  await page.click('#schemes .swatch[data-scheme="Dracula"]');
+  check("AC-12 a swatch pressed while the link is down says so and changes nothing",
+    await page.locator("#toast").innerText() === "Not connected: the colors stay as they were" && await page.getAttribute('#schemes .swatch[data-scheme="Nord"]', "aria-pressed") === "true" && await bg(page) === "#2e3440" && kept() === "Nord",
+    `${await page.locator("#toast").innerText()} ${await bg(page)} ${kept()}`);
+  await page.keyboard.press("Escape");
+  // written while terminumd is down, so only the new one can bring it: the rows left on the page prove nothing
+  tmux("send-keys", "-t", shownPane, "-l", "printf 'back-%s\\n' after-restart");
+  tmux("send-keys", "-t", shownPane, "Enter");
   await start();
-  await within("AC-14 the page reconnects after terminumd restarts and shows the pane", () => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3 && !document.getElementById("status").innerText.includes("not running"), null, { timeout: 8000 }));
+  await within("AC-14 the page reconnects after terminumd restarts and shows the pane", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("back-after-restart") && document.getElementById("status").hidden, null, { timeout: 8000 }));
   const still = await unreadRow();
   check("AC-93 a row marked unread is still unread after terminumd restarts", !still, still);
   check("AC-12 the color scheme picked is kept across the restart", kept() === "Nord" && await bg(page) === "#2e3440", `${kept()} ${await bg(page)}`);

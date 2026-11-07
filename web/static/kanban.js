@@ -454,6 +454,7 @@ function listen() {
         for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
       }
       else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
+      else if (m.t === "boardtheme") { meta.theme = m.theme; colors(); }
       else if (m.t === "projects") { side.projects(m.items ?? [], m.order ?? []); clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);

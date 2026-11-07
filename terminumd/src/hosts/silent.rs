@@ -52,7 +52,7 @@ fn said(host: &str, client: &str, server: Option<&str>) -> String {
 /// `remote` over a plain ssh: its stdout, or None when ssh or the command failed.
 async fn ask(server: &Server, remote: &str) -> Option<String> {
     let Link::Ssh { args, .. } = &server.link else { return None };
-    super::tunnel::ssh(args, remote, None, WAIT).await.ok()
+    super::tunnel::ssh(args, &[], remote, None, WAIT).await.ok()
 }
 
 /// A client got no answer: None when ssh itself does not work (the network: tries go on). Two

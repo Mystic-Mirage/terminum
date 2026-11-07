@@ -107,9 +107,9 @@ fn ssh_cmd(recipe: &[String]) -> Command {
 }
 
 
-/// Runs `command` on the host; its stdout, or ssh's last words.
-pub(super) async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>, timeout: Duration) -> Result<String, String> {
-    let mut c = ssh_cmd(recipe);
+/// Runs `command` on the host, with `extra` ssh options; its stdout, or ssh's last words.
+pub(crate) async fn ssh(recipe: &[String], extra: &[&str], command: &str, stdin: Option<Vec<u8>>, timeout: Duration) -> Result<String, String> {
+    let mut c = crate::hosts::ssh_command(crate::hosts::ssh_bin(), recipe, extra);
     with_command(&mut c, recipe, command);
     c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     let mut child = c.spawn().map_err(|e| format!("ssh: {e}"))?;
@@ -134,7 +134,7 @@ pub(super) async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>
 /// so whatever the host's rc files print cannot be taken for the answer.
 pub(super) async fn probe(recipe: &[String]) -> Result<(Result<&'static str, String>, String), String> {
     let marker = format!("tm-probe-{}", crate::auth::crypto::random_hex::<6>());
-    let out = ssh(recipe, &super::link::probe_command(&marker), None, PROBE_LIMIT).await?;
+    let out = ssh(recipe, &[], &super::link::probe_command(&marker), None, PROBE_LIMIT).await?;
     let (s, m, home) = super::link::parse_probe(&out, &marker).ok_or("the host did not answer the probe")?;
     Ok((platform(&s, &m).ok_or_else(|| format!("no helper for {s} {m}")), home))
 }
@@ -161,7 +161,7 @@ async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), St
     ]
     .join("; ");
     let bytes = tokio::fs::read(binary).await.map_err(|e| format!("{}: {e}", binary.display()))?;
-    let out = ssh(recipe, &script, Some(bytes), COPY_LIMIT).await?;
+    let out = ssh(recipe, &[], &script, Some(bytes), COPY_LIMIT).await?;
     let got = answer(&out);
     if got != id {
         return Err(format!("the copied helper says {got}, expected {id}"));
@@ -477,7 +477,7 @@ pub async fn remove(app: &Shared, host: &str) -> Result<(), String> {
 
 /// The helper and its log taken off a host (Files' remove, agents off with Files off).
 pub(super) async fn remove_helper(recipe: &[String]) -> Result<(), String> {
-    ssh(recipe, &remove_script(), None, HELPER_REMOVE_LIMIT).await.map(drop)
+    ssh(recipe, &[], &remove_script(), None, HELPER_REMOVE_LIMIT).await.map(drop)
 }
 
 fn remove_script() -> String {

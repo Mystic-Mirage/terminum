@@ -174,6 +174,14 @@ class Landing(unittest.TestCase):
         land.land(tree, check=self.green, say=lambda _: None, after=seen.append)
         self.assertEqual(seen, [{"new.txt"}])
 
+    def test_a_sweep_taking_the_merged_tree_during_after_still_lands(self):
+        tree = self.tree("one")
+        made = self.commit(tree, "new.txt", "x\n")
+        swept = lambda _: git("worktree", "remove", str(tree), cwd=self.primary)
+        self.assertEqual(land.land(tree, check=self.green, say=lambda _: None, after=swept), made)
+        self.assertFalse(tree.exists())
+        self.assertEqual(self.on_origin(), made)
+
     def test_only_a_change_with_code_counts_as_code(self):
         self.assertFalse(land.has_code({"docs/USAGE.md", "README.md"}))
         self.assertTrue(land.has_code({"docs/USAGE.md", "terminumd/src/a.rs"}))

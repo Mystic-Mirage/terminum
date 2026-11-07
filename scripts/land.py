@@ -133,8 +133,9 @@ def land(tree, check=checks_of, build=lambda tree: builds(tree), say=print, afte
             pushed = git("push", "--quiet", "origin", "HEAD:main", cwd=tree, check=False)
             if pushed.returncode == 0:
                 git("fetch", "--quiet", "origin", cwd=tree)
-                after(own_files)
-                return git("rev-parse", "HEAD", cwd=tree).stdout.strip()
+                commit = git("rev-parse", "HEAD", cwd=tree).stdout.strip()
+                after(own_files)  # minutes, when it installs: a sweep may take the tree, merged now
+                return commit
             git("fetch", "--quiet", "origin", cwd=tree)
             if has_base(tree):
                 raise Stop(1, f"push refused, and {BASE} has not moved: {pushed.stderr.strip()}")
@@ -178,6 +179,8 @@ def main(argv):
         return stop.code
     print(f"landed {commit[:9]} on {BASE}")
     os.chdir(primary)
+    if not tree.is_dir():
+        return 0
     gone = subprocess.run([str(primary / "scripts" / "delete_worktree.sh"), argv[0]])
     if gone.returncode:
         print(f"{tree} stays: see above; the Stop hook's sweep takes it when it is free", file=sys.stderr)

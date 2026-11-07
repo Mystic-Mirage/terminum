@@ -53,6 +53,18 @@ def tmux_on(socket_name, *args):
     return subprocess.run(["tmux", "-L", socket_name, *args], capture_output=True, text=True).stdout
 
 
+def end_tmux(socket_name):
+    """Ends the private server `socket_name`, its panes' programs first, by pid while the server still
+    holds them (no pid reused): a login shell of macOS's bash can outlive kill-server, its terminal
+    gone, ignoring SIGHUP and spinning (a Dispatcher's window)."""
+    for pid in tmux_on(socket_name, "list-panes", "-a", "-F", "#{pane_pid}").split():
+        try:
+            os.kill(int(pid), signal.SIGKILL)
+        except (ValueError, ProcessLookupError):
+            pass
+    tmux_on(socket_name, "kill-server")
+
+
 def wait_for(read, predicate, seconds=15, every=0.1, last=False):
     """read() until predicate(value) holds; its value, else an error with the last one (`last`: that one, for the caller to judge)."""
     end = time.monotonic() + seconds
@@ -199,7 +211,7 @@ class Terminumd:
         return os.path.join(self.app, "terminumd.sock")
 
     def start(self):
-        subprocess.run(["tmux", "-L", self.tmux_socket, "kill-server"], stderr=subprocess.DEVNULL)
+        end_tmux(self.tmux_socket)
         log = open(self.log_path, "a")
         self.proc = subprocess.Popen([BIN], env=self.env, stdout=log, stderr=log)
         for _ in range(100):
@@ -219,7 +231,7 @@ class Terminumd:
 
     def cleanup(self):
         self.stop()
-        subprocess.run(["tmux", "-L", self.tmux_socket, "kill-server"], stderr=subprocess.DEVNULL)
+        end_tmux(self.tmux_socket)
         shutil.rmtree(self.root, ignore_errors=True)
 
     def log(self):

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """The guard of AC-102 on real commands: a clean run passes, what a run leaves fails it and goes,
 and a folder of the temporary folder outside the run never counts."""
+import importlib.util
 import os
 from pathlib import Path
 import signal
@@ -110,6 +111,49 @@ class Guard(unittest.TestCase):
             self.assertNotEqual(run.returncode, 0)
             self.assertIn("LEFT x", err)
             self.assertFalse(os.path.exists(folder))
+
+
+def gone(pid, seconds=5):
+    """Whether `pid` has ended within `seconds` (not this test's child: launchd reaps it)."""
+    for _ in range(int(seconds * 10)):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.1)
+    return False
+
+
+class Stubborn(unittest.TestCase):
+    """A leftover that ignores SIGTERM and SIGHUP, as macOS's bash spinning on a terminal gone does."""
+    def test_the_guard_ends_one_that_ignores_sigterm(self):
+        status, err, _ = guarded("(trap '' TERM HUP; exec sleep 62) >/dev/null 2>&1 &")
+        self.assertEqual(status, 3)
+        pid = int(err.split("LEFT process ")[1].split(":")[0])
+        self.assertTrue(gone(pid), f"{pid} still runs")
+
+    def test_a_landings_steps_run_under_the_guard(self):
+        spec = importlib.util.spec_from_file_location("check_changed", Path(GUARD).with_name("check_changed.py"))
+        check_changed = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(check_changed)
+        root = Path(GUARD).parents[1]
+        try:
+            self.assertEqual(check_changed.run([("guard-probe", 'touch "$TMPDIR/left"')], root=root), ["guard-probe"])
+            self.assertIn("LEFT left", (root / ".checks" / "changed.guard-probe.log").read_text())
+        finally:
+            (root / ".checks" / "changed.guard-probe.log").unlink(missing_ok=True)
+
+    def test_end_tmux_ends_a_pane_program_that_outlives_kill_server(self):
+        sys.path.insert(0, str(Path(GUARD).parent))
+        from e2e_ws import end_tmux
+        from testrun import own
+        name = own("tm-test-stubborn")
+        try:
+            subprocess.run(["tmux", "-f", "/dev/null", "-L", name, "new-session", "-d", "sh -c \"trap '' HUP TERM; exec sleep 63\""], check=True)
+            pid = int(subprocess.run(["tmux", "-L", name, "display", "-p", "#{pane_pid}"], capture_output=True, text=True).stdout)
+        finally:
+            end_tmux(name)
+        self.assertTrue(gone(pid), f"{pid} still runs")
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use parking_lot::Mutex;
-use rusqlite::{Connection, ErrorCode, Transaction};
+use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 
 /// The schema's versions, oldest first: `PRAGMA user_version` says how many have run.
 const MIGRATIONS: [&str; 5] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql")];
@@ -158,7 +158,8 @@ impl Store {
             State::Failed(why) | State::SetAside(why) => return Err(why.clone()),
             State::Absent => return Err("An agent keeps no tasks.".into()),
         };
-        let tx = conn.transaction().map_err(|e| message(&e))?;
+        // it takes the write first: read and then written, a writer from outside between them would fail it at once, past the busy timeout
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(|e| message(&e))?;
         let out = f(&tx)?;
         tx.commit().map_err(|e| message(&e))?;
         Ok(out)

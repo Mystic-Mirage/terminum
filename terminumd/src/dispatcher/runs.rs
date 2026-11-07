@@ -20,7 +20,7 @@ pub struct Run {
     /// IN PROGRESS while any is, else WAIT FOR HUMAN, else how the last ended
     pub status: String,
     pub project: String,
-    /// its tasks' time budgets together: none if one has none
+    /// the time budgets its tasks have, together: one without adds nothing and lifts no limit
     pub budget: Option<i64>,
     pub agent_id: String,
     pub agent_name: String,
@@ -82,13 +82,12 @@ impl Run {
         self.targets().join(", ")
     }
 
-    /// RUN or a human's own prompt: every clock starts anew (AC-122).
+    /// RUN or a human's own prompt: every clock starts anew (AC-122). The turn is the agent's: a hook says when one starts.
     pub fn new_work(&mut self) {
         self.nudged = false;
         self.nudge_turn = false;
         self.no_result_wait = false;
         self.wait_moved = false;
-        self.turn_ended = false;
         self.again_said = false;
         self.idle_for = 0;
         self.closing_for = 0;
@@ -103,7 +102,7 @@ const SELECT: &str = "SELECT r.id, r.task,
     (SELECT group_concat('T-' || x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND x.status NOT IN ('DONE', 'FAILED')),
     (SELECT x.status FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id ORDER BY CASE x.status WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'FAILED' THEN 3 ELSE 4 END LIMIT 1),
     t.project,
-    (SELECT CASE WHEN count(*) = count(x.budget_seconds) THEN sum(x.budget_seconds) END FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
+    (SELECT sum(x.budget_seconds) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     r.agent_id, r.agent_name, r.agent_color, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
     r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.no_result_wait,
     NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = r.id AND m.result = 0), r.again_said, r.close_tried, r.last_walk, r.memory_warned

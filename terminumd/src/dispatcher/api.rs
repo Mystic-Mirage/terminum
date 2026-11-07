@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, Run};
-use super::press::{also_of, prompt_of, refused_busy, rev_of, shown_of, way, ways, Asked, Way};
+use super::press::{also_of, budget_told, prompt_of, refused_busy, rev_of, shown_of, way, ways, Asked, Way};
 use super::{acts, move_one, move_task, procs, say, start, store, walk};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
@@ -214,9 +214,9 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
     let line = start::resume_command(r).unwrap_or_else(|_| r.command.clone());
     let new = next_run(app, r, t, again).await?;
     start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await?;
-    let (key, n) = (server.key(pane), new.clone());
-    app.dispatcher.panes.lock().insert(key.clone());
-    store(app, move |tx| runs::change(tx, &n, |now| now.pane_key = Some(key)).map(drop)).await?;
+    let (a, key, n) = (app.clone(), server.key(pane), new.clone());
+    app.dispatcher.panes.lock().insert(key.clone());    // its agent's first hooks
+    store(app, move |tx| a.dispatcher.pane_opened(tx, &n, &key).map(drop)).await?;
     start::watch(app, &new);
     Ok(json!({"run": new}))
 }
@@ -371,9 +371,7 @@ async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -> Response 
 /// warning is (AC-126).
 pub fn budget_changed(app: &Shared, task: &Task) {
     let Some(key) = task.session.clone().filter(|k| app.dispatcher.has_run(k)) else { return };
-    let (app, words) = (app.clone(), task.budget_seconds.map_or_else(
-        || format!("[terminum Dispatcher] {}: its time budget is off.", task.id),
-        |s| format!("[terminum Dispatcher] {}: its time budget is now {} minutes.", task.id, s / 60)));
+    let (app, id, own) = (app.clone(), task.id.clone(), task.budget_seconds);
     tokio::spawn(async move {
         let k = key.clone();
         let Ok(Some(r)) = store(&app, move |tx| {
@@ -381,6 +379,7 @@ pub fn budget_changed(app: &Shared, task: &Task) {
             runs::change(tx, &r.id, |now| now.warned = false).map(Some)
         }).await else { return };
         if let Some((server, pane)) = app.tmux.resolve(&key) {
+            let words = budget_told(&id, own, &r);
             acts::tell(&app, &r, &server, &pane, words, "The new budget").await;
         }
     });

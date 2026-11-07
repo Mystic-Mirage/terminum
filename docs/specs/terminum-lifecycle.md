@@ -344,14 +344,19 @@ Scenario: AC-102 edge — a run ended by a signal leaves nothing either
   Then it exits 143 or 130, and its terminumd, tmux server, browser and folders go; terminumd's stand-in for ssh, ended by SIGKILL, keeps its files in the test's home, which the run removes
 
 Scenario: AC-102 happy path — a run leaves nothing
-  Given a step of make check, run by scripts/check_step.py with its own short folder as TMPDIR and TMUX_TMPDIR
+  Given a step of make check or of a landing's targeted checks, run by scripts/check_step.py with its own short folder as TMPDIR and TMUX_TMPDIR
   When the step passes, fails or gets a signal
   Then its folders, tmux servers, tmux socket files and processes have gone and that folder is removed
 
 Scenario: AC-102 failure — a step that leaves something fails
   Given a step that passes but leaves a file in its folder, or a process in its process group or with that folder in its environment
   When it ends
-  Then each is printed as "LEFT …", the process is ended by its pid, the folder is removed and the step fails
+  Then each is printed as "LEFT …", the process is ended by its pid (SIGTERM, then SIGKILL when it is still there 2 s later: an interactive shell ignores SIGTERM), the folder is removed and the step fails
+
+Scenario: AC-102 edge — a pane's program that ignores SIGHUP does not outlive its test
+  Given a test's private tmux server whose pane runs a program that ignores SIGHUP, as macOS's bash does when it spins on a terminal gone
+  When the test ends that server with end_tmux of scripts/e2e_ws.py
+  Then the program has ended too, where kill-server alone leaves it running with no parent
 
 Scenario: AC-102 edge — another session's run is no leftover of this one
   Given another session's test run with folders in the temporary folder and sockets of its own
@@ -709,6 +714,6 @@ All cases are shipped; nothing is staged.
 - [x] AC-16 — `scripts/e2e_install.sh`; `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines`; `web/test/e2e_lastlines.mjs`
-- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh`; `scripts/tests/test_check_step.py`; `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`
+- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

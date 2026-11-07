@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_for  # noqa: E402
+from e2e_ws import Terminumd, check, end_tmux, summary, tmux_on, unix_request, wait_for  # noqa: E402
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
@@ -41,7 +41,7 @@ def main():
         f.write(STUB)
     os.chmod(stub, 0o700)
     t.through_fake_ssh(home, REMOTE_SOCKET, os.path.join(t.root, "ssh-pids"))
-    subprocess.run(["tmux", "-L", REMOTE_SOCKET, "kill-server"], stderr=subprocess.DEVNULL, check=False)
+    end_tmux(REMOTE_SOCKET)
     try:
         t.start()
         secret = t.signin()
@@ -107,14 +107,15 @@ def main():
         st, said = call(f"/api/tasks/{timed}", "PATCH", {"budget_minutes": 5})
         check("setup: a budget", st == 200, said)
         run(timed)
-        check("AC-130 at the limit the task is FAILED", until(lambda: status(timed) == "FAILED"), history(timed))
+        # its start takes its real time before the test clock's budget begins: a loaded machine needs longer
+        check("AC-130 at the limit the task is FAILED", until(lambda: status(timed) == "FAILED", 60), history(timed))
         tkey = pane_of(timed)
         ended = until(lambda: shown(tkey, "#{@terminum-exit}"), 10)
         check("AC-130 its agent is ended over the host's link", bool(ended), ended)
         check("AC-123 so does the window of an agent ended", window_holds_shell(timed))
     finally:
         t.cleanup()
-        subprocess.run(["tmux", "-L", REMOTE_SOCKET, "kill-server"], stderr=subprocess.DEVNULL, check=False)
+        end_tmux(REMOTE_SOCKET)
     return summary()
 
 

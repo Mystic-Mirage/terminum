@@ -148,7 +148,9 @@ def run(steps, root=REPO):
         started = time.monotonic()
         log = logs / f"changed.{name}.log"
         with log.open("w") as out:
-            code = subprocess.run(command.lstrip("-"), shell=True, cwd=root, stdout=out, stderr=subprocess.STDOUT).returncode
+            # under make check's guard (AC-102): a step that leaves a process or a file fails here too
+            guarded = [sys.executable, "-I", str(root / "scripts" / "check_step.py"), "sh", "-c", command.lstrip("-")]
+            code = subprocess.run(guarded, cwd=root, stdout=out, stderr=subprocess.STDOUT).returncode
         seconds = round(time.monotonic() - started)
         if code == 0 or optional:
             print(f"{'ok  ' if code == 0 else 'note'} {name} ({seconds} s)" + ("" if code == 0 else f": {log}"), flush=True)

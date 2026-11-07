@@ -36,6 +36,11 @@ async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words:
             }
         }
     }
+    // RUN or a human's prompt may have come since the walk decided: read again, last of all (AC-131)
+    let wanted = run.id.clone();
+    if !store(app, move |tx| runs::by_id(tx, &wanted).map(|now| plan::still_closes(&now))).await? {
+        return Ok(());
+    }
     let (id, words) = (run.id.clone(), words.to_string());
     match server.run(format!("kill-pane -t {pane}")).await {
         Ok(_) => store(app, move |tx| {

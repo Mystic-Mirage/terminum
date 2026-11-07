@@ -17,6 +17,7 @@ import time
 
 SETTLE_S = 15   # what ends by itself gets this long: terminumd's tmutil takes seconds on a busy Mac
 LEFT = 3   # the exit status of a check that passed but left something
+KILL_AFTER_S = 2   # a leftover still there this long after SIGTERM gets SIGKILL
 
 
 def own_processes(folder, group):
@@ -31,6 +32,19 @@ def own_processes(folder, group):
         if fields[1] == str(group) or f"TMPDIR={folder}" in fields[3]:
             found.append((int(fields[0]), fields[3].split(" TMPDIR=")[0][:120]))
     return found
+
+
+def send(pid, number):
+    """Signal `number` to `pid`; True while it is there (0 only asks): one that ended meanwhile is no error."""
+    try:
+        os.kill(pid, number)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def alive(pid):
+    return send(pid, 0)
 
 
 def files_in(folder):
@@ -71,7 +85,15 @@ def main(command):
         for pid, name in processes:
             left += 1
             print(f"LEFT process {pid}: {name}", file=sys.stderr)
-            os.kill(pid, signal.SIGTERM)
+            send(pid, signal.SIGTERM)
+        # an interactive shell ignores SIGTERM; one spinning on a terminal gone, SIGHUP too
+        stays = [pid for pid, _ in processes]
+        end = time.monotonic() + KILL_AFTER_S
+        while stays and time.monotonic() < end:
+            time.sleep(0.1)
+            stays = [pid for pid in stays if alive(pid)]
+        for pid in stays:
+            send(pid, signal.SIGKILL)
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)

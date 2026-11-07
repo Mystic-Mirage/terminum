@@ -449,6 +449,11 @@ Scenario: AC-119 edge — an older or newer store
   Given a store of a newer schema (a downgrade)
   Then the board says "The tasks' store is newer than this terminum: upgrade terminum." and nothing is written; the session list shows tmux groups with a banner, and project actions are refused where taken
 
+Scenario: AC-119 edge — a writer from outside
+  Given another program writing to kanban.sqlite
+  When terminumd's transaction reads and then writes
+  Then it holds the write from its start: the other waits up to 5 s, and no "database is locked" fails what terminumd was doing
+
 Scenario: AC-119 failure — unreadable
   When SQLite says it is not a database or corrupt, or its quick check fails (run off the workers, holding up no list)
   Then it is set aside with its -wal and -shm as kanban.sqlite.bad-<time>, never written over, the board says so with the path, and an empty store is made only when the user presses Start empty

@@ -193,7 +193,29 @@ impl Projects {
 
     /// A project made on the board, with no session (AC-110). Its id.
     pub fn create(&mut self, name: &str, host: Option<String>, dir: String) -> Result<String, String> {
+        crate::tasks::agents::check_folder(&dir)?;
         self.kept(|ps| ps.make(Some(name), host, dir))
+    }
+
+    /// A project's window (terminum-kanban.md AC-138): its name and folder together; what is not said stays.
+    pub fn edit(&mut self, id: &str, name: Option<&str>, dir: Option<String>) -> Result<(), String> {
+        let name = name.map(name_ok).transpose()?;
+        if let Some(name) = &name {
+            self.name_free(name, Some(id))?;
+        }
+        if let Some(dir) = &dir {
+            crate::tasks::agents::check_folder(dir)?;
+        }
+        self.kept(|ps| {
+            let p = ps.find(id)?;
+            if let Some(name) = name {
+                p.name = name;
+            }
+            if let Some(dir) = dir {
+                p.dir = dir;
+            }
+            Ok(())
+        })
     }
 
     /// The folder a project asks for at its first [+] (AC-110).

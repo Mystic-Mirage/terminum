@@ -7,7 +7,7 @@ fn open(name: &str) -> Store {
 }
 
 fn opus() -> Given {
-    Given { name: "Opus reviewer".into(), kind: "claude".into(), host: None, dir: String::new(), command: "claude --model opus".into() }
+    Given { name: "Opus reviewer".into(), kind: "claude".into(), host: None, dir: String::new(), command: "claude --model opus".into(), effort: String::new() }
 }
 
 fn project(tx: &Transaction, id: &str, host: Option<&str>) -> Result<(), String> {
@@ -113,4 +113,33 @@ fn ac128_a_project_s_limits_are_checked_and_go_with_it() {
     s.with(|tx| keep_limits(tx, "p1", None)).unwrap();
     assert!(s.with(limits).unwrap().is_empty(), "back to the global ones");
     assert_eq!(s.with(|tx| keep_limits(tx, "gone", None)).unwrap_err(), "That project is gone.");
+}
+
+#[test]
+fn ac138_an_effort_goes_on_its_kind_s_command_line() {
+    assert_eq!(command_line("claude", "claude", ""), "claude");
+    assert_eq!(command_line("claude", "claude --model opus", "high"), "claude --model opus --effort high");
+    assert_eq!(command_line("codex", "codex", "low"), "codex -c model_reasoning_effort=low");
+    let with = |kind: &str, command: &str, effort: &str| Given { kind: kind.into(), command: command.into(), effort: effort.into(), ..opus() }.check(&[]);
+    assert!(with("claude", "claude", "max").is_ok());
+    assert_eq!(with("codex", "codex", "max").unwrap_err(), "codex has no effort max.");
+    assert_eq!(with("claude", "claude", "$(rm -rf)").unwrap_err(), "claude has no effort $(rm -rf).", "a word of a fixed list, never free text");
+    assert!(with("claude", "claude; notify", "high").unwrap_err().contains("; | or &"), "the flag would go to the other program");
+    assert!(with("claude", "claude; notify", "").is_ok(), "a command is the human's own words");
+}
+
+#[test]
+fn ac138_each_agent_of_a_project_has_its_own_color() {
+    let s = open("agents-colors");
+    s.with(|tx| {
+        project(tx, "api", None)?;
+        add(tx, "api", &opus())?;
+        let second = add(tx, "api", &Given { name: "b".into(), ..opus() })?;
+        let third = add(tx, "api", &Given { name: "c".into(), ..opus() })?;
+        remove(tx, &second)?;
+        let fourth = add(tx, "api", &Given { name: "d".into(), ..opus() })?;
+        let colors: Vec<i64> = of_project(tx, "api")?.iter().map(|a| a.color).collect();
+        assert_eq!(colors, [0, 2, 3], "{third} {fourth}");
+        Ok(())
+    }).unwrap();
 }

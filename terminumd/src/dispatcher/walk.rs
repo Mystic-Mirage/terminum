@@ -74,60 +74,77 @@ struct Later {
     act: Act,
 }
 
-/// What a beat's transaction leaves: acts, tasks changed, seconds of budget used by task.
-type Walked = (Vec<Later>, Vec<String>, HashMap<String, i64>);
+/// What a beat's transaction leaves: acts, tasks changed, the budget used and whole by task.
+type Walked = (Vec<Later>, Vec<String>, HashMap<String, (i64, i64)>);
 
 /// In one transaction: every run as it stands now, its clocks, what `plan` says. Moves and words are
-/// done here; what is not written is not done (AC-131).
+/// done here; what is not written is not done (AC-131). A run that cannot be written costs only itself.
 fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     let live: HashMap<String, Run> = runs::live(tx)?.into_iter().map(|r| (r.id.clone(), r)).collect();
     for read in reads {
-        let Some(mut r) = live.get(&read.id).cloned() else { continue };
-        if r.is_starting() {
-            continue;
-        }
-        let seen = now - r.last_walk;
-        if seen > GAP {
-            r.idle_for = 0;                            // it reads the agent's state first: no ending act for one idle period (AC-130, AC-131)
-        }
-        let dt = if seen > (GAP / scale()).max(1) { 0 } else { seen.max(0) * scale() };
-        let mut facts = read.facts;
-        facts.dt = dt;
-        facts.active |= r.open_tools > 0;
-        r.turn_ended |= read.ended;
-        facts.others_open = match r.pane_key.as_deref().filter(|_| plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) {
-            Some(key) => tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks WHERE session_key = ?1 AND id != ?2 AND status NOT IN ('DONE', 'FAILED') AND archived_at IS NULL)", (key, &r.task), |x| x.get(0)).map_err(ops::sql)?,
-            None => false,
-        };
-        r.last_walk = now;
-        let mut acts = plan::step(&mut r, &facts);
-        if seen > GAP {
-            acts.push(Act::Say(format!("Clocks paused {} minutes: no walk saw them pass", seen / 60)));
-        }
-        if r.budget.is_some() {
-            used.insert(r.task_id.clone(), r.budget_used);
-        }
-        runs::save(tx, &r)?;
-        if facts.pane && !facts.marked {
-            ops::link(tx, super::DISPATCHER, &r.task_id, None, now)?;   // a stale link drops (AC-125)
-        }
-        for act in acts {
-            match act {
-                Act::Move { to, words } => {
-                    move_task(tx, &r, to, &words)?;
-                    r.status = to.to_string();
-                    changed.push(r.task_id.clone());
-                }
-                Act::Say(words) => {
-                    say(tx, &r, &words)?;
-                    changed.push(r.task_id.clone());
-                }
-                act => later.push(Later { run: r.clone(), act }),
+        let Some(r) = live.get(&read.id).cloned() else { continue };
+        tx.execute_batch("SAVEPOINT one_run").map_err(ops::sql)?;
+        let (from_later, from_changed) = (later.len(), changed.len());
+        match walk_one(tx, r, read, now, &mut later, &mut changed, &mut used) {
+            Ok(()) => tx.execute_batch("RELEASE one_run").map_err(ops::sql)?,
+            Err(e) => {
+                tracing::warn!(event = "dispatcher.walk", error = %e);
+                later.truncate(from_later);
+                changed.truncate(from_changed);
+                tx.execute_batch("ROLLBACK TO one_run; RELEASE one_run").map_err(ops::sql)?;
             }
         }
     }
     Ok((later, changed, used))
+}
+
+fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64, later: &mut Vec<Later>, changed: &mut Vec<String>, used: &mut HashMap<String, (i64, i64)>) -> Result<(), String> {
+    if r.is_starting() {
+        return Ok(());
+    }
+    let seen = now - r.last_walk;
+    if seen > GAP {
+        r.idle_for = 0;                            // it reads the agent's state first: no ending act for one idle period (AC-130, AC-131)
+    }
+    let dt = if seen > (GAP / scale()).max(1) { 0 } else { seen.max(0) * scale() };
+    let mut facts = read.facts;
+    facts.dt = dt;
+    facts.active |= r.open_tools > 0;
+    r.turn_ended |= read.ended;
+    facts.others_open = match r.pane_key.as_deref().filter(|_| plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) {
+        Some(key) => tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks WHERE session_key = ?1 AND id != ?2 AND status NOT IN ('DONE', 'FAILED') AND archived_at IS NULL)", (key, &r.task), |x| x.get(0)).map_err(ops::sql)?,
+        None => false,
+    };
+    r.last_walk = now;
+    let mut acts = plan::step(&mut r, &facts);
+    if seen > GAP {
+        acts.push(Act::Say(format!("Clocks paused {} minutes: no walk saw them pass", seen / 60)));
+    }
+    if let Some(total) = r.budget {
+        used.extend(r.ids.iter().map(|id| (id.clone(), (r.budget_used, total))));
+    }
+    runs::save(tx, &r)?;
+    if facts.pane && !facts.marked {
+        for id in &r.ids {
+            ops::link(tx, super::DISPATCHER, id, None, now)?;   // a stale link drops (AC-125)
+        }
+    }
+    for act in acts {
+        match act {
+            Act::Move { to, words } => {
+                move_task(tx, &r, to, &words)?;
+                r.status = to.to_string();
+                changed.extend(r.ids.iter().cloned());
+            }
+            Act::Say(words) => {
+                say(tx, &r, &words)?;
+                changed.extend(r.ids.iter().cloned());
+            }
+            act => later.push(Later { run: r.clone(), act }),
+        }
+    }
+    Ok(())
 }
 
 /// Closes the pane: its mark checked just before; with no result the screen's last 200 rows stay on
@@ -138,13 +155,13 @@ async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words:
         let rows = server.run(format!("capture-pane -p -S -200 -t {pane}")).await.unwrap_or_default();
         let text = crate::sent::redact(&rows.join("\n"));
         if !text.trim().is_empty() {
-            let (a, task, name, at) = (app.clone(), run.task_id.clone(), format!("{}-screen.txt", run.task_id), ops::now());
+            let (a, task, name, at) = (app.clone(), run.ids.first().cloned().unwrap_or_default(), format!("{}-screen.txt", run.names().replace(", ", "-")), ops::now());
             let kept = crate::http::off(move || {
                 let f = files::keep(&a.tasks, &a.cfg.dir, &name, text.as_bytes(), at)?;
                 a.tasks.with(|tx| files::attach(tx, std::slice::from_ref(&f.id), &task, None))
             }).await;
             if let Err(e) = kept {
-                tracing::warn!(event = "dispatcher.close", task = %run.task_id, error = %e);
+                tracing::warn!(event = "dispatcher.close", task = %run.names(), error = %e);
             }
         }
     }
@@ -176,7 +193,7 @@ async fn end_agent(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str) {
         }
         match procs::end(app, server, root, grace).await {
             Ok(n) => {
-                tracing::info!(event = "dispatcher.end", task = %run.task_id, signalled = n);
+                tracing::info!(event = "dispatcher.end", task = %run.names(), signalled = n);
                 return;
             }
             Err(e) => why = e,
@@ -184,9 +201,9 @@ async fn end_agent(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str) {
         tokio::time::sleep((BEAT / scale() as u32).max(Duration::from_millis(500))).await;
     }
     let (r, words) = (run.clone(), format!("The agent could not be ended: {why}. It may still run."));
-    tracing::warn!(event = "dispatcher.end", task = %run.task_id, error = %why);
+    tracing::warn!(event = "dispatcher.end", task = %run.names(), error = %why);
     let _ = store(app, move |tx| say(tx, &r, &words)).await;
-    crate::tasks::api::told(app, &run.task_id);
+    super::told_all(app, run);
 }
 
 /// Words for the agent: on its next tool call while it works, through the gate while it idles.
@@ -196,7 +213,7 @@ pub(super) async fn tell(app: &Shared, run: &Run, server: &Arc<Server>, pane: &s
     let words = match sent {
         Ok(()) => format!("{what} was given."),
         Err(why) => {
-            app.task_lines.push(&key, &run.task_id, text);
+            app.task_lines.push(&key, run.ids.first().map_or("", String::as_str), text);
             match why {
                 Some(why) => format!("{what} waits for the agent's next tool call: {why}."),
                 None => format!("{what} waits for the agent's next tool call."),
@@ -214,7 +231,7 @@ fn note(app: &Shared, msg: String) {
 
 async fn do_later(app: &Shared, l: Later) {
     let Some((server, pane)) = l.run.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)) else { return };
-    let task = l.run.task_id.clone();
+    let task = l.run.names();
     let done = match l.act {
         Act::Warn(left) => {
             let text = format!("[terminum Dispatcher] {task}: {} minutes of the {}-minute budget are left. Write the result with finish_task and end your subagents now. Then the agent is ended and unsaved work is lost.", (left.max(0) + 59) / 60, l.run.budget.unwrap_or(0) / 60);
@@ -253,7 +270,7 @@ async fn do_later(app: &Shared, l: Later) {
     if let Err(e) = done {
         tracing::warn!(event = "dispatcher.act", task = %task, error = %e);
     }
-    crate::tasks::api::told(app, &task);
+    super::told_all(app, &l.run);
 }
 
 /// A subagent silent and idle: one request to the main agent, then it is said that it cannot be
@@ -276,14 +293,14 @@ async fn watch_subagents(app: &Shared, run: &Run, server: &Arc<Server>, pane: &s
     };
     for (id, step) in due {
         if step == plan::SubStep::Tell {
-            let text = format!("[terminum Dispatcher] A subagent of {} has been silent for 10 minutes. End it if it is stuck.", run.task_id);
+            let text = format!("[terminum Dispatcher] A subagent of {} has been silent for 10 minutes. End it if it is stuck.", run.names());
             tell(app, run, server, pane, text, "The request about a silent subagent").await;
         } else {
             let (r, words) = (run.clone(), format!("Subagent {id} cannot be ended alone: it runs inside the agent"));
-            note(app, format!("{}: {words}", run.task_id));
+            note(app, format!("{}: {words}", run.names()));
             let _ = store(app, move |tx| say(tx, &r, &words)).await;
         }
-        crate::tasks::api::told(app, &run.task_id);
+        crate::tasks::api::told(app, &run.names());
     }
 }
 
@@ -314,16 +331,13 @@ async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String
 }
 
 /// What a card shows of its session (AC-128, AC-129): as of this walk, with its budget's time.
-fn usage_line(app: &Shared, key: &str, seen: &Seen, pane: &str, used: Option<i64>) -> serde_json::Value {
+fn usage_line(app: &Shared, key: &str, seen: &Seen, pane: &str) -> serde_json::Value {
     let mut watch = app.dispatcher.watch.lock();
     let w = watch.entry(key.to_string()).or_default();
     let idle: Vec<serde_json::Value> = w.subs.iter().filter(|(_, s)| s.told != plan::SubStep::Nothing).map(|(id, s)| serde_json::json!({"id": id, "kind": s.kind})).collect();
     let mut v = serde_json::json!({"idle_subs": idle});
     if let Some(t) = &w.tokens {
         v["tokens"] = t.clone();
-    }
-    if let Some(used) = used {
-        v["budget_used"] = serde_json::json!(used);
     }
     if seen.skipped {
         if let Some(last) = &w.line {
@@ -440,19 +454,25 @@ async fn walk(app: &Shared) {
     }
     // what a card shows of every linked live session; for others' sessions only the numbers (AC-128)
     let mut items = serde_json::Map::new();
+    let mut lines: HashMap<String, serde_json::Value> = HashMap::new();   // one reading a session, its tasks sharing it
     for (task, key) in linked {
         let Some((server, pane)) = app.tmux.resolve(&key) else { continue };
         let Some(s) = seen.get(&server.id()) else { continue };
         if s.panes.as_ref().is_some_and(|l| !l.contains_key(&pane)) {
             continue;
         }
-        let line = usage_line(app, &key, s, &pane, used.get(&task).copied());
+        let mut line = lines.entry(key.clone()).or_insert_with(|| usage_line(app, &key, s, &pane)).clone();
+        if let Some((spent, total)) = used.get(&task) {
+            line["budget_used"] = serde_json::json!(spent);
+            line["budget_total"] = serde_json::json!(total);
+        }
         items.insert(task, line);
     }
     // what no walk watches any more goes with it
     let kept: HashSet<&str> = wanted.iter().map(String::as_str).collect();
     app.dispatcher.watch.lock().retain(|k, _| kept.contains(k.as_str()));
-    let message = serde_json::json!({"t": "taskusage", "items": items}).to_string();
+    let busy = store(app, |tx| runs::live(tx)).await.map_or(serde_json::Value::Null, |live| runs::busy_agents(&live));
+    let message = serde_json::json!({"t": "taskusage", "items": items, "busy": busy}).to_string();
     let mut told = app.dispatcher.usage.lock();
     if *told != message {
         app.pages.tell(&message);

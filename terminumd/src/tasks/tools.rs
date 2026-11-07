@@ -110,6 +110,10 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 if t.session.is_some() {
                     return Err(format!("{id} has a session already."));
                 }
+                // what a human ran here is what this session does (terminum-dispatcher.md AC-138)
+                if crate::dispatcher::runs::in_pane(tx, &who.key)?.is_some_and(|r| r.busy()) {
+                    return Err(format!("This session runs what the human gave it: finish that first. {id} can be commented on."));
+                }
                 let me = me()?;
                 ops::link(tx, &me, id, Some(&who.key), at)?;
                 ops::edit(tx, &me, id, ops::Edit { owner: Some(me.clone()), ..Default::default() }, at)?;
@@ -117,7 +121,10 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             }
             "move_task" => {
                 let (id, to) = (arg(args, "id")?, arg(args, "to")?);
-                own(tx, who, id)?;
+                let t = own(tx, who, id)?;
+                if to == "TODO" && crate::dispatcher::runs::holding(tx, &t.key)?.is_some() {
+                    return Err(format!("{id} is what the human ran: finish it, fail it, or ask."));
+                }
                 ops::move_to(tx, &me()?, id, to, at)?;
                 Ok((format!("{id} is in {to}."), vec![id.to_string()]))
             }

@@ -8,7 +8,6 @@ import "./pop.js";                                  // where a window flies out 
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
 import { pageTasks } from "./pagetasks.js";
-import { addressedSession } from "./tasklink.js";
 import { findItem, listParts, renderNav, seeWaits, serverDown, setTaskMarks, taskMarksOf } from "./nav.js";
 import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
@@ -66,7 +65,7 @@ const store = {
 if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
-const tasks = pageTasks({ box: $("asks"), embedded, say: (...a) => toast(...a) });
+const tasks = pageTasks({ box: $("asks"), embedded, say: (...a) => toast(...a), show: (id) => { if (id !== st.sid) select(id); } });
 const st = {
   groups: [], sid: embedded ?? tasks.asked ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),
@@ -213,6 +212,7 @@ $("attachfab").addEventListener("click", pickFile);
 $("attachfab").addEventListener("mousedown", (e) => e.preventDefault());   // the terminal keeps the keys
 files.bindDrop($("term"));
 
+
 const tools = navTools({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
   onResize: () => view.keepBottom(applyFit), onRenamed: () => (computer.matches ? focusTerminal() : document.activeElement?.blur()) });
 dockGrip({ store, cellWidth: () => view.charRatio() * view.chosenSize(), onResize: () => view.keepBottom(applyFit) });   // docked Files' width (AC-70)
@@ -287,9 +287,7 @@ function onMessage(m) {
     case "restore": if (!embedded) menu.showRestore(m.report); break;
     case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files
     case "quickmade": quick.made(m); break;
-    case "hostadded": case "hostagents": tools.hostAnswer(m); break;
-    case "tmuxadded": tools.tmuxAdded(); break;
-    case "tmuxsessions": tools.tmuxChoices(m); break;
+    case "hostadded": case "hostagents": case "tmuxadded": case "tmuxsessions": tools.seen(m); break;
     case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg)) status(m.msg); break;   // empty: tmux is back
     case "update": if (!embedded) menu.showUpdate(m.latest); break;
     case "note": toast(m.msg, 4000); break;
@@ -372,8 +370,6 @@ function toggleGroup(key) {
 const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
   send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), tasks: () => taskMarksOf(st.sid), toast, onShown: tools.sayStalls });
 
-addEventListener("popstate", () => { const id = addressedSession(); if (id && id !== st.sid) select(id); });
-
 function select(id, force = false) {
   if (id) tasks.address(id);
   if (id === st.sid && !force && view.screen.length) return;
@@ -391,7 +387,7 @@ function select(id, force = false) {
   drawNav(); syncControls();
 }
 
-const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focusInput: () => input.focus(), peek: () => showCurrent.peek() });
+const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focusInput: () => input.focus() });
 
 // ---------- theme ----------
 

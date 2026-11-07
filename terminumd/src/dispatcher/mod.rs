@@ -4,6 +4,7 @@
 //! as the session lives, and closes what it started. All its clocks and facts are in the store.
 
 pub mod api;
+mod press;
 mod gate;
 mod hooks;
 pub mod plan;
@@ -154,14 +155,36 @@ pub fn scale() -> i64 {
     std::env::var("TM_APP_DIR").ok().and_then(|_| std::env::var("TM_TEST_CLOCK_SCALE").ok()).and_then(|s| s.parse().ok()).filter(|s: &i64| *s > 0).unwrap_or(1)
 }
 
-/// Moves `run`'s task and says why, as Dispatcher.
-fn move_task(tx: &rusqlite::Transaction, run: &runs::Run, to: &str, words: &str) -> Result<(), String> {
+/// Moves one task and says why, as Dispatcher; one already there says nothing.
+fn move_one(tx: &rusqlite::Transaction, id: &str, to: &str, words: &str) -> Result<(), String> {
+    let t = ops::get(tx, id)?;
+    if t.status == to {
+        return Ok(());
+    }
     let at = ops::now();
-    ops::move_to(tx, DISPATCHER, &run.task_id, to, at)?;
-    ops::log(tx, &run.task, DISPATCHER, "why", words, None, at).map(|_| ())
+    ops::move_to(tx, DISPATCHER, id, to, at)?;
+    ops::log(tx, &t.key, DISPATCHER, "why", words, None, at).map(|_| ())
 }
 
-/// Says `words` on `run`'s task, as Dispatcher.
+/// Moves `run`'s tasks still open: what is done stays done (AC-138).
+fn move_task(tx: &rusqlite::Transaction, run: &runs::Run, to: &str, words: &str) -> Result<(), String> {
+    run.open.iter().try_for_each(|id| move_one(tx, id, to, words))
+}
+
+/// Moves all `run`'s tasks: its agent took them.
+fn move_all(tx: &rusqlite::Transaction, run: &runs::Run, to: &str, words: &str) -> Result<(), String> {
+    run.ids.iter().try_for_each(|id| move_one(tx, id, to, words))
+}
+
+/// Says `words` on `run`'s open tasks, else on all, as Dispatcher.
 fn say(tx: &rusqlite::Transaction, run: &runs::Run, words: &str) -> Result<(), String> {
-    ops::log(tx, &run.task, DISPATCHER, "told", words, None, ops::now()).map(|_| ())
+    let on = if run.open.is_empty() { &run.ids } else { &run.open };
+    on.iter().try_for_each(|id| ops::log(tx, &ops::key_of(tx, id)?, DISPATCHER, "told", words, None, ops::now()).map(|_| ()))
+}
+
+/// Every page hears of `run`'s tasks.
+fn told_all(app: &crate::app::Shared, run: &runs::Run) {
+    for id in &run.ids {
+        crate::tasks::api::told(app, id);
+    }
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The board at /kanban/ (terminum-kanban.md): five columns of tasks, filters kept in the URL, moves
-// by drag or Move to…; terminumd owns the cards and every page hears of a change, this one too.
+// The board at /kanban/ (terminum-kanban.md): five columns of tasks, filters kept in the URL; a task moves by
+// running it, dropped on an agent or by its key; terminumd owns the cards and every page hears of a change.
 // signin.js comes first: every fetch then carries the sign-in.
 import * as signin from "./signin.js";
 import "./press.js";
@@ -8,7 +8,7 @@ import "./pop.js";
 import { pageColors } from "./contrast.js";
 import { withScheme } from "./schemes.js";
 import { askConfirm } from "./dialogs.js";
-import { takeSelection } from "./tasklink.js";
+import { sessionUrl, takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
 import { projectInk } from "./listparts.js";
@@ -20,7 +20,7 @@ import { projectWindow } from "./kanbanproject.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
-import { $, COLUMNS, api, button, el, iconButton, say } from "./kanbanutil.js";
+import { $, COLUMNS, agentColor, api, button, el, iconButton, say } from "./kanbanutil.js";
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -28,7 +28,9 @@ let cards = new Map(COLUMNS.map((c) => [c, []]));
 let counts = {};
 let shownColumn = "TODO";
 const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-reduced-motion: reduce)");
-let dragging = null;
+let dragging = null;                               // the tasks of a drag
+const picked = new Set();                          // the tasks ⌘ or Ctrl+click chose (terminum-dispatcher.md AC-138)
+let busy = {};                                     // what each busy agent does
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
 let loading = 0, changing = 0, chain = Promise.resolve();
@@ -60,11 +62,13 @@ async function load() {
     const parts = await Promise.all(COLUMNS.map(async (c, i) => {
       const pages = Math.max(1, Math.ceil(cards.get(c).length / PAGE));
       const got = await Promise.all(Array.from({ length: pages }, (_, n) => api(`/api/tasks?${query({ status: c, limit: PAGE, after: n ? n * PAGE : undefined, counts: i === 0 && !n ? 1 : undefined })}`)));
-      return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts };
+      return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts, busy: got[0].busy };
     }));
     if (mine !== loading || changing) return;
     cards = new Map(COLUMNS.map((c, i) => [c, parts[i].tasks]));
     counts = parts[0].counts;
+    busy = parts[0].busy ?? {};
+    agents.draw();
     banner(meta.problem ?? "");
     draw();
   } catch (e) {
@@ -98,15 +102,12 @@ function sessionLine(t) {
   return line("stopped", s.agent ? "stopped, task open" : "no agent");
 }
 
-const cardBudget = (id) => [...cards.values()].flat().find((t) => t.id === id)?.budget_seconds;
-
 /** What its session uses and what stands idle in it (terminum-dispatcher.md AC-127 to AC-129): as of the last walk. */
 function usageWords(id) {
   const u = usage[id];
   if (!u) return "";
   const words = u.not_measured ? [u.not_measured] : [`CPU ${u.cpu}%`, `${u.gib} GiB`, `${u.minutes} min`];
-  const budget = cardBudget(id);
-  if (budget && u.budget_used !== undefined) words.unshift(`${Math.floor(u.budget_used / 60)} of ${budget / 60} min`);
+  if (u.budget_total) words.unshift(`${Math.floor(u.budget_used / 60)} of ${u.budget_total / 60} min`);
   if (u.tokens) words.push(`${(u.tokens.input + u.tokens.output + u.tokens.cached).toLocaleString("en")} tokens`);
   else if (u.tokens === null) words.push("Tokens not known");
   for (const s of u.idle_subs ?? []) words.push(`idle: ${s.kind || "subagent"} ${s.id}`);
@@ -136,57 +137,79 @@ function showSession(c, t) {
   if (item) c.append(sessionStrip(item, p));
 }
 
+/** The agent a task is on, in its color: as long as it stays there, DONE or FAILED too (AC-138). */
+function agentChip(t) {
+  const a = el("span", "cagent", t.agent.name);
+  a.style.setProperty("--ag", agentColor(t.agent));
+  a.title = `${t.agent.name} did this`;
+  return a;
+}
+
 function card(t) {
-  const c = el("article", `card sev-${t.severity}`);
+  const c = el("article", `card sev-${t.severity}${picked.has(t.id) ? " picked" : ""}`);
   c.dataset.id = t.id;
   c.draggable = true;
   c.tabIndex = 0;
   c.rowDrawn = "";
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
-  const menu = iconButton("icon cmove", "ellipsis", "Move to…", "Move to…", (b) => moveMenu(t, b));
-  menu.setAttribute("aria-haspopup", "true");
-  head.append(menu);
-  const foot = el("div", "cfoot");
+  if (t.agent) head.append(agentChip(t));
+  if (t.status !== "IN PROGRESS") head.append(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])));
+  const foot = el("div", "cfoot"), one = filters().project.length === 1;
   const p = projectOf(t.project);
-  const proj = el("span", "cproj", p?.name ?? "Default");
-  proj.style.setProperty("--proj", projectInk(p));
-  foot.append(proj, el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));
+  if (!one) {                                      // its project is said once: by the head when one is shown
+    const proj = el("span", "cproj", p?.name ?? "Default");
+    proj.style.setProperty("--proj", projectInk(p));
+    foot.append(proj);
+  }
+  if (!t.agent) foot.append(el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));   // on an agent, the agent says who
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
   showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
   showUsage(c, t.id);
   showSession(c, t);
-  c.addEventListener("click", () => openTask(t.id));
+  c.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey) pick(t.id, c); else openTask(t.id); });
   c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) openTask(t.id); });
-  c.addEventListener("dragstart", (e) => { dragging = t; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", t.id); c.classList.add("lifted"); });
+  c.addEventListener("dragstart", (e) => {
+    dragging = picked.has(t.id) ? pickedTasks() : [t];
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", dragging.map((d) => d.id).join(" "));
+    for (const d of dragging) document.querySelector(`.card[data-id="${d.id}"]`)?.classList.add("lifted");
+    document.body.classList.add("dragtask");
+  });
   c.addEventListener("dragend", () => {
     dragging = null;
-    c.classList.remove("lifted");
+    document.querySelectorAll(".card.lifted").forEach((x) => x.classList.remove("lifted"));
+    document.body.classList.remove("dragtask");
     for (const { col } of columns.values()) col.classList.remove("over");
+    agents.dragEnded();
     draw();
   });
   return c;
 }
 
-/** Move to…: every drag also has a menu item (CLAUDE.md §1); the only way on a phone. A window of
- *  its own: nothing clips it, Esc and a press outside close it; beside its key, a sheet on a phone. */
-function moveMenu(t, anchor) {
-  const box = $("movebox"), rows = $("moverows");
-  rows.replaceChildren(el("p", "movehead", `Move ${t.id} to`), ...COLUMNS.filter((c) => c !== t.status).map((c) => {
-    const b = button(null, c, () => { box.close(); moveTo(t, c); });
-    b.setAttribute("role", "menuitem");
-    return b;
-  }));
-  box.setAttribute("aria-label", `Move ${t.id} to`);
-  box.showModal();
-  if (narrow.matches) { rows.focus(); return; }   // a finger's: no row looks chosen before it presses one
-  const r = anchor.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
-  box.style.left = `${Math.max(8, Math.min(r.right - w, innerWidth - w - 8))}px`;
-  box.style.top = `${r.bottom + h + 4 < innerHeight ? r.bottom + 4 : Math.max(8, r.top - h - 4)}px`;
+const pickedTasks = () => [...cards.values()].flat().filter((t) => picked.has(t.id));
+
+/** ⌘ or Ctrl+click: several tasks for one agent; Esc lets them go. */
+function pick(id, c) {
+  if (!picked.delete(id)) picked.add(id);
+  c.classList.toggle("picked", picked.has(id));
+  agents.draw();
 }
-$("movebox").addEventListener("click", (e) => { if (e.target === $("movebox")) $("movebox").close(); });
+function unpick() {
+  picked.clear();
+  document.querySelectorAll(".card.picked").forEach((c) => c.classList.remove("picked"));
+  agents.draw();
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && picked.size && !document.querySelector("dialog[open]")) unpick(); });
+
+/** RUN's window for `tasks`, on `agent` if chosen; what is said of a refusal is terminumd's. */
+async function runThem(tasks, agent) {
+  try {
+    if (await runs.open(tasks, { agent }) === true) unpick();
+  } catch (e) { say(e.message); }
+}
 
 /** The board's changes go one after another, as made, so the last drop stands; when none is left
  *  the columns are read again: a refused one's card goes back, and the toast says why (AC-133). */
@@ -198,35 +221,9 @@ function change(t, body) {
     .finally(() => { if (!--changing) readSoon(); });
 }
 
-/** Shown at once where it goes: on top of its severity's cards. */
-function placeCard(t, column) {
-  const from = cards.get(t.status), to = cards.get(column);
-  from.splice(from.indexOf(t), 1);
-  counts[t.status] = Math.max(0, (counts[t.status] ?? 1) - 1);
-  counts[column] = (counts[column] ?? 0) + 1;
-  t.status = column;
-  const top = to.findIndex((c) => c.severity >= t.severity);
-  to.splice(top >= 0 ? top : to.length, 0, t);
-  draw();
-}
-
-/** IN PROGRESS with no session asks which agent starts it; the card moves when one takes it (terminum-dispatcher.md AC-121). */
-async function moveTo(t, status) {
-  if (status === "IN PROGRESS" && !t.session) {
-    try {
-      const how = await runs.open(t, { canMove: true });
-      if (how !== "move") return;
-    } catch (e) { return say(e.message); }
-  }
-  placeCard(t, status);
-  change(t, { status });
-}
-
-function dropOn(column, before) {
-  const t = dragging;
-  if (!t) return;
-  if (t.status !== column) return moveTo(t, column);
-  const list = cards.get(column);
+/** Within its column a task's place is the human's; to another it goes only by running (AC-138). */
+function dropOn(before) {
+  const t = dragging[0], list = cards.get(t.status);
   list.splice(list.indexOf(t), 1);
   const at = before ? list.findIndex((c) => c.id === before) : -1;
   list.splice(at >= 0 ? at : list.length, 0, t);
@@ -246,13 +243,13 @@ const columns = new Map(COLUMNS.map((column) => {
   col.dataset.status = column;
   head.append(el("span", null, column), count);
   col.append(head, list);
-  col.addEventListener("dragover", (e) => { if (dragging) { e.preventDefault(); col.classList.add("over"); } });
+  col.addEventListener("dragover", (e) => { if (dragging?.length === 1 && dragging[0].status === column) { e.preventDefault(); col.classList.add("over"); } });
   col.addEventListener("dragleave", (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove("over"); });
   col.addEventListener("drop", (e) => {
     e.preventDefault();
     col.classList.remove("over");
-    const under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging?.id; });
-    dropOn(column, under?.dataset.id);
+    const under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging[0].id; });
+    dropOn(under?.dataset.id);
   });
   return [column, { col, count, list, tab: tabFor(column), drawn: "" }];
 }));
@@ -262,20 +259,21 @@ function send(m) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(m));
   else say("Not connected");
 }
-const side = boardSessions({ chosen: () => filters().project, openTask, send });
+const openSession = (key) => { location.href = sessionUrl(key); };
+const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
 const runs = runWindow({ addAgent: (project) => agents.addTo(project), done: () => readSoon() });
-const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta });
+const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, busy: () => busy, liveRow: (key) => liveRows.get(key),
+  given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
 $("agentbar").append(agents.box);
-const pages = columns;
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
-$("colswitch").replaceChildren(...[...pages.values()].map((p) => p.tab));
+$("colswitch").replaceChildren(...[...columns.values()].map((p) => p.tab));
 
 /** A column is built anew only when what it shows changed; a drag's card stays until it ends. */
 function draw() {
   if (dragging) return;
   const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed();
   for (const [column, part] of columns) {
-    const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have.map((t) => ({ ...t, session: t.session?.key })), n, !!filtered]);   // a session's state changes on its card alone (sessionsCame)
+    const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have.map((t) => ({ ...t, session: t.session?.key })), n, !!filtered, filters().project.length === 1]);   // a session's state changes on its card alone (sessionsCame)
     part.count.textContent = String(n);
     part.tab.textContent = `${column} ${n}`;
     if (shown === part.drawn) continue;
@@ -293,12 +291,12 @@ function draw() {
 /** A phone's one column, by its tab or a swipe. */
 function showColumn(column) {
   shownColumn = column;
-  pages.get(column).col.scrollIntoView({ inline: "start", block: "nearest", behavior: still.matches ? "auto" : "smooth" });
+  columns.get(column).col.scrollIntoView({ inline: "start", block: "nearest", behavior: still.matches ? "auto" : "smooth" });
   markTab();
 }
 
 function markTab() {
-  for (const [name, { tab }] of pages) {
+  for (const [name, { tab }] of columns) {
     const on = name === shownColumn;
     if (tab.getAttribute("aria-selected") === String(on)) continue;
     tab.setAttribute("aria-selected", String(on));
@@ -308,7 +306,7 @@ function markTab() {
 
 $("board").addEventListener("scroll", () => {
   if (!narrow.matches) return;
-  const b = $("board"), now = [...pages.keys()][Math.round(b.scrollLeft / Math.max(1, b.clientWidth))];
+  const b = $("board"), now = [...columns.keys()][Math.round(b.scrollLeft / Math.max(1, b.clientWidth))];
   if (now && now !== shownColumn) { shownColumn = now; markTab(); }
 }, { passive: true });
 
@@ -317,6 +315,7 @@ function sessionsCame(groups) {
   const items = groups.flatMap((g) => g.items ?? []);
   meta.sessions = items.map((it) => ({ key: it.id, title: it.title }));
   liveRows = new Map(items.map((it) => [it.id, it]));
+  agents.draw();
   seeFolders(groups);
   const shown = new Map([...document.querySelectorAll(".card")].map((c) => [c.dataset.id, c]));
   for (const t of [...cards.values()].flat()) {
@@ -343,6 +342,7 @@ async function loadMeta() {
     if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); bar.setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
     bar.draw();
     agents.draw();
+    project.refresh();
   } catch (e) {
     banner(`The board is out of date: ${e.message}`);
   }
@@ -356,11 +356,23 @@ async function madeHidden(t) {
 }
 
 const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, editProject: (p) => project.open(p) });
-const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, send, chosen: (id) => bar.setFilters({ project: [id] }) });
+const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
 $("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
 const windowed = taskWindow({ getMeta: () => meta, runs });
-const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden });
+const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, busy: () => busy });
+
+/** Run in the new-task window: at once on its agent; what stands in the way opens RUN's window, saying it. */
+async function runMade(t, agent) {
+  madeHidden(t);
+  if (!agent) return runThem([t]);
+  try {
+    await api(`/api/tasks/${t.id}/run`, { method: "POST", body: { agent } });
+    readSoon();
+  } catch (e) {
+    runs.open([t], { why: e.message }).catch((no) => say(no.message));
+  }
+}
 
 const addressed = () => /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
 
@@ -446,6 +458,8 @@ function listen() {
       else if (m.t === "taskmarks") needs.came(m);
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
+        busy = m.busy ?? busy;
+        agents.draw();
         for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
       }
       else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }

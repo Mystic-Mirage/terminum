@@ -27,17 +27,17 @@ function address(next) {
 export const filters = () => {
   const q = new URLSearchParams(location.search);
   const list = (k) => (q.get(k) ?? "").split(",").filter(Boolean);
-  return { project: list("project"), severity: list("severity"), owner: q.get("owner") ?? "", q: q.get("q") ?? "" };
+  return { project: list("project"), severity: list("severity"), owner: q.get("owner") ?? "", q: q.get("q") ?? "", archived: q.get("archived") ?? "" };
 };
 
 /** What Clear filters takes off: the project is a choice, not a filter (AC-135). */
-export const narrowed = () => { const f = filters(); return f.severity.length || f.owner || f.q; };
+export const narrowed = () => { const f = filters(); return f.severity.length || f.owner || f.q || f.archived; };
 /** A task made now may not show. */
 export const hasFilter = () => narrowed() || filters().project.length;
 
 export function query(extra = {}) {
   const f = filters(), p = new URLSearchParams();
-  for (const [k, v] of Object.entries({ project: f.project.join(","), severity: f.severity.join(","), owner: f.owner, q: f.q, ...extra })) if (v !== "" && v !== undefined) p.set(k, v);
+  for (const [k, v] of Object.entries({ project: f.project.join(","), severity: f.severity.join(","), owner: f.owner, q: f.q, archived: f.archived, ...extra })) if (v !== "" && v !== undefined) p.set(k, v);
   return p.toString();
 }
 
@@ -98,7 +98,8 @@ export function filterBar({ getMeta, changed, editProject }) {
     picks($("fseverity"), SEVERITIES.map((s) => ({ id: s, name: s })), f.severity, (id, on) => setFilters({ severity: toggled(filters().severity, id, on) }));
     picks($("fowner"), [{ id: "humans", name: "People" }, { id: "agents", name: "Agents" }], f.owner ? [f.owner] : [], (id, on) => setFilters({ owner: on ? id : "" }));
     if ($("find").value !== f.q) $("find").value = f.q;
-    const on = f.severity.length + (f.owner ? 1 : 0);
+    const on = f.severity.length + (f.owner ? 1 : 0) + (f.archived ? 1 : 0);
+    $("farchived").setAttribute("aria-pressed", String(!!f.archived));
     $("clearfilters").hidden = !narrowed();
     $("filtersbtn").textContent = on ? `Filters ${on}` : "Filters";
     if (on) $("picks").classList.add("open");
@@ -113,7 +114,8 @@ export function filterBar({ getMeta, changed, editProject }) {
     $("filtersbtn").setAttribute("aria-expanded", String(open));
   });
   $("find").addEventListener("input", () => { clearTimeout($("find").wait); $("find").wait = setTimeout(() => setFilters({ q: $("find").value }), 200); });
-  $("clearfilters").addEventListener("click", () => setFilters({ severity: [], owner: "", q: "" }));
+  $("farchived").addEventListener("click", () => setFilters({ archived: filters().archived ? "" : "1" }));
+  $("clearfilters").addEventListener("click", () => setFilters({ severity: [], owner: "", q: "", archived: "" }));
 
   // an address that names none: the project this browser last chose
   const kept = read(CHOSEN);

@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A project's window (terminum-kanban.md AC-138): a new empty one, or one to change: its name, server,
 // folder, agents and memory limits. terminumd checks what is kept and says what is wrong.
-import { askConfirm } from "./dialogs.js";
-import { $, THIS_MAC, api, fillSelect } from "./kanbanutil.js";
+import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
 
-const DEFAULT = "default";
-
-/** `agents`: the agents' section; `send(m)`: to terminumd; `chosen(id)`: a project just made is shown. */
-export function projectWindow({ getMeta, reload, agents, send, chosen }) {
+/** `agents`: the agents' section; `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown. */
+export function projectWindow({ getMeta, reload, agents, deleteProject, chosen }) {
   const box = $("projectbox");
   let shown = null;
 
@@ -18,27 +15,23 @@ export function projectWindow({ getMeta, reload, agents, send, chosen }) {
     $("projectagentlist").hidden = !rows.length;
   };
 
-  /** What it shows: `p` none for a new one. Default is no real project: it holds only agents and limits. */
-  function draw(p) {
+  /** `p` to change, none for a new one. Default is no real project: it holds only agents and limits. */
+  function open(p = null) {
     shown = p;
     const real = p?.id !== DEFAULT;
+    fillSelect($("projecthost"), hostOptions(getMeta().hosts), p?.host ?? "");
+    $("projecthost").disabled = !!p;                 // its sessions are on its server
+    $("projectname").value = p?.name ?? "";
+    $("projectdir").value = p?.dir ?? "";
     $("projecthead").textContent = p ? p.name : "New project";
     $("projectok").textContent = p ? "Done" : "Create";
     $("projectfields").hidden = !real;
     $("projectagents").hidden = !p;
     $("projectdelete").hidden = !p || !real;
     if (p) drawAgents();
-  }
-
-  function open(p = null) {
-    fillSelect($("projecthost"), [["", THIS_MAC], ...getMeta().hosts.map((h) => [h, h])], p?.host ?? "");
-    $("projecthost").disabled = !!p;                 // its sessions are on its server
-    $("projectname").value = p?.name ?? "";
-    $("projectdir").value = p?.dir ?? "";
-    draw(p);
     say("");
     box.showModal();
-    if (p?.id !== DEFAULT) $("projectname").focus();
+    if (real) $("projectname").focus();
   }
 
   /** Created, the window stays: now its agents can be added; else what changed is kept and it closes. */
@@ -47,8 +40,7 @@ export function projectWindow({ getMeta, reload, agents, send, chosen }) {
     try {
       if (shown?.id === DEFAULT) return box.close();
       if (shown) {
-        await api(`/api/task-projects/${shown.id}`, { method: "PATCH", body: { name, dir } });
-        await reload();
+        await api(`/api/task-projects/${shown.id}`, { method: "PATCH", body: { name, dir } });   // the board hears of it
         return box.close();
       }
       const { id } = await api("/api/task-projects", { method: "POST", body: { name, dir, host } });
@@ -62,16 +54,10 @@ export function projectWindow({ getMeta, reload, agents, send, chosen }) {
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.isComposing && e.target.matches("input")) { e.preventDefault(); keep(); }
   });
-  $("projectaddagent").addEventListener("click", async () => {
-    await agents.addTo(shown.id);
-    drawAgents();
-  });
-  $("projectagentlist").addEventListener("click", () => { document.getElementById("agentbox").addEventListener("close", drawAgents, { once: true }); }, true);
+  $("projectaddagent").addEventListener("click", () => agents.addTo(shown.id));
   $("projectlimits").addEventListener("click", () => agents.openLimits(shown.id));
-  $("projectdelete").addEventListener("click", async () => {
-    if (!await askConfirm(`Delete the project ${shown.name}? Its sessions and tasks move to Default; nothing is closed.`, "Delete Project")) return;
-    send({ t: "project", action: "delete", project: shown.id });
-    box.close();
-  });
-  return { open };
+  $("projectdelete").addEventListener("click", () => { box.close(); deleteProject(shown.id); });
+  /** What terminumd now says of its agents. */
+  const refresh = () => { if (box.open && shown) drawAgents(); };
+  return { open, refresh };
 }

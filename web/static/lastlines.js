@@ -4,7 +4,7 @@
 // is text), scrolled to the end: those from before its tmux restarted, when there are, else the
 // latest; "Before restart | Now" switches when both are. Copy copies the lines shown; Esc or × closes.
 // The same window shows a pane's diagnostics (AC-100, diag.js).
-import { when } from "./marks.js";
+import { when } from "./listparts.js";
 
 const $ = (id) => document.getElementById(id);
 

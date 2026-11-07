@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Tasks' files (AC-106, AC-109): bytes in `kanban-files/<id>` beside the store, 0600 in a 0700
+//! Tasks' files (AC-106, AC-109): bytes in `attachments/<id>` beside the store, 0600 in a 0700
 //! folder, a row in the store. A file dropped in a window not yet saved has no task; such a file
 //! goes after 7 days. Nothing here runs or is opened on the page's origin.
 
@@ -31,7 +31,16 @@ impl File {
 }
 
 pub fn folder(dir: &Path) -> PathBuf {
-    dir.join("kanban-files")
+    dir.join("attachments")
+}
+
+/// A store made under the folder's first name keeps its files: moved once, before anything reads them.
+pub fn move_old_folder(dir: &Path) -> std::io::Result<()> {
+    let (old, new) = (dir.join("kanban-files"), folder(dir));
+    if old.exists() && !new.exists() {
+        std::fs::rename(old, new)?;
+    }
+    Ok(())
 }
 
 /// `id` as a file's name: what terminumd made, never a path.

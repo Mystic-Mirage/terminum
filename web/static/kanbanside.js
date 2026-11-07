@@ -8,16 +8,24 @@ import { colored, markedSessions } from "./listparts.js";
 import { findItem, renderNav, row, setTaskMarks } from "./nav.js";
 import { arranged, bindReorder, listOrderer, ordered } from "./reorder.js";
 import { rowMenus, saveOrder } from "./rowmenu.js";
+import { copyPreview, hiddenNote, unhidden } from "./seltext.js";
 import { sessionUrl } from "./tasklink.js";
-import { $, el, read, say, write } from "./kanbanutil.js";
+import { copyByCommand } from "./touchcopy.js";
+import { $, DEFAULT, el, read, say, write } from "./kanbanutil.js";
 
-const DEFAULT = "default";
-const openSession = (key) => { location.href = sessionUrl(key); };
+let opened = null;                                 // the session a press last opened
+const openSession = (key) => { opened = key; location.href = sessionUrl(key); };
 const store = { get: (k, d) => read(k) ?? d, set: write };
-const narrow = matchMedia("(max-width: 860px)");
+
+/** What the session page's copy does: what hides what a line runs is left out; the toast says what went. */
+async function copy(got) {
+  const { text, left } = unhidden(got), said = `Copied ${copyPreview(text)}${hiddenNote(left)}`;
+  const ok = window.isSecureContext && navigator.clipboard?.writeText ? await navigator.clipboard.writeText(text).then(() => true, () => false) : copyByCommand(text);
+  say(ok ? said : "Copying is blocked here; use the system Copy menu.");
+}
 
 /** `chosen()`: the projects shown; a task's mark opens its window by `openTask`; `send(m)`: to terminumd. */
-export function boardSessions({ chosen, openTask, send }) {
+export function boardSessions({ chosen, openTask, send, narrow }) {
   const st = { groups: [], projects: [], listOrder: [] };
   const list = $("sessions"), collapsed = new Set(store.get("collapsed", []));   // the session page's: one list, one memory
   const marks = new Map();
@@ -25,11 +33,10 @@ export function boardSessions({ chosen, openTask, send }) {
   const drawnGroups = () => ordered(st.groups, store.get("groupOrder", []));
   const item = (id) => findItem(st.groups, id)?.item ?? null;
   const clone = (it) => send({ t: "clone", id: it.id });
-  const copy = (text) => navigator.clipboard.writeText(text).then(() => say("Copied"), () => say("This browser refused to copy."));
-  const tools = listTools({ send, store, groups: () => st.groups, onResize: () => {} });
+  const tools = listTools({ send, store, groups: () => st.groups });
   const orderList = listOrderer(st, () => arranged(drawnGroups(), st.projects, st.listOrder).map((p) => p.id), send, () => draw(true));
   const menus = rowMenus({ list, send, item, projects: () => st.projects, clone, orderList, lastLines: () => lastLines, copy, say,
-    groups: () => st.groups, split: (it) => openSession(it.id),
+    groups: () => st.groups,
     keepFolded: (from, to) => { if (collapsed.has(from)) { collapsed.add(to); store.set("collapsed", [...collapsed]); } } });
   const reorder = bindReorder(list, (kind, parent, ids) => {
     if (kind === "part") orderList(ids);
@@ -55,11 +62,14 @@ export function boardSessions({ chosen, openTask, send }) {
     draw();
   }
 
-  sessionDrawer({ narrow, store, drawNav: draw, focusInput: () => {}, peek: () => {}, hiddenKey: "board.sessionsHidden" });
+  sessionDrawer({ narrow, store, drawNav: () => draw(), hiddenKey: "board.sessionsHidden" });
+  // the row's Plan: its pane is on the session page
+  document.addEventListener("planopen", () => { if (opened) location.href = sessionUrl(opened, "plan"); });
 
-  /** What terminumd says for the list; false: not the list's. */
+  /** What terminumd says for the list. */
   function seen(m) {
     menus.seen(m);
+    tools.seen(m);
     switch (m.t) {
       case "layout": st.groups = m.groups ?? []; tools.layoutCame(st.groups); draw(); return;
       case "projects": st.projects = m.items ?? []; st.listOrder = m.order ?? []; draw(); return;
@@ -68,14 +78,13 @@ export function boardSessions({ chosen, openTask, send }) {
       case "mark": marks.set(m.item.id, m.item); draw(); return;
       case "unmark": marks.delete(m.id); draw(); return;
       case "settings": lastLines = m.page?.lastLines ?? 0; return;
-      case "hostadded": case "hostagents": tools.hostAnswer(m); return;
-      case "tmuxadded": tools.tmuxAdded(); return;
-      case "tmuxsessions": tools.tmuxChoices(m); return;
       case "note": say(m.msg); return;
       case "error": if (m.msg && !tools.formError(m.msg)) say(m.msg); return;
     }
   }
-  return { draw, seen };
+  /** Asked as the list's own menu asks. */
+  const deleteProject = (id) => { const p = st.projects.find((x) => x.id === id); if (p) menus.deleteProject(p); };
+  return { draw, seen, deleteProject };
 }
 
 /** A card's strip: its session's own row and what the agent says it does now; `project` colors its bar. */

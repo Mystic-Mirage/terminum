@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the board's parts share: terminumd's routes, small DOM helpers, dialogs and files.
 import * as signin from "./signin.js";
-import { el, iconButton } from "./listparts.js";
+import { PROJECT_HUES, el, hueColor, iconButton } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 
@@ -9,6 +9,11 @@ export { el, iconButton };
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
 export const THIS_MAC = "This Mac";
+export const DEFAULT = "default";                  // terminumd's Default project
+/** A server's choices: none is this Mac. */
+export const hostOptions = (hosts) => [["", THIS_MAC], ...hosts.map((h) => [h, h])];
+/** An agent's color: its place in the projects' palette (terminum-dispatcher.md AC-138). */
+export const agentColor = (a) => hueColor(PROJECT_HUES[(a.color ?? 0) % PROJECT_HUES.length]);
 export const $ = (id) => document.getElementById(id);
 
 /** A page with no sign-in goes to /sessions/, whose form signs in. */

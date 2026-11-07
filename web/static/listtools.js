@@ -11,7 +11,7 @@ import { askConfirm } from "./dialogs.js";
 const $ = (id) => document.getElementById(id);
 
 /** Wires them; `groups()`: the layout's; `onResize()` after the width changed. */
-export function listTools({ send, store, groups, onResize }) {
+export function listTools({ send, store, groups, onResize = () => {} }) {
   // The session list's width, dragged at its border (wide screens), remembered per browser.
   const NAV_MIN = 200, NAV_MAX = 640;
   function setNavWidth(px, save) {
@@ -172,7 +172,12 @@ export function listTools({ send, store, groups, onResize }) {
   document.addEventListener("click", (e) => { if (!$("hostmenu").hidden && !e.target.closest("#hostmenu")) hideHostMenu(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("hostmenu").hidden) hideHostMenu(); });   // Esc closes a popover
 
-  /** terminumd's answer to the host form or the agents dialog. */
-  const hostAnswer = (m) => (m.t === "hostagents" ? agents.answered(m) : hostAdded(m.name));
-  return { reconnect: (g) => send({ t: "hostaction", name: g.host, action: "retry" }), formError, layoutCame, hostAnswer, tmuxAdded, tmuxChoices: tmux.choices, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu };
+  /** terminumd's answers to its forms. */
+  function seen(m) {
+    if (m.t === "hostadded") hostAdded(m.name);
+    else if (m.t === "hostagents") agents.answered(m);
+    else if (m.t === "tmuxadded") tmuxAdded();
+    else if (m.t === "tmuxsessions") tmux.choices(m);
+  }
+  return { reconnect: (g) => send({ t: "hostaction", name: g.host, action: "retry" }), formError, layoutCame, seen, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu };
 }

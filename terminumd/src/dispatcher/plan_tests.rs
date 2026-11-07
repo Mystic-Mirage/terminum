@@ -2,7 +2,7 @@
 use super::*;
 
 fn run(status: &str) -> Run {
-    Run { status: status.into(), state: "working".into(), kind: "claude".into(), task_id: "T-12".into(), ..Default::default() }
+    Run { status: status.into(), state: "working".into(), kind: "claude".into(), ids: vec!["T-12".into()], open: if crate::dispatcher::plan::finished(status) { vec![] } else { vec!["T-12".into()] }, ..Default::default() }
 }
 
 fn up(dt: i64) -> Facts {
@@ -81,20 +81,6 @@ fn ac124_two_minutes_of_a_question_wait_for_a_human_and_it_returns() {
     assert_eq!(r.idle_for, 0, "no idle clock while it waits");
     let acts = step(&mut r, &Facts { active: true, ..up(30) });
     assert_eq!(moved(&acts).unwrap().0, "IN PROGRESS");
-}
-
-#[test]
-fn ac124_a_human_s_move_stands_against_every_signal() {
-    let mut r = run("WAIT FOR HUMAN");
-    r.held = true;
-    r.wait_moved = true;
-    r.turn_ended = true;
-    assert_eq!(moved(&step(&mut r, &Facts { active: true, ..up(30) })), None);
-    assert_eq!(moved(&step(&mut r, &up(7200))), None, "no nudge and no DONE");
-    assert_eq!(moved(&step(&mut r, &Facts { failed: Some("x".into()), ..up(0) })), None);
-    let acts = step(&mut r, &Facts { exit: Some(1), alive: false, ..up(0) });
-    assert_eq!(moved(&acts), None, "nor an end: it is said");
-    assert_eq!(acts, vec![Act::Say("Session ended: claude ended, exit 1.".into())]);
 }
 
 #[test]

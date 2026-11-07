@@ -28,6 +28,28 @@ pub struct Agent {
     pub host: Option<String>,
     pub dir: String,
     pub command: String,
+    pub effort: String,
+    /// its place in the palette (listparts.js): none of a project's two share one while another is free
+    pub color: i64,
+    /// what starts it: its command with its effort
+    pub line: String,
+}
+
+impl Agent {
+    pub fn line(&self) -> String {
+        command_line(&self.kind, &self.command, &self.effort)
+    }
+}
+
+/// The effort a kind takes, as its command line names it; empty goes by the agent's own setting.
+const EFFORTS: [(&str, &[&str]); 2] = [("claude", &["low", "medium", "high", "xhigh", "max"]), ("codex", &["low", "medium", "high", "xhigh"])];
+
+fn command_line(kind: &str, command: &str, effort: &str) -> String {
+    match (kind, effort) {
+        (_, "") => command.to_string(),
+        ("codex", e) => format!("{command} -c model_reasoning_effort={e}"),
+        (_, e) => format!("{command} --effort {e}"),
+    }
 }
 
 /// What a page keeps, trimmed.
@@ -37,12 +59,13 @@ struct Given {
     host: Option<String>,
     dir: String,
     command: String,
+    effort: String,
 }
 
 impl Given {
     fn of(body: &Value) -> Given {
         let text = |k: &str| body[k].as_str().unwrap_or_default().trim().to_string();
-        Given { name: text("name"), kind: text("kind"), host: Some(text("host")).filter(|h| !h.is_empty()), dir: text("dir"), command: text("command") }
+        Given { name: text("name"), kind: text("kind"), host: Some(text("host")).filter(|h| !h.is_empty()), dir: text("dir"), command: text("command"), effort: text("effort") }
     }
 
     /// What needs no store: refused with the words the window shows.
@@ -67,6 +90,15 @@ impl Given {
         }
         if has_control(&self.command) {
             return Err("An agent's command is one line, with no control or invisible characters.".into());
+        }
+        if !self.effort.is_empty() {
+            if !EFFORTS.iter().any(|(kind, levels)| *kind == self.kind && levels.contains(&self.effort.as_str())) {
+                return Err(format!("{} has no effort {}.", self.kind, self.effort));
+            }
+            // the flag goes after the command: after a `;` it would go to another program
+            if self.command.contains([';', '|', '&']) {
+                return Err("An effort goes on one program's command: this one has ; | or &. Write it in the command.".into());
+            }
         }
         check_folder(&self.dir)?;
         if let Some(host) = self.host.as_ref().filter(|h| !hosts.contains(h)) {
@@ -102,8 +134,9 @@ pub fn check_folder(dir: &str) -> Result<(), String> {
 
 /// Every project's, as they were added.
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
-    rows(tx, "SELECT id, project, name, kind, host, dir, command FROM project_agents ORDER BY rowid", [], |r| {
-        Ok(Agent { id: r.get(0)?, project: r.get(1)?, name: r.get(2)?, kind: r.get(3)?, host: r.get(4)?, dir: r.get(5)?, command: r.get(6)? })
+    rows(tx, "SELECT id, project, name, kind, host, dir, command, effort, color FROM project_agents ORDER BY rowid", [], |r| {
+        let (kind, command, effort): (String, String, String) = (r.get(3)?, r.get(6)?, r.get(7)?);
+        Ok(Agent { id: r.get(0)?, project: r.get(1)?, name: r.get(2)?, line: command_line(&kind, &command, &effort), kind, host: r.get(4)?, dir: r.get(5)?, command, effort, color: r.get(8)? })
     })
 }
 
@@ -117,16 +150,18 @@ fn add(tx: &Transaction, project: &str, given: &Given) -> Result<String, String>
     check_project(tx, project)?;
     given.fits(tx, project, "")?;
     let id = crate::auth::crypto::random_hex::<8>();
-    tx.execute("INSERT INTO project_agents (id, project, name, kind, host, dir, command) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-               (&id, project, &given.name, &given.kind, &given.host, &given.dir, &given.command)).map_err(sql)?;
+    // the next color after the project's last: agents far apart, and no two alike for a palette's length
+    let color: i64 = tx.query_row("SELECT COALESCE(MAX(color) + 1, 0) FROM project_agents WHERE project = ?1", [project], |r| r.get(0)).map_err(sql)?;
+    tx.execute("INSERT INTO project_agents (id, project, name, kind, host, dir, command, effort, color) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+               (&id, project, &given.name, &given.kind, &given.host, &given.dir, &given.command, &given.effort, color)).map_err(sql)?;
     Ok(id)
 }
 
 fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
     let project: String = tx.query_row("SELECT project FROM project_agents WHERE id = ?1", [id], |r| r.get(0)).optional().map_err(sql)?.ok_or_else(|| "That agent is gone.".to_string())?;
     given.fits(tx, &project, id)?;
-    tx.execute("UPDATE project_agents SET name = ?2, kind = ?3, host = ?4, dir = ?5, command = ?6 WHERE id = ?1",
-               (id, &given.name, &given.kind, &given.host, &given.dir, &given.command)).map(|_| ()).map_err(sql)
+    tx.execute("UPDATE project_agents SET name = ?2, kind = ?3, host = ?4, dir = ?5, command = ?6, effort = ?7 WHERE id = ?1",
+               (id, &given.name, &given.kind, &given.host, &given.dir, &given.command, &given.effort)).map(|_| ()).map_err(sql)
 }
 
 fn remove(tx: &Transaction, id: &str) -> Result<(), String> {

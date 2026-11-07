@@ -72,6 +72,8 @@ export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, tasks,
     if (!renaming()) $("rename").hidden = !found;
   }
   show.plan = plan;
+  // its buttons (✎, Plan, Copy) are theirs; a narrow window's title shows the full name and path (☰ opens the list)
+  $("current").onclick = (e) => { if (!e.target.closest("button")) matchMedia("(max-width: 860px)").matches ? show.peek() : $("filter").focus(); };
   /** The full name and path for PEEK ms, the header's buttons slid aside; again: back at once. */
   show.peek = () => {
     if (peeking) return unpeek();

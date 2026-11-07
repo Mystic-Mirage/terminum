@@ -726,7 +726,7 @@ The board is a second page (`web/static/kanban.html`), plain JavaScript, using t
 
 ## 9. Technical details and specifications
 
-**Files.** `<app>/state/kanban.sqlite`, WAL mode, `foreign_keys` on; files in `<app>/state/kanban-files/<uuid>`, 0600, folder 0700.
+**Files.** `<app>/state/kanban.sqlite`, WAL mode, `foreign_keys` on; files in `<app>/state/attachments/<uuid>`, 0600, folder 0700.
 
 ```sql
 CREATE TABLE users (id TEXT PRIMARY KEY, kind TEXT CHECK (kind IN ('human','agent','system')), name TEXT NOT NULL, role TEXT NOT NULL);

@@ -4,7 +4,7 @@
 const $ = (id) => document.getElementById(id);
 
 /** `hiddenKey`: what this page remembers hiding by: the board's is its own (terminum-kanban.md AC-135). */
-export function sessionDrawer({ narrow, store, drawNav, focusInput, peek, hiddenKey = "navHidden" }) {
+export function sessionDrawer({ narrow, store, drawNav, focusInput = () => {}, hiddenKey = "navHidden" }) {
   function openDrawer() {
     if (!narrow.matches) { $("app").classList.remove("nav-hidden"); store.set(hiddenKey, false); return; }
     $("app").classList.add("nav-open");
@@ -16,9 +16,6 @@ export function sessionDrawer({ narrow, store, drawNav, focusInput, peek, hidden
     $("navbtn").setAttribute("aria-expanded", "false");
   }
   $("navbtn").onclick = openDrawer;
-  // its buttons (✎, Plan, Copy) are theirs; a narrow window's title shows the full name and path (☰ opens the list)
-  if ($("current")) $("current").onclick = (e) => { if (!e.target.closest("button")) narrow.matches ? peek() : $("filter").focus(); };
-
   $("scrim").onclick = closeDrawer;
   $("drawerclose").onclick = closeDrawer;
   // "/" filters the sessions, unless the keys go to a field or the terminal

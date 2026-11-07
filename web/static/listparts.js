@@ -44,3 +44,5 @@ export function markedSessions(items) {
   }
   return m;
 }
+
+export const when = (s) => new Date(s * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });

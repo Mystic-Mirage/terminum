@@ -10,8 +10,8 @@ export const newTaskUrl = (session, project) => `/kanban/?new=1&session=${encode
 /** A session's own address on its page: `#/<key>/`, as readable as a key can stay (AC-134). */
 export const sessionHash = (key) => `#/${encodeURIComponent(key).replaceAll("%3A", ":")}/`;
 
-/** The session page showing session `key`. */
-export const sessionUrl = (key) => `/sessions/${sessionHash(key)}`;
+/** The session page showing session `key`; `then` "plan": with its Plan pane open. */
+export const sessionUrl = (key, then) => `/sessions/${then ? `?then=${then}` : ""}${sessionHash(key)}`;
 
 /** The session this page's address names, if any. */
 export function addressedSession() {

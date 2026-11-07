@@ -114,13 +114,14 @@
       <a id="barsessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
   <div id="filters">
     <details id="fproject" class="pick" name="picks"><summary class="textkey" title="The project the board shows">All projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
-    <button id="newproject" class="textkey" type="button" title="A new project, empty"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Project</button>
+    <button id="newproject" class="textkey" type="button" title="A new project, empty"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Project</span></button>
     <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
       <input id="find" type="search" placeholder="Find tasks" aria-label="Find tasks" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
     <button id="filtersbtn" class="textkey" type="button" aria-expanded="false" aria-controls="picks">Filters</button>
     <div id="picks">
       <details id="fseverity" class="pick" name="picks"><summary class="textkey">Severity</summary><div class="box menurows" role="group" aria-label="Severity"></div></details>
       <details id="fowner" class="pick" name="picks"><summary class="textkey">Owner</summary><div class="box menurows" role="group" aria-label="Owner"></div></details>
+      <button id="farchived" class="textkey" type="button" aria-pressed="false" title="The archived tasks instead of the board's">Archived</button>
       <button id="clearfilters" class="textkey" type="button" hidden>Clear filters</button>
     </div>
   </div>
@@ -173,26 +174,30 @@
         <button id="newpreview" type="button" role="tab" aria-selected="false">Preview</button>
       </div>
     </div>
-    <textarea id="newtext" class="field" rows="9" aria-label="Text, Markdown" placeholder="Markdown. Drop or paste files here."></textarea>
+    <textarea id="newtext" class="field droparea" rows="9" aria-label="Text, Markdown" placeholder="Markdown. Drop or paste files here."></textarea>
     <div id="newshown" class="markdown" hidden></div>
     <ul id="newfiles" class="filelist"></ul>
-    <div class="fieldgrid">
+    <div class="fieldgrid three">
       <label class="fieldrow">Project <select id="newproj" class="field"></select></label>
       <label class="fieldrow">Severity <select id="newsev" class="field"><option>P0</option><option>P1</option><option selected>P2</option><option>P3</option></select></label>
-      <label class="fieldrow">Owner <select id="newowner" class="field"></select></label>
-      <label class="fieldrow">Session <select id="newsession" class="field"></select></label>
+      <label class="fieldrow">Agent <select id="newagent" class="field"></select></label>
     </div>
+    <details class="more"><summary>Owner and session</summary>
+      <div class="fieldgrid">
+        <label class="fieldrow">Owner <select id="newowner" class="field"></select></label>
+        <label class="fieldrow">Session <select id="newsession" class="field"></select></label>
+      </div>
+    </details>
     <input id="newpick" type="file" multiple hidden>
     <p id="newerror" role="alert" hidden></p>
     <div class="actions">
       <button id="newadd" type="button">Add files…</button>
       <button id="newdiscard" type="button">Discard</button>
-      <button id="newcreate" type="button" class="primary">Create</button>
+      <button id="newcreate" type="button">Create</button>
+      <button id="newrun" type="button" class="primary" title="Create it and start it on the agent chosen">Run</button>
     </div>
   </form>
 </dialog>
-
-<dialog id="movebox" class="box dlg menurows" aria-label="Move to"><form method="dialog" id="moverows" tabindex="-1"></form></dialog>
 
 <dialog id="agentbox" class="box dlg" aria-labelledby="agenthead">
   <form method="dialog" id="agentform">
@@ -202,6 +207,7 @@
       <label class="fieldrow">Name <input id="agentname" class="field" type="text" autocomplete="off" spellcheck="false"></label>
       <label class="fieldrow">Kind <select id="agentkind" class="field"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
       <label class="fieldrow">Server <select id="agenthost" class="field"></select></label>
+      <label class="fieldrow">Effort <select id="agenteffort" class="field"></select></label>
     </div>
     <label class="fieldrow">Folder <input id="agentdir" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
     <label class="fieldrow">Command <input id="agentcommand" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
@@ -218,17 +224,19 @@
   <form method="dialog" id="runform">
     <div class="dhead"><h2 id="runhead">Run</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="runnone" hidden></p>
-    <div id="runfields" class="fieldgrid">
-      <label class="fieldrow">Agent <select id="runagent" class="field"></select></label>
-      <label class="fieldrow">Folder <input id="runfolder" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-    </div>
-    <dl id="runfacts" class="runfacts"><dt>Server</dt><dd id="runserver"></dd><dt>Command</dt><dd id="runcommand"></dd></dl>
-    <p id="runmarked" class="runmarked" hidden>An agent wrote this text.</p>
-    <pre id="runprompt" class="runprompt" tabindex="0" aria-label="What will be sent"></pre>
+    <label id="runagentrow" class="fieldrow">Agent <select id="runagent" class="field"></select></label>
+    <label class="fieldrow">Message to the agent <textarea id="runmessage" class="field" rows="3" placeholder="Optional: what to mind, in a line or two"></textarea></label>
+    <details id="runhow" class="more"><summary>Where and how</summary>
+      <div id="runfields"><label class="fieldrow">Folder <input id="runfolder" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label></div>
+      <dl id="runfacts" class="runfacts"><dt>Server</dt><dd id="runserver"></dd><dt>Command</dt><dd id="runcommand"></dd></dl>
+    </details>
+    <details id="runwhat" class="more"><summary>What will be sent</summary>
+      <p id="runmarked" class="runmarked" hidden>An agent wrote some of this text.</p>
+      <pre id="runprompt" class="runprompt" tabindex="0" aria-label="What will be sent"></pre>
+    </details>
     <p id="runerror" role="alert" hidden></p>
     <div class="actions">
       <button id="runadd" type="button" hidden>Add agent</button>
-      <button id="runjust" type="button" hidden>Only move it</button>
       <button id="runfresh" type="button" hidden>Run from scratch</button>
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="rungo" type="button" class="primary">Run</button>

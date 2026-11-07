@@ -85,8 +85,9 @@ def main():
             if kind == "codex":
                 hook("SessionStart", source="startup")
             hook("UserPromptSubmit", prompt=prompt)
+            several = re.search(r"tasks: ((?:T-\d+(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
             named = re.search(r"T-\d+", prompt)
-            task = named[0] if named else ""
+            tasks = re.findall(r"T-\d+", several[1]) if several else [named[0]] if named else [""]
             if "LIMIT" in prompt:
                 hook("StopFailure", error="rate_limit")
             elif "DIES" in prompt:
@@ -107,7 +108,8 @@ def main():
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop
             elif "FINISHES" in prompt:
                 hook("PostToolUse", tool_name="Read", tool_input={}, tool_response={})
-                finish(task)
+                for task in tasks:
+                    finish(task)
                 hook("Stop", last_assistant_message="done")
             else:
                 hook("Stop", last_assistant_message="I did part of it.")

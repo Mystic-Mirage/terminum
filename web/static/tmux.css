@@ -33,7 +33,6 @@
 #addtmuxticks { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
 #addtmuxticks:empty { display: none; }
 .footform .tick { display: flex; align-items: center; gap: 6px; font-size: 13.5px; flex-wrap: wrap; }
-:is(.footform .tick, .pickrow) input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
 .footform .tick span { color: var(--muted); font-size: 12.5px; }
 .footform .tick.ends span { flex-basis: 100%; padding-left: 22px; color: var(--danger-text); }   /* a session that can be lost */
 

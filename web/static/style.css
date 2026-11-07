@@ -208,7 +208,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 /* addresses and paths that open (linkmarks.js) */
 ::highlight(lnk) { text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); }
 #term .ln .olink { text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); }   /* an OSC 8 link's text (render.js) */
-:is(#term, #newbox).dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
+#term.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
 #renamebox { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
 #renamebox input { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border-radius: var(--r-md); border: 0;
   background: var(--surface-3); color: inherit; font: inherit; font-size: 16px; outline: 0; }
@@ -321,7 +321,7 @@ a.icon .taskneed { position: absolute; top: -4px; right: -4px; margin: 0; }
 
 /* at the top, where the eye is, not over the agent's input at the bottom: toast.js places it over the terminal's top (this
    top only while nothing is laid out); clicks and taps go through to the rows under it */
-#toast[popover] { inset: auto; left: 50%; top: var(--sp-6); margin: 0; border: 0; color: var(--t-fg); }   /* in the top layer: over an open window (the board) */
+#toast[popover] { inset: auto; left: 50%; top: var(--sp-6); margin: 0; border: 0; }   /* in the top layer: over an open window (the board) */
 #toast { position: absolute; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%);
   z-index: 6; pointer-events: none; margin: 0; padding: 6px 14px; border-radius: var(--r-lg); font-size: 13px; text-align: center;
   width: max-content; max-width: min(560px, calc(100% - 32px)); overflow-wrap: anywhere;   /* a long message wraps, inside the column */

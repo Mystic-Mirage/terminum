@@ -217,9 +217,11 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     get(tx, &format!("T-{number}"))
 }
 
-/// A session works on one task at a time (AC-113): refused while another than `but` stands in IN PROGRESS.
+/// A session works on one task at a time (AC-113), but for those one run gave it together (terminum-dispatcher.md
+/// AC-138): refused while another than `but` stands in IN PROGRESS.
 fn check_free(tx: &Transaction, session: &str, but: &str) -> Result<(), String> {
-    let other: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL", (session, but), |r| r.get(0))
+    let other: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM run_tasks a JOIN run_tasks b ON a.run = b.run JOIN runs r ON r.id = a.run WHERE a.task = tasks.id AND b.task = ?2 AND r.state NOT IN ('closed', 'left'))", (session, but), |r| r.get(0))
         .optional().map_err(sql)?;
     match other {
         Some(other) => Err(format!("Session {} already works on {other}. Finish or move {other} first.", pane_of(session))),
@@ -357,6 +359,14 @@ pub enum ProjectMove {
     SessionFollows(String),
     /// it has a session: nothing moved until the human says what becomes of that
     Ask,
+}
+
+/// Takes a task off the board, or brings it back to where it stood (AC-118).
+pub fn archive(tx: &Transaction, author: &str, id: &str, on: bool, at: i64) -> Result<(), String> {
+    let key = key_of(tx, id)?;
+    tx.execute("UPDATE tasks SET archived_at = CASE WHEN ?1 THEN ?2 END, updated_at = ?2 WHERE id = ?3", (on, at, &key)).map_err(sql)?;
+    let who = user_name(tx, author)?;
+    log(tx, &key, author, "archive", &format!("{who} {}", if on { "archived it" } else { "brought it back" }), None, at).map(|_| ())
 }
 
 /// A human moves a task to `project` (AC-113): a session goes with it (`choice` "move") unless it

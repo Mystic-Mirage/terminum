@@ -155,3 +155,8 @@ export async function renderInto(box, text) {
     else { a.target = "_blank"; a.rel = "noopener noreferrer"; }
   }
 }
+
+/** 1,234 as 1.2k, 4,800,000 as 4.8M. */
+export function countOf(n) {
+  return n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace(/\.0$/, "")}k` : String(n);
+}

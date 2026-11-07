@@ -21,7 +21,7 @@ import { projectWindow } from "./kanbanproject.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
-import { choose, $, COLUMNS, agentChip, api, button, el, iconButton, say } from "./kanbanutil.js";
+import { choose, $, COLUMNS, agentChip, countOf, api, button, el, iconButton, say } from "./kanbanutil.js";
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -103,13 +103,22 @@ function sessionLine(t) {
   return line("stopped", s.agent ? "stopped, task open" : "no agent");
 }
 
+/** What a finished task's sessions spent (terminum-dispatcher.md AC-129): tokens that count, dollars where known. */
+function spentLine(s) {
+  const counted = s.input + s.output + s.cache_write;
+  const line = el("span", "cspent", [countOf(counted), s.usd != null ? `≈$${s.usd.toFixed(2)}` : null].filter(Boolean).join(" · "));
+  line.title = [`${s.input.toLocaleString("en")} in, ${s.output.toLocaleString("en")} out, ${s.cache_write.toLocaleString("en")} written to the cache, ${s.cache_read.toLocaleString("en")} read from it`,
+    s.usd != null ? "an estimate at list prices" : "no price known for its model", s.with.length ? `for this and ${s.with.join(", ")} together` : null].filter(Boolean).join("; ");
+  return line;
+}
+
 /** What its session uses and what stands idle in it (terminum-dispatcher.md AC-127 to AC-129): as of the last walk. */
 function usageWords(id) {
   const u = usage[id];
   if (!u) return "";
   const words = u.not_measured ? [u.not_measured] : [`CPU ${u.cpu}%`, `${u.gib} GiB`, `${u.minutes} min`];
   if (u.budget_total) words.unshift(`${Math.floor(u.budget_used / 60)} of ${u.budget_total / 60} min`);
-  if (u.tokens) words.push(`${(u.tokens.input + u.tokens.output + u.tokens.cached).toLocaleString("en")} tokens`);
+  if (u.tokens) words.push(`${(u.tokens.input + u.tokens.output + u.tokens.cached + (u.tokens.cache_write ?? 0)).toLocaleString("en")} tokens`);
   else if (u.tokens === null) words.push("Tokens not known");
   for (const s of u.idle_subs ?? []) words.push(`idle: ${s.kind || "subagent"} ${s.id}`);
   return words.join(" · ");
@@ -160,6 +169,7 @@ function card(t) {
   if (!t.agent) foot.append(el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));   // on an agent, the agent says who
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
+  if (t.spent && ["DONE", "FAILED"].includes(t.status)) foot.append(spentLine(t.spent));
   showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
   showUsage(c, t.id);

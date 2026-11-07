@@ -833,9 +833,8 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-127 | A subagent is never ended alone, as none is tied to a process or pane yet (OQ-122, AS-126): it is said. | `terminumd/src/dispatcher/walk.rs` |
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
-| AC-137, AC-138 | No Week's or Month's limit in an agent's window, nor its week and month on its rectangle. | `web/static/kanbanagents.js` |
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
-| AC-129, AC-143 | Tokens stay in memory, three integers with no model; no price; no week or month. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/mod.rs` |
+| AC-129 | Codex's model is not read, so its sessions show tokens only; Claude Code's 1-hour cache writes are priced as 5-minute ones. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
 | AC-128 | The window says neither what it measures nor the global values. | `web/static/kanbanagents.js` |
 
 ## 8. Recommendation and ownership
@@ -976,8 +975,8 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 ## 11. Checklist with Definition of Done
 
 - [x] AC-121 — `cargo test dispatcher::screen`, `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
-- [ ] AC-138 — the pool's shape to come; `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
-- [ ] AC-137 — the pool's shape to come; `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
+- [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs` with the test clock
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
@@ -991,5 +990,5 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
-- [ ] AC-143 — to come: `cargo test dispatcher::usage`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-144 — `cargo test tasks::store`, `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

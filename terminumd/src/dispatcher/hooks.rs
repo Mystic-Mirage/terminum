@@ -15,6 +15,11 @@ use crate::app::Shared;
 use crate::plans::rules;
 use crate::tasks::ops;
 
+/// A model's name as a hook may say it: kept only in this shape.
+fn good_model(m: &str) -> bool {
+    !m.is_empty() && m.len() <= 60 && m.chars().all(|c| c.is_ascii_alphanumeric() || "-._[]".contains(c))
+}
+
 /// The shape a session ID must have to reach a command line (§9 Resume): no flag.
 pub fn good_id(id: &str) -> bool {
     id.len() <= 100 && id.starts_with(|c: char| c.is_ascii_alphanumeric()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
@@ -94,6 +99,12 @@ impl Default for Events {
     }
 }
 
+impl crate::dispatcher::Dispatcher {
+    pub(super) fn events_sender(&self) -> &UnboundedSender<(String, Value)> {
+        &self.events.sender
+    }
+}
+
 /// Pane `key`'s agent spoke: its run, if Dispatcher started it. A pane with none costs a lookup.
 pub fn heard(app: &Shared, key: &str, ev: &Value) {
     if !app.dispatcher.has_run(key) {
@@ -105,6 +116,18 @@ pub fn heard(app: &Shared, key: &str, ev: &Value) {
 
 /// What one event does to its run.
 async fn one_event(app: Shared, key: String, ev: Value) {
+    if ev["event"] == "Tokens" {
+        let Some(totals) = super::usage::Totals::of(&ev["tokens"]) else { return };
+        let model: Option<String> = ev["tokens"]["model"].as_str().filter(|m| good_model(m)).map(str::to_string);
+        let done = store(&app, move |tx| {
+            let Some(r) = runs::in_pane(tx, &key)? else { return Ok(()) };
+            super::usage::heard(tx, &r.id, &r.agent_id, totals, model.as_deref(), ops::now())
+        }).await;
+        if let Err(e) = done {
+            tracing::warn!(event = "dispatcher.usage", error = %e);
+        }
+        return;
+    }
     let typed = ev["event"] == "UserPromptSubmit" && ev["prompt"].as_str().is_some_and(|p| app.dispatcher.was_typed(&key, p));
     let ended = ev["event"] == "SessionEnd" && ev["reason"] != "clear";
     let k = key.clone();

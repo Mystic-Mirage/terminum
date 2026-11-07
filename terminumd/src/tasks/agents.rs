@@ -33,6 +33,9 @@ pub struct Agent {
     pub color: i64,
     /// how many of it may run at once (terminum-dispatcher.md AC-141)
     pub at_once: i64,
+    /// what it may spend in 7 and in 30 days, in million tokens; shown, never enforced (AC-143)
+    pub week_limit: Option<f64>,
+    pub month_limit: Option<f64>,
     /// what starts it: its command with its effort
     pub line: String,
 }
@@ -55,12 +58,20 @@ struct Given {
     command: String,
     effort: String,
     at_once: i64,
+    week_limit: Option<f64>,
+    month_limit: Option<f64>,
+}
+
+/// A limit as a page sends it: none, or a number; anything else is -1, refused by `check`.
+fn limit_of(v: &Value) -> Option<f64> {
+    if v.is_null() { None } else { Some(v.as_f64().unwrap_or(-1.0)) }
 }
 
 impl Given {
     fn of(body: &Value) -> Given {
         let text = |k: &str| body[k].as_str().unwrap_or_default().trim().to_string();
-        Given { name: text("name"), kind: text("kind"), command: text("command"), effort: text("effort"), at_once: if body["at_once"].is_null() { 1 } else { body["at_once"].as_i64().unwrap_or(-1) } }
+        Given { name: text("name"), kind: text("kind"), command: text("command"), effort: text("effort"), at_once: if body["at_once"].is_null() { 1 } else { body["at_once"].as_i64().unwrap_or(-1) },
+                week_limit: limit_of(&body["week_limit"]), month_limit: limit_of(&body["month_limit"]) }
     }
 
     /// What needs no store: refused with the words the window shows.
@@ -70,6 +81,9 @@ impl Given {
         }
         if !(1..=MOST_AT_ONCE).contains(&self.at_once) {
             return Err("At once is 1 to 100.".into());
+        }
+        if [self.week_limit, self.month_limit].iter().flatten().any(|l| !(l.is_finite() && *l > 0.0)) {
+            return Err("A limit is a positive number of million tokens, or empty.".into());
         }
         if self.name.chars().count() > MOST_NAME {
             return Err(format!("An agent's name is {MOST_NAME} characters at most."));
@@ -113,10 +127,21 @@ impl Given {
 
 /// The pool, as they were added.
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
-    rows(tx, "SELECT id, name, kind, command, effort, color, at_once FROM agents ORDER BY rowid", [], |r| {
+    rows(tx, "SELECT id, name, kind, command, effort, color, at_once, week_limit, month_limit FROM agents ORDER BY rowid", [], |r| {
         let (kind, command, effort): (String, String, String) = (r.get(2)?, r.get(3)?, r.get(4)?);
-        Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)?, at_once: r.get(6)? })
+        Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)?, at_once: r.get(6)?, week_limit: r.get(7)?, month_limit: r.get(8)? })
     })
+}
+
+/// The pool as a page shows it: each with what it spent in the last 7 and 30 days (AC-143).
+pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
+    let spent = crate::dispatcher::usage::of_agents(tx, now)?;
+    Ok(list(tx)?.into_iter().map(|a| {
+        let (week, month) = spent.get(&a.id).copied().unwrap_or((0, 0));
+        let mut v = json!(a);
+        v["spent"] = json!({"week": week, "month": month});
+        v
+    }).collect())
 }
 
 /// One of the pool, if it is still there.
@@ -130,8 +155,8 @@ fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
     let id = crate::auth::crypto::random_hex::<8>();
     // the next color after the last: agents far apart, and no two alike for a palette's length
     let color: i64 = tx.query_row("SELECT COALESCE(MAX(color) + 1, 0) FROM agents", [], |r| r.get(0)).map_err(sql)?;
-    tx.execute("INSERT INTO agents (id, name, kind, command, effort, color, at_once) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-               (&id, &given.name, &given.kind, &given.command, &given.effort, color, given.at_once)).map_err(sql)?;
+    tx.execute("INSERT INTO agents (id, name, kind, command, effort, color, at_once, week_limit, month_limit) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+               rusqlite::params![id, given.name, given.kind, given.command, given.effort, color, given.at_once, given.week_limit, given.month_limit]).map_err(sql)?;
     Ok(id)
 }
 
@@ -139,7 +164,8 @@ fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
     given.fits(tx, id)?;
     // what it wrote stays under its name, the new one (AC-137)
     tx.execute("UPDATE users SET name = ?2 WHERE id = ?1", (super::ops::pool_user_id(id), &given.name)).map_err(sql)?;
-    match tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5, at_once = ?6 WHERE id = ?1", (id, &given.name, &given.kind, &given.command, &given.effort, given.at_once)).map_err(sql)? {
+    match tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5, at_once = ?6, week_limit = ?7, month_limit = ?8 WHERE id = ?1",
+                      rusqlite::params![id, given.name, given.kind, given.command, given.effort, given.at_once, given.week_limit, given.month_limit]).map_err(sql)? {
         0 => Err("That agent is gone.".into()),
         _ => Ok(()),
     }

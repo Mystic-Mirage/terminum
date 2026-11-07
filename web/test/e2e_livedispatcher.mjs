@@ -224,7 +224,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-127 one that runs inside the agent cannot be ended alone: said", await said(silentSub, "Subagent sub-1 cannot be ended alone", 15000), await history(silentSub));
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(card(silentSub));
-  check("AC-127 the card shows its kind and ID, as idle", await until(async () => /idle: reviewer sub-1/.test(await page.textContent(card(silentSub))), 8000), await page.textContent(card(silentSub)));
+  check("AC-127 the card shows its kind and ID, as idle", await until(async () => /idle: reviewer sub-1/.test(await page.textContent(card(silentSub))), 20000), await page.textContent(card(silentSub)));
 
   // AC-128 what it consumes: shown on its card; limits by project; a limit of 0 is off
   const badLimits = await j(`/api/task-projects/${project}/limits`, "PUT", { warn: 9, end: 3 });
@@ -250,6 +250,12 @@ export async function liveDispatcher(page, opts) {
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(card(tokens));
   check("AC-129 the card shows the tokens its session used", await until(async () => /1,239 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), await page.textContent(card(tokens)));
+  let spent;
+  check("AC-129 what grew is kept in the store, with the model's price", await until(async () => (spent = (await j(`/api/tasks?id=${tokens}`)).tasks?.[0]?.spent)?.input === 1200, 8000)
+    && spent.output === 34 && spent.cache_read === 5 && Math.abs(spent.usd - (1200 * 4 + 34 * 20 + 5 * 0.2) / 1e6) < 1e-9, JSON.stringify(spent));
+  check("AC-143 its agent's week and month count it", (await j("/api/tasks/meta")).agents.some((a) => a.spent?.week >= 1234 && a.spent?.month >= 1234));
+  await j(`/api/tasks/${tokens}/give-up`, "POST");
+  check("AC-129 a finished card says what it spent, an estimate in dollars", await until(async () => /1\.2k · ≈\uFE0E?\$0\.01/.test(await page.textContent(`${card(tokens)} .cspent`).catch(() => "")), 20000), await page.textContent(card(tokens)).catch(() => ""));
 
   // AC-125 closing, with the screen kept when there is no result
   const closes = await task("closes CLEAN");

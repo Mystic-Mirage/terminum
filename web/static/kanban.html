@@ -208,6 +208,8 @@
       <label class="fieldrow">Kind <select id="agentkind" class="field"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
       <label class="fieldrow">Effort <select id="agenteffort" class="field"></select></label>
       <label class="fieldrow">At once <input id="agentatonce" class="field" type="number" min="1" max="100" step="1"></label>
+      <label class="fieldrow">Week's limit, M tokens <input id="agentweek" class="field" type="number" min="0" step="any" placeholder="None"></label>
+      <label class="fieldrow">Month's limit, M tokens <input id="agentmonth" class="field" type="number" min="0" step="any" placeholder="None"></label>
     </div>
     <label class="fieldrow">Command <input id="agentcommand" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
     <ul id="agentsessions" class="filelist" aria-label="Its sessions" hidden></ul>

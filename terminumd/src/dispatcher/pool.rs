@@ -121,7 +121,7 @@ mod tests {
     }
 
     fn agent(id: &str, at_once: i64) -> Agent {
-        Agent { id: id.into(), name: id.to_uppercase(), kind: "claude".into(), command: "claude".into(), effort: String::new(), color: 0, line: "claude".into(), at_once }
+        Agent { id: id.into(), name: id.to_uppercase(), kind: "claude".into(), command: "claude".into(), effort: String::new(), color: 0, line: "claude".into(), at_once, week_limit: None, month_limit: None }
     }
 
     fn project(tx: &Transaction, id: &str, limit: Option<i64>) -> Result<(), String> {

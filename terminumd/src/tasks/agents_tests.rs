@@ -7,7 +7,7 @@ fn open(name: &str) -> Store {
 }
 
 fn opus() -> Given {
-    Given { name: "Opus reviewer".into(), kind: "claude".into(), command: "claude --model opus".into(), effort: String::new(), at_once: 1 }
+    Given { name: "Opus reviewer".into(), kind: "claude".into(), command: "claude --model opus".into(), effort: String::new(), at_once: 1, week_limit: None, month_limit: None }
 }
 
 fn project(tx: &Transaction, id: &str) -> Result<(), String> {
@@ -40,6 +40,8 @@ fn ac137_refused_with_words() {
         (Given { name: "".into(), ..opus() }, "An agent needs a name."),
         (Given { at_once: 0, ..opus() }, "At once is 1 to 100."),
         (Given { at_once: 101, ..opus() }, "At once is 1 to 100."),
+        (Given { week_limit: Some(0.0), ..opus() }, "A limit is a positive number of million tokens, or empty."),
+        (Given { month_limit: Some(-1.0), ..opus() }, "A limit is a positive number of million tokens, or empty."),
         (Given { name: "n".repeat(41), ..opus() }, "An agent's name is 40 characters at most."),
         (Given { name: "a\tb".into(), ..opus() }, "An agent's name is one line, with no control or invisible characters."),
         (Given { kind: "gemini".into(), ..opus() }, "An agent is Claude Code or Codex."),

@@ -143,17 +143,21 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         let tasks = query::list(tx, &filter)?;
         let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
         let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
+        let spent = crate::dispatcher::usage::of_tasks(tx, &keys)?;
         let counts = if with_counts { Some((query::counts(tx, &filter)?, crate::dispatcher::pool::board(tx)?)) } else { None };
-        Ok((tasks, counts, run_marks, on_agents))
+        Ok((tasks, counts, run_marks, on_agents, spent))
     }).await;
     match done {
-        Ok((tasks, counts, run_marks, on_agents)) => {
+        Ok((tasks, counts, run_marks, on_agents, spent)) => {
             let layout = app.layout.read();
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
             let shown: Vec<Value> = tasks.iter().map(|t| {
                 let mut v = with_session(t, t.session.as_deref().and_then(|k| rows.get(k).copied()));
                 if let Some(state) = run_marks.get(&t.key) {
                     v["run"] = json!(state);
+                }
+                if let Some(s) = spent.get(&t.key) {
+                    v["spent"] = s.clone();
                 }
                 if let Some(agent) = on_agents.get(&t.key) {
                     v["agent"] = agent.clone();
@@ -178,7 +182,7 @@ async fn meta(State(app): State<Shared>) -> Response {
     let (users, agents, limits, last_agents, at_once, problem, set_aside) = tokio::task::spawn_blocking(move || {
         let (users, agents, limits, last_agents, at_once) = a.tasks.with(|tx| Ok((
             ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
-            super::agents::list(tx)?,
+            super::agents::listed(tx, ops::now())?,
             super::limits::limits(tx)?,
             runs::last_agents(tx)?,
             super::limits::agent_limits(tx)?,

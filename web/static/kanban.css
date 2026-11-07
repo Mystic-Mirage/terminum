@@ -64,6 +64,9 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agentlist .colempty { margin: 0; align-self: center; white-space: nowrap; }
 .agentlist .item { position: relative; flex: none; width: 240px; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
+.agspent { padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.agspent.over { color: var(--danger-text); }
+.cspent { font-variant-numeric: tabular-nums; }
 /* a dot for each live session: blinking while it works, still when it waits or idles */
 .agdots { display: flex; align-items: center; gap: var(--sp-1); min-height: 12px; padding-left: 20px; }
 .agdot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--surface-4); cursor: pointer; }

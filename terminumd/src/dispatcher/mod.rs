@@ -9,6 +9,7 @@ mod gate;
 mod hooks;
 pub mod plan;
 pub mod pool;
+pub mod usage;
 mod procs;
 pub mod runs;
 pub mod screen;
@@ -135,13 +136,15 @@ impl Dispatcher {
 
     /// A hook's three integers, or null when they are not (AC-129): nothing else of them is kept.
     pub fn heard_tokens(&self, key: &str, ev: &serde_json::Value) {
-        let t = &ev["tokens"];
-        let numbers = [&t["input"], &t["output"], &t["cached"]].map(serde_json::Value::as_u64);
-        let kept = match numbers {
-            [Some(input), Some(output), Some(cached)] => serde_json::json!({"input": input, "output": output, "cached": cached}),
-            _ => serde_json::Value::Null,
-        };
+        let kept = usage::Totals::of(&ev["tokens"]).map_or(serde_json::Value::Null, |t| {
+            serde_json::json!({"input": t.input, "output": t.output, "cached": t.cache_read, "cache_write": t.cache_write})
+        });
+        let known = !kept.is_null();
         self.watch.lock().entry(key.to_string()).or_default().tokens = Some(kept);
+        // what grew goes to the store, in its turn with the run's other events (AC-129)
+        if known && self.has_run(key) {
+            let _ = self.events_sender().send((key.to_string(), ev.clone()));
+        }
     }
 
     /// Whether a turn's end in pane `key` should say its tokens: only a task's session shows them.

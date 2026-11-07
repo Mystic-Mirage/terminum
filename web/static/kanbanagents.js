@@ -5,6 +5,7 @@
 import { askConfirm } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
 import { $, button, agentColor, api, el, fillSelect, iconButton } from "./kanbanutil.js";
+import { countOf } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -18,7 +19,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   const hint = el("p", "pickhint");
   hint.hidden = true;
   box.append(list, addKey, hint);
-  const field = { name: $("agentname"), kind: $("agentkind"), effort: $("agenteffort"), command: $("agentcommand"), at_once: $("agentatonce") };
+  const field = { name: $("agentname"), kind: $("agentkind"), effort: $("agenteffort"), command: $("agentcommand"), at_once: $("agentatonce"), week_limit: $("agentweek"), month_limit: $("agentmonth") };
   const dialog = $("agentbox"), error = $("agenterror");
   let editing = null, snapshot = "";
 
@@ -32,6 +33,15 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     if (s.idle) return "idle";
     const row = s.key ? liveRow(s.key) : null;
     return ["starting", "typed"].includes(s.state) ? "starting" : s.state === "asking" || row?.state === "waiting" ? "waits" : "working";
+  }
+
+  /** Its last 7 and 30 days (AC-143): of its limit when it has one, else the tokens; past a limit in the danger color. */
+  function spentOf(a) {
+    const s = a.spent ?? { week: 0, month: 0 }, part = (word, used, limit) => (limit ? `${word} ${Math.round((used / (limit * 1e6)) * 100)}%` : `${word} ${countOf(used)}`);
+    const line = el("span", "agspent", `${part("week", s.week, a.week_limit)} · ${part("month", s.month, a.month_limit)}`);
+    line.classList.toggle("over", (a.week_limit && s.week > a.week_limit * 1e6) || (a.month_limit && s.month > a.month_limit * 1e6));
+    line.title = `${s.week.toLocaleString("en")} tokens in 7 days, ${s.month.toLocaleString("en")} in 30, of every project: terminum's own count`;
+    return line;
   }
 
   /** A session's dot: blinking while it works, still when it waits or idles; a press on it opens it. */
@@ -55,7 +65,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     dots.append(...mine.map(dot));
     if (a.at_once > 1) dots.append(el("small", "agcount", `${slots(a).length}/${a.at_once}`));
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
-    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), dots);
+    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), spentOf(a), dots);
     b.append(bar, txt);
     b.title = [a.name, `${slots(a).length} of ${a.at_once} at once`, a.line].join(" · ");
     return b;
@@ -136,8 +146,8 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   /** Its window: a new one, or `a` to change. */
   function open(a = null) {
     editing = a;
-    const v = a ?? { kind: "claude", name: freeName("claude"), command: "claude", effort: "", at_once: 1 };
-    for (const k of ["kind", "name", "command", "at_once"]) field[k].value = v[k];
+    const v = a ?? { kind: "claude", name: freeName("claude"), command: "claude", effort: "", at_once: 1, week_limit: null, month_limit: null };
+    for (const k of ["kind", "name", "command", "at_once", "week_limit", "month_limit"]) field[k].value = v[k] ?? "";
     fillEfforts(v.effort);
     showSessions(a);
     $("agenthead").textContent = a ? a.name : "Add agent";
@@ -159,7 +169,8 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   }
 
   function keep() {
-    const body = { ...values(), at_once: Number(field.at_once.value) };
+    const limit = (f) => (f.value === "" ? null : Number(f.value));
+    const body = { ...values(), at_once: Number(field.at_once.value), week_limit: limit(field.week_limit), month_limit: limit(field.month_limit) };
     return send(editing ? `/api/task-agents/${editing.id}` : "/api/task-agents", { method: editing ? "PATCH" : "POST", body });
   }
 

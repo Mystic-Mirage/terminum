@@ -308,7 +308,9 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String) -> Result<Str
             ops::link(tx, super::DISPATCHER, other, None, ops::now())?;
         }
         bring_back(tx, &id)?;
-        runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], ops::now())
+        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], ops::now())?);
+        super::usage::carry(tx, &from, &id)?;
+        Ok(id)
     }).await
 }
 

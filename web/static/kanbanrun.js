@@ -14,6 +14,14 @@ export function runWindow({ addAgent, noFolder, done }) {
   const free = () => offer.agents.filter((a) => !a.busy);
 
   function showAgent() {
+    const full = chosen()?.full;
+    if (full) {                                    // at its limit, an idle holder could go: one press does both (AC-141)
+      $("runnone").textContent = full.words;
+      $("runnone").hidden = false;
+    } else if (!$("runnone").dataset.kept) {
+      $("runnone").hidden = true;
+    }
+    $("rungo").textContent = full ? `Close ${full.tasks}'s session and run` : "Run";
     $("runserver").textContent = offer.host ?? THIS_MAC;
     $("runfolder").textContent = offer.dir;
     $("runcommand").textContent = chosen()?.line ?? "";
@@ -27,6 +35,7 @@ export function runWindow({ addAgent, noFolder, done }) {
     const words = none ? "No agents yet." : allBusy ? `All agents are busy: one takes more when its session closes or its tasks end.` : first ? "" : "It goes on in its session, with what you write.";
     $("runnone").textContent = words;
     $("runnone").hidden = !words;
+    if (words) $("runnone").dataset.kept = "1"; else delete $("runnone").dataset.kept;
     // the agent it was dropped on is said by the title; what a person checks only sometimes stays folded
     $("runagentrow").hidden = !first || none || !!on;
     $("runhow").hidden = !first || none;
@@ -73,7 +82,7 @@ export function runWindow({ addAgent, noFolder, done }) {
     say("");
     $("rungo").disabled = true;
     try {
-      await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: fresh || offer.first ? $("runagent").value : null, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });   // going on, it is its session's agent
+      await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: fresh || offer.first ? $("runagent").value : null, close: fresh || offer.first ? chosen()?.full?.run : undefined, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });   // going on, it is its session's agent
       box.close("run");
       done();
     } catch (e) { say(e.message); }

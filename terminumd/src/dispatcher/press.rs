@@ -132,10 +132,6 @@ pub(super) fn budget_told(id: &str, own: Option<i64>, run: &Run) -> String {
     }
 }
 
-pub(super) fn refused_busy(agent: &str, run: &Run) -> String {
-    format!("{agent} is busy with {}: it takes more when its session closes or they end.", run.names())
-}
-
 /// How a press on `id` and `also` goes on: each task as it stands now may go, the first says how.
 pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool) -> Result<(Vec<Task>, Result<Way, String>), String> {
     let tasks = members(tx, id, also)?;

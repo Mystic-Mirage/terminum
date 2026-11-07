@@ -12,8 +12,10 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, Run};
-use super::press::{also_of, budget_told, prompt_of, refused_busy, rev_of, shown_of, way, ways, Asked, Way};
-use super::{move_one, move_task, procs, say, start, store, walk};
+use super::press::{also_of, budget_told, prompt_of, rev_of, shown_of, way, ways, Asked, Way};
+use super::pool::{self, Full};
+use super::screen::Screen;
+use super::{move_one, move_task, plan, procs, say, start, store, walk};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
@@ -35,21 +37,20 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         let w = w?;
         let t = &tasks[0];
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
-        let pool: Vec<Agent> = agents::list(tx)?;
+        let all: Vec<Agent> = agents::list(tx)?;
         let lacks = no_folder(&name, &dir).err().filter(|_| matches!(w, Way::First));
         if let (Some(named), Way::First) = (&asked.agent, &w) {
-            let a = pool.iter().find(|a| a.id == *named).ok_or("That agent is gone.")?;
-            if let Some(other) = runs::busy_with(tx, &a.id, None)? {
-                return Err(refused_busy(&a.name, &other));
+            let a = all.iter().find(|a| a.id == *named).ok_or("That agent is gone.")?;
+            if let Some(Full { words, close: None }) = pool::check(tx, Some(a), &t.project, None)? {
+                return Err(words);
             }
         }
-        let busy = runs::busy_agents(&runs::live(tx)?);
-        let offered: Vec<Value> = pool.iter().map(|a| {
+        let offered: Vec<Value> = all.iter().map(|a| {
             let mut v = json!(a);
-            v["busy"] = busy[&a.id]["tasks"].clone();
-            v
-        }).collect();
-        let last = runs::last_agent(tx, &t.project)?.filter(|l| pool.iter().any(|a| a.id == *l));
+            pool::offered(tx, a, &t.project, &mut v)?;
+            Ok(v)
+        }).collect::<Result<_, String>>()?;
+        let last = runs::last_agent(tx, &t.project)?.filter(|l| all.iter().any(|a| a.id == *l));
         let shown = shown_of(tx, &tasks)?;
         Ok(json!({"first": matches!(w, Way::First), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
                   "prompt_rev": rev_of(&shown), "prompt": shown, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
@@ -98,6 +99,8 @@ struct Press {
     files: Vec<String>,
     #[serde(default)]
     fresh: bool,
+    /// the idle run whose window this press closes to make room (AC-141)
+    close: Option<String>,
     /// the other tasks of this press (AC-138)
     #[serde(default)]
     also: Vec<String>,
@@ -179,15 +182,24 @@ pub(super) fn has_stray(text: &str) -> bool {
     text.split(['\n', '\t']).any(has_control)
 }
 
-/// Its agent is taken for the words about to be typed, free as it may have read, unless another took it first (AC-138).
+/// Its turn is taken for the words about to be typed, so nothing reads it idle meanwhile. No limit stops it: it starts no process (AC-141).
 async fn reserve(app: &Shared, r: &Run) -> Result<(), String> {
-    let (id, agent, name) = (r.id.clone(), r.agent_id.clone(), r.agent_name.clone());
-    store(app, move |tx| {
-        if let Some(other) = runs::busy_with(tx, &agent, Some(&id))? {
-            return Err(refused_busy(&name, &other));
-        }
-        runs::change(tx, &id, |now| now.turn_ended = false).map(drop)
-    }).await
+    let id = r.id.clone();
+    store(app, move |tx| runs::change(tx, &id, |now| now.turn_ended = false).map(drop)).await
+}
+
+/// Closes an idle holder for the press that asked: read again here, its screen too: a draft or a question stands in the way (AC-141).
+async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), String> {
+    let wanted = run.to_string();
+    let r = store(app, move |tx| runs::by_id(tx, &wanted)).await?;
+    let (server, pane) = pane_of(app, &r)?;
+    let quiet = plan::idle_holder(&r) && app.dispatcher.watch.lock().get(&server.key(&pane)).is_none_or(|w| w.subs.is_empty());
+    if !quiet || !matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
+        return Err(format!("{}'s session is no longer idle: it stays.", r.names()));
+    }
+    walk::close(app, &r, &server, &pane, &format!("Session ended: closed for {for_tasks}."), true, plan::idle_holder).await?;
+    super::told_all(app, &r);
+    Ok(())
 }
 
 /// What runs in `pane` other than its shell: in front, or stopped or left behind it (AC-122).
@@ -275,8 +287,13 @@ fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<(), String> {
 async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String) -> Result<String, String> {
     let (old, key, id) = (r.clone(), t.key.clone(), t.id.clone());
     store(app, move |tx| {
-        if let Some(other) = runs::busy_with(tx, &old.agent_id, Some(&old.id))? {
-            return Err(refused_busy(&old.agent_name, &other));
+        // an agent deleted since has no slot to take: its run's own settings start
+        let agent = agents::list(tx)?.into_iter().find(|a| a.id == old.agent_id);
+        if let Some(full) = pool::check(tx, agent.as_ref(), &old.project, Some(&old.id))? {
+            return Err(full.words);
+        }
+        if agent.is_none() {
+            say(tx, &old, &format!("{} is no longer in the pool: this goes on with the settings it started with.", old.agent_name))?;
         }
         runs::change(tx, &old.id, |was| { was.state = "closed".into(); was.pane_key = None; })?;
         for other in old.ids.iter().filter(|other| **other != id) {
@@ -315,11 +332,14 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
             return Err("Run terminum hooks install first: Dispatcher cannot follow the agent without them.".to_string());
         }
     }
-    let (ag, f) = (a.clone(), dir.clone());
+    if let Some(holder) = &body.close {
+        close_idle(app, holder, &tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")).await?;
+    }
+    let (ag, f, project) = (a.clone(), dir.clone(), t.project.clone());
     let run = store(app, move |tx| {
-        // the one check that counts: in the transaction that takes the agent, each task as it stands now
-        if let Some(other) = runs::busy_with(tx, &ag.id, None)? {
-            return Err(refused_busy(&ag.name, &other));
+        // the one check that counts: in the transaction that takes the slots, each task as it stands now
+        if let Some(full) = pool::check(tx, Some(&ag), &project, None)? {
+            return Err(full.words);
         }
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
         for t in &now {

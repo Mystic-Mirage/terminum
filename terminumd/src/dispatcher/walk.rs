@@ -128,7 +128,7 @@ fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Res
     facts.active |= r.open_tools > 0;
     r.turn_ended |= read.ended;
     facts.others_open = match r.pane_key.as_deref().filter(|_| plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) {
-        Some(key) => tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks WHERE session_key = ?1 AND id != ?2 AND status NOT IN ('DONE', 'FAILED') AND archived_at IS NULL)", (key, &r.task), |x| x.get(0)).map_err(ops::sql)?,
+        Some(key) => runs::others_open(tx, key, &r.task)?,
         None => false,
     };
     r.last_walk = now;
@@ -162,9 +162,10 @@ fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Res
     Ok((later, changed, used))
 }
 
-/// Closes the pane: its mark checked just before; with no result the screen's last 200 rows stay on
-/// the task. tmux refusing: one more try at the next beat, then it stays and says so (AC-125).
-async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words: &str, keep: bool) -> Result<(), String> {
+/// Closes the pane: its mark checked just before; `keep`: the screen's last 200 rows stay on the task.
+/// `still` read of the run as it stands, last of all: no: it stays. tmux refusing: one more try at the next beat,
+/// then it stays and says so (AC-125).
+pub(super) async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words: &str, keep: bool, still: fn(&Run) -> bool) -> Result<(), String> {
     start::is_marked(server, pane, &run.id).await?;
     if keep {
         let rows = server.run(format!("capture-pane -p -S -200 -t {pane}")).await.unwrap_or_default();
@@ -181,7 +182,7 @@ async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words:
         }
     }
     let wanted = run.id.clone();
-    if !store(app, move |tx| runs::by_id(tx, &wanted).map(|now| plan::still_closes(&now))).await? {
+    if !store(app, move |tx| runs::by_id(tx, &wanted).map(|now| still(&now))).await? {
         return Ok(());
     }
     let (id, words) = (run.id.clone(), words.to_string());
@@ -283,7 +284,7 @@ async fn do_later(app: &Shared, l: Later) {
                 }
             }
         }
-        Act::Close { words, keep } => close(app, &l.run, &server, &pane, &words, keep).await,
+        Act::Close { words, keep } => close(app, &l.run, &server, &pane, &words, keep, plan::still_closes).await,
         _ => Ok(()),
     };
     if let Err(e) = done {

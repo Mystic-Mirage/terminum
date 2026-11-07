@@ -69,31 +69,48 @@ fn ac138_its_result_is_all_of_theirs() {
 }
 
 #[test]
-fn ac138_an_agent_is_busy_until_its_tasks_end_and_its_turn_is_over() {
+fn ac141_a_run_holds_its_slot_until_it_is_closed_let_go_or_its_agent_is_gone() {
     store("runs-busy").with(|tx| {
-        assert!(busy_with(tx, "a", None)?.is_none());
+        assert!(holding_agent(tx, "a")?.is_none());
         let (r, t) = working(tx, "a", &["one", "two"]);
-        assert_eq!(busy_with(tx, "a", None)?.map(|b| b.id).as_deref(), Some(r.id.as_str()));
-        assert!(busy_with(tx, "a", Some(&r.id))?.is_none(), "its own run is no other");
-        assert!(busy_with(tx, "b", None)?.is_none(), "another agent is free");
+        assert_eq!(holding_agent(tx, "a")?.map(|b| b.id).as_deref(), Some(r.id.as_str()));
+        assert!(holding_agent(tx, "b")?.is_none(), "another agent's slots are its own");
         ops::move_to(tx, HUMAN, &t[0].id, "DONE", 3)?;
         ops::move_to(tx, HUMAN, &t[1].id, "FAILED", 3)?;
-        assert!(busy_with(tx, "a", None)?.is_some(), "still in its turn");
         change(tx, &r.id, |r| r.turn_ended = true)?;
-        assert!(busy_with(tx, "a", None)?.is_none(), "free, its idle session waiting to close");
-        // a human's own prompt there: working again, whatever the tasks say
-        change(tx, &r.id, |r| r.turn_ended = false)?;
-        assert!(busy_with(tx, "a", None)?.is_some());
+        assert!(holding_agent(tx, "a")?.is_some(), "its idle session stays open, and holds it");
+        assert!(!by_id(tx, &r.id)?.busy(), "though nothing is left to hold its tasks");
+        for state in ["gone", "left", "closed"] {
+            change(tx, &r.id, |r| r.state = state.into())?;
+            assert!(holding_agent(tx, "a")?.is_none(), "{state}");
+        }
         Ok(())
     }).unwrap();
 }
 
 #[test]
-fn ac138_closing_its_session_frees_its_agent() {
+fn ac138_each_agent_lists_what_its_slots_hold() {
+    store("runs-lists").with(|tx| {
+        let (one, t) = working(tx, "a", &["one"]);
+        let (_, u) = working(tx, "a", &["two"]);
+        let lines = busy_agents(&live(tx)?);
+        assert_eq!(lines["a"].as_array().map(Vec::len), Some(2), "a session each: none hides another");
+        assert_eq!(lines["a"][0]["tasks"], t[0].id);
+        assert_eq!(lines["a"][1]["tasks"], u[0].id);
+        assert_eq!(lines["a"][0]["idle"], false);
+        ops::move_to(tx, HUMAN, &t[0].id, "DONE", 3)?;
+        change(tx, &one.id, |r| r.turn_ended = true)?;
+        assert_eq!(busy_agents(&live(tx)?)["a"][0]["idle"], true);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac138_closing_its_session_frees_its_slot() {
     store("runs-closed").with(|tx| {
         let (r, _) = working(tx, "a", &["one"]);
         change(tx, &r.id, |r| r.state = "closed".into())?;
-        assert!(busy_with(tx, "a", None)?.is_none());
+        assert!(holding_agent(tx, "a")?.is_none());
         assert!(holding(tx, &r.task)?.is_none());
         Ok(())
     }).unwrap();
@@ -109,7 +126,7 @@ fn ac138_giving_up_fails_what_is_open_and_lets_the_window_be() {
         assert_eq!(after.pane_key, r.pane_key, "its window stays");
         assert_eq!(ops::get(tx, &t[0].id)?.status, "DONE", "what is done stays");
         assert_eq!(ops::get(tx, &t[1].id)?.status, "FAILED");
-        assert!(busy_with(tx, "a", None)?.is_none());
+        assert!(holding_agent(tx, "a")?.is_none());
         assert_eq!(give_up(tx, &t[1].key).unwrap_err(), "It has no run to give up.");
         Ok(())
     }).unwrap();

@@ -31,7 +31,7 @@ let shownColumn = "TODO";
 const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-reduced-motion: reduce)");
 let dragging = null;                               // the tasks of a drag
 const picked = new Set();                          // the tasks ⌘ or Ctrl+click chose (terminum-dispatcher.md AC-138)
-let busy = {};                                     // what each busy agent does
+let busy = {};                                     // what each agent's slots hold
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
 let loading = 0, changing = 0, chain = Promise.resolve();
@@ -257,7 +257,7 @@ function send(m) {
 const openSession = (key) => { location.href = sessionUrl(key); };
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
 const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: () => readSoon() });
-const agents = agentsSection({ getMeta: () => meta, reload: loadMeta, busy: () => busy, liveRow: (key) => liveRows.get(key),
+const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, busy: () => busy, liveRow: (key) => liveRows.get(key),
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
 $("agentbar").append(agents.box);
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));

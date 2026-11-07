@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The pool over the columns, and its window (terminum-dispatcher.md AC-137, AC-138): what a task is dropped
-// on to run: each a rectangle with its color, name, kind, effort and what it does now. None is a project's.
+// on to run: each a rectangle with its color, name, kind, effort and a dot per live session. None is a project's.
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
@@ -8,58 +8,71 @@ import { $, agentColor, api, el, fillSelect, iconButton } from "./kanbanutil.js"
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
-/** `getMeta()`: terminumd's agents; `busy()`: what each busy agent does; `liveRow(key)`: a session's row;
- *  `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an agent; `run(tasks, agent)`. */
-export function agentsSection({ getMeta, reload, busy, liveRow, dragging, given, run, openSession }) {
+/** `getMeta()`: terminumd's agents; `chosen()`: the projects shown, none for all; `busy()`: what each agent's slots hold;
+ *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
+ *  agent; `run(tasks, agent)`. */
+export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging, given, run, openSession }) {
   const box = el("section", "agents"), list = el("div", "agentlist");
   const addKey = iconButton("icon", "plus", "Add agent", "Add an agent to the pool", () => open());
   addKey.id = "addagent";
   const hint = el("p", "pickhint");
   hint.hidden = true;
   box.append(list, addKey, hint);
-  const field = { name: $("agentname"), kind: $("agentkind"), effort: $("agenteffort"), command: $("agentcommand") };
+  const field = { name: $("agentname"), kind: $("agentkind"), effort: $("agenteffort"), command: $("agentcommand"), at_once: $("agentatonce") };
   const dialog = $("agentbox"), error = $("agenterror");
   let editing = null, snapshot = "";
 
-  /** What it does now, in a word or two; its tasks when busy. */
-  function doing(now) {
-    if (!now) return "free";
-    const row = now.key ? liveRow(now.key) : null;
-    const state = ["starting", "typed"].includes(now.state) ? "starting" : now.state === "asking" || row?.state === "waiting" ? "waits for you" : "working";
-    return `${state}: ${now.tasks}`;
+  const slots = (a) => busy()[a.id] ?? [];
+  const full = (a) => slots(a).length >= a.at_once;
+
+  /** What a session does now, in a word or two. */
+  function doing(s) {
+    if (s.idle) return "idle";
+    const row = s.key ? liveRow(s.key) : null;
+    return ["starting", "typed"].includes(s.state) ? "starting" : s.state === "asking" || row?.state === "waiting" ? "waits for you" : "working";
   }
 
-  /** Its rectangle: its color, name, kind, effort and what it does now. */
+  /** A session's dot: blinking while it works, still when it waits or idles; a press on it opens it. */
+  function dot(s) {
+    const words = doing(s), d = el("span", `agdot ${words === "working" || words === "starting" ? "on" : words === "idle" ? "idle" : "waits"}`);
+    d.dataset.key = s.key ?? "";
+    d.title = [s.tasks, getMeta().projects.find((p) => p.id === s.project)?.name, words].filter(Boolean).join(" · ");
+    return d;
+  }
+
+  /** Its rectangle: its color, name, kind, effort and a dot for each session of what is shown; its limit counts them all. */
   function row(a) {
-    const now = busy()[a.id];
-    const b = el("button", `item agentcard${now ? " busy" : ""}`);
+    const shown = chosen(), mine = slots(a).filter((s) => !shown.length || shown.includes(s.project));
+    const b = el("button", `item agentcard${full(a) ? " busy" : ""}`);
     b.type = "button";
     b.dataset.agent = a.id;
-    const bar = el("span", `pbar${now ? " busy" : ""}`);
+    const bar = el("span", `pbar${slots(a).length ? " busy" : ""}`);
     bar.style.setProperty("--dot", agentColor(a));
     b.style.setProperty("--ag", agentColor(a));
-    const txt = el("span", "txt"), line = el("span", "head"), words = doing(now);
+    const txt = el("span", "txt"), line = el("span", "head"), dots = el("span", "agdots");
+    dots.append(...mine.map(dot));
+    if (a.at_once > 1) dots.append(el("small", "agcount", `${slots(a).length}/${a.at_once}`));
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
-    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), el("span", "agstatus", words));
+    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), dots);
     b.append(bar, txt);
-    b.title = [a.name, words, a.line].join(" · ");
+    b.title = [a.name, `${slots(a).length} of ${a.at_once} at once`, a.line].join(" · ");
     return b;
   }
 
-  /** Over the columns it takes tasks: dropped or pressed, terminumd says if it cannot; else a press opens what it does, or it. */
+  /** Over the columns it takes tasks: dropped or pressed, terminumd says if it cannot; a dot opens its session, else a press opens its window. */
   function target(a) {
-    const b = row(a), now = busy()[a.id];
+    const b = row(a);
     b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
-    b.addEventListener("click", () => {
-      const tasks = given();
+    b.addEventListener("click", (e) => {
+      const tasks = given(), key = e.target.closest?.(".agdot")?.dataset.key;
       if (tasks) run(tasks, a.id);
-      else if (now?.key) openSession(now.key);
+      else if (key) openSession(key);
       else open(a);
     });
     b.addEventListener("dragover", (e) => {
       if (!dragging()) return;
       e.preventDefault();
-      if (!now) b.classList.add("over");
+      if (!full(a)) b.classList.add("over");
     });
     b.addEventListener("dragleave", () => b.classList.remove("over"));
     b.addEventListener("drop", (e) => {
@@ -75,7 +88,7 @@ export function agentsSection({ getMeta, reload, busy, liveRow, dragging, given,
   /** Anew only when what it shows changed, and not under a drag: a press spanning a read keeps its key. */
   function draw() {
     const tasks = given(), agents = getMeta().agents;
-    const now = JSON.stringify([agents, agents.map((a) => [busy()[a.id], doing(busy()[a.id])]), tasks?.length]);
+    const now = JSON.stringify([agents, chosen(), agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
     if (dragging() || now === drawn) return;
     drawn = now;
     list.replaceChildren(...agents.map(target));
@@ -121,8 +134,8 @@ export function agentsSection({ getMeta, reload, busy, liveRow, dragging, given,
   /** Its window: a new one, or `a` to change. */
   function open(a = null) {
     editing = a;
-    const v = a ?? { kind: "claude", name: freeName("claude"), command: "claude", effort: "" };
-    for (const k of ["kind", "name", "command"]) field[k].value = v[k];
+    const v = a ?? { kind: "claude", name: freeName("claude"), command: "claude", effort: "", at_once: 1 };
+    for (const k of ["kind", "name", "command", "at_once"]) field[k].value = v[k];
     fillEfforts(v.effort);
     $("agenthead").textContent = a ? a.name : "Add agent";
     $("agentok").textContent = a ? "Save" : "Add";
@@ -143,7 +156,8 @@ export function agentsSection({ getMeta, reload, busy, liveRow, dragging, given,
   }
 
   function keep() {
-    return send(editing ? `/api/task-agents/${editing.id}` : "/api/task-agents", { method: editing ? "PATCH" : "POST", body: values() });
+    const body = { ...values(), at_once: Number(field.at_once.value) };
+    return send(editing ? `/api/task-agents/${editing.id}` : "/api/task-agents", { method: editing ? "PATCH" : "POST", body });
   }
 
   $("agentok").addEventListener("click", keep);

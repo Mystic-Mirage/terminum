@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A project's memory limits (`terminum-dispatcher.md` AC-128).
+//! A project's memory limits (`terminum-dispatcher.md` AC-128) and how many agents it runs at once (AC-141).
 
 use axum::extract::{Path, State};
 use axum::response::Response;
@@ -13,7 +13,7 @@ use super::ops::{check_project, rows, sql};
 use crate::app::Shared;
 
 pub fn routes() -> Router<Shared> {
-    Router::new().route("/api/task-projects/{id}/limits", put(set_limits))
+    Router::new().route("/api/task-projects/{id}/limits", put(set_limits)).route("/api/task-projects/{id}/agents-at-once", put(set_agent_limit))
 }
 
 /// A project's memory limits, or none to go by the global ones (terminum-dispatcher.md AC-128); 0: off.
@@ -51,10 +51,49 @@ async fn set_limits(State(app): State<Shared>, Path(project): Path<String>, Json
     told_projects(&app, done)
 }
 
+/// How many agents a project runs at once; none: no limit.
+fn keep_agent_limit(tx: &Transaction, project: &str, limit: Option<i64>) -> Result<(), String> {
+    check_project(tx, project)?;
+    if limit.is_some_and(|n| !(1..=100).contains(&n)) {
+        return Err("Agents at once is 1 to 100, or empty.".to_string());
+    }
+    tx.execute("UPDATE projects SET agent_limit = ?2 WHERE id = ?1", (project, limit)).map(drop).map_err(sql)
+}
+
+/// Every project's that has one.
+pub fn agent_limits(tx: &Transaction) -> Result<std::collections::HashMap<String, i64>, String> {
+    Ok(rows(tx, "SELECT id, agent_limit FROM projects WHERE agent_limit IS NOT NULL", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+}
+
+async fn set_agent_limit(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
+    let wanted = match &body["limit"] {
+        Value::Null => Ok(None),
+        n => n.as_i64().map(Some).ok_or_else(|| "Agents at once is 1 to 100, or empty.".to_string()),
+    };
+    let done = match wanted {
+        Ok(limit) => store(&app, move |tx| keep_agent_limit(tx, &project, limit).map(|()| json!({"ok": true}))).await,
+        Err(e) => Err(e),
+    };
+    told_projects(&app, done)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tasks::store::Store;
+    use crate::tasks::store::{Store, DEFAULT_PROJECT};
+
+    #[test]
+    fn ac141_a_project_s_agents_at_once_are_checked() {
+        let s = Store::open(crate::testutil::fresh_dir("limits-agents").join("kanban.sqlite"));
+        s.with(|tx| keep_agent_limit(tx, DEFAULT_PROJECT, Some(3))).unwrap();
+        assert_eq!(s.with(agent_limits).unwrap()[DEFAULT_PROJECT], 3);
+        for bad in [0, 101] {
+            assert_eq!(s.with(|tx| keep_agent_limit(tx, DEFAULT_PROJECT, Some(bad))).unwrap_err(), "Agents at once is 1 to 100, or empty.");
+        }
+        s.with(|tx| keep_agent_limit(tx, DEFAULT_PROJECT, None)).unwrap();
+        assert!(s.with(agent_limits).unwrap().is_empty(), "no limit");
+        assert_eq!(s.with(|tx| keep_agent_limit(tx, "gone", None)).unwrap_err(), "That project is gone.");
+    }
 
     #[test]
     fn ac128_a_project_s_limits_are_checked_and_go_with_it() {

@@ -230,6 +230,15 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     acts
 }
 
+/// Quiet this long, two walks' worth, before an idle session can be closed for a slot (AC-141).
+const IDLE_QUIET: i64 = 60;
+
+/// Whether a session can be closed for a slot, by what the store knows: its tasks ended, its turn over, no tool open and
+/// two walks quiet; what the pane shows is read just before (AC-141).
+pub fn idle_holder(run: &Run) -> bool {
+    run.state == "working" && finished(&run.status) && run.open.is_empty() && run.turn_ended && run.open_tools == 0 && run.closing_for >= IDLE_QUIET
+}
+
 /// Whether a Close a walk decided still holds, read just before the pane goes: a press or a prompt may have come since.
 pub fn still_closes(run: &Run) -> bool {
     finished(&run.status) && !run.is_over() && !run.busy() && run.closing_for >= CLOSE

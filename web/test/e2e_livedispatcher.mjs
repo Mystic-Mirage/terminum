@@ -333,10 +333,10 @@ export async function liveDispatcherReal(page, opts) {
   const [first, second] = [await makes("First of two", "Finish this task with the result one."), await makes("Second of two", "Finish this task with the result two.")];
   const both = await j(`/api/tasks/${first}/run`, "POST", { agent: pool, also: [second], comment: "Do both, briefly." });
   check("AC-138 real Claude Code: one press runs two tasks", !!both.run, JSON.stringify(both));
-  check("AC-138 real Claude Code: its agent is busy", /is busy with/.test((await j(`/api/tasks/${await makes("A third", "")}/run`, "POST", { agent: pool })).error ?? ""));
+  check("AC-141 real Claude Code: its agent is at its limit", /at its limit of 1/.test((await j(`/api/tasks/${await makes("A third", "")}/run`, "POST", { agent: pool })).error ?? ""));
   check("AC-138 real Claude Code: both end DONE, from one session", await hasStatus(first, "DONE", 240000) && await hasStatus(second, "DONE", 120000) && await paneOf(first) === await paneOf(second), `${await history(first)} || ${await history(second)}`);
   check("AC-138 real Claude Code: and each result is its own", /\bone\b/.test(await history(first)) && /\btwo\b/.test(await history(second)), `${await history(first)} || ${await history(second)}`);
-  check("AC-138 real Claude Code: its agent is free again, the cards stay on it", await until(async () => !(await j("/api/tasks?counts=1")).busy[pool], 90000) && (await j(`/api/tasks/${first}`)).agent?.name === "Real pool");
+  check("AC-138 real Claude Code: its session idles, the cards stay on it", await until(async () => (await j("/api/tasks?counts=1")).busy[pool]?.every((s) => s.idle), 90000) && (await j(`/api/tasks/${first}`)).agent?.name === "Real pool");
   if (!process.env.TM_TEST_REAL_CODEX) return;
   const codex = await add("Real Codex", "codex", "codex");
   const x = (await j("/api/tasks", "POST", { title: "Reply with the word ok", project })).id;

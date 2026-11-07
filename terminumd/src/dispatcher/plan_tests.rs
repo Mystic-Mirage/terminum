@@ -265,3 +265,15 @@ fn ac125_a_close_decided_is_read_again_before_the_pane_goes() {
     assert!(!still_closes(&Run { status: "IN PROGRESS".into(), ..due() }), "open again");
     assert!(!still_closes(&Run { state: "left".into(), ..due() }), "given up since");
 }
+
+#[test]
+fn ac141_only_a_session_with_all_over_is_idle_for_a_slot() {
+    let idle = || { let mut r = run("DONE"); r.turn_ended = true; r.closing_for = 60; r };
+    assert!(idle_holder(&idle()));
+    assert!(!idle_holder(&Run { closing_for: 59, ..idle() }), "two walks quiet first");
+    assert!(!idle_holder(&Run { turn_ended: false, ..idle() }), "in a turn");
+    assert!(!idle_holder(&Run { open_tools: 1, ..idle() }), "a tool open");
+    assert!(!idle_holder(&Run { status: "IN PROGRESS".into(), ..idle() }));
+    assert!(!idle_holder(&Run { open: vec!["T-13".into()], ..idle() }), "a task of it open");
+    assert!(!idle_holder(&Run { state: "gone".into(), ..idle() }), "holds no slot");
+}

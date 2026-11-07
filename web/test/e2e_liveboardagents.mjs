@@ -111,7 +111,13 @@ export async function liveBoardAgents(page, opts) {
 /** A press where a window opened over another modal one reports "element is inert" on some Playwrights. */
 const pressAt = async (page, sel) => {
   await page.waitForSelector(sel, { state: "visible" });
-  const b = await (await page.$(sel)).boundingBox();
+  // a window opening still moves: a press waits for where it stands
+  let was = null, b = await (await page.$(sel)).boundingBox();
+  for (let i = 0; i < 40 && JSON.stringify(b) !== was; i++) {
+    was = JSON.stringify(b);
+    await new Promise((r) => setTimeout(r, 60));
+    b = await (await page.$(sel)).boundingBox();
+  }
   await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
 };
 
@@ -127,12 +133,14 @@ async function agentPool(page, opts) {
   const hasStatus = (id, s, ms = 15000) => until(async () => await status(id) === s, ms);
   const paneOf = async (id) => (await j(`/api/tasks/${id}`)).session?.key?.split(":").pop();
   const shown = async () => { await page.goto(`${base}/kanban/?project=${project}`); await page.waitForSelector(card(a)); };
-  const pool = `#agentbar .agentcard[data-agent="${fixer}"]`, words = () => page.textContent(`${pool} .agstatus`);
+  const pool = `#agentbar .agentcard[data-agent="${fixer}"]`;
+  const dots = () => page.$$eval(`${pool} .agdot`, (l) => l.map((d) => `${d.className} ${d.title}`));
+  const dotted = async (test) => until(async () => test(await dots()), 15000);
   await shown();
 
   const said = await page.textContent(pool);
   check("AC-138 a rectangle shows the agent's name, kind and effort", /Fast fixer/.test(said) && /Claude Code/.test(said) && /high/.test(said), said);
-  check("AC-138 and that it is free", await words() === "free", await words());
+  check("AC-138 and no dot: nothing of it runs", (await dots()).length === 0, JSON.stringify(await dots()));
   check("AC-138 a card names no project when one is chosen", !(await page.$(`${card(a)} .cproj`)));
   check("AC-138 a task on no agent shows its owner", await page.isVisible(`${card(a)} .cowner`) && !(await page.$(`${card(a)} .cagent`)));
 
@@ -162,53 +170,69 @@ async function agentPool(page, opts) {
   const key = (await j(`/api/tasks/${a}`)).session?.key;
   check("AC-138 in one session", !!key && (await j(`/api/tasks/${b}`)).session?.key === key, key);
   check("AC-138 what was chosen is let go", await until(async () => await page.locator(".card.picked").count() === 0));
-  check("AC-138 the agent says it works on both", await until(async () => { const w = await words(); return w.startsWith("working") && w.includes(a) && w.includes(b); }), await words());
+  check("AC-138 one dot blinks for the session, saying both", await dotted((d) => d.length === 1 && /agdot on/.test(d[0]) && d[0].includes(a) && d[0].includes(b)), JSON.stringify(await dots()));
   check("AC-138 a task in progress has no play key, its card names the agent", await until(async () => !(await page.$(`${card(a)} .crun`)) && (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Fast fixer"));
   check("AC-138 and hides the owner", !(await page.$(`${card(a)} .cowner`)));
 
   // busy: a third is refused, on the page and by terminumd
   await page.click(`${card(c)} .ctitle`, { modifiers: ["Meta"] });
   await page.click(pool);
-  check("AC-138 a busy agent refuses a third: said", await until(async () => /is busy/.test(await page.textContent("#toast"))), await page.textContent("#toast"));
+  check("AC-141 an agent at its limit refuses a third: said", await until(async () => /Fast fixer is at its limit of 1/.test(await page.textContent("#toast"))), await page.textContent("#toast"));
   check("AC-138 and no window opens", !(await page.$("#runbox[open]")));
   await page.keyboard.press("Escape");
   const refused = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
-  check("AC-138 terminumd refuses it too", refused.code >= 400 && /is busy/.test(refused.error), JSON.stringify(refused));
+  check("AC-141 terminumd refuses it too, naming what holds it", refused.code >= 400 && /at its limit of 1/.test(refused.error) && refused.error.includes(a), JSON.stringify(refused));
   check("AC-138 the third stays", await status(c) === "TODO");
 
-  // a press on a busy one shows its session; its pencil still edits
-  await page.click(`${pool} .agstatus`);
+  // a press on a dot shows its session; on the agent, its window
+  await page.click(pool, { position: { x: 60, y: 8 } });
+  check("AC-138 a press on the agent opens its window", await until(() => page.$("#agentbox[open]")));
+  await page.click('#agentbox button[value="cancel"]');
+  await page.click(`${pool} .agdot`);
   await page.waitForURL("**/sessions/**", { timeout: 8000 });
-  check("AC-138 a press on a busy agent opens its session", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, key), 8000));
+  check("AC-138 a press on a dot opens its session", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, key), 8000));
   await shown();
   await page.hover(pool);
   await page.click(`${pool} .agedit`);
   check("AC-138 its pencil edits it", await until(() => page.$("#agentbox[open]")) && await page.inputValue("#agentname") === "Fast fixer" && await page.inputValue("#agenteffort") === "high");
   await page.click('#agentbox button[value="cancel"]');
 
-  // both finish, in the words its prompt of several names them; they stay on that agent, which is free
+  // both finish, in the words its prompt of several names them; they stay on that agent, its session idle
   const pane = await paneOf(a);
   tmux("send-keys", "-t", pane, "-l", `The human ran 2 tasks: ${a}, ${b}. FINISHES`);
   tmux("send-keys", "-t", pane, "Enter");
   check("AC-138 both finish", await hasStatus(a, "DONE") && await hasStatus(b, "DONE"), `${await status(a)} ${await status(b)}`);
   check("AC-138 and stay on that agent", await until(async () => await page.textContent(`.col[data-status="DONE"] ${card(a)} .cagent`).catch(() => "") === "Fast fixer" && await page.textContent(`.col[data-status="DONE"] ${card(b)} .cagent`).catch(() => "") === "Fast fixer"));
-  check("AC-138 which is free again", await until(async () => await words() === "free"), await words());
+  check("AC-138 its session stays, its dot still", await dotted((d) => d.length === 1 && /agdot idle/.test(d[0])), JSON.stringify(await dots()));
   await page.click(`${card(a)} .ctitle`);
   await page.waitForSelector("#taskbox[open]");
   check("AC-138 a task's window names its agent", await until(() => page.isVisible("#taskbody .fieldvalue .cagent"), 2000), await page.textContent("#taskbody .fieldvalue"));
   await page.click("#taskclose");
   await page.waitForFunction(() => /^\/kanban\/$/.test(location.pathname));
 
-  // by its play key, the agent chosen in the window; closing the session frees the agent
+  // at its limit with an idle holder: one press closes it and runs
+  const offered = async () => (await j(`/api/tasks/${c}/run`)).agents?.find((x) => x.id === fixer)?.full;
+  check("AC-141 once two walks are quiet the idle holder can be closed", await until(offered, 15000), JSON.stringify(await offered()));
+  const idlePane = await paneOf(a);
+  tmux("send-keys", "-t", idlePane, "-l", "a draft in its box");
   await page.click(`${card(c)} .crun`);
   await page.waitForSelector("#runbox[open]");
-  check("AC-138 a play key asks for the agent, the free one picked", await page.isVisible("#runagent") && await page.inputValue("#runagent") === fixer);
+  check("AC-141 the window says what holds it and names the key", /at its limit of 1/.test(await page.textContent("#runnone")) && /Close .*'s session and run/.test(await page.textContent("#rungo")), await page.textContent("#rungo"));
   await page.fill("#runmessage", "WORKS");
   await page.click("#rungo");
-  check("AC-138 it takes the third", await hasStatus(c, "IN PROGRESS"), await status(c));
-  check("AC-138 busy again", await until(async () => (await words()).includes(c)), await words());
+  check("AC-141 a draft in its box stops it: said, nothing closed", await until(async () => /no longer idle/.test(await page.textContent("#runerror"))) && tmux("list-panes", "-a", "-F", "#{pane_id}").includes(idlePane), await page.textContent("#runerror"));
+  await page.click('#runbox button[value="cancel"]');
+  tmux("send-keys", "-t", idlePane, "C-u");
+  await page.click(`${card(c)} .crun`);
+  await page.waitForSelector("#runbox[open]");
+  await page.fill("#runmessage", "WORKS");
+  await page.click("#rungo");
+  check("AC-141 with its box empty it closes the holder", await until(() => !tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(idlePane), 15000));
+  check("AC-141 and says so on its task", await until(async () => /Session ended: closed for/.test(JSON.stringify((await j(`/api/tasks/${a}`)).history))));
+  check("AC-141 and the third starts in the slot", await hasStatus(c, "IN PROGRESS"), await status(c));
+  check("AC-138 a dot for it", await dotted((d) => d.length === 1 && d[0].includes(c)), JSON.stringify(await dots()));
   tmux("kill-pane", "-t", await paneOf(c));
-  check("AC-138 closing a session frees its agent", await until(async () => await words() === "free", 15000), await words());
+  check("AC-138 closing a session frees its slot", await dotted((d) => d.length === 0), JSON.stringify(await dots()));
 
   // made and run at once: the new-task window's Run
   await page.click("#newtask");
@@ -220,6 +244,8 @@ async function agentPool(page, opts) {
   await until(async () => (made = (await j(`/api/tasks?q=${encodeURIComponent("made and run")}`)).tasks?.[0]?.id));
   check("AC-138 Run creates it and starts it at once on that agent", !!made && await hasStatus(made, "DONE") && await until(async () => await page.textContent(`${card(made)} .cagent`).catch(() => "") === "Fast fixer"), made);
   check("AC-138 no window on the way", !(await page.$("#runbox[open]")));
+  tmux("kill-pane", "-t", await paneOf(made));
+  await dotted((d) => d.length === 0);
   await page.click("#newtask");
   await page.waitForSelector("#newbox[open]");
   await page.fill("#newtitle", "made, its agent not chosen");
@@ -267,8 +293,32 @@ async function agentPool(page, opts) {
   check("AC-138 Give up fails its open tasks", await hasStatus(held, "FAILED") && await hasStatus(held2, "FAILED"), `${await status(held)} ${await status(held2)}`);
   check("AC-138 its window stays", tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(heldPane));
   await page.click("#taskclose");
-  check("AC-138 the agent is free after it", await until(async () => await words() === "free", 15000), await words());
+  check("AC-141 giving up frees its slot", await dotted((d) => d.length === 0), JSON.stringify(await dots()));
   tmux("kill-pane", "-t", heldPane);
+
+  // two at once, and a project's own limit, whichever agent runs
+  const line = (await j("/api/tasks/meta")).agents.find((x) => x.id === fixer);
+  await j(`/api/task-agents/${fixer}`, "PATCH", { name: line.name, kind: line.kind, command: line.command, effort: line.effort, at_once: 2 });
+  const one = await task("first at once"), two = await task("second at once"), three = await task("third at once");
+  await page.waitForSelector(card(three), { timeout: 8000 });
+  await j(`/api/tasks/${one}/run`, "POST", { agent: fixer });
+  await j(`/api/tasks/${two}/run`, "POST", { agent: fixer });
+  check("AC-141 two at once start", await hasStatus(one, "IN PROGRESS") && await hasStatus(two, "IN PROGRESS"), `${await status(one)} ${await status(two)}`);
+  check("AC-138 a dot each", await dotted((d) => d.length === 2 && d[0].includes(one) && d[1].includes(two)), JSON.stringify(await dots()));
+  check("AC-138 and it counts them", await until(async () => (await page.textContent(`${pool} .agcount`).catch(() => "")) === "2/2"));
+  const third = await j(`/api/tasks/${three}/run`, "POST", { agent: fixer });
+  check("AC-141 a third is refused, naming both", /at its limit of 2/.test(third.error) && third.error.includes(one) && third.error.includes(two), JSON.stringify(third));
+  const other = (await j("/api/task-agents", "POST", { name: "Other one", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
+  check("AC-141 Agents at once takes 1 to 100 or nothing", /1 to 100/.test((await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 0 })).error));
+  await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 2 });
+  const limited = await j(`/api/tasks/${three}/run`, "POST", { agent: other });
+  check("AC-141 a project's limit counts every agent", /Pool runs 2 agents at once, its limit/.test(limited.error), JSON.stringify(limited));
+  await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: null });
+  check("AC-141 no limit: another agent starts", !!(await j(`/api/tasks/${three}/run`, "POST", { agent: other })).run);
+  await hasStatus(three, "IN PROGRESS");
+  for (const id of [one, two, three]) tmux("kill-pane", "-t", await paneOf(id));
+  check("AC-141 and their slots free", await dotted((d) => d.length === 0), JSON.stringify(await dots()));
+  await j(`/api/task-agents/${other}`, "DELETE");
 }
 
 /** AC-139, AC-140: a project made empty, its window stays for the pool; with no folder nothing starts; a pencil opens it; a change is kept. */

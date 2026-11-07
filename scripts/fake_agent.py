@@ -74,6 +74,8 @@ def main():
                     typed += part.replace("\r", " ").replace("\n", " ")
                 else:
                     ends = ends or "\r" in part
+                    if "\x15" in part:                # Ctrl+U clears the box, as both agents' do
+                        typed, part = "", part.rsplit("\x15", 1)[1]
                     typed += part.split("\r")[0]
             if not ends:
                 box()

@@ -169,21 +169,27 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
 
 /// What the board's pickers offer, and the store's trouble if any.
 async fn meta(State(app): State<Shared>) -> Response {
-    let projects: Vec<Value> = std::iter::once(json!({"id": DEFAULT_PROJECT, "name": "Default", "dir": "~"}))
+    let mut projects: Vec<Value> = std::iter::once(json!({"id": DEFAULT_PROJECT, "name": "Default", "dir": "~"}))
         .chain(app.projects.lock().list().iter().map(|p| json!({"id": p.id, "name": p.name, "color": p.color, "dir": p.dir, "host": p.host}))).collect();
     let sessions: Vec<Value> = crate::page::marks::layout_items(app.layout.read().as_array().map_or(&[], |a| a.as_slice()))
         .map(|it| json!({"key": it["id"], "title": it["title"]})).collect();
     // the store's lock waits out a running query: off the async workers, its state too
     let a = app.clone();
-    let (users, agents, limits, last_agents, problem, set_aside) = tokio::task::spawn_blocking(move || {
-        let (users, agents, limits, last_agents) = a.tasks.with(|tx| Ok((
+    let (users, agents, limits, last_agents, at_once, problem, set_aside) = tokio::task::spawn_blocking(move || {
+        let (users, agents, limits, last_agents, at_once) = a.tasks.with(|tx| Ok((
             ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
             super::agents::list(tx)?,
             super::limits::limits(tx)?,
             runs::last_agents(tx)?,
+            super::limits::agent_limits(tx)?,
         ))).unwrap_or_default();
-        (users, agents, limits, last_agents, a.tasks.problem(), a.tasks.is_set_aside())
+        (users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
+    for p in &mut projects {
+        if let Some(limit) = p["id"].as_str().and_then(|id| at_once.get(id)) {
+            p["agent_limit"] = json!(limit);
+        }
+    }
     Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 

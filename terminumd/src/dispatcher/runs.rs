@@ -67,6 +67,11 @@ impl Run {
         !self.is_over() && (self.is_starting() || !self.open.is_empty() || (self.state == "working" && !self.turn_ended))
     }
 
+    /// It holds a slot of its agent and of its project (AC-141): from RUN until it is closed, let go or its agent is gone.
+    pub fn holds_slot(&self) -> bool {
+        !self.is_over() && self.state != "gone"
+    }
+
     /// What it is about now: its tasks still open, else all.
     pub fn targets(&self) -> &[String] {
         if self.open.is_empty() { &self.ids } else { &self.open }
@@ -135,15 +140,27 @@ pub fn last_of(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
     tx.query_row(&format!("{SELECT} WHERE r.id = (SELECT m.run FROM run_tasks m WHERE m.task = ?1 ORDER BY m.rowid DESC LIMIT 1)"), [task], of_row).optional().map_err(sql)
 }
 
-/// What keeps agent `agent` busy but run `but`, if anything (AC-138): read in the transaction that adds
-/// or goes on with a run, so two presses never both find it free.
-pub fn busy_with(tx: &Transaction, agent: &str, but: Option<&str>) -> Result<Option<Run>, String> {
-    Ok(live(tx)?.into_iter().find(|r| r.agent_id == agent && Some(r.id.as_str()) != but && r.busy()))
+/// A run holding one of agent `agent`'s slots, if any.
+pub fn holding_agent(tx: &Transaction, agent: &str) -> Result<Option<Run>, String> {
+    Ok(live(tx)?.into_iter().find(|r| r.agent_id == agent && r.holds_slot()))
 }
 
-/// What each busy agent does: its tasks, its run's state and its session (AC-138).
+/// Whether session `key` holds an open task other than `lead`'s: one taken there, no run's.
+pub fn others_open(tx: &Transaction, key: &str, lead: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks WHERE session_key = ?1 AND id != ?2 AND status NOT IN ('DONE', 'FAILED') AND archived_at IS NULL)", (key, lead), |x| x.get(0)).map_err(sql)
+}
+
+/// What each agent's slots hold: per run its tasks, state, session and project, and whether it idles (AC-138).
 pub fn busy_agents(all: &[Run]) -> serde_json::Value {
-    all.iter().filter(|r| r.busy()).map(|r| (r.agent_id.clone(), serde_json::json!({"tasks": r.names(), "state": r.state, "key": r.pane_key}))).collect::<serde_json::Map<_, _>>().into()
+    let mut by_agent = serde_json::Map::new();
+    for r in all.iter().filter(|r| r.holds_slot()) {
+        let line = serde_json::json!({"tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": r.open.is_empty() && r.turn_ended});
+        match by_agent.entry(r.agent_id.clone()).or_insert_with(|| serde_json::json!([])) {
+            serde_json::Value::Array(lines) => lines.push(line),
+            _ => unreachable!("each is a list"),
+        }
+    }
+    by_agent.into()
 }
 
 pub(super) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {

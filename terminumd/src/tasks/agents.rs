@@ -29,6 +29,8 @@ pub struct Agent {
     pub effort: String,
     /// its place in the palette (listparts.js): none of two share one while another is free
     pub color: i64,
+    /// how many of it may run at once (terminum-dispatcher.md AC-141)
+    pub at_once: i64,
     /// what starts it: its command with its effort
     pub line: String,
 }
@@ -50,18 +52,22 @@ struct Given {
     kind: String,
     command: String,
     effort: String,
+    at_once: i64,
 }
 
 impl Given {
     fn of(body: &Value) -> Given {
         let text = |k: &str| body[k].as_str().unwrap_or_default().trim().to_string();
-        Given { name: text("name"), kind: text("kind"), command: text("command"), effort: text("effort") }
+        Given { name: text("name"), kind: text("kind"), command: text("command"), effort: text("effort"), at_once: body["at_once"].as_i64().unwrap_or(if body["at_once"].is_null() { 1 } else { 0 }) }
     }
 
     /// What needs no store: refused with the words the window shows.
     fn check(&self) -> Result<(), String> {
         if self.name.is_empty() {
             return Err("An agent needs a name.".into());
+        }
+        if !(1..=100).contains(&self.at_once) {
+            return Err("At once is 1 to 100.".into());
         }
         if self.name.chars().count() > MOST_NAME {
             return Err(format!("An agent's name is {MOST_NAME} characters at most."));
@@ -105,9 +111,9 @@ impl Given {
 
 /// The pool, as they were added.
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
-    rows(tx, "SELECT id, name, kind, command, effort, color FROM agents ORDER BY rowid", [], |r| {
+    rows(tx, "SELECT id, name, kind, command, effort, color, at_once FROM agents ORDER BY rowid", [], |r| {
         let (kind, command, effort): (String, String, String) = (r.get(2)?, r.get(3)?, r.get(4)?);
-        Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)? })
+        Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)?, at_once: r.get(6)? })
     })
 }
 
@@ -117,21 +123,21 @@ fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
     let id = crate::auth::crypto::random_hex::<8>();
     // the next color after the last: agents far apart, and no two alike for a palette's length
     let color: i64 = tx.query_row("SELECT COALESCE(MAX(color) + 1, 0) FROM agents", [], |r| r.get(0)).map_err(sql)?;
-    tx.execute("INSERT INTO agents (id, name, kind, command, effort, color) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-               (&id, &given.name, &given.kind, &given.command, &given.effort, color)).map_err(sql)?;
+    tx.execute("INSERT INTO agents (id, name, kind, command, effort, color, at_once) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+               (&id, &given.name, &given.kind, &given.command, &given.effort, color, given.at_once)).map_err(sql)?;
     Ok(id)
 }
 
 fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
     given.fits(tx, id)?;
-    match tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5 WHERE id = ?1", (id, &given.name, &given.kind, &given.command, &given.effort)).map_err(sql)? {
+    match tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5, at_once = ?6 WHERE id = ?1", (id, &given.name, &given.kind, &given.command, &given.effort, given.at_once)).map_err(sql)? {
         0 => Err("That agent is gone.".into()),
         _ => Ok(()),
     }
 }
 
 fn remove(tx: &Transaction, id: &str) -> Result<(), String> {
-    if let Some(run) = crate::dispatcher::runs::busy_with(tx, id, None)? {
+    if let Some(run) = crate::dispatcher::runs::holding_agent(tx, id)? {
         return Err(format!("{} is busy with {}: it can go when they end, or after Give up.", run.agent_name, run.names()));
     }
     match tx.execute("DELETE FROM agents WHERE id = ?1", [id]).map_err(sql)? {

@@ -125,7 +125,13 @@ export async function renderInto(box, text) {
     box.innerHTML = (await renderers()).taskMarkdownHtml(text);
   } catch { return; }
   for (const img of box.querySelectorAll("img[data-raw]")) {
-    signin.blobUrl(img.dataset.raw).then((got) => { if (got.url) img.src = got.url; });
+    signin.blobUrl(img.dataset.raw).then((got) => {
+      if (!got.url) return;
+      const done = () => URL.revokeObjectURL(got.url);   // a picture decoded needs its address no more
+      img.addEventListener("load", done, { once: true });
+      img.addEventListener("error", done, { once: true });
+      img.src = got.url;
+    });
   }
   for (const a of box.querySelectorAll("a")) {
     const id = /^\/api\/task-files\/([0-9a-f]{32})$/.exec(a.getAttribute("href") ?? "")?.[1];

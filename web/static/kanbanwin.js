@@ -18,7 +18,7 @@ function editor(text, label) {
 
 export function taskWindow({ getMeta, runs }) {
   const box = $("taskbox"), body = $("taskbody");
-  let shown = null, opening = 0;
+  let shown = null, drawn = "", opening = 0;
 
   /** A change of a field: whether terminumd took it. The window shows what stands; a text being
    *  typed stays (refresh). The board hears of it from terminumd. */
@@ -214,6 +214,7 @@ export function taskWindow({ getMeta, runs }) {
 
   function draw(t) {
     shown = t;
+    drawn = JSON.stringify(t);
     $("tasktitle").textContent = `${t.id} ${t.title}`;
     const history = el("ol", "history");
     history.append(...t.history.map((e) => eventRow(t, e)));
@@ -242,11 +243,15 @@ export function taskWindow({ getMeta, runs }) {
     return true;
   }
 
-  /** Reads it again; a text being edited holds until it is saved (`saved`). */
-  async function refresh(saved = false) {
+  /** Reads it again; a text being edited holds until it is saved (`saved`). What the page only heard
+   *  of (`news`) and answers the same draws nothing: no Markdown again, no picture fetched again. */
+  async function refresh(saved = false, news = false) {
     if (!box.open || !shown) return;
     if (!saved && body.querySelector(EDITS)) return;
-    try { draw(await api(`/api/tasks/${shown.id}`)); } catch (e) { say(e.message); }
+    try {
+      const t = await api(`/api/tasks/${shown.id}`);
+      if (!news || JSON.stringify(t) !== drawn) draw(t);
+    } catch (e) { say(e.message); }
   }
 
   $("taskclose").addEventListener("click", tryClose);

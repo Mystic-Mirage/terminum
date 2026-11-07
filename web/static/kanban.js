@@ -12,7 +12,6 @@ import { takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
 import { projectInk } from "./listparts.js";
-import { seeFolders } from "./nav.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
 import { sessionStrip, sessionsColumn } from "./kanbanside.js";
 import { agentsSection } from "./kanbanagents.js";
@@ -96,14 +95,11 @@ function sessionLine(t) {
   return line("stopped", s.agent ? "stopped, task open" : "no agent");
 }
 
-const cardBudget = (id) => [...cards.values()].flat().find((t) => t.id === id)?.budget_seconds;
-
 /** What its session uses and what stands idle in it (terminum-dispatcher.md AC-127 to AC-129): as of the last walk. */
-function usageWords(id) {
+function usageWords(id, budget) {
   const u = usage[id];
   if (!u) return "";
   const words = u.not_measured ? [u.not_measured] : [`CPU ${u.cpu}%`, `${u.gib} GiB`, `${u.minutes} min`];
-  const budget = cardBudget(id);
   if (budget && u.budget_used !== undefined) words.unshift(`${Math.floor(u.budget_used / 60)} of ${budget / 60} min`);
   if (u.tokens) words.push(`${(u.tokens.input + u.tokens.output + u.tokens.cached).toLocaleString("en")} tokens`);
   else if (u.tokens === null) words.push("Tokens not known");
@@ -112,7 +108,7 @@ function usageWords(id) {
 }
 
 function showUsage(c, id) {
-  const words = usageWords(id), line = c.querySelector(".cusage");
+  const words = usageWords(id, Number(c.dataset.budget)), line = c.querySelector(".cusage");
   if (line?.textContent === words) return;
   line?.remove();
   if (words) c.querySelector(".cfoot").append(el("span", "cusage", words));
@@ -137,6 +133,7 @@ function showSession(c, t) {
 function card(t) {
   const c = el("article", `card sev-${t.severity}`);
   c.dataset.id = t.id;
+  c.dataset.budget = t.budget_seconds ?? "";
   c.draggable = true;
   c.tabIndex = 0;
   c.rowDrawn = "";
@@ -312,7 +309,6 @@ function sessionsCame(groups) {
   const items = groups.flatMap((g) => g.items ?? []);
   meta.sessions = items.map((it) => ({ key: it.id, title: it.title }));
   liveRows = new Map(items.map((it) => [it.id, it]));
-  seeFolders(groups);
   side.layout(groups);
   const shown = new Map([...document.querySelectorAll(".card")].map((c) => [c.dataset.id, c]));
   for (const t of [...cards.values()].flat()) {
@@ -432,7 +428,7 @@ $("newtask").addEventListener("click", () => form.open());
 let readWait = 0, windowToo = false;
 function readSoon() {
   clearTimeout(readWait);
-  readWait = setTimeout(() => { load(); if (windowToo) windowed.refresh(); windowToo = false; }, 40);
+  readWait = setTimeout(() => { load(); if (windowToo) windowed.refresh(false, true); windowToo = false; }, 40);
 }
 
 /** Every page hears of a task's change; an open window reads again only when it shows that task. */

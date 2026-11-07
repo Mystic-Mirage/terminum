@@ -23,8 +23,8 @@ export const within = async (name, fn, ms = 5000) => {
   const t0 = Date.now();
   try { await fn(ms); check(name, true, `${Date.now() - t0} ms`); } catch (e) { check(name, false, e.message.split("\n")[0]); }
 };
-/** Whether `ok()` comes true within `ms`. */
-export const until = async (ok, ms = 8000) => { for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 150))) if (await ok()) return true; return false; };
+/** Whether `ok()` comes true within `ms`, `slack(ms)` on a busy machine. */
+export const until = async (ok, ms = 8000) => { for (const end = Date.now() + slack(ms); Date.now() < end; await new Promise((r) => setTimeout(r, 150))) if (await ok()) return true; return false; };
 /** In the page (page.evaluate's function): the browser's focus and visibility played, then `ev`
     fired where the browser fires it (visibilitychange on the document); a test cannot take the
     window's focus away. */

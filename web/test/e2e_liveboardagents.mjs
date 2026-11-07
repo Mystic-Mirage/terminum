@@ -298,7 +298,8 @@ async function projectWindowChecks(page, opts) {
   check("AC-139 Add agent opens the agent's window on it", await until(() => page.$("#agentbox[open]")) && await page.inputValue("#agentproject") === fresh && !(await page.isVisible("#agentproject")));
   await page.fill("#agentname", "Its first");
   await pressAt(page, "#agentok");
-  check("AC-139 the agent stands in the project's window", await until(() => page.isVisible('#projectagentlist .agentcard:has-text("Its first")')));
+  check("AC-139 the agent stands in the project's window", await until(() => page.isVisible('#projectagentlist .agentcard:has-text("Its first")')),
+    JSON.stringify(await page.evaluate(() => ({ asking: !!document.querySelector("#agentbox[open]"), why: document.getElementById("agenterror")?.textContent, list: document.getElementById("projectagentlist")?.textContent.slice(0, 200) }))));
   await pressAt(page, "#projectlimits");
   await page.waitForSelector("#limitsbox[open]");
   await page.fill("#limitwarn", "2");

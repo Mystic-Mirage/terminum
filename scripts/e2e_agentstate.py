@@ -52,7 +52,7 @@ const s = JSON.parse(process.argv[2]);
 const draw = (rows) => process.stdout.write(`\x1b[2J\x1b[${process.stdout.rows - rows.length + 1};1H` + rows.join("\r\n"));
 if (s.title) process.stdout.write(`\x1b]2;${s.title}\x07`);
 draw(s.rows);
-if (s.later) setTimeout(() => { process.stdout.write("\x1b]2;dev\x07"); draw(s.later); }, 3000);
+if (s.later) setTimeout(() => { process.stdout.write("\x1b]2;dev\x07"); draw(s.later); }, 8000);   // past a read's STATE_EVERY: a first capture may find it not yet drawn
 // phases: [rows, ms] drawn one after another, the last one kept
 let at = 0;
 for (const [rows, ms] of s.phases ?? []) { setTimeout(() => draw(rows), at); at += ms; }
@@ -150,7 +150,7 @@ def main():
               during and all(x[1] == "working" and not x[2] for x in during), rows)
         check("AC-93 once the shell ended, the turn ends: unread SETTLE later",
               unread_at is not None and unread_at >= SHELL_FOR + SETTLE - 1, (unread_at, rows[-3:]))
-        run("switch")    # its screen changes 3 s after it starts
+        run("switch")    # its screen changes 8 s after it starts
         before = seen("switch", lambda r: r["agent"] == "codex")
         check("AC-39 Codex in a pane before the switch", before and before["state"] == "done", before)
         after = seen("switch", lambda r: r["agent"] is None, 12)

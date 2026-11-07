@@ -204,3 +204,17 @@ fn ac138_a_store_of_the_last_schema_keeps_its_runs() {
     let color: i64 = conn.query_row("SELECT color FROM project_agents WHERE id = 'a1'", [], |x| x.get(0)).unwrap();
     assert!(color > 0, "each agent has a color of its own");
 }
+
+#[test]
+fn ac119_a_writer_from_outside_waits_for_a_transaction_that_has_read() {
+    let path = fresh("tasks-outside");
+    let s = Store::open(path.clone());
+    s.with(|tx| {
+        let _ = tx.query_row("SELECT count(*) FROM tasks", [], |r| r.get::<_, i64>(0)).map_err(|e| e.to_string())?;
+        let outside = Connection::open(&path).map_err(|e| e.to_string())?;
+        outside.busy_timeout(Duration::ZERO).map_err(|e| e.to_string())?;
+        assert!(outside.execute("INSERT INTO meta (key, value) VALUES ('outside', '1')", []).is_err(), "the transaction holds the write from its start");
+        // read first, then written: with a deferred transaction this fails at once with "database is locked"
+        tx.execute("INSERT INTO meta (key, value) VALUES ('inside', '1')", []).map(drop).map_err(|e| e.to_string())
+    }).unwrap();
+}

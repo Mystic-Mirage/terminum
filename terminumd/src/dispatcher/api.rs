@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, Run};
-use super::press::{also_of, prompt_of, refused_busy, rev_of, shown_of, way, ways, Asked, Way};
+use super::press::{also_of, budget_told, prompt_of, refused_busy, rev_of, shown_of, way, ways, Asked, Way};
 use super::{move_one, move_task, procs, say, start, store, walk};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
@@ -217,8 +217,10 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
     let new = next_run(app, r, t, again).await?;
     start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await?;
     let (key, n) = (server.key(pane), new.clone());
-    app.dispatcher.panes.lock().insert(key.clone());
-    store(app, move |tx| runs::change(tx, &n, |now| now.pane_key = Some(key)).map(drop)).await?;
+    app.dispatcher.watch_pane(&key);
+    let k = key.clone();
+    store(app, move |tx| runs::change(tx, &n, |now| now.pane_key = Some(k)).map(drop)).await?;
+    app.dispatcher.watch_pane(&key);                   // a walk that read before this has dropped it
     start::watch(app, &new);
     Ok(json!({"run": new}))
 }
@@ -243,7 +245,7 @@ fn project_of(app: &Shared, t: &Task) -> Option<(String, String)> {
 async fn went_on(app: &Shared, r: &Run, t: &Task) -> Result<Value, String> {
     let (id, task, key, status, words) = (r.id.clone(), t.id.clone(), t.key.clone(), t.status.clone(), "The human ran it again.");
     let done = store(app, move |tx| {
-        let now = runs::change(tx, &id, |now| { now.state = "working".into(); now.new_work(); })?;
+        let now = runs::change(tx, &id, Run::going_on)?;
         bring_back(tx, &task)?;
         if super::plan::finished(&status) {
             move_one(tx, &task, "IN PROGRESS", words)?;
@@ -381,9 +383,7 @@ async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -> Response 
 /// warning is (AC-126).
 pub fn budget_changed(app: &Shared, task: &Task) {
     let Some(key) = task.session.clone().filter(|k| app.dispatcher.has_run(k)) else { return };
-    let (app, words) = (app.clone(), task.budget_seconds.map_or_else(
-        || format!("[terminum Dispatcher] {}: its time budget is off.", task.id),
-        |s| format!("[terminum Dispatcher] {}: its time budget is now {} minutes.", task.id, s / 60)));
+    let (app, id, own) = (app.clone(), task.id.clone(), task.budget_seconds);
     tokio::spawn(async move {
         let k = key.clone();
         let Ok(Some(r)) = store(&app, move |tx| {
@@ -391,6 +391,7 @@ pub fn budget_changed(app: &Shared, task: &Task) {
             runs::change(tx, &r.id, |now| now.warned = false).map(Some)
         }).await else { return };
         if let Some((server, pane)) = app.tmux.resolve(&key) {
+            let words = budget_told(&id, own, &r);
             walk::tell(&app, &r, &server, &pane, words, "The new budget").await;
         }
     });

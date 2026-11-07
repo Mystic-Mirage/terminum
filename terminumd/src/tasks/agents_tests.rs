@@ -143,3 +143,17 @@ fn ac138_each_agent_of_a_project_has_its_own_color() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac138_a_busy_agent_is_not_deleted() {
+    open("agents-busy").with(|tx| {
+        let id = add(tx, DEFAULT_PROJECT, &opus())?;
+        let t = crate::tasks::ops::create(tx, crate::tasks::store::HUMAN, crate::tasks::ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
+        let like = crate::dispatcher::runs::Run { agent_id: id.clone(), agent_name: "Opus reviewer".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), ..Default::default() };
+        let run = crate::dispatcher::runs::add(tx, &like, std::slice::from_ref(&t.key), 1)?;
+        let refused = remove(tx, &id).unwrap_err();
+        assert!(refused.contains("Opus reviewer is busy with") && refused.contains(&t.id), "{refused}");
+        crate::dispatcher::runs::change(tx, &run, |r| r.state = "closed".into())?;
+        remove(tx, &id)
+    }).unwrap();
+}

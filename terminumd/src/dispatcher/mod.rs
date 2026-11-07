@@ -26,7 +26,7 @@ use crate::tasks::api::store;
 use crate::tasks::ops;
 use crate::tasks::store::DISPATCHER;
 
-pub use hooks::heard;
+pub use hooks::{heard, hearing};
 pub use walk::run as walking;
 
 /// The walk's beat; a gap over GAP adds nothing to a clock (AC-131).
@@ -39,8 +39,10 @@ const TYPED_FOR: Duration = Duration::from_secs(300);
 pub struct Dispatcher {
     /// panes with activity since the last walk
     active: Mutex<HashSet<String>>,
-    /// panes with a live run: the others' hook events cost nothing here
-    panes: Mutex<HashSet<String>>,
+    /// panes with a live run, each since when: the others' hook events cost nothing here
+    panes: Mutex<HashMap<String, Instant>>,
+    /// hooks' events, in the order they came (AC-131)
+    events: hooks::Events,
     /// what terminum typed, by pane
     typed: Mutex<Vec<(String, String, Instant)>>,
     /// runs whose start is being watched
@@ -96,7 +98,22 @@ impl Dispatcher {
     }
 
     fn has_run(&self, key: &str) -> bool {
-        self.panes.lock().contains(key)
+        self.panes.lock().contains_key(key)
+    }
+
+    /// Pane `key` has a live run from now on.
+    fn watch_pane(&self, key: &str) {
+        self.panes.lock().insert(key.to_string(), Instant::now());
+    }
+
+    /// The panes of the runs a walk read at `read_at`; one opened since stands, that read could not have seen it.
+    fn keep_panes(&self, live: impl Iterator<Item = String>, read_at: Instant) {
+        let live: HashSet<String> = live.collect();
+        let mut panes = self.panes.lock();
+        panes.retain(|k, since| live.contains(k) || *since >= read_at);
+        for k in live {
+            panes.entry(k).or_insert(read_at);
+        }
     }
 
     /// A hook's facts of a watched pane: a new agent starts clean; its subagents, shape-checked (AC-127).

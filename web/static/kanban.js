@@ -413,7 +413,7 @@ function listen() {
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
       else if (m.t === "build") buildCame(m.id);
       else if (m.t === "taskmarks") side.marks(m);
-      else if (m.t === "settings") { meta.scheme = m.page?.colorScheme ?? null; colors(); }
+      else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
       else if (m.t === "projects") { side.projects(m.items ?? [], m.order ?? []); clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
     };
     ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);

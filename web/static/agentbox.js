@@ -54,6 +54,10 @@ function tallTop(rows, bottom, above) {
   return { top: -(k + 1), txt: row.txt };
 }
 
+/** The caret last seen ({top, bottom, row, col, txt}) in the box `at`, its row's text unchanged; else null. */
+const seenCaret = (rows, seen, at) => (seen && at && seen.top === at.top && seen.bottom === at.bottom && seen.row > at.top && seen.row < at.bottom && rows[seen.row].txt === seen.txt
+  ? { row: seen.row, col: Math.max(2, seen.col) } : null);
+
 /** Where the agent's caret is while the cursor stands below its box: Claude Code puts the
  *  terminal's cursor on its caret after a key, but a redraw of its own (a status line's refresh,
  *  a notice) leaves it on the row after its footer (measured in iTerm2), and one after the pane
@@ -67,18 +71,16 @@ function tallTop(rows, bottom, above) {
  *  too, and no other: a cursor above it stays where it is. above: as inputBox's. */
 export function parkedCaret(rows, cursor, seen, above, status = () => false) {
   if (cursor == null || cursor < 0 || cursor >= rows.length) return null;
-  const caretIn = (at) => seen && seen.top === at.top && seen.bottom === at.bottom && seen.row > at.top && seen.row < at.bottom && rows[seen.row].txt === seen.txt
-    && { row: seen.row, col: Math.max(2, seen.col) };
-  if (seen && cursor < seen.top && rows[seen.bottom]?.rule) {
-    const at = inputBox(rows, seen.bottom - 1, above);
-    return (at && caretIn(at)) || null;
+  if (seen && cursor < seen.top && rows[seen.top]?.rule && rows[seen.bottom]?.rule) {
+    const caret = seenCaret(rows, seen, inputBox(rows, seen.bottom - 1));
+    if (caret) return caret;
   }
   if (!(rows[cursor].blank || status(rows[cursor].txt))) return null;
   const bottom = rows.findLastIndex((r, i) => i < cursor && r.rule);
   if (bottom <= 0) return null;
   const at = inputBox(rows, bottom - 1, above);
   if (!at || at.bottom !== bottom || (rows[cursor].blank && cursor <= at.end)) return null;   // a blank row after the footer, or a status line in it
-  return caretIn(at) || { row: bottom - 1, col: Math.max(2, rows[bottom - 1].end ?? 0) };
+  return seenCaret(rows, seen, at) ?? { row: bottom - 1, col: Math.max(2, rows[bottom - 1].end ?? 0) };
 }
 
 /** Codex's input (measured: codex 0.16x in tmux, its alternate screen): no rules, its prompt row

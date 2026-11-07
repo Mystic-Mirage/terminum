@@ -25,7 +25,7 @@ struct FolderAt {
 }
 
 /// Where `dir` is on a server whose home is `home`: as typed when absolute, else in the home folder.
-fn folder_in(home: &str, dir: &str) -> String {
+pub fn folder_in(home: &str, dir: &str) -> String {
     let dir = dir.trim();
     if dir.starts_with('/') {
         return dir.to_string();
@@ -39,8 +39,7 @@ fn folder_in(home: &str, dir: &str) -> String {
 async fn folder_at(State(app): State<Shared>, Query(q): Query<FolderAt>) -> Response {
     let server = if q.host.is_empty() { Some(app.tmux.local.clone()) } else { app.tmux.host(&q.host).filter(|s| s.connected()) };
     let Some(server) = server else { return answer::<serde_json::Value>(Err(format!("The host {} is out of reach.", q.host))) };
-    let home = if server.is_local() { Some(crate::config::home().display().to_string()) } else { server.home().await };
-    answer(home.map(|h| json!({"path": folder_in(&h, &q.dir)})).ok_or_else(|| format!("The home folder on {} is not known.", server.name)))
+    answer(server.home_folder().await.map(|h| json!({"path": folder_in(&h, &q.dir)})).ok_or_else(|| format!("The home folder on {} is not known.", server.name)))
 }
 
 #[cfg(test)]

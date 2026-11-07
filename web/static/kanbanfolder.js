@@ -4,6 +4,7 @@
 // in the picker and the field stays typeable.
 import { icon } from "./icons.js";
 import { $, api, button, el } from "./kanbanutil.js";
+import { settled } from "./panefiles.js";
 
 const PAGE = 500;                      // a listing's page (CLAUDE.md §1): past it, the rest is typed
 const isFolder = (e) => e.k === "d" || e.k === "L";
@@ -32,16 +33,14 @@ export function folderPicker() {
     say("");
     const q = new URLSearchParams({ path, limit: String(PAGE), hidden: "0" });
     if (host) q.set("host", host);
-    let page = null, why = "";
-    for (let tries = 0; tries < 4 && (!page || page.status === "loading"); tries++) {   // a large folder still being read
-      if (tries) await new Promise((r) => setTimeout(r, 400));
-      try { page = await api(`/fb/api/ls?${q}`); } catch (e) { why = e.message; break; }
-    }
+    let why = "";
+    const page = await settled(() => api(`/fb/api/ls?${q}`).catch((e) => { why = e.message; return null; }));
     if (mine !== asked) return;
     const rows = path === "/" ? [] : [row("..", up(path), "corner-left-up", "Up")];
     if (page?.status === "ready") {
       rows.push(...page.entries.filter(isFolder).map((e) => row(e.n, into(path, e.n), "folder", into(path, e.n))));
-      if (page.total > page.entries.length) say(`The first ${PAGE} of ${page.total} shown: type the rest in the field.`);
+      // folders come first: a page with a file in it holds them all
+      if (page.total > page.entries.length && page.entries.every(isFolder)) say(`The first ${PAGE} folders shown: type the rest in the field.`);
       else if (rows.length < 2) rows.push(el("li", "colempty", "No folders in it."));
     } else say(why || page?.error || "The folder could not be listed.");
     $("folderok").disabled = page?.status !== "ready";

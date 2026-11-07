@@ -203,16 +203,18 @@ fn ac120_a_long_get_task_comes_in_pages() {
     let ((s, dir), w) = (fresh("tools-pages"), who(Some("api")));
     let id = s.with(|tx| {
         let t = ops::create(tx, HUMAN, NewTask { title: "long".into(), project: Some("api".into()), ..Default::default() }, 1)?;
-        for n in 0..HISTORY_PAGE + 5 {
-            ops::comment(tx, HUMAN, &t.id, &format!("comment {n}"), 2)?;
+        for n in 0..105 {
+            ops::comment(tx, HUMAN, &t.id, &format!("comment {n} {}", "x".repeat(900)), 2)?;
         }
         Ok(t.id)
     }).unwrap();
     let first = call(&s, &dir, &w, "get_task", json!({"id": id})).unwrap();
-    assert!(first.contains("page 1 of 2: get_task with page \"2\" for the next") && first.contains("comment 0") && !first.contains("comment 104"), "the first page says there is more");
-    let last = call(&s, &dir, &w, "get_task", json!({"id": id, "page": "2"})).unwrap();
-    assert!(last.contains("comment 104") && !last.contains("for the next"), "the last page");
-    assert_eq!(call(&s, &dir, &w, "get_task", json!({"id": id, "page": "3"})).unwrap_err(), "page is 1 to 2");
+    assert!(first.len() < HISTORY_PAGE_BYTES + 2_000, "a page within the link's limit: {}", first.len());
+    assert!(first.contains("page 1 of 3: get_task with page \"2\" for the next") && first.contains("comment 0 ") && !first.contains("comment 104 "), "the first page says there is more");
+    let last = call(&s, &dir, &w, "get_task", json!({"id": id, "page": "3"})).unwrap();
+    let task: Value = serde_json::from_str(last.lines().last().unwrap()).unwrap();
+    assert!(last.contains("comment 104 ") && !last.contains("for the next") && task.get("text").is_none() && task["files"].is_i64(), "the last page: its text and files' list only on the first, here their number");
+    assert_eq!(call(&s, &dir, &w, "get_task", json!({"id": id, "page": "4"})).unwrap_err(), "page is 1 to 3");
     assert!(call(&s, &dir, &w, "get_task", json!({"id": id, "page": "x"})).is_err());
 }
 

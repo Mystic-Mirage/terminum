@@ -103,7 +103,6 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     canCreate(true);
     try {
       const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, session: d.session || undefined, parent: parent ?? undefined, files: files.map((f) => f.id), record: record ?? undefined } });
-      record = null;
       write(draftKey(), null);
       files = [];
       box.close();

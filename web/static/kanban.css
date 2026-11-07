@@ -148,8 +148,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #folderbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
 #folderpath { margin: 0; font-family: var(--term-font, monospace); font-size: var(--fs-label); overflow-wrap: anywhere; }
 #folderlist { margin: 0; padding: 0; list-style: none; height: min(50vh, 420px); overflow: auto; border-radius: var(--key-r); box-shadow: var(--field-edge); }
-.folderrow { display: flex; align-items: center; gap: var(--sp-2); width: 100%; padding: 3px var(--sp-2); border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-.folderrow:hover, .folderrow:focus-visible { background: var(--bg-hover, color-mix(in srgb, var(--fg) 8%, transparent)); outline: none; }
 .folderrow .lu { color: var(--accent); flex: none; }
 .folderrow .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #projectform, #projectfields { display: flex; flex-direction: column; gap: var(--sp-3); }

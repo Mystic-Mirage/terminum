@@ -278,7 +278,7 @@ pub async fn cwd_of(server: &Server, pane: &str) -> Result<String, String> {
 /// the folder its coding agent works in when its hooks said one (printed paths, AC-35).
 pub async fn files_message(app: &Shared, server: &crate::tmux::Server, key: &str, cwd: &str) -> Value {
     let host = (!server.is_local()).then(|| server.name.clone());
-    let home = if server.is_local() { crate::config::home().display().to_string() } else { server.home().await.unwrap_or_default() };
+    let home = server.home_folder().await.unwrap_or_default();
     let agent = app.hooks.cwd(key).filter(|a| a != cwd);
     json!({"t": "files", "sid": key, "key": key, "cwd": cwd, "home": home, "host": host, "agent": agent})
 }

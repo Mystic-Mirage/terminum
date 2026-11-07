@@ -18,6 +18,16 @@ const SAY_EVERY = 250;       // ms between two "files turned up" (the page marks
 
 /** paneInfo(): the shown pane's {cwd, home, host, agent} or {error}, null when the Mac does not answer.
  *  fetchJson(url): the answer's JSON, null when it failed (tests give their own). */
+/** A listing's page once read: a large folder still being read is asked again, three times at most. */
+export async function settled(ask) {
+  let page = await ask();
+  for (let tries = 0; page?.status === "loading" && tries < 3; tries++) {
+    await new Promise((r) => setTimeout(r, 400));
+    page = await ask();
+  }
+  return page;
+}
+
 export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => (r.ok ? r.json() : null), () => null)) {
   let pane = null, paneAt = -Infinity, asking = null;
   let found = new Map();     // host\npath -> {ok, at, tries, pending}
@@ -74,11 +84,7 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
     const mine = gen;
     const isFile = (e) => e.k === "f" || e.k === "l";
     const ask = (params) => fetchPage(`/fb/api/ls?${query({ path: job.dir, limit: String(PAGE), ...params }, job.host)}`, mine);
-    let page = await ask({});
-    for (let tries = 0; page?.status === "loading" && tries < 3; tries++) {         // a large folder still being read
-      await new Promise((r) => setTimeout(r, 400));
-      page = await ask({});
-    }
+    const page = await settled(() => ask({}));
     if (!page || page.status !== "ready") return [...job.names].map((n) => [n, false]);
     if (page.total <= page.entries.length) {
       const files = new Set(page.entries.filter(isFile).map((e) => e.n));

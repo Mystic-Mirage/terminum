@@ -145,7 +145,7 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
         let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
         // only a finished task says what it spent (AC-129)
-        let finished: Vec<&str> = tasks.iter().filter(|t| matches!(t.status.as_str(), "DONE" | "FAILED")).map(|t| t.key.as_str()).collect();
+        let finished: Vec<&str> = tasks.iter().filter(|t| crate::dispatcher::plan::finished(&t.status)).map(|t| t.key.as_str()).collect();
         let spent = crate::dispatcher::usage::of_tasks(tx, &finished)?;
         let counts = if with_counts { Some((query::counts(tx, &filter)?, crate::dispatcher::pool::board(tx)?)) } else { None };
         Ok((tasks, counts, run_marks, on_agents, spent))
@@ -269,7 +269,7 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
             told(&app, up);                            // its card counts it, its window lists it (AC-112)
         }
         // the record it was made of goes once the task is kept (AC-116); refused, it stays
-        if let Some(record) = text(&body, "record") && let Err(e) = crate::page::marks::forget(&app, &record) {
+        if let Some(record) = text(&body, "record") && let Err(e) = crate::page::marks::forget(&app, &record).await {
             tracing::warn!(event = "tasks.record_kept", error = %e);
         }
     }

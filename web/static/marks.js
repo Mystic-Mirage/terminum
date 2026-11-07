@@ -3,7 +3,7 @@
 // signed-in browser (the bridge's bookmarks.py). Here: the dialog that makes or edits one, the
 // marks on the terminal's right edge, the bar that shows the one brought into view, and the list
 // below the sessions of those no session shows (orphaned). Text from the terminal is shown as text only.
-import { markedSessions, openReminder, when } from "./listparts.js";
+import { iconButton, markedSessions, openReminder, when } from "./listparts.js";
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
@@ -369,12 +369,7 @@ export class Marks {
       const label = () => [icon("x", 14)];
       del.append(...label());
       armed(del, label, () => this.send({ t: "unmark", id: item.id }));
-      const make = el("button", "mkmake");
-      make.type = "button";
-      make.title = "Make a task of it: it goes once the task is kept";
-      make.setAttribute("aria-label", "Make a task");
-      make.append(icon("plus", 14));
-      make.onclick = () => this.recordToTask(item);
+      const make = iconButton("mkmake", "plus", "Make a task", "Make a task of it: it goes once the task is kept", () => this.recordToTask(item));
       li.append(b, make, del);
       ul.append(li);
     }

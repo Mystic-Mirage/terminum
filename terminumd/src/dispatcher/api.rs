@@ -78,16 +78,9 @@ fn hooks_there(kind: &str) -> bool {
     crate::cli::Ctx::from_env("terminumd").is_ok_and(|ctx| crate::cli::agentsetup::installed(&ctx, kind))
 }
 
-fn expanded(folder: &str) -> std::path::PathBuf {
-    match folder.strip_prefix('~') {
-        Some(rest) if rest.is_empty() || rest.starts_with('/') => crate::config::home().join(rest.trim_start_matches('/')),
-        _ => std::path::PathBuf::from(folder),
-    }
-}
-
 /// Whether `folder` stands on this Mac: off the async workers, as a stale mount can hang.
 async fn folder_there(folder: &str) -> bool {
-    let path = expanded(folder);
+    let path = std::path::PathBuf::from(crate::tasks::folder::folder_in(&crate::config::home().display().to_string(), folder));
     crate::http::off(move || Ok(path.is_dir())).await.unwrap_or(false)
 }
 

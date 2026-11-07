@@ -26,7 +26,7 @@ pub fn hello(app: &Shared, page: &Page) {
 pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     match t {
         "unmark" => {
-            if let Err(e) = forget(app, msg["id"].as_str().unwrap_or("")) {
+            if let Err(e) = forget(app, msg["id"].as_str().unwrap_or("")).await {
                 super::client::error(page, e, None);
             }
         }
@@ -126,9 +126,12 @@ pub fn tell_mark(app: &Shared, item: &bm::Item) {
     app.pages.tell(&json!({"t": "mark", "item": item.wire()}).to_string());
 }
 
-/// A bookmark or reminder goes, and every page hears; one already gone is nothing to do.
-pub fn forget(app: &Shared, id: &str) -> Result<(), String> {
-    if app.bookmarks.lock().remove(id).map_err(|e| e.to_string())? {
+/// A bookmark or reminder goes, its file written off the async workers, and every page hears; one already
+/// gone is nothing to do.
+pub async fn forget(app: &Shared, id: &str) -> Result<(), String> {
+    let (a, i) = (app.clone(), id.to_string());
+    let gone = tokio::task::spawn_blocking(move || a.bookmarks.lock().remove(&i).map_err(|e| e.to_string())).await.map_err(|e| e.to_string())??;
+    if gone {
         tell_unmark(app, id);
     }
     Ok(())

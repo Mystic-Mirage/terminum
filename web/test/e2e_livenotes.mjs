@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { mcpOpening, rpc } from "./boardkit.mjs";
 import { check, shownPane, until } from "./check.mjs";
+import { foldFoot, pressFoot } from "./fake.mjs";
 import { ownTmp } from "./testrun.mjs";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -157,7 +158,11 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     // a record becomes a task (terminum-kanban.md AC-116)
     const back = page.url();
     const makeOf = async (note) => {
-      await page.click("#marksbtn");
+      if (page.url() !== back) {
+        await page.goto(back);
+        await page.waitForSelector(row(a.pane), { timeout: 8000 });
+      }
+      await pressFoot(page, "#marksbtn");             // the foot folded on a computer: its toggle first
       await page.waitForSelector("#marksdlg[open]");
       await page.click('#marklist .mkkind button:has-text("Reminders")');
       await page.click(`#marklist li:has-text("${note}") .mkmake`);
@@ -165,7 +170,7 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     };
     await makeOf("A asks");
     const said = await page.inputValue("#newtext");
-    check("AC-116 Make a task fills the new-task window", await page.inputValue("#newtitle") === "A asks" && /^> .*selectable words/m.test(said) && /\]\(\/sessions\/#\//.test(said)
+    check("AC-116 Make a task fills the new-task window", await page.inputValue("#newtitle") === "A asks" && /^> .*electable word/m.test(said) && /\]\(\/sessions\/#\//.test(said)
       && (await page.inputValue("#newsession")).endsWith(`:${a.pane}`), said);
     await page.click("#newdiscard");
     await page.click("#confirmok");                  // what it brought counts as typed: Discard asks
@@ -181,6 +186,7 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
       && (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200")).json()).tasks)).some((t) => t.title === "A asks"));
     await page.goto(back);
     await page.waitForSelector(row(a.pane), { timeout: 8000 });
+    await foldFoot(page);
   } finally {
     await page.evaluate((k) => document.querySelector(`#sessions .item[data-id$=":${k}"]`)?.click(), shown).catch(() => {});
     for (const { pane, dir } of made) { try { tmux("kill-pane", "-t", pane); } catch { /* its pane ended */ } fs.rmSync(dir, { recursive: true, force: true }); }

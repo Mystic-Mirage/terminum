@@ -284,6 +284,11 @@ impl Server {
         on
     }
 
+    /// Its home folder: this Mac's own, a host's `HOME`; None when a host's is not read.
+    pub async fn home_folder(&self) -> Option<String> {
+        if self.is_local() { Some(crate::config::home().display().to_string()) } else { self.home().await }
+    }
+
     /// The server's `HOME` (for "~" in a host's paths), read once per connection.
     pub async fn home(&self) -> Option<String> {
         self.per_connection(&self.home, async {

@@ -213,6 +213,12 @@ async fn watching(app: &Shared, id: &str) {
             return;
         }
         let Some((server, pane)) = r.place(app) else {
+            // no pane yet: the press that made it is still opening its window, and a walk may have come
+            // first; one that never gets it (a restart on the way) fails when a box would have come
+            if r.pane_key.is_none() && began.elapsed() < start_scaled(BOX_WITHIN) {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                continue;
+            }
             return did_not_start(app, &r, None, "its window is gone").await;
         };
         if let Some(code) = exit_of(&server, &pane).await {

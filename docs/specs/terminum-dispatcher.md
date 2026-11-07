@@ -126,6 +126,10 @@ Scenario: AC-121 failure — did not start
   And when a Codex prompt was taken on screen and no hook came, the reason says "hooks not trusted: open /hooks in Codex"; the agent left running is named, and Dispatcher does not watch it
   And the window stays for AC-125 to close
 
+Scenario: AC-121 edge — the window still opening
+  Given a press has made the run and its window opens over a slow link
+  When Dispatcher's walk comes first
+  Then the run waits for its window and starts as ever; a run that gets no window within 60 s (a restart on the way) did not start: "its window is gone"
 Scenario: AC-121 failure — out of subscription or limit
   When a StopFailure comes on the first turn
   Then AC-123's failure scenario holds

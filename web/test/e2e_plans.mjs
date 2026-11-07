@@ -97,7 +97,7 @@ export async function webPlans(browser, name) {
       return { title: t(".pltitle"), doing: t(".pldoing"), marks: [...b.querySelectorAll(".plitem .plmark")].map((e) => e.textContent).join(""),
         partial: t(".plpartial"), meta: [...b.querySelectorAll(".plmeta")].map((e) => e.textContent),
         kept: t(".plkept"), section: [...b.querySelectorAll(".plsec")].map((e) => e.textContent),
-        links: [...b.querySelectorAll(".plkept a.linkish")].map((a) => [a.textContent, a.getAttribute("href")]),
+        links: [...b.querySelectorAll(".plkept a")].map((a) => [a.textContent, a.getAttribute("href")]),
         expanded: document.getElementById("curplan").getAttribute("aria-expanded") };
     });
     check("AC-97 a press on the header's Plan button opens the Plan pane and asks {t:plan, key}", await paneOpen(page) && asked(f, from) === 1, JSON.stringify(f.sent.slice(from)));

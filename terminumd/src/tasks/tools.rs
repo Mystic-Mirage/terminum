@@ -51,39 +51,21 @@ fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
 
 /// Runs one tool in one transaction: its answer and the tasks it changed.
 pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value) -> Result<(String, Vec<String>), String> {
-    if tool == "attach_file" {
-        return attach_file(store, state_dir, who, args);
+    match tool {
+        "attach_file" => return attach_file(store, state_dir, who, args),
+        "list_tasks" => return list_tasks(store, who, args).map(|text| (text, Vec::new())),
+        "get_task" => return get_task(store, who, args).map(|text| (text, Vec::new())),
+        _ => {}
     }
     let at = ops::now();
     store.with(|tx| {
         // only what writes makes the agent's user: reading leaves no row
         let me = || ops::agent_user(tx, &who.agent, &who.title);
         match tool {
-            "list_tasks" => {
-                let q = Query {
-                    reach: Some((who.key.clone(), who.project.clone())),
-                    statuses: args["status"].as_str().map(|s| vec![s.to_string()]).unwrap_or_default(),
-                    severities: args["severity"].as_str().map(|s| vec![s.to_string()]).unwrap_or_default(),
-                    with_subtasks: true,
-                    ..Default::default()
-                };
-                let tasks = query::list(tx, &q)?;
-                let more = if tasks.len() == 200 { "\nThe first 200: ask by status or severity for others." } else { "" };
-                Ok((format!("{DATA}\n{}{more}", json!(tasks)), Vec::new()))
-            }
-            "get_task" => {
-                let id = arg(args, "id")?;
-                let t = visible(tx, who, id)?;
-                let mut v = serde_json::to_value(&t).map_err(|e| e.to_string())?;
-                v["text"] = json!(ops::text_of(tx, id)?);
-                v["history"] = ops::history(tx, id)?;
-                v["files"] = json!(files::of_task(tx, id)?);
-                Ok((format!("{DATA}\n{v}"), Vec::new()))
-            }
             "create_task" => {
-                let title: String = rules::clean(arg(args, "title")?).chars().take(200).collect();
+                let title: String = rules::clean(arg(args, "title")?).chars().take(super::ops::TITLE_MOST).collect();
                 let project = who.project.clone().unwrap_or_else(|| DEFAULT_PROJECT.to_string());
-                if let Some(same) = ops::repeat_of(tx, &project, &title)? {
+                if let Some(same) = super::query::repeat_of(tx, &project, &title)? {
                     return Err(format!("Not kept: {same} already says this. Read it with get_task, and comment if you have more."));
                 }
                 let parent = args["parent"].as_str().map(str::to_string);
@@ -157,6 +139,30 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
     })
 }
 
+/// The rows under the store's lock, their text off it: the walk and hooks wait on that lock.
+fn list_tasks(store: &Store, who: &Who, args: &Value) -> Result<String, String> {
+    let q = Query {
+        reach: Some((who.key.clone(), who.project.clone())),
+        statuses: args["status"].as_str().map(|s| vec![s.to_string()]).unwrap_or_default(),
+        severities: args["severity"].as_str().map(|s| vec![s.to_string()]).unwrap_or_default(),
+        with_subtasks: true,
+        ..Default::default()
+    };
+    let tasks = store.with(|tx| query::list(tx, &q))?;
+    let more = if tasks.len() as i64 == super::query::LIST_MOST { "\nThe first 200: ask by status or severity for others." } else { "" };
+    Ok(format!("{DATA}\n{}{more}", json!(tasks)))
+}
+
+fn get_task(store: &Store, who: &Who, args: &Value) -> Result<String, String> {
+    let id = arg(args, "id")?;
+    let (t, text, history, attached) = store.with(|tx| Ok((visible(tx, who, id)?, ops::text_of(tx, id)?, ops::history(tx, id)?, files::of_task(tx, id)?)))?;
+    let mut v = serde_json::to_value(&t).map_err(|e| e.to_string())?;
+    v["text"] = json!(text);
+    v["history"] = history;
+    v["files"] = json!(attached);
+    Ok(format!("{DATA}\n{v}"))
+}
+
 /// A file on a task it can reach: judged first, the bytes read and kept off the store's lock, then
 /// joined to the task in a comment; refused then, they go again.
 fn attach_file(store: &Store, state_dir: &Path, who: &Who, args: &Value) -> Result<(String, Vec<String>), String> {
@@ -164,7 +170,7 @@ fn attach_file(store: &Store, state_dir: &Path, who: &Who, args: &Value) -> Resu
     store.with(|tx| visible(tx, who, id).map(|_| ()))?;
     let (name, data) = file_of(who, args)?;
     let at = ops::now();
-    let file = files::keep(store, state_dir, &name, &data, at)?;
+    let file = files::keep_from(store, state_dir, &name, data, at)?;
     store.with(|tx| {
         let me = ops::agent_user(tx, &who.agent, &who.title)?;
         let event = ops::comment(tx, &me, id, &format!("Attached {}", file.name), at)?;
@@ -175,12 +181,12 @@ fn attach_file(store: &Store, state_dir: &Path, who: &Who, args: &Value) -> Resu
 
 /// A file an agent hands in: on this Mac a path inside its session's folder, judged on resolved
 /// paths; from a host its text alone.
-fn file_of(who: &Who, args: &Value) -> Result<(String, Vec<u8>), String> {
+fn file_of(who: &Who, args: &Value) -> Result<(String, Box<dyn std::io::Read>), String> {
     if let (Some(name), Some(text)) = (args["name"].as_str(), args["text"].as_str()) {
         if text.len() > TEXT_FILE_MOST {
             return Err(format!("A file given as text holds at most {TEXT_FILE_MOST} bytes."));
         }
-        return Ok((rules::clean(name), rules::clean(text).into_bytes()));
+        return Ok((rules::clean(name), Box::new(std::io::Cursor::new(rules::clean(text).into_bytes()))));
     }
     let Some(dir) = &who.dir else {
         return Err("From a host give {task, name, text}.".into());
@@ -196,9 +202,7 @@ fn file_of(who: &Who, args: &Value) -> Result<(String, Vec<u8>), String> {
     if meta.len() as usize > files::MOST_BYTES {
         return Err(format!("{name} is over 100 MB"));
     }
-    let mut data = Vec::with_capacity(meta.len() as usize);
-    std::io::Read::read_to_end(&mut std::io::Read::take(opened, files::MOST_BYTES as u64 + 1), &mut data).map_err(|e| format!("{path}: {e}"))?;
-    Ok((name, data))
+    Ok((name, Box::new(opened)))
 }
 
 #[cfg(test)]

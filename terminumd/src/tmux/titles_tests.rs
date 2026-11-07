@@ -64,9 +64,14 @@ fn ac01_a_subagents_pane_shows_its_own_name_and_keeps_its_type() {
     assert_eq!(item(&other, 2, 2, HOME).title, "shell");
 }
 
+/// A row written short, with the last of tmux's 19 fields empty.
+fn full(row: &str) -> String {
+    format!("{row}{}", "\t".repeat(18 - row.matches('\t').count()))
+}
+
 #[test]
 fn ac01_only_a_name_is_taken_from_the_start_command() {
-    let row = |name: &str| format!("main\t1\t@1\tw\t1\t%3\t0\tt\tclaude\t/p\t0\t1\th\t\t\t$1\t\t{name}");
+    let row = |name: &str| full(&format!("main\t1\t@1\tw\t1\t%3\t0\tt\tclaude\t/p\t0\t1\th\t\t\t$1\t\t{name}"));
     assert_eq!(parse_list_panes(&row("simplify-reuse")).unwrap().agent_name, "simplify-reuse");
     assert_eq!(parse_list_panes(&row("")).unwrap().agent_name, "");
     for bad in ["a=b", "$(id)", "a/b", &"x".repeat(65)] {
@@ -179,19 +184,20 @@ fn marks_and_folders() {
 
 #[test]
 fn list_panes_rows() {
-    let row = "main\t1\t@2\tapi\t0\t%3\t0\t\u{2733} Fix\tclaude\t/Users/alex/work/api\t0\t1\tmac.example\t\t\t$1";
-    let p = parse_list_panes(row).unwrap();
+    let row = full("main\t1\t@2\tapi\t0\t%3\t0\t\u{2733} Fix\tclaude\t/Users/alex/work/api\t0\t1\tmac.example\t\t\t$1");
+    let p = parse_list_panes(&row).unwrap();
     assert_eq!((p.session.as_str(), p.window_index, p.window_id.as_str(), p.window_name.as_str()), ("main", 1, "@2", "api"));
     assert_eq!((p.automatic_rename, p.pane_id.as_str(), p.pane_index, p.pane_title.as_str()), (false, "%3", 0, "\u{2733} Fix"));
     assert_eq!((p.command.as_str(), p.path.as_str(), p.alternate_on, p.pane_active), ("claude", "/Users/alex/work/api", false, true));
     assert_eq!((p.host_name.as_str(), p.session_id.as_str()), ("mac.example", "$1"));
     assert_eq!(parse_list_panes(&format!("{row}\n")), Some(p));
-    assert_eq!(parse_list_panes("main\t1\t@2\ta\tb\t0\t%3\t0\tt\tc\t/p\t0\t1\th\t\t\t$1"), None, "a tab in a name");
+    assert_eq!(parse_list_panes(&format!("{row}\tx")), None, "a tab in a name");
+    assert_eq!(parse_list_panes("main\t1\t@2\tapi\t0\t%3\t0\tt\tc\t/p\t0\t1\th\t\t\t$1"), None, "cut short");
     assert_eq!(parse_list_panes(&row.replacen("\t1\t", "\tx\t", 1)), None);
     assert_eq!(parse_list_panes(""), None);
-    let old = parse_list_panes("s\t1\t@1\tzsh\t\t%1\t0\tt\tzsh\t/\t0\t1\th\t\t\t$1").unwrap();
+    let old = parse_list_panes(&full("s\t1\t@1\tzsh\t\t%1\t0\tt\tzsh\t/\t0\t1\th\t\t\t$1")).unwrap();
     assert!(old.automatic_rename, "a tmux that does not say: a command's name is tmux's");
-    let named = parse_list_panes("s\t1\t@1\tmy api\t\t%1\t0\tt\tzsh\t/\t0\t1\th\t\t\t$1").unwrap();
+    let named = parse_list_panes(&full("s\t1\t@1\tmy api\t\t%1\t0\tt\tzsh\t/\t0\t1\th\t\t\t$1")).unwrap();
     assert!(!named.automatic_rename);
 }
 
@@ -224,6 +230,6 @@ fn ac15_a_restored_pane_shows_its_agents_title_while_a_shell_runs_there() {
     let agent = PaneFields { command: "2.1.312".into(), pane_title: "\u{2733} A new talk".into(), ..p };
     assert_eq!(item(&agent, 1, 1, HOME).title, "A new talk", "a coding agent running again titles it itself");
     let line = "main\t1\t@1\tbash\t1\t%3\t0\tt\tbash\t/tmp\t0\t1\tmac\t\t\t$1";
-    assert_eq!(parse_list_panes(line).map(|p| p.restored_title), Some(String::new()), "16 fields: none");
-    assert_eq!(parse_list_panes(&format!("{line}\tOld talk")).map(|p| p.restored_title), Some("Old talk".into()));
+    assert_eq!(parse_list_panes(&full(line)).map(|p| p.restored_title), Some(String::new()), "none");
+    assert_eq!(parse_list_panes(&full(&format!("{line}\tOld talk"))).map(|p| p.restored_title), Some("Old talk".into()));
 }

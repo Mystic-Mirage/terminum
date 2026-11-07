@@ -46,7 +46,7 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
       return;
     }
     unproven = RETRY;
-    const sock = ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws`, signin.protocols());
+    const sock = ws = new WebSocket(signin.socketUrl(), signin.protocols());
     sock.onopen = () => { downSince = 0; clearTimeout(quiet); status(""); signedIn(); onOpen(sock); };
     sock.onmessage = (ev) => onMessage(parse(ev.data));
     sock.onclose = async () => {
@@ -130,23 +130,9 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
   addEventListener("pageshow", (e) => { if (e.persisted && ws?.readyState !== WebSocket.OPEN) connect(); });
 
   // ---------- updates ----------
-  // terminumd names the build of the page's files first on every connection. A page of another
-  // build (open across an upgrade, or restored from memory) reloads once, but never while a
-  // Files or View frame has unsaved edits: it waits for those.
-  const BUILD = document.querySelector('meta[name="build"]').content;
-  let updateTimer = 0;
-  function checkBuild(id) {
-    if (id === BUILD || updateTimer) return;
-    if (sessionStorage.getItem("web.reloaded-for") === id) return status("An update is ready: reload the page.");   // no loop
-    const attempt = () => {
-      if (busy()) return status("An update is ready: the page reloads after you save.");
-      clearInterval(updateTimer);
-      try { sessionStorage.setItem("web.reloaded-for", id); } catch { /* private mode: at worst asks again */ }
-      location.reload();
-    };
-    updateTimer = setInterval(attempt, 1000);
-    attempt();
-  }
+  // terminumd names the build of the page's files first on every connection; the page never
+  // reloads while a Files or View frame has unsaved edits: it waits for those.
+  const checkBuild = (id) => signin.reloadOnce(id, busy, status);
 
   return { connect, send, signOut, checkBuild, open: () => ws?.readyState === 1 };
 }

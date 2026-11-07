@@ -325,43 +325,44 @@ async fn captured(server: &Server, panes: &[&PaneFields]) -> Vec<Result<Vec<Stri
 async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFields], now: Instant)
     -> (HashMap<String, Option<agentstate::State>>, HashSet<String>) {
     let (mut out, mut behind) = (HashMap::new(), HashSet::new());
+    // not due, not asked or no answer: as last read, never "no state", which would end a turn (AC-132);
+    // true when it is an agent's pane
+    let as_last_read = |g: &States, p: &PaneFields, out: &mut HashMap<String, Option<agentstate::State>>| {
+        let key = server.key(&p.pane_id);
+        let agent = named_agent(p) || g.codex(&key);
+        if agent {
+            out.insert(p.pane_id.clone(), g.last(&key));
+        }
+        agent
+    };
     let mut due = Vec::new();
     for &p in panes {
-        let named = named_agent(p);
-        if !named && !maybe_codex(p) {
+        if !named_agent(p) && !maybe_codex(p) {
             continue;
         }
         let key = server.key(&p.pane_id);
         let g = states.lock();
         if g.due(&key, &p.pane_title, now, p.window_activity) {
             due.push(p);
-        } else if named || g.codex(&key) {
-            out.insert(p.pane_id.clone(), g.last(&key));
-            if g.behind(&key) {
-                behind.insert(p.pane_id.clone());
-            }
+        } else if as_last_read(&g, p, &mut out) && g.behind(&key) {
+            behind.insert(p.pane_id.clone());
         }
     }
     if due.is_empty() {
         return (out, behind);
     }
-    // not asked, or no answer: as last read, never "no state", which would end a turn (AC-132)
-    let as_last_read = |g: &States, p: &PaneFields, out: &mut HashMap<String, Option<agentstate::State>>| {
-        let key = server.key(&p.pane_id);
-        if named_agent(p) || g.codex(&key) {
-            out.insert(p.pane_id.clone(), g.last(&key));
-        }
-    };
     let Some(client) = server.reader() else {
         let g = states.lock();
-        due.iter().for_each(|p| as_last_read(&g, p, &mut out));
+        for p in &due {
+            as_last_read(&g, p, &mut out);
+        }
         return (out, behind);
     };
     let lines: Vec<String> = due.iter().map(|p| format!("capture-pane -p -J -t {}", p.pane_id)).collect();
     let answers = client.run_all(lines).await;
     for (p, a) in due.iter().zip(answers) {
         let key = server.key(&p.pane_id);
-        let unanswered = a.as_ref().err().is_some_and(|e| super::control::no_answer(e));
+        let unanswered = a.as_ref().err().is_some_and(|e| client.no_answer(e));
         let rows = a.ok();
         let mut g = states.lock();
         if unanswered {

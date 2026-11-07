@@ -120,17 +120,17 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     if server.session_of(pane).is_none() {
         return StatusCode::NO_CONTENT.into_response();  // a pane it does not list: nothing is made up
     }
+    let key = server.key(pane);
     if ev["event"] == "Tokens" {
-        app.dispatcher.heard_tokens(&server.key(pane), &ev);   // terminum-dispatcher.md AC-129: asked for below
+        app.dispatcher.heard_tokens(&key, &ev);   // terminum-dispatcher.md AC-129: asked for below
         return StatusCode::NO_CONTENT.into_response();
     }
     let _dispatch = app.hooks.dispatch.lock();
-    let key = server.key(pane);
     let Some(changed) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
         return StatusCode::NO_CONTENT.into_response();
     };
     if changed {
-        app.dirty.notify_one();
+        server.list_changed();
     }
     // a turn ended (its last background subagent too): its reminders come up with the list
     // read this notice brings, also when it was too quick for a layout to show it working,
@@ -151,7 +151,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     // what waits for it rides the same event
     let context = if crate::plans::carries_context(&ev) { crate::tasks::tell::with_lines(&app, &key, remind) } else { remind };
     // a task's session: its hook sums the tokens, after this turn's end has gone (AC-129)
-    let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.wants_tokens(&key) || app.task_marks.has_session(&key));
+    let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.has_run(&key) || app.task_marks.has_session(&key));
     match (context, tokens) {
         (None, false) => StatusCode::NO_CONTENT.into_response(),
         (text, _) => {

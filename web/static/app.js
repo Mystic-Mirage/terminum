@@ -22,7 +22,8 @@ import { cellAt, cursorCell, shellMove } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
 import { selectionCut } from "./selcut.js";
 import { switchGate } from "./switchgate.js";
-import { askConfirm, navTools } from "./navtools.js";
+import { askConfirm } from "./dialogs.js";
+import { navTools } from "./navtools.js";
 import { dockGrip } from "./dock.js";
 import { embedded, quickShell } from "./quick.js";
 import { paneMenu } from "./menu.js";
@@ -65,7 +66,7 @@ const store = {
 if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
-const tasks = pageTasks({ box: $("asks"), embedded, say: (...a) => toast(...a), show: (id) => { if (id !== st.sid) select(id); } });
+const tasks = pageTasks({ box: $("asks"), embedded, say: toast, show: (id) => { if (id !== st.sid) select(id); } });
 const st = {
   groups: [], sid: embedded ?? tasks.asked ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),
@@ -89,7 +90,9 @@ const conn = connection({ parse: (data) => trace.parse(data), onMessage: (m) => 
 // Nothing typed waits for a connection: it would arrive late, all at once (AC-14).
 function send(m) {
   trace.sent(m);
-  if (!conn.send(m) && (m.t === "in" || m.t === "paste" || m.t === "mouse")) toast("Not connected");
+  const sent = conn.send(m);
+  if (!sent && (m.t === "in" || m.t === "paste" || m.t === "mouse")) toast("Not connected");
+  return sent;
 }
 function status(text) { banner("status", text); }
 
@@ -392,7 +395,7 @@ const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focu
 let shownTheme = "", shownFont = "", themeSent = null;
 const prefs = menuPrefs({ store, send, toast, redraw: drawNav });       // Markdown size, history lines (AC-19)
 // a color scheme picked in the menu goes over the session's theme at once (AC-12)
-const schemes = colorSchemes({ box: $("schemes"), send, onPick: () => { if (themeSent) applyTheme(schemes.over(themeSent)); } });
+const schemes = colorSchemes({ box: $("schemes"), send, onPick: () => { if (themeSent) applyTheme(schemes.over(themeSent)); }, say: toast });
 function applyTheme(theme) {
   // sent with every subscribe and resume; the same one changes nothing (and rebuilds no line)
   const key = JSON.stringify(theme);

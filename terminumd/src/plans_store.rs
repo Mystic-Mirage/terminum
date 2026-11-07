@@ -80,15 +80,20 @@ pub fn hook_event(app: &Shared, key: &str, ev: &Value) -> Option<String> {
         save(app);
     }
     if changed {
-        app.dirty.notify_one();
+        crate::lists::pane_changed(app, key);
         crate::page::plans::tell(&app.pages, &[key.to_string()]);
     }
     remind
 }
 
+/// An event of the main agent, no subagent's.
+fn is_main(ev: &serde_json::Value) -> bool {
+    !ev["sub"].as_str().is_some_and(|s| !s.is_empty())
+}
+
 /// Whether the main agent reads `ev`'s answer as context: the one event that may carry words to it.
 pub fn carries_context(ev: &Value) -> bool {
-    !ev["sub"].as_str().is_some_and(|s| !s.is_empty()) && ev["event"].as_str() == Some(remind_event(ev["agent"].as_str().unwrap_or("")))
+    is_main(ev) && ev["event"].as_str() == Some(remind_event(ev["agent"].as_str().unwrap_or("")))
 }
 
 /// `ev` applied to the plans: (changed, the reminder due).
@@ -101,7 +106,7 @@ fn apply(p: &Plans, key: &str, ev: &Value, working: impl FnOnce() -> bool, now: 
         _ => false,
     };
     // a subagent's plan tool and tool calls are its own: the session's plan is the main agent's
-    if ev["plan"].is_object() && !ev["sub"].as_str().is_some_and(|s| !s.is_empty()) {
+    if ev["plan"].is_object() && is_main(ev) {
         p.hook(key, agent, session, &ev["plan"], now);
         changed = true;
     }

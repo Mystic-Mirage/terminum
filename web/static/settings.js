@@ -6,14 +6,14 @@
 // never served without one) and again when terminumd says it changed. The copy last fetched is
 // shown at once at load (it came after the connection: the page drew a moment without it).
 import { hotRows } from "./hotkeys.js";
-import { CSS_KEY, held } from "./signin.js";
+import { loadCss, showKeptCss } from "./signin.js";
 
 const SAY_FOR = 4000;        // ms a message stays
 
 /** toast(text, ms); setLayout(rows | null): the hot keys panel; onPage(page): the defaults changed. */
 export function pageSettings({ toast, setLayout, onPage }) {
   let page = {}, css, loaded = false;
-  try { if (held()) document.getElementById("customcss").textContent = localStorage.getItem(CSS_KEY) ?? ""; } catch { /* no storage: fetched below */ }
+  showKeptCss();
   const said = new Set(), queue = [];
   let saying = false;
 
@@ -46,15 +46,6 @@ export function pageSettings({ toast, setLayout, onPage }) {
       loaded = true;
       loadCss();
     }
-  }
-  let loads = 0;
-  async function loadCss() {
-    const mine = ++loads;
-    const r = await fetch("/custom.css", { cache: "no-store" }).catch(() => null);
-    const text = r?.ok ? await r.text() : null;
-    if (text === null || mine !== loads) return;                   // the newest only
-    document.getElementById("customcss").textContent = text;
-    try { localStorage.setItem(CSS_KEY, text); } catch { /* no storage: fetched at every load */ }
   }
   return { apply, page: () => page };
 }

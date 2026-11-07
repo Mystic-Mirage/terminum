@@ -79,9 +79,14 @@ def primary_of(cwd):
     return next(iter(trees(cwd)))
 
 
+def common_dir(cwd):
+    """The repository's git folder, the one every worktree shares."""
+    return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd))
+
+
 def mark_path(cwd):
     """The file a running release holds (scripts/release_turn.py): landings and installs leave main alone."""
-    return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd)) / "terminum-release"
+    return common_dir(cwd) / "terminum-release"
 
 
 def releasing(cwd):

@@ -318,7 +318,7 @@ fn take_line(buf: &mut Vec<u8>) -> Option<String> {
 
 fn fs_change(host: &str, data: &str) -> Option<Event> {
     let v: Value = serde_json::from_str(data).ok()?;
-    let strings = |k: &str| v[k].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    let strings = |k: &str| crate::config::strings(&v[k]);
     let files: Vec<Stamp> = serde_json::from_value(v["files"].clone()).unwrap_or_default();
     let moved: Vec<Moved> = serde_json::from_value(v["moved"].clone()).unwrap_or_default();
     Some(Event::FsChange { dirs: strings("dirs"), files, moved, host: Some(host.to_string()) })

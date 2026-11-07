@@ -29,5 +29,23 @@ export async function webOpenEnd(browser, name) {
     check("AC-02 a session just opened keeps to its last line while its layout settles late; once the reader scrolls, it stays where they are",
       settled < 8 && kept < 8, JSON.stringify({ settled, kept }));
     await page.context().close();
+
+    // text selected while it keeps to the end: what settles in that same moment leaves the selection in sight
+    const { page: reader } = await openPage(browser, { device });
+    await drawn(reader);
+    const place = await reader.evaluate(() => {
+      const t = document.getElementById("term"), d = document.createElement("div");
+      d.style.height = "2000px";
+      document.getElementById("hist").prepend(d);
+      t.scrollTop = 0;
+      const r = document.createRange();
+      r.selectNodeContents(document.querySelector("#term .ln"));
+      getSelection().removeAllRanges();
+      getSelection().addRange(r);
+      document.getElementById("bigger").click();   // no reader's press (no pointerdown): as a font coming, it keeps to the end if there
+      return t.scrollTop;
+    });
+    check("AC-02 text selected on a session just opened stays in sight, whatever settles before the next frame", place < 8, JSON.stringify({ place }));
+    await reader.context().close();
   }
 }

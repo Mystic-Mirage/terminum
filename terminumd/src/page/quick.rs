@@ -14,10 +14,10 @@ use super::Page;
 use crate::app::Shared;
 use crate::tmux::args;
 
-pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
+pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value) {
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
     let side = match s("side").as_str() { "left" => "left", "right" => "right", _ => "bottom" };
-    let result = match t {
+    let result = match msg["t"].as_str().unwrap_or("") {
         "quick" => open(app, page, &s("id"), side).await,
         "quickside" => set_side(app, &s("id"), side).await,
         _ => Ok(()),

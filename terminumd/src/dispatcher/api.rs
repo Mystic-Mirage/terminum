@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use super::gate::{self, Miss};
 use super::runs::{self, Run};
 use super::press::{also_of, prompt_of, refused_busy, rev_of, shown_of, way, ways, Asked, Way};
-use super::{move_one, move_task, procs, say, start, store, walk};
+use super::{acts, move_one, move_task, procs, say, start, store, walk};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
@@ -105,7 +105,7 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(body): Js
 
 /// Where a run's pane is.
 fn pane_of(app: &Shared, r: &Run) -> Result<(Arc<Server>, String), String> {
-    r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)).ok_or_else(|| "Its session is gone.".to_string())
+    r.place(app).ok_or_else(|| "Its session is gone.".to_string())
 }
 
 async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
@@ -161,8 +161,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             }
             let server = server_of(app, r.host.as_deref())?;
             let new = next_run(app, &r, &t, again).await?;
-            let project = project_of(app, &t);
-            start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind }).await?;
+            start::open(app, start::Opening { server: &server, task: &t, folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind }).await?;
             start::watch(app, &new);
             Ok(json!({"run": new}))
         }
@@ -208,8 +207,7 @@ async fn what_runs(app: &Shared, server: &Server, pane: &str) -> Result<Option<S
 /// Only its shell remains: the agent starts there anew, by the resume when a conversation is known;
 /// the pane's queue held from the look to the start, so no key starts anything between (AC-122).
 async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, again: String, t: &Task) -> Result<Value, String> {
-    let queue = server.typing(pane);
-    let _held = queue.lock().await;
+    let _held = server.typing(pane).lock_owned().await;
     if let Some(program) = what_runs(app, server, pane).await? {
         return Err(format!("{program} runs in its pane."));
     }
@@ -229,13 +227,6 @@ async fn could_not_continue(app: &Shared, r: &Run, why: &str) -> Result<Value, S
     store(app, move |tx| if super::plan::finished(&run.status) { say(tx, &run, &words) } else { move_task(tx, &run, "FAILED", &words) }).await?;
     super::told_all(app, r);
     Err(format!("{why}: use Run from scratch."))
-}
-
-fn project_of(app: &Shared, t: &Task) -> Option<(String, String)> {
-    if t.project == DEFAULT_PROJECT {
-        return None;
-    }
-    app.projects.lock().list().iter().find(|p| p.id == t.project).map(|p| (p.id.clone(), p.name.clone()))
 }
 
 /// RUN goes on in its live session: every clock starts anew; a finished task reopens alone, an open one
@@ -353,9 +344,8 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
         }
         runs::add(tx, &Run { agent_id: ag.id, agent_name: ag.name, agent_color: ag.color, kind: ag.kind, command: ag.line, host: ag.host, folder: f, prompt: Some(prompt), ..Default::default() }, &keys, ops::now())
     }).await?;
-    let project = project_of(app, t);
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
-    let opening = start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &chosen, command: &a.line, run: &run, tasks: &ids, program: &a.kind };
+    let opening = start::Opening { server: &server, task: t, folder: &chosen, command: &a.line, run: &run, tasks: &ids, program: &a.kind };
     if let Err(e) = start::open(app, opening).await {
         let r = run.clone();
         let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = "closed".into()).map(drop)).await;
@@ -391,7 +381,7 @@ pub fn budget_changed(app: &Shared, task: &Task) {
             runs::change(tx, &r.id, |now| now.warned = false).map(Some)
         }).await else { return };
         if let Some((server, pane)) = app.tmux.resolve(&key) {
-            walk::tell(&app, &r, &server, &pane, words, "The new budget").await;
+            acts::tell(&app, &r, &server, &pane, words, "The new budget").await;
         }
     });
 }

@@ -15,10 +15,9 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, host_group, summary, tmux_on as tmux, unix_request, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, host_group, summary, tmux_on as tmux, unix_request, wait_host, wait_layout  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 LOCAL, REMOTE = own("tm-test-ilocal"), own("tm-test-iremote")
 FAST = 1.0                              # seconds: the targets of §9 Performance
 
@@ -82,14 +81,13 @@ def main():
     frozen = None
     home = os.path.join(t.root, "remote-home")
     os.makedirs(home)
-    t.env.update(TM_SSH=os.path.join(HERE, "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=REMOTE,
-                 FAKE_SSH_PIDS=os.path.join(t.root, "ssh-pids"))
+    t.through_fake_ssh(home, REMOTE, os.path.join(t.root, "ssh-pids"))
     try:
         t.start()
         ws = t.page(t.signin())
         st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "", "recipe": "ssh alex@devbox.example"})
         assert st == 200, body
-        groups = wait_layout(ws, lambda g: (h := host_group(g)) is not None and h["items"], 15)
+        groups = wait_host(ws, lambda h: h["items"], 15)
         assert groups, "the host did not come up: " + t.log()
         session = tmux(LOCAL, "list-sessions", "-F", "#S").splitlines()[0]
         known, host_pane = local_ids(groups), host_group(groups)["items"][0]["id"]
@@ -119,7 +117,7 @@ def main():
             check(f"AC-132 a local window reaches the list while the host hangs ({at})", took is not None and took < FAST, f"{took} s")
             time.sleep(6)
 
-        dim = wait_layout(ws, lambda g: (h := host_group(g)) is not None and h["items"] and all(i.get("offline") for i in h["items"]), 40)
+        dim = wait_host(ws, lambda h: h["items"] and all(i.get("offline") for i in h["items"]), 40)
         h = host_group(dim or []) or {}
         check("AC-132 rows not read for 30 s dim, with no agent state", bool(dim) and all(i.get("state") is None for i in h["items"]), h.get("items"))
         panes = next((s["panes"] for s in unix_request(t.sock, "GET", "/health")[1]["servers"] if s["name"] == "devbox"), None)
@@ -129,7 +127,7 @@ def main():
 
         os.kill(frozen, signal.SIGCONT)
         frozen = None
-        back = wait_layout(ws, lambda g: (h := host_group(g)) is not None and h["items"] and not any(i.get("offline") for i in h["items"]), 40)
+        back = wait_host(ws, lambda h: h["items"] and not any(i.get("offline") for i in h["items"]), 40)
         check("AC-132 the host answers again: its rows are live", back is not None)
 
         # the link cut: the group says so, the rows stay where they were, a shown pane with them (AC-81)
@@ -139,14 +137,14 @@ def main():
         # the control clients end, as with a real ssh going (the watchdog's kill left fake_ssh's child up)
         for pid in tmux(REMOTE, "list-clients", "-F", "#{client_pid}").split():
             os.kill(int(pid), signal.SIGTERM)
-        lost = wait_layout(ws, lambda g: (h := host_group(g)) is not None and h.get("state") in ("reconnecting", "failed"), 20)
+        lost = wait_host(ws, lambda h: h.get("state") in ("reconnecting", "failed"), 20)
         h = host_group(lost or []) or {}
         check("AC-81 the link cut: its group says so", bool(lost), h.get("why"))
         check("AC-81 the link cut: its rows stay, offline, with no agent state", bool(h.get("items")) and [i["id"] for i in h["items"]] == ids
               and all(i.get("offline") is True and i.get("state") is None for i in h["items"]), h.get("items"))
         took, known = new_local_window(ws, session, known)
         check("AC-132 a local window reaches the list with the link cut", took is not None and took < FAST, f"{took} s")
-        again = wait_layout(ws, lambda g: (h := host_group(g)) is not None and h.get("state") == "attached" and h["items"]
+        again = wait_host(ws, lambda h: h.get("state") == "attached" and h["items"]
                             and not any(i.get("offline") for i in h["items"]), 40)
         check("AC-81 the link back: its rows are live, the same panes", again is not None and [i["id"] for i in host_group(again)["items"]] == ids)
         ws.send({"t": "sub", "id": local_pane, "cols": 90, "rows": 25})

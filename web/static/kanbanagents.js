@@ -5,7 +5,8 @@
 import { askConfirm } from "./dialogs.js";
 import { projectInk } from "./listparts.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
-import { $, DEFAULT, THIS_MAC, agentColor, api, el, fillSelect, hostOptions, iconButton } from "./kanbanutil.js";
+import { el, iconButton } from "./listparts.js";
+import { $, DEFAULT, THIS_MAC, agentColor, api, fillSelect, hostOptions, showError } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -102,7 +103,7 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging
   }
 
   const values = () => Object.fromEntries(Object.entries(field).map(([k, e]) => [k, e.value]));
-  const say = (text) => { error.textContent = text; error.hidden = !text; };
+  const say = (text) => showError(error, text);
 
   // what a kind fills in follows the kind; what the user wrote stays
   field.kind.addEventListener("change", () => {

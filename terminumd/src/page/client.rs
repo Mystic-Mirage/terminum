@@ -103,30 +103,32 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
             action(app, page, msg, |a, p, m, at| async move { super::sessions::handle(&a, &p, &m, at).await }),
         "plan" => super::plans::handle(app, page, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
-        "quick" | "quickside" => action(app, page, msg, |a, p, m, _| async move { super::quick::handle(&a, &p, m["t"].as_str().unwrap_or(""), &m).await }),
+        "quick" | "quickside" => action(app, page, msg, |a, p, m, _| async move { super::quick::handle(&a, &p, &m).await }),
         // a host's ssh, helper copy and install take up to minutes: the page's loop goes on (it waits for the answer)
         "addhost" | "hostaction" | "hostagents" => {
             let (app, page) = (app.clone(), page.clone());
-            tokio::spawn(async move { super::sessions::admin(&app, &page, msg["t"].as_str().unwrap_or(""), &msg).await });
+            tokio::spawn(async move { super::sessions::admin(&app, &page, &msg).await });
         }
-        "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => action(app, page, msg, |a, p, m, _| async move { super::sessions::admin(&a, &p, m["t"].as_str().unwrap_or(""), &m).await }),
+        "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => action(app, page, msg, |a, p, m, _| async move { super::sessions::admin(&a, &p, &m).await }),
         "updatechoice" if !page.web => {
             if let Err(e) = crate::release::choose(app, &s("action"), msg["tag"].as_str()) {
                 error(page, e, None);
             }
         }
-        "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => action(app, page, msg, |a, p, m, at| async move { super::sent::handle(&a, &p, m["t"].as_str().unwrap_or(""), &m, at).await }),
+        "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => action(app, page, msg, |a, p, m, at| async move { super::sent::handle(&a, &p, &m, at).await }),
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),
         "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
         "lastlines" => {
             let id = s("id");
-            read(app, page, "lastlines", move |a, p| async move { crate::lastlines::show(&a, &p, &id).await });
+            let lane = lane_of(app, page, &msg);
+            read_in(app, page, "lastlines", &lane, move |a, p| async move { crate::lastlines::show(&a, &p, &id).await });
         }
         "diag" => {
             let id = s("id");
-            read(app, page, "diag", move |a, p| async move { super::diag::show(&a, &p, &id).await });
+            let lane = lane_of(app, page, &msg);
+            read_in(app, page, "diag", &lane, move |a, p| async move { super::diag::show(&a, &p, &id).await });
         }
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
@@ -159,10 +161,7 @@ fn lane_of(app: &Shared, page: &Page, msg: &Value) -> String {
     if matches!(msg["t"].as_str(), Some("newsession" | "restore")) {
         return app.tmux.local.id();
     }
-    if let Some((server, _)) = msg["id"].as_str().and_then(|id| app.tmux.resolve(id)) {
-        return server.id();
-    }
-    if let Some((server, _)) = msg["group"].as_str().and_then(|g| super::sessions::group(app, g)) {
+    if let Some((server, _)) = super::sessions::about(app, msg) {
         return server.id();
     }
     msg["server"].as_str().map_or_else(|| shown_lane(page), str::to_string)
@@ -181,13 +180,22 @@ where
     }
 }
 
-/// Runs a read in its lane (`reads`), one per kind and server; a full lane is said on the page.
+/// A read of the shown pane, in its server's lane.
 fn read<F, Fut>(app: &Shared, page: &Arc<Page>, kind: &'static str, work: F)
 where
     F: FnOnce(Shared, Arc<Page>) -> Fut,
     Fut: std::future::Future<Output = ()> + Send + 'static,
 {
-    if !super::reads::spawn(page, &format!("{kind} {}", shown_lane(page)), work(app.clone(), page.clone())) {
+    read_in(app, page, kind, &shown_lane(page), work);
+}
+
+/// Runs a read in its lane (`reads`), one per kind and server; a full lane is said on the page.
+fn read_in<F, Fut>(app: &Shared, page: &Arc<Page>, kind: &'static str, lane: &str, work: F)
+where
+    F: FnOnce(Shared, Arc<Page>) -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    if !super::reads::spawn(page, &format!("{kind} {lane}"), work(app.clone(), page.clone())) {
         error(page, "Too many reads of the history or folder are waiting; try again in a moment.", None);
     }
 }
@@ -298,6 +306,31 @@ mod tests {
         let ctl = Arc::new(Ctl::default());
         page.state.lock().shown = Some(Shown { key: "k".into(), server, pane: "%1".into(), ctl: ctl.clone(), task: tokio::spawn(async {}) });
         ctl
+    }
+
+    /// AC-132: a row's Last lines and diagnostics wait on that row's server, never on the shown pane's.
+    #[tokio::test]
+    async fn ac132_lastlines_and_diag_of_a_row_go_past_a_hung_shown_server() {
+        let (root, app) = crate::testutil::app("row-lanes");
+        let link = crate::tmux::server::Link::Ssh { ssh: "unused".into(), args: Vec::new() };
+        let host = Server::new("devbox", "default", link, app.changed.clone());
+        app.tmux.add_host(host.clone());
+        let (page, mut rx) = Pages::default().add(true, trace::Recorder::new(root.join("trace"))).unwrap();
+        let _ctl = shown(&page, "tm-test-row-lanes");
+        let hung = shown_lane(&page);
+        let key = host.key("%1");
+        assert_eq!(lane_of(&app, &page, &json!({"t": "diag", "id": key})), host.id());
+        assert_eq!(lane_of(&app, &page, &json!({"t": "diag", "id": "tmux:gone:default:%1"})), hung, "no such row: the shown pane's");
+        for kind in ["lastlines", "diag"] {
+            assert!(super::super::reads::spawn(&page, &format!("{kind} {hung}"), std::future::pending()));
+            handle(&app, &page, json!({"t": kind, "id": key})).await;
+            let said = tokio::time::timeout(Duration::from_secs(2), rx.recv()).await.expect("it waited behind the shown server").unwrap();
+            let said: Value = serde_json::from_str(&said).unwrap();
+            assert_eq!((said["t"].as_str(), said["id"].as_str()), (Some(kind), Some(key.as_str())), "{said}");
+            assert!(said["error"].as_str().is_some_and(|e| e.contains("does not answer")), "{said}");
+        }
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]

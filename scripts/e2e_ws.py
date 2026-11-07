@@ -53,8 +53,8 @@ def tmux_on(socket_name, *args):
     return subprocess.run(["tmux", "-L", socket_name, *args], capture_output=True, text=True).stdout
 
 
-def wait_for(read, predicate, seconds=15, every=0.1):
-    """read() until predicate(value) holds; its value, else an error with the last one."""
+def wait_for(read, predicate, seconds=15, every=0.1, last=False):
+    """read() until predicate(value) holds; its value, else an error with the last one (`last`: that one, for the caller to judge)."""
     end = time.monotonic() + seconds
     value = None
     while time.monotonic() < end:
@@ -62,6 +62,8 @@ def wait_for(read, predicate, seconds=15, every=0.1):
         if predicate(value):
             return value
         time.sleep(every)
+    if last:
+        return value
     raise AssertionError(f"The expected private test state did not arrive; last: {str(value)[:300]}")
 
 
@@ -74,6 +76,11 @@ def wait_layout(ws, pred, timeout=5):
     """The groups of the first layout message for which pred(groups) holds, or None."""
     m = ws.until(lambda m: m["t"] == "layout" and pred(m["groups"]), timeout)
     return m["groups"] if m else None
+
+
+def wait_host(ws, test, timeout=5, name="devbox"):
+    """The groups of the first layout in which the host's own group passes test(group), or None."""
+    return wait_layout(ws, lambda groups: (g := host_group(groups, name)) is not None and test(g), timeout)
 
 
 class WS:
@@ -182,6 +189,10 @@ class Terminumd:
         self.env["HISTFILE"] = "/dev/null"   # an ending shell would write it into the folder being removed
         self.proc = None
         self.log_path = os.path.join(self.root, "terminumd.log")
+
+    def through_fake_ssh(self, home, socket_name, pids, **more):
+        """Its ssh is fake_ssh.py: `home` the far side's, `socket_name` its tmux, `pids` the file of its stand-ins; `more`: more of the environment."""
+        self.env.update(TM_SSH=os.path.join(ROOT, "scripts", "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=socket_name, FAKE_SSH_PIDS=pids, **more)
 
     @property
     def sock(self):

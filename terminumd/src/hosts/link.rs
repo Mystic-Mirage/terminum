@@ -141,15 +141,9 @@ async fn keep_alive(stdin: &mut (impl tokio::io::AsyncWrite + Unpin)) {
 /// Keeps the helper told while it waits for `closed` (the ssh child's end) or, with `retry`, that
 /// long; true when the retry time came first.
 pub async fn closed_or_retry(closed: impl std::future::Future, retry: Option<Duration>, stdin: &mut (impl tokio::io::AsyncWrite + Unpin)) -> bool {
-    let retried = async {
-        match retry {
-            Some(d) => tokio::time::sleep(d).await,
-            None => std::future::pending().await,
-        }
-    };
     tokio::select! {
         _ = closed => false,
-        () = retried => true,
+        () = tokio::time::sleep(retry.unwrap_or_default()), if retry.is_some() => true,
         () = keep_alive(stdin) => false,
     }
 }
@@ -197,7 +191,7 @@ pub(super) fn set_agents(app: &Shared, host: &str, state: &str, refused: bool) {
         a.refusals = 0;
     }
     drop(g);
-    app.dirty.notify_one();
+    crate::lists::host_changed(app, host);
 }
 
 /// The agents' link for this connection, when agents are on and -R is not in its back-off;

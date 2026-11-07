@@ -10,7 +10,7 @@ use super::screen::Screen;
 use super::{gate, hooks, move_task, say, store};
 use crate::app::Shared;
 use crate::tasks::ops;
-use crate::tasks::store::DISPATCHER;
+use crate::tasks::store::{DEFAULT_PROJECT, DISPATCHER};
 use crate::tmux::server::{Link, HOST_SESSION};
 use crate::tmux::{args, Server};
 
@@ -24,7 +24,11 @@ fn start_scaled(d: Duration) -> Duration {
 }
 /// The wrapper's words are its arguments: no quote or `#` in them can break it. What the tty still
 /// holds when the agent has gone is dropped, so nothing meant for it reaches the shell it leaves.
-const WRAPPER: &str = r#"d=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l"#;
+/// `set -m` takes the terminal back whichever way the agent went: left with a dead process group, an
+/// older bash's login shell (macOS's) or ash's waits for the terminal for good, spinning, with no prompt.
+/// The `trap`: with job control a dash or ash dies of its job's Ctrl-C, and the window with it; a caught
+/// signal goes back to its default in the agent and the shell after.
+const WRAPPER: &str = r#"trap : INT; set -m; d=$1; c=$2; t=$3; case $d in "~"|"~/"*) d=$HOME${d#"~"};; esac; s=${SHELL:-/bin/sh}; if cd -- "$d"; then "$s" -lic "$c"; e=$?; else e=-1; fi; "$t" set -p -t "$TMUX_PANE" @terminum-exit "$e"; stty -icanon min 0 time 0 2>/dev/null; cat >/dev/null 2>&1; stty sane 2>/dev/null; exec "$s" -l"#;
 /// What the wrapper records when it could not enter the folder: no process exits with it.
 const NO_FOLDER: i32 = -1;
 
@@ -47,7 +51,7 @@ async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, 
     let fmt = "-P -F '#{pane_id} #{session_name}:#{window_index}'";
     let last = project.and_then(|(id, _)| {
         let ps = app.projects.lock();
-        ps.list().iter().find(|p| p.id == id).and_then(|p| p.members.iter().rev().filter_map(|k| app.tmux.resolve(k)).find(|(s, _)| Arc::ptr_eq(s, server)).map(|(_, pane)| pane))
+        ps.by_id(id).and_then(|p| p.members.iter().rev().filter_map(|k| app.tmux.resolve(k)).find(|(s, _)| Arc::ptr_eq(s, server)).map(|(_, pane)| pane))
     });
     let window = match &last {
         Some(pane) => crate::page::sessions::window_of(server, pane).await.ok(),
@@ -59,7 +63,7 @@ async fn open_window(app: &Shared, server: &Arc<Server>, project: Option<(&str, 
         // a host shows only the session terminumd holds there (terminum-remote.md OQ-81)
         format!("new-window -d -t {} {fmt} {cmd}", args::quote(&format!("={HOST_SESSION}:")))
     } else {
-        let wanted = args::check_session_name(&project.map_or("tasks".to_string(), |(_, name)| name.replace([':', '.'], "-")))?;
+        let wanted = args::project_session(project.map_or("tasks", |(_, name)| name))?;
         let sessions = server.run("list-sessions -F '#{session_name}'").await.unwrap_or_default();
         let target = if sessions.contains(&wanted) { Some(wanted.clone()) } else if project.is_none() { sessions.first().cloned() } else { None };
         match target {
@@ -88,7 +92,7 @@ pub async fn is_marked(server: &Server, pane: &str, run: &str) -> Result<(), Str
 /// What a window is for.
 pub struct Opening<'a> {
     pub server: &'a Arc<Server>,
-    pub project: Option<(&'a str, &'a str)>,
+    pub task: &'a ops::Task,
     pub folder: &'a str,
     pub command: &'a str,
     pub run: &'a str,
@@ -96,18 +100,27 @@ pub struct Opening<'a> {
     pub program: &'a str,
 }
 
+/// A task's project, its id and name; Default stands for none.
+fn project_of(app: &Shared, t: &ops::Task) -> Option<(String, String)> {
+    if t.project == DEFAULT_PROJECT {
+        return None;
+    }
+    app.projects.lock().by_id(&t.project).map(|p| (p.id.clone(), p.name.clone()))
+}
+
 /// Opens the window, links it and says so.
 pub async fn open(app: &Shared, o: Opening<'_>) -> Result<(), String> {
-    let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command).await?;
+    let project = project_of(app, o.task);
+    let (pane, place) = open_window(app, o.server, project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), o.folder, o.command).await?;
     mark(o.server, &pane, o.run).await?;
     if let Some((session, _)) = place.rsplit_once(':') {
         o.server.note_pane(&pane, session);            // its agent's first hook may come before the next list
     }
     let key = o.server.key(&pane);
     app.dispatcher.panes.lock().insert(key.clone());
-    if let Some((project, _)) = o.project {
-        let (a, k, p, host) = (app.clone(), key.clone(), project.to_string(), (!o.server.is_local()).then(|| o.server.name.clone()));
-        let _ = crate::http::off(move || a.projects.lock().add(&k, Some(&p), None, host, String::new(), None)).await;
+    if let Some((project, _)) = project {
+        let (a, k) = (app.clone(), key.clone());
+        let _ = crate::http::off(move || a.projects.lock().add_to(&k, &project, None)).await;
         crate::page::projects::tell(app);
     }
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };
@@ -199,11 +212,17 @@ async fn watching(app: &Shared, id: &str) {
     let box_within = |miss: &Option<String>| match miss { Some(m) => format!("its input box did not come in 60 s: {m}"), None => "its input box did not come in 60 s".to_string() };
     loop {
         let wanted = id.to_string();
-        let Ok(r) = store(app, move |tx| runs::change(tx, &wanted, |_| {})).await else { return };
+        let Ok(r) = store(app, move |tx| runs::by_id(tx, &wanted)).await else { return };
         if !r.is_starting() {
             return;
         }
-        let Some((server, pane)) = r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)) else {
+        let Some((server, pane)) = r.place(app) else {
+            // no pane yet: the press that made it is still opening its window, and a walk may have come
+            // first; one that never gets it (a restart on the way) fails when a box would have come
+            if r.pane_key.is_none() && began.elapsed() < start_scaled(BOX_WITHIN) {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                continue;
+            }
             return did_not_start(app, &r, None, "its window is gone").await;
         };
         if let Some(code) = exit_of(&server, &pane).await {
@@ -264,4 +283,39 @@ pub async fn respawn(app: &Shared, server: &Arc<Server>, pane: &str, old: &str, 
         w.subs.clear();                                // a new agent: none of the last one's
     }
     server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::Tmux;
+
+    fn until(mut ok: impl FnMut() -> bool) -> bool {
+        let end = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < end {
+            if ok() {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        false
+    }
+
+    /// Under the `sh` of Debian, where a Mac has it too: with job control it dies of its job's Ctrl-C.
+    #[test]
+    fn ac123_a_ctrl_c_under_dash_is_recorded_and_the_window_keeps_a_shell() {
+        if !std::path::Path::new("/bin/dash").exists() {
+            return;
+        }
+        let Some(s) = Tmux::start("wrapper-dash", (80, 24), "/bin/sh") else { return };
+        let pane = s.read(&["new-window", "-d", "-P", "-F", "#{pane_id}", "/bin/dash", "-c", WRAPPER, "sh", "/", "sleep 300", "tmux"]);
+        let pane = pane.trim();
+        let shown = |what: &str| s.read(&["display", "-p", "-t", pane, what]).trim().to_string();
+        assert!(until(|| shown("#{pane_current_command}") == "sleep"), "{}", shown("#{pane_current_command}"));
+        s.tmux(&["send-keys", "-t", pane, "C-c"]);
+        assert!(until(|| shown("#{@terminum-exit}") == "130"), "exit {:?}", shown("#{@terminum-exit}"));
+        let pid = shown("#{pane_pid}");
+        let groups = || String::from_utf8_lossy(&std::process::Command::new("ps").args(["-o", "pgid=,tpgid=", "-p", &pid]).output().unwrap().stdout).split_whitespace().map(str::to_string).collect::<Vec<_>>();
+        assert!(until(|| { let g = groups(); g.len() == 2 && g[0] == g[1] }), "its shell does not hold the terminal: {:?}", groups());
+    }
 }

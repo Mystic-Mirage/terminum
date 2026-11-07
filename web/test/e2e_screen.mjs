@@ -4,7 +4,7 @@
 // size messages and when they go, the alternate screen, too small a view, a wider pane scaled, a
 // pane sized for another screen, and the mouse reports of clicks, drags, the wheel and taps.
 
-import { check, runningIn, slack } from "./check.mjs";
+import { check, runningIn, slack, until } from "./check.mjs";
 import { drawn, LAYOUT, line, openPage, pause, SIZES } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1";
@@ -44,17 +44,19 @@ export async function webScreen(browser, name) {
     check("AC-13 size: the first key after a pause sends the size as typing, once a second at most",
       typing.length === 1 && typing[0].typing === true, JSON.stringify(typing));
     await page.click("#menubtn");
-    const changed = Date.now();
-    await page.evaluate(() => { document.getElementById("bigger").click(); document.getElementById("bigger").click(); });   // two changes at once
-    // the menu closed as Escape closes it, but no key: one reaching the terminal a second after "ab" sizes as typing
-    await page.evaluate(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
-    await pause(page, 150);
-    const early = sizes().length;
-    const inTime = Date.now() - changed < 300;   // on a busy machine this pause outlasts the wait: then early says nothing
-    await pause(page, slack(400));
+    // two changes at once, the menu closed with no key (a second after the last, one sends the size as
+    // typing); counted in the page: its timers keep their order however late they run, the sends reach us later
+    const early = await page.evaluate(() => new Promise((done) => {
+      const send = WebSocket.prototype.send;
+      let n = 0;
+      WebSocket.prototype.send = function (m) { if (JSON.parse(m).t === "size") n++; return send.call(this, m); };
+      for (const id of ["bigger", "bigger", "menubtn"]) document.getElementById(id).click();
+      setTimeout(() => { WebSocket.prototype.send = send; done(n); }, 150);
+    }));
+    await until(() => sizes().length >= n0 + 2, slack(8000));
     const bigger = sizes().at(-1);
     check("AC-13 size: a bigger text size sends the smaller grid, 300 ms after the last change",
-      (early === n0 + 1 || !inTime) && sizes().length === n0 + 2 && bigger.cols < first.cols && bigger.typing === false, JSON.stringify({ early, inTime, bigger }));
+      early === 0 && sizes().length === n0 + 2 && bigger.cols < first.cols && bigger.typing === false, JSON.stringify({ early, bigger }));
 
     // a full-screen program on the alternate screen: its grid alone, and back
     frame({ alt: true });

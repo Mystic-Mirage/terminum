@@ -5,7 +5,7 @@
 // one block in one place and the cursor in it, frame after frame.
 import fs from "node:fs";
 import path from "node:path";
-import { check, SLACK } from "./check.mjs";
+import { check, until } from "./check.mjs";
 
 // every 100 ms the spinner row rewritten in two writes `gap` ms apart, the cursor on that row between
 const program = (gap) => `const G = ["·", "✢", "✳", "✶", "✻", "✽"];
@@ -41,7 +41,11 @@ async function redraws(page, { tmux, work }, gap, name) {
   try {
     // right after the restart checks (e2e_live.mjs): the page settled first (no status line; a hidden one keeps its old text), then the row shown
     await page.waitForFunction(() => document.getElementById("status").hidden, null, { timeout: 8000 }).catch(() => {});
-    await page.click(`#sessions .item[data-id$=":${pane}"]`);
+    // pressed until shown: right after a restart the list draws anew, and a press across a redraw is no click
+    await until(async () => {
+      await page.click(`#sessions .item[data-id$=":${pane}"]`);
+      return page.evaluate((p) => !!document.querySelector("#sessions .item.on")?.dataset.id.endsWith(`:${p}`), pane);
+    }, 8000);
     const ready = await page.waitForFunction(() => document.querySelector("#screen .blk.inbox .cur"), null, { timeout: 8000 }).then(() => "", (e) => e.message);
     if (ready) {
       // the precondition failed: what the page showed, to tell a wrong row, a hidden page or a lost link from a redraw bug
@@ -76,7 +80,7 @@ async function redraws(page, { tmux, work }, gap, name) {
       requestAnimationFrame(tick);
     }));
     if (got.lost) got.tmux = { pane, screen: tmux("capture-pane", "-p", "-t", pane).split("\n").filter(Boolean).slice(0, 4), cmd: tmux("display", "-p", "-t", pane, "#{pane_current_command} #{pane_dead}") };
-    check(name, got.frames > 60 / SLACK && got.lost === 0 && got.away === 0 && got.boxes === 1 && got.tops.length === 1, JSON.stringify(got));
+    check(name, got.frames > 60 && got.lost === 0 && got.away === 0 && got.boxes === 1 && got.tops.length === 1, JSON.stringify(got));
   } finally {
     tmux("kill-window", "-t", pane);
     fs.rmSync(prog, { force: true });

@@ -85,7 +85,8 @@ pub fn heard(app: &Shared, key: &str, ev: &Value) {
     let (app, key, ev) = (app.clone(), key.to_string(), ev.clone());
     tokio::spawn(async move {
         let typed = ev["event"] == "UserPromptSubmit" && ev["prompt"].as_str().is_some_and(|p| app.dispatcher.was_typed(&key, p));
-        let (k, e) = (key.clone(), ev.clone());
+        let ended = ev["event"] == "SessionEnd" && ev["reason"] != "clear";
+        let (k, e) = (key.clone(), ev);
         let done = store(&app, move |tx| {
             let Some(mut r) = runs::in_pane(tx, &k)? else { return Ok(None) };
             let was = r.clone();
@@ -108,7 +109,7 @@ pub fn heard(app: &Shared, key: &str, ev: &Value) {
             Err(e) => tracing::warn!(event = "dispatcher.hook", error = %e),
         }
         // an end: the exit code decides, at a walk now (AS-127)
-        if ev["event"] == "SessionEnd" && ev["reason"] != "clear" {
+        if ended {
             app.dispatcher.soon.notify_one();
         }
     });

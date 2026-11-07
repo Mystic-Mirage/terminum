@@ -132,8 +132,11 @@ def writes(command, cwd):
     if not WORTH_READING.search(command):
         return False, [], []
     inline, paths, git_folders, folder = False, [], [], cwd
+
+    def placed(names, own):
+        return [(where, own) for name in names if readable(name) and (where := at(folder, name))]
     for args, targets in simple_commands(tokens(strip_text(command))):
-        paths += [(at(folder, t), False) for t in targets if readable(t) and at(folder, t)]
+        paths += placed(targets, False)
         while args and (ASSIGNMENT.match(args[0]) or args[0] in PREFIXES):
             inline = inline or args[0].startswith("TM_EDIT_PRIMARY=")
             args = args[1:]
@@ -166,5 +169,5 @@ def writes(command, cwd):
             verb = rest[i:i + 2]
             if verb and verb[0] in GIT_WRITES and tuple(verb) not in GIT_READS and where and readable(where):
                 git_folders.append(where)
-        paths += [(at(folder, n), own) for n in named if readable(n) and at(folder, n)]
+        paths += placed(named, own)
     return inline, paths, git_folders

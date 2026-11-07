@@ -211,6 +211,7 @@ fn ac111_filters_hold_together_and_count_columns() {
 fn ac115_a_repeat_and_the_agents_limit() {
     let s = store("t-repeat");
     let a = new(&s, "Fix  the Retry loop.", "P2").id;
+    use crate::tasks::query::repeat_of;
     assert_eq!(s.with(|tx| repeat_of(tx, "default", "fix the retry LOOP")).unwrap(), Some(a.clone()));
     assert_eq!(s.with(|tx| repeat_of(tx, "default", "another")).unwrap(), None);
     moved(&s, &a, "DONE").unwrap();

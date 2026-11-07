@@ -10,10 +10,8 @@ import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
 import { planPct, planTrack } from "./planrow.js";
 import { arranged } from "./reorder.js";
-import { PROJECT_HUES, el, hueColor, iconButton, projectColor, projectHue } from "./listparts.js";
+import { PROJECT_HUES, el, hueColor, iconButton, plural, projectColor, projectHue } from "./listparts.js";
 import { taskUrl } from "./tasklink.js";
-
-export { el, projectColor };
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
 // but a quiet terminal mark while a shell, a monitor or a task it started still runs (terminumd reads
@@ -51,9 +49,7 @@ export function stateIcon(state, size) {
   return wrap;
 }
 
-let hues = new Map();                  // each folder's hue (AC-01)
-/** The folders' hues of `groups`: for a list, and a row drawn without one (a card's, terminum-kanban.md AC-134). */
-export const seeFolders = (groups) => { hues = folderHues(groups.flatMap((g) => g.items.map(folderKey))); };
+let hues = new Map();                  // each folder's hue (AC-01): the last list's, for a row drawn without one too (a card's, terminum-kanban.md AC-134)
 // a coding agent's own mark (their owners' trademarks, outside terminum's licenses: NOTICE)
 const MARKS = { claude: ["agents/claude.svg", "Claude Code"], codex: ["agents/codex.svg", "Codex"] };
 // a program shown by its mark alone, by its name as tmux has it (no coding agent's input box: its own full screen)
@@ -138,7 +134,7 @@ function matches(item, q) {
 }
 
 /** A group's count: its sessions (its rows, not their panes or quick shells under them), said in words. */
-const sessionCount = (n) => el("span", "count", n ? `${n} session${n === 1 ? "" : "s"}` : "");   // a group without rows says its state instead
+const sessionCount = (n) => el("span", "count", n ? plural(n, "session") : "");   // a group without rows says its state instead
 
 
 /** Open tasks by session (terminumd's): a row shows them, each opening its window on the board (AC-113). */
@@ -185,7 +181,7 @@ export function row(item, current, onPick, movable, child = false, marked = new 
   if (item.subagents) {
     const n = el("span", "subs");
     n.append(icon("bot", 11), String(item.subagents));
-    n.title = `${item.subagents} subagent${item.subagents > 1 ? "s" : ""}`;
+    n.title = plural(item.subagents, "subagent");
     st.append(n);
   }
   const bar = folderBar(item, item.id === current, item.state === "working", opts.project);
@@ -281,7 +277,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
-  seeFolders(groups);
+  hues = folderHues(groups.flatMap((g) => g.items.map(folderKey)));
   const down = new Map(groups.filter((g) => g.host && !g.attached && g.state && g.state !== "attached").map((g) => [g.host, g.state]));
   let shown = 0;
   const { kids, topsOf, leftOf } = membership(groups, projects);

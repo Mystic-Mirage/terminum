@@ -44,9 +44,9 @@ impl Server {
     }
 
     /// Its list is to be read again, its own alone (lists.rs).
-    pub(super) fn list_changed(&self) {
+    pub fn list_changed(&self) {
         self.list.mark_changed();
-        self.dirty.notify_one();
+        self.changed.notify_one();
     }
 
     /// A page's mouse release went to the pane `%N`: what its program copies within

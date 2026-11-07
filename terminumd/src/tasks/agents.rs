@@ -126,17 +126,19 @@ pub fn check_folder(dir: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn agent_row(r: &rusqlite::Row) -> rusqlite::Result<Agent> {
+    let (kind, command, effort): (String, String, String) = (r.get(3)?, r.get(6)?, r.get(7)?);
+    Ok(Agent { id: r.get(0)?, project: r.get(1)?, name: r.get(2)?, line: command_line(&kind, &command, &effort), kind, host: r.get(4)?, dir: r.get(5)?, command, effort, color: r.get(8)? })
+}
+
 /// Every project's, as they were added.
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
-    rows(tx, "SELECT id, project, name, kind, host, dir, command, effort, color FROM project_agents ORDER BY rowid", [], |r| {
-        let (kind, command, effort): (String, String, String) = (r.get(3)?, r.get(6)?, r.get(7)?);
-        Ok(Agent { id: r.get(0)?, project: r.get(1)?, name: r.get(2)?, line: command_line(&kind, &command, &effort), kind, host: r.get(4)?, dir: r.get(5)?, command, effort, color: r.get(8)? })
-    })
+    rows(tx, "SELECT id, project, name, kind, host, dir, command, effort, color FROM project_agents ORDER BY rowid", [], agent_row)
 }
 
 /// One project's.
 pub fn of_project(tx: &Transaction, project: &str) -> Result<Vec<Agent>, String> {
-    Ok(list(tx)?.into_iter().filter(|a| a.project == project).collect())
+    rows(tx, "SELECT id, project, name, kind, host, dir, command, effort, color FROM project_agents WHERE project = ?1 ORDER BY rowid", [project], agent_row)
 }
 
 /// Keeps a new one. Its id.

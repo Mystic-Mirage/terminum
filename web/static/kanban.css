@@ -164,8 +164,7 @@ dialog .markdown pre { max-width: 100%; overflow-x: auto; }
 textarea.droparea { outline: 1px dashed var(--line); outline-offset: -1px; }
 section.droparea { border-radius: var(--r-sm); }
 .droparea.dropping { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 8%, var(--field-fill)); }
-#taskbody textarea.field { width: 100%; box-sizing: border-box; }
-#newtext { width: 100%; box-sizing: border-box; }
+#taskbody textarea.field, #newtext { width: 100%; box-sizing: border-box; }
 dialog .markdown { font-family: var(--ui); font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; min-width: 0; }
 dialog .markdown img { max-width: 100%; }
 .filelist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-label); }

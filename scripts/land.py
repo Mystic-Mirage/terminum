@@ -10,17 +10,19 @@ builds again if they changed any code. During a release the primary checkout sta
                     TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code
 Exit: 0 landed; 1 checks failed or refused (the tree stays); 2 a merge conflict, left in the tree
 to resolve and commit before running this again. No force, ever."""
+import fcntl
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
-import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_changed import is_doc  # noqa: E402
+from worktree import common_dir, primary_of, Refused, releasing  # noqa: E402
 
 BASE = "origin/main"
 TRIES = 8
-DOCS = re.compile(r"\.md$|^docs/")
-LOCK_STALE_S = 600
 
 
 class Stop(Exception):
@@ -36,8 +38,8 @@ def git(*args, cwd, check=True):
     return done
 
 
-def primary_of(cwd):
-    return Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=cwd).stdout.strip()).parent
+def has_base(tree):
+    return git("merge-base", "--is-ancestor", BASE, "HEAD", cwd=tree, check=False).returncode == 0
 
 
 def files_between(a, b, cwd):
@@ -45,30 +47,24 @@ def files_between(a, b, cwd):
 
 
 class Turn:
-    """One tree at a time merges and pushes; a holder that died leaves it free after LOCK_STALE_S."""
-    def __init__(self, primary):
-        self.path = Path(git("rev-parse", "--path-format=absolute", "--git-common-dir", cwd=primary).stdout.strip()) / "terminum-land.lock"
+    """One tree at a time merges and pushes, however long its install takes; the kernel frees the turn when its holder dies."""
+    def __init__(self, tree):
+        try:
+            self.path = common_dir(tree) / "terminum-land.turn"
+        except Refused as refused:
+            raise Stop(1, str(refused)) from refused
 
     def __enter__(self):
-        for _ in range(LOCK_STALE_S * 2):
-            try:
-                self.path.mkdir()
-                return self
-            except FileExistsError:
-                try:
-                    if time.time() - self.path.stat().st_mtime > LOCK_STALE_S:
-                        self.path.rmdir()
-                        continue
-                except FileNotFoundError:
-                    continue
-                time.sleep(1)
-        raise Stop(1, f"another landing holds {self.path}")
+        self.file = self.path.open("w")   # not inherited: a build it starts holds nothing
+        try:
+            fcntl.flock(self.file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("land: another tree's landing has its turn: waiting", flush=True)
+            fcntl.flock(self.file, fcntl.LOCK_EX)
+        return self
 
     def __exit__(self, *_):
-        try:
-            self.path.rmdir()
-        except FileNotFoundError:
-            pass
+        self.file.close()
 
 
 def merge_base_in(tree):
@@ -103,7 +99,7 @@ def builds(tree):
 
 
 def has_code(files):
-    return any(not DOCS.search(f) for f in files)
+    return any(not is_doc(f) for f in files)
 
 
 def land(tree, check=checks_of, build=lambda tree: builds(tree), say=print, after=lambda files: None):
@@ -114,14 +110,13 @@ def land(tree, check=checks_of, build=lambda tree: builds(tree), say=print, afte
     if git("merge-base", "--is-ancestor", "HEAD", BASE, cwd=tree, check=False).returncode == 0:
         return git("rev-parse", "HEAD", cwd=tree).stdout.strip()  # nothing of its own to land
     tested_at = None
-    own_files = None
+    own_files = files_between(BASE, "HEAD", tree)
     for _ in range(TRIES):
         git("fetch", "--quiet", "origin", cwd=tree)
         base_now = git("rev-parse", BASE, cwd=tree).stdout.strip()
         ours = files_between(BASE, "HEAD", tree)
-        own_files = ours if own_files is None else own_files
         others = files_between("HEAD", BASE, tree)
-        if git("merge-base", "--is-ancestor", BASE, "HEAD", cwd=tree, check=False).returncode:
+        if not has_base(tree):
             merge_base_in(tree)
             say(f"merged {BASE} ({base_now[:9]})")
         if tested_at is None or ours & others:
@@ -132,7 +127,7 @@ def land(tree, check=checks_of, build=lambda tree: builds(tree), say=print, afte
             raise Stop(1, f"the build fails merged with {BASE}: {tree} stays, nothing pushed")
         with Turn(tree):
             git("fetch", "--quiet", "origin", cwd=tree)
-            if git("merge-base", "--is-ancestor", BASE, "HEAD", cwd=tree, check=False).returncode:
+            if not has_base(tree):
                 say(f"{BASE} moved while this tree was checked")
                 continue
             pushed = git("push", "--quiet", "origin", "HEAD:main", cwd=tree, check=False)
@@ -142,7 +137,7 @@ def land(tree, check=checks_of, build=lambda tree: builds(tree), say=print, afte
                 after(own_files)  # minutes, when it installs: a sweep may take the tree, merged now
                 return commit
             git("fetch", "--quiet", "origin", cwd=tree)
-            if git("merge-base", "--is-ancestor", BASE, "HEAD", cwd=tree, check=False).returncode == 0:
+            if has_base(tree):
                 raise Stop(1, f"push refused, and {BASE} has not moved: {pushed.stderr.strip()}")
             say(f"{BASE} moved during the push")
     raise Stop(1, f"{BASE} kept moving: {TRIES} tries; land again")
@@ -151,8 +146,6 @@ def land(tree, check=checks_of, build=lambda tree: builds(tree), say=print, afte
 def after_push(primary):
     """The primary checkout on the fresh origin/main, and installed if the maintainer asked for that."""
     def run(files):
-        sys.path.insert(0, str(primary / "scripts"))
-        from worktree import releasing
         if releasing(primary):
             print("primary checkout stays where it is: a release is running")
             return
@@ -172,7 +165,10 @@ def after_push(primary):
 def main(argv):
     if len(argv) != 1 or not re.fullmatch(r"[A-Za-z0-9][\w.-]*", argv[0]):
         sys.exit("usage: land.py <slug>")
-    primary = primary_of(Path.cwd())
+    try:
+        primary = primary_of(Path.cwd())
+    except Refused as refused:
+        sys.exit(str(refused))
     tree = primary / ".worktrees" / argv[0]
     if not tree.is_dir():
         sys.exit(f"no worktree {tree}")

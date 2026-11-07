@@ -34,9 +34,13 @@ const NOT_ANSWERED: &str = "tmux did not answer";
 const NOT_CONNECTED: &str = "tmux is not connected";
 const NOT_KEEPING_UP: &str = "tmux is not keeping up: too many commands wait for it";
 
-/// Whether an answer's error says the link failed, not tmux: nothing is known of what was asked (AC-132).
-pub fn no_answer(error: &str) -> bool {
-    [NOT_ANSWERED, NOT_CONNECTED, NOT_KEEPING_UP].contains(&error)
+/// A command's answer, or why none came.
+async fn answer_of(rx: oneshot::Receiver<Answer>) -> Answer {
+    match tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(1), rx).await {
+        Ok(Ok(a)) => a,
+        Ok(Err(_)) => Err(NOT_CONNECTED.into()),
+        Err(_) => Err(NOT_ANSWERED.into()),
+    }
 }
 
 /// stderr kept to say why a client ended (ssh's "Permission denied (publickey)").
@@ -224,8 +228,9 @@ impl Control {
             if exit_reason.is_none() {
                 let _ = tokio::time::timeout(STDERR_WAIT, stderr_done).await;
             }
-            let quiet = if via_ssh && !att.load(Ordering::Relaxed) { SSH_NO_ANSWER } else { "tmux exited" };
-            let said_nothing = hung_up.load(Ordering::Relaxed) && via_ssh && !att.load(Ordering::Relaxed);
+            let unseen = via_ssh && !att.load(Ordering::Relaxed);
+            let quiet = if unseen { SSH_NO_ANSWER } else { "tmux exited" };
+            let said_nothing = hung_up.load(Ordering::Relaxed) && unseen;
             let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).filter(|_| !said_nothing).unwrap_or_else(|| quiet.into());
             for w in p.lock().drain(..) {
                 let _ = w.reply.send(Err(why.clone()));
@@ -257,6 +262,12 @@ impl Control {
         });
 
         Ok(Control { lines: tx, queued, alive, ended, attached, clean, pid, pending })
+    }
+
+    /// Whether an answer's error says the link failed, not tmux: nothing is known of what was
+    /// asked (AC-132). A client that ended fails what waited with its reason, whatever that says.
+    pub fn no_answer(&self, error: &str) -> bool {
+        !self.alive() || [NOT_ANSWERED, NOT_CONNECTED, NOT_KEEPING_UP].contains(&error)
     }
 
     pub fn alive(&self) -> bool {
@@ -294,12 +305,7 @@ impl Control {
 
     /// One command and its answer.
     pub async fn run(&self, line: impl Into<String>) -> Answer {
-        let rx = self.send(line.into());
-        match tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(1), rx).await {
-            Ok(Ok(a)) => a,
-            Ok(Err(_)) => Err(NOT_CONNECTED.into()),
-            Err(_) => Err(NOT_ANSWERED.into()),
-        }
+        answer_of(self.send(line.into())).await
     }
 
     /// Several commands written at once (one round trip), answered in order.
@@ -307,11 +313,7 @@ impl Control {
         let waiting: Vec<_> = lines.into_iter().map(|l| self.send(l)).collect();
         let mut out = Vec::with_capacity(waiting.len());
         for rx in waiting {
-            out.push(match tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(1), rx).await {
-                Ok(Ok(a)) => a,
-                Ok(Err(_)) => Err(NOT_CONNECTED.into()),
-                Err(_) => Err(NOT_ANSWERED.into()),
-            });
+            out.push(answer_of(rx).await);
         }
         out
     }

@@ -108,18 +108,18 @@ if [ -n "${TM_PORT:-}" ] && [ -n "${TM_APP_DIR:-}" ]; then
   if python3 -c 'import os,sys; from pathlib import Path; sys.exit(Path(sys.argv[1]).resolve() == (Path.home() / ".terminum/state").resolve())' "$app"; then :; else
     echo "Refusing the live state folder: run it against a private terminumd (TM_APP_DIR=<its short folder>)" >&2; exit 1
   fi
-  code() { curl -s -o /dev/null -w '%{http_code}' -m 5 "$@"; }
+  # -m 60: a sign-in runs the password's hash, seconds each on a machine under load
+  code() { curl -s -o /dev/null -w '%{http_code}' -m 60 "$@"; }
   check() { # name expected actual
     if [ "$2" = "$3" ]; then echo "ok   $1 → $3"; else echo "FAIL $1 → $3 (want $2)"; fail=1; fi; }
   # a password set over the socket (as `terminum password`), then the sign-in /auth/login gives (never printed)
   pw='security check password'
-  # hashing a password takes seconds in a debug build on a busy machine, so these three wait longer
-  curl -s -o /dev/null -m 30 --unix-socket "$sock" -X POST -H 'Content-Type: application/json' -d "{\"password\":\"$pw\"}" http://localhost/password
-  secret=$(curl -s -m 30 -X POST -H 'Content-Type: application/json' -d "{\"password\":\"$pw\"}" "$b/auth/login" \
+  code --unix-socket "$sock" -X POST -H 'Content-Type: application/json' -d "{\"password\":\"$pw\"}" http://localhost/password >/dev/null
+  secret=$(curl -s -m 60 -X POST -H 'Content-Type: application/json' -d "{\"password\":\"$pw\"}" "$b/auth/login" \
            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("secret", ""))' 2>/dev/null)
   [ -n "$secret" ] || { echo "FAIL no sign-in from the password (POST /password on the socket, then POST /auth/login)"; exit 1; }
   ws=(-H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==')
-  check "wrong password"            401 "$(code -m 30 -X POST -H 'Content-Type: application/json' -d '{"password":"wrong one"}' "$b/auth/login")"
+  check "wrong password"            401 "$(code -X POST -H 'Content-Type: application/json' -d '{"password":"wrong one"}' "$b/auth/login")"
   check "tailscale funnel"          403 "$(code -H 'Tailscale-Funnel-Request: ?1' -H "X-TM-Session: $secret" "$b/fb/api/state")"
   check "forwarded: Finder"         403 "$(code -X POST -H 'X-Forwarded-Host: mac.tail1234.ts.net' -H 'Content-Type: application/json' -H "X-TM-Session: $secret" -d '{}' "$b/fb/api/os/reveal")"
   check "no sign-in: /ws"           401 "$(code "${ws[@]}" "$b/ws")"

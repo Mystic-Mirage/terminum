@@ -183,6 +183,8 @@ pub async fn follow(app: Shared) {
                 }
             }
             app.dirty.notify_one(); // the list's dots follow the theme names
+            // the board shows no pane: it wears the local default, as /api/tasks/meta gives it
+            app.pages.tell(&json!({"t": "boardtheme", "theme": app.looks.theme(None, "").1}).to_string());
         }
     }
 }

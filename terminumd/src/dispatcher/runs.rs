@@ -52,6 +52,11 @@ pub struct Run {
 }
 
 impl Run {
+    /// Its pane's server and pane, while its key resolves.
+    pub(super) fn place(&self, app: &crate::app::Shared) -> Option<(std::sync::Arc<crate::tmux::Server>, String)> {
+        self.pane_key.as_deref().and_then(|k| app.tmux.resolve(k))
+    }
+
     /// Before its prompt is taken: its start is being watched.
     pub fn is_starting(&self) -> bool {
         matches!(self.state.as_str(), "starting" | "asking" | "typed")
@@ -105,6 +110,7 @@ const SELECT: &str = "SELECT r.id, r.task,
     FROM runs r JOIN tasks t ON t.id = r.task";
 /// A run Dispatcher still holds, over `runs r`.
 pub(crate) const STILL: &str = "r.state NOT IN ('closed', 'left')";
+const STARTING: &str = "r.state IN ('starting', 'asking', 'typed')";
 
 /// `group_concat`'s list, its order by number.
 fn listed(text: Option<String>) -> Vec<String> {
@@ -121,6 +127,11 @@ fn of_row(r: &Row) -> rusqlite::Result<Run> {
     })
 }
 
+/// The one run `tail` finds, by a statement kept for the next call.
+fn one(tx: &Transaction, tail: &str, key: &str) -> rusqlite::Result<Run> {
+    tx.prepare_cached(&format!("{SELECT} WHERE {tail}"))?.query_row([key], of_row)
+}
+
 /// Every run whose session may still need Dispatcher.
 pub fn live(tx: &Transaction) -> Result<Vec<Run>, String> {
     rows(tx, &format!("{SELECT} WHERE {STILL} ORDER BY r.rowid"), [], of_row)
@@ -128,12 +139,12 @@ pub fn live(tx: &Transaction) -> Result<Vec<Run>, String> {
 
 /// The run in pane `key`, if any.
 pub fn in_pane(tx: &Transaction, key: &str) -> Result<Option<Run>, String> {
-    tx.query_row(&format!("{SELECT} WHERE r.pane_key = ?1 AND {STILL} ORDER BY r.rowid DESC LIMIT 1"), [key], of_row).optional().map_err(sql)
+    one(tx, &format!("r.pane_key = ?1 AND {STILL} ORDER BY r.rowid DESC LIMIT 1"), key).optional().map_err(sql)
 }
 
 /// Task `task`'s newest run.
 pub fn last_of(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
-    tx.query_row(&format!("{SELECT} WHERE r.id = (SELECT m.run FROM run_tasks m WHERE m.task = ?1 ORDER BY m.rowid DESC LIMIT 1)"), [task], of_row).optional().map_err(sql)
+    one(tx, "r.id = (SELECT m.run FROM run_tasks m WHERE m.task = ?1 ORDER BY m.rowid DESC LIMIT 1)", task).optional().map_err(sql)
 }
 
 /// What keeps agent `agent` busy but run `but`, if anything (AC-138): read in the transaction that adds
@@ -147,8 +158,8 @@ pub fn busy_agents(all: &[Run]) -> serde_json::Value {
     all.iter().filter(|r| r.busy()).map(|r| (r.agent_id.clone(), serde_json::json!({"tasks": r.names(), "state": r.state, "key": r.pane_key}))).collect::<serde_json::Map<_, _>>().into()
 }
 
-fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
-    tx.query_row(&format!("{SELECT} WHERE r.id = ?1"), [id], of_row).map_err(sql)
+pub(super) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
+    one(tx, "r.id = ?1", id).map_err(sql)
 }
 
 /// The run as it stands, changed by `f` and written.
@@ -209,9 +220,9 @@ fn listed_keys(keys: &[&str]) -> String {
 
 /// What a card says of its task's run: starting, asking, or `no_result`: DONE with no result from the agent (AC-123).
 pub fn card_marks(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, String>, String> {
-    Ok(rows(tx, "SELECT m.task, CASE WHEN r.state IN ('starting', 'asking', 'typed') THEN r.state ELSE 'no_result' END FROM run_tasks m JOIN runs r ON r.id = m.run JOIN tasks t ON t.id = m.task
+    Ok(rows(tx, &format!("SELECT m.task, CASE WHEN {STARTING} THEN r.state ELSE 'no_result' END FROM run_tasks m JOIN runs r ON r.id = m.run JOIN tasks t ON t.id = m.task
               WHERE m.task IN (SELECT value FROM json_each(?1)) AND m.rowid = (SELECT MAX(rowid) FROM run_tasks WHERE task = m.task)
-                AND (r.state IN ('starting', 'asking', 'typed') OR (t.status = 'DONE' AND m.result = 0 AND t.archived_at IS NULL))", [listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+                AND ({STARTING} OR (t.status = 'DONE' AND m.result = 0 AND t.archived_at IS NULL))"), [listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
 /// The agent each of `keys` stays on: its newest run's, as that run knew it (AC-138).

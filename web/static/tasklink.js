@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The ways between the session page and the board.
+import { read, write } from "./listparts.js";
+
 const SELECTION = "tm.taskselection";
 
 export const taskUrl = (id) => `/kanban/${id}`;
@@ -20,14 +22,10 @@ export function addressedSession() {
 }
 
 /** Text for that window to take, once; in private mode it opens empty. */
-export function leaveSelection(text) {
-  try { localStorage.setItem(SELECTION, text); } catch { /* private mode */ }
-}
+export const leaveSelection = (text) => write(SELECTION, text);
 
 export function takeSelection() {
-  try {
-    const text = localStorage.getItem(SELECTION) ?? "";
-    localStorage.removeItem(SELECTION);
-    return text;
-  } catch { return ""; }
+  const text = read(SELECTION) ?? "";
+  write(SELECTION, null);
+  return text;
 }

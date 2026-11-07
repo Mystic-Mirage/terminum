@@ -89,6 +89,7 @@ pub struct App {
     pub bookmarks: Mutex<crate::page::bookmarks::Store>,
     /// named groups of sessions in the list (AC-92)
     pub projects: Mutex<crate::page::projects::Projects>,
+    pub projects_untold: Arc<std::sync::atomic::AtomicBool>,
     /// the tasks' store (terminum-kanban.md AC-119)
     pub tasks: Arc<crate::tasks::store::Store>,
     /// Dispatcher's words waiting for a pane's next hook

@@ -7,13 +7,12 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde_json::json;
-
 use super::client::Look;
-use super::sizing::{users_pane, viewers};
+use super::sizing::{refused, take_zoom, users_pane};
 use super::Page;
 use crate::app::Shared;
 use crate::screen::frame::Fields;
+use crate::tmux::orphans::ours;
 use crate::tmux::Server;
 
 /// A zoom a program's layout command took away comes back at most this often.
@@ -28,30 +27,32 @@ pub(super) fn zoom_line(pane: &str, zoomed: bool) -> String {
 }
 
 /// Whether `lines` of `list-clients -F '#{client_flags}\t#{window_id}'` have a client terminumd did
-/// not attach (all of its carry `ignore-size`) with `window` on its screen.
+/// not attach with `window` on its screen.
 fn hand_attached(lines: &[String], window: &str) -> bool {
-    lines.iter().filter_map(|l| l.split_once('\t')).any(|(flags, w)| w == window && !flags.split(',').any(|x| x == "ignore-size"))
+    lines.iter().filter_map(|l| l.split_once('\t')).any(|(flags, w)| w == window && !ours(flags))
 }
 
 /// Whether terminumd may zoom in `window`: not the user's own tmux (AC-89), nor a window a client
 /// attached by hand has on its screen, whose user could unzoom it, only to have it zoomed again.
+/// On the pane's client, as a shown pane's frame waits for it: the bulk client may be busy with history.
 pub(super) async fn zoomable(server: &Server, pane: &str, window: &str) -> bool {
     if users_pane(server, pane) {
         return false;
     }
-    let mut asked = server.run_all_on(pane, vec!["list-clients -F '#{client_flags}\t#{window_id}'".into()]).await;
-    asked.pop().and_then(Result::ok).is_some_and(|lines| !hand_attached(&lines, window))
+    let Some(client) = server.client(pane) else { return false };
+    client.run("list-clients -F '#{client_flags}\t#{window_id}'".to_string()).await.is_ok_and(|lines| !hand_attached(&lines, window))
 }
 
-/// Whether a page may take a window's zoom from `by`, whose look is `holder` (None: it no longer
-/// shows the window): a page in sight keeps it against any page that is not the active one, so
-/// two pages never take it from each other by themselves (AC-13).
-fn may_take(me: u64, active: bool, by: Option<u64>, holder: Option<Look>) -> bool {
-    by.is_none_or(|id| id == me || match holder {
+/// Whether a page whose look is `look` may take a window's zoom from another page holding it, whose
+/// look is `holder` (None: no other page in sight holds it): a page in sight keeps it against any
+/// page but an active one taking it from a page out of focus, so two pages never take it from
+/// each other by themselves (AC-13).
+pub(super) fn may_take(look: Look, holder: Option<Look>) -> bool {
+    look != Look::Hidden && match holder {
         None | Some(Look::Hidden) => true,
-        Some(Look::Away) => active,
+        Some(Look::Away) => look == Look::On,
         Some(Look::On) => false,
-    })
+    }
 }
 
 /// A stream's pace in zooming its pane.
@@ -74,23 +75,12 @@ pub async fn zoom_shown(app: &Shared, page: &Arc<Page>, server: &Server, pane: &
         return true;
     }
     pace.refused_until = Some(Instant::now() + ZOOM_REFUSED);
-    if !zoomable(server, pane, &f.window).await {
+    let Some(client) = server.client(pane) else { return false };
+    if !zoomable(server, pane, &f.window).await || !take_zoom(app, page, server, &f.window) {
         return false;
     }
-    {
-        let mut g = app.sizes.0.lock();
-        let (me, look) = (page.id, page.state.lock().look);   // under the lock: pause is set before a handover (sizing::resize)
-        let win = g.entry((server.id(), f.window.clone())).or_default();
-        let holder = win.by.and_then(|id| viewers(app, server, &f.window).into_iter().find(|v| v.id == id)).map(|v| v.state.lock().look);
-        if look == Look::Hidden || !may_take(me, look == Look::On, win.by, holder) {
-            return false;
-        }
-        win.by = Some(me);
-    }
-    let mut answers = server.run_all_on(pane, vec![zoom_line(pane, f.zoomed)]).await;
-    if let Some(Err(e)) = answers.pop() {
-        tracing::warn!(event = "tmux.error", cmd = "resize-pane", msg = e);
-        page.send_json(&json!({"t": "sized", "sid": server.key(pane), "cols": f.width, "rows": f.height, "mine": false, "error": e}));
+    if let Err(e) = client.run(zoom_line(pane, f.zoomed)).await {
+        refused(page, &server.key(pane), f, "resize-pane", e);
         return false;
     }
     *pace = ZoomPace { zoomed_at: Some(Instant::now()), refused_until: None };
@@ -123,12 +113,11 @@ mod tests {
     /// AC-13: two pages never take a window's zoom from each other by themselves.
     #[test]
     fn a_zoom_goes_to_a_page_only_from_one_not_looking() {
-        assert!(may_take(1, false, None, None), "nobody holds it");
-        assert!(may_take(1, false, Some(1), Some(Look::Away)), "its own");
-        assert!(may_take(1, false, Some(2), None), "the holder shows something else");
-        assert!(may_take(1, false, Some(2), Some(Look::Hidden)), "the holder is put away");
-        assert!(may_take(1, true, Some(2), Some(Look::Away)), "the active page takes it from one out of focus");
-        assert!(!may_take(1, false, Some(2), Some(Look::Away)), "two pages out of focus: no fight");
-        assert!(!may_take(1, true, Some(2), Some(Look::On)), "two active pages: no fight; typing moves it");
+        assert!(may_take(Look::Away, None), "no other page in sight holds it");
+        assert!(may_take(Look::Away, Some(Look::Hidden)), "the holder is put away");
+        assert!(may_take(Look::On, Some(Look::Away)), "the active page takes it from one out of focus");
+        assert!(!may_take(Look::Away, Some(Look::Away)), "two pages out of focus: no fight");
+        assert!(!may_take(Look::On, Some(Look::On)), "two active pages: no fight; typing moves it");
+        assert!(!may_take(Look::Hidden, None), "a hidden page takes nothing");
     }
 }

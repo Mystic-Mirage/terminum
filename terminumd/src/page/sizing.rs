@@ -17,7 +17,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 use super::client::Shown;
-use super::zoom::{zoom_line, zoomable};
+use super::zoom::{may_take, zoom_line, zoomable};
 use super::Page;
 use crate::app::Shared;
 use crate::screen::frame::Fields;
@@ -37,12 +37,14 @@ fn bounded(cols: u16, rows: u16) -> (u16, u16) {
 
 /// Who sized which window: (server id, @window) -> its record.
 #[derive(Default)]
-pub struct Sizes(pub(super) Mutex<HashMap<(String, String), Win>>);
+pub struct Sizes(Mutex<HashMap<(String, String), Win>>);
 
 #[derive(Default, Clone)]
-pub(super) struct Win {
-    /// the page whose grid the window has, or whose shown pane it zoomed
-    pub(super) by: Option<u64>,
+struct Win {
+    /// the page whose grid the window has
+    by: Option<u64>,
+    /// the page whose shown pane terminumd zoomed
+    zoom_by: Option<u64>,
     /// window-size manual was set by terminumd
     manual: bool,
 }
@@ -74,7 +76,7 @@ pub(super) fn users_pane(server: &Server, pane: &str) -> bool {
 }
 
 /// Pages showing `window` of `server` now.
-pub(super) fn viewers(app: &Shared, server: &Server, window: &str) -> Vec<Arc<Page>> {
+fn viewers(app: &Shared, server: &Server, window: &str) -> Vec<Arc<Page>> {
     app.pages.all().into_iter().filter(|p| {
         let st = p.state.lock();
         st.shown.as_ref().is_some_and(|s| s.server.id() == server.id() && s.ctl.fields.lock().as_ref().is_some_and(|f| f.window == window))
@@ -92,28 +94,31 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
     let wait = {
         let mut st = page.state.lock();
         let now = Instant::now();
-        let last = st.resized_at.as_ref().filter(|(w, _)| why != Why::Open && *w == window).map(|(_, t)| *t);
+        let waiting = st.resized_at.as_mut().filter(|(w, _, _)| why != Why::Open && *w == window);
+        let last = waiting.as_ref().map(|(_, t, _)| *t);
         if last.is_some_and(|t| t > now) {
-            st.typed_waiting |= why == Why::Typed;
+            if let Some((_, _, typed)) = waiting {
+                *typed |= why == Why::Typed;
+            }
             return false; // one is waiting: it will do what this one would
         }
-        st.typed_waiting = false;
         let wait = last.map(|t| EVERY.saturating_sub(t.elapsed())).filter(|w| !w.is_zero());
-        st.resized_at = Some((window, now + wait.unwrap_or_default()));
+        st.resized_at = Some((window, now + wait.unwrap_or_default(), false));
         wait
     };
     if let Some(w) = wait {
         tokio::time::sleep(w).await;
     }
     let (view, inactive, why) = {
-        let mut st = page.state.lock();
-        let typed = std::mem::take(&mut st.typed_waiting);
+        let st = page.state.lock();
+        let typed = st.resized_at.as_ref().is_some_and(|(_, _, typed)| *typed);
         (st.view, !st.active(), if typed { Why::Typed } else { why })
     };
     if inactive {
         return false; // hidden while it waited: a hidden page sizes nothing
     }
     let (Some((server, pane, f)), Some(grid)) = (shown_window(page), view) else { return false };
+    let grid = (grid.0 as usize, grid.1 as usize);
     let (cols, rows) = target(grid, &f, why);
     let key = (server.id(), f.window.clone());
     let mut cmds = Vec::new();
@@ -134,10 +139,11 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
         }
         win.manual = true;
     }
-    // a claim that changed nothing and is not this page's grid (a split window only grows) leaves
-    // the window its holder's: else its holder's next view would be refused
-    if f.window_size != (cols, rows) || !f.whole() || (cols, rows) == (grid.0 as usize, grid.1 as usize) {
+    if (cols, rows) == grid {
         win.by = Some(page.id);
+    }
+    if !f.whole() {
+        win.zoom_by = Some(page.id);
     }
     {
         let mut g = app.sizes.0.lock();
@@ -152,8 +158,7 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
     let resized = server.key(&pane);   // the user may show another pane by the time tmux answers
     for a in server.run_all_on(&pane, cmds).await {
         if let Err(e) = a {
-            tracing::warn!(event = "tmux.error", cmd = "resize-window", msg = e);
-            page.send_json(&json!({"t": "sized", "sid": resized, "cols": f.width, "rows": f.height, "mine": false, "error": e}));
+            refused(page, &resized, &f, "resize-window", e);
             return false;
         }
     }
@@ -167,6 +172,25 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
         handover(app, page);                   // hidden while it resized: its handover came first and saw nothing to give
     }
     true
+}
+
+/// tmux refused to size or zoom the pane `sid`: said where it shows, and in the log.
+pub(super) fn refused(page: &Page, sid: &str, f: &Fields, cmd: &str, e: String) {
+    tracing::warn!(event = "tmux.error", cmd, msg = e);
+    page.send_json(&json!({"t": "sized", "sid": sid, "cols": f.width, "rows": f.height, "mine": false, "error": e}));
+}
+
+/// `page`'s stream takes `window`'s zoom, unless another page in sight keeps it (AC-13).
+pub(super) fn take_zoom(app: &Shared, page: &Page, server: &Server, window: &str) -> bool {
+    let mut g = app.sizes.0.lock();
+    let look = page.state.lock().look;   // under the lock: pause is set before a handover (`resize`)
+    let win = g.entry((server.id(), window.to_string())).or_default();
+    let holder = win.zoom_by.filter(|&id| id != page.id).and_then(|id| viewers(app, server, window).into_iter().find(|v| v.id == id)).map(|v| v.state.lock().look);
+    let yes = may_take(look, holder);
+    if yes {
+        win.zoom_by = Some(page.id);
+    }
+    yes
 }
 
 /// The window option marking a window of the user's that terminumd sized (AC-89).
@@ -189,13 +213,12 @@ async fn claim(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
         return false;
     }
     let key = (server.id(), f.window.clone());
-    let win = app.sizes.0.lock().get(&key).cloned().unwrap_or_default();
-    let (by, manual) = (win.by, win.manual);
+    let by = app.sizes.0.lock().get(&key).and_then(|w| w.by);
     let mine = by == Some(page.id);
     // free: nobody sizes it, or the page that does no longer shows it or is hidden (a locked phone, a tab in the background)
     let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && v.state.lock().active()));
     let view = page.state.lock().view.map(|(c, r)| (c as usize, r as usize));
-    if mine && manual && f.whole() && view == Some(f.window_size) {
+    if mine && f.whole() && view == Some(f.window_size) {
         return false;                                         // it has this page's grid already: the once-a-second slot stays free
     }
     (why != Why::View || free || mine) && resize(app, page, why).await
@@ -203,12 +226,11 @@ async fn claim(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
 
 /// The grid the window gets for `grid`: a window of several panes grows on any claim and shrinks
 /// only for typing: a phone that just looks would squeeze the panes the zoom hides (AC-13).
-fn target(grid: (u16, u16), f: &Fields, why: Why) -> (usize, usize) {
-    let (cols, rows) = (grid.0 as usize, grid.1 as usize);
+fn target(grid: (usize, usize), f: &Fields, why: Why) -> (usize, usize) {
     if f.panes > 1 && why != Why::Typed {
-        return (cols.max(f.window_size.0), rows.max(f.window_size.1));
+        return (grid.0.max(f.window_size.0), grid.1.max(f.window_size.1));
     }
-    (cols, rows)
+    grid
 }
 
 /// A claim on its own task: a resize that waits for its second never holds up the page's

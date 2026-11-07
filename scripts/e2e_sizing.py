@@ -135,16 +135,21 @@ def second_teammate(pane, mate):
     return made
 
 
+def narrow_frame(ws):
+    """A frame narrower than the page's 130 columns within a second."""
+    return ws.until(lambda m: m["t"] == "screen" and m.get("cols") != 130, 1)
+
+
 def split(t, pid, pane):
     """AC-13: the shown pane of a window of several panes is zoomed to fill it; old pages' fit and screenmode are ignored."""
     ws = open_pane(t, pid, 130, 40)
     settle(pane, "130x40")
     mate = teammate(pane)
-    narrow = ws.until(lambda m: m["t"] == "screen" and m.get("cols") != 130, 1)
+    narrow = narrow_frame(ws)
     check("AC-13 no frame goes out at the narrow width", narrow is None, narrow and narrow.get("cols"))
     check("AC-13 a split under the shown pane: it is zoomed and fills the window", until_filling(pane), tmux("list-panes", "-t", pane, "-F", "#{pane_id} #{pane_width}"))
     third = second_teammate(pane, mate)
-    narrow = ws.until(lambda m: m["t"] == "screen" and m.get("cols") != 130, 1)
+    narrow = narrow_frame(ws)
     check("AC-13 a second teammate: the zoom comes back, no frame at the narrow width", narrow is None and until_filling(pane), narrow and narrow.get("cols"))
     layout = tmux("display", "-p", "-t", pane, "#{window_layout}")
     check("AC-13 the window's layout stays its maker's: the leader's 30% (restore reads it)", "39x40" in layout and layout != tmux("display", "-p", "-t", pane, "#{window_visible_layout}"), layout)
@@ -239,7 +244,6 @@ def by_hand(ws, pane):
     session = tmux("display", "-p", "-t", pane, "#{session_name}").strip()
     tmux("select-window", "-t", pane)
     hand = subprocess.Popen(["tmux", "-L", SOCKET, "-C", "attach", "-t", session], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    mate = None
     try:
         time.sleep(0.3)
         mate = teammate(pane)
@@ -254,8 +258,7 @@ def by_hand(ws, pane):
             hand.terminate()
             hand.wait(5)
     check("AC-13 that client gone: the pane is zoomed", until_filling(pane), window_of(pane))
-    if mate:
-        tmux("kill-pane", "-t", mate)
+    tmux("kill-pane", "-t", mate)
     time.sleep(0.3)
 
 

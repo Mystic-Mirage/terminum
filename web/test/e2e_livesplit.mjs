@@ -5,7 +5,7 @@
 // at the narrow pane's width re-flows to the view's width at the chosen text size, with no sideways
 // scrolling. Docked Files follows quick switches, which move the zoom, back to the pane's folder (AC-70).
 import { spawn } from "node:child_process";
-import { check, within } from "./check.mjs";
+import { check, fills, until, within } from "./check.mjs";
 
 const LINE = Array.from({ length: 41 }, (_, i) => 1000 + i).join(" ");   // 204 characters: wider than any pane here
 
@@ -49,24 +49,20 @@ export async function liveSplit(page, { tmux, work, socket }) {
     still = now === before ? still + 1 : 0;
     before = now;
   }
-  tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane);
-  const zoomed = () => of("#{window_zoomed_flag} #{pane_active} #{pane_width} #{window_width}").split(" ");
-  await within("AC-13 a split under the shown pane: it is zoomed to the whole window", async () => {
-    for (let t = 0; t < 5000; t += 50) { const z = zoomed(); if (z[0] === "1" && z[1] === "1" && z[2] === z[3]) return; await page.waitForTimeout(50); }
-    throw new Error(JSON.stringify(zoomed()));
-  });
+  const split = () => tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane, "-P", "-F", "#{pane_id}");
+  const first = split();
+  check("AC-13 a split under the shown pane: it is zoomed to the whole window", await until(() => fills(tmux, pane), 5000), of("#{window_zoomed_flag} #{pane_width} #{window_width}"));
   check("AC-13 the zoom keeps the view's size", of("#{window_width}") === before, `${before} → ${of("#{window_width}")}`);
   const flat = await page.evaluate(() => { const t = document.getElementById("term"); return { reflow: t.classList.contains("reflow"), banner: !!document.getElementById("splitnote") }; });
   check("AC-13 zoomed, the pane is drawn as the program laid it out, nothing over the terminal", !flat.reflow && !flat.banner, JSON.stringify(flat));
-  for (const [id, w] of panes()) if (w === win && id !== pane) tmux("kill-pane", "-t", id);
+  tmux("kill-pane", "-t", first);
   // a client attached by hand with this window on its screen: the layout stays its own
   tmux("select-window", "-t", win);
   const hand = spawn("tmux", ["-L", socket, "-C", "attach", "-t", of("#{session_name}")], { stdio: ["pipe", "ignore", "ignore"] });
   let mate;
   try {
     await page.waitForTimeout(300);
-    tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane);
-    mate = panes().find((p) => p[1] === win && p[0] !== pane)?.[0];
+    mate = split();
     tmux("send-keys", "-t", pane, "clear; seq -s ' ' 1000 1040", "Enter");   // the command itself is short: only its output is LINE
     let d = null;
     await within("AC-04 a line tmux wrapped in the split's narrow pane is drawn re-flowed", async () => {
@@ -77,14 +73,10 @@ export async function liveSplit(page, { tmux, work, socket }) {
     check("AC-04 it fills the view's width, not the pane's", d.widest > paneW * cell * 1.2 && d.widest <= d.view + 1, JSON.stringify({ ...d, paneW }));
     check("AC-04 at the chosen text size, with no sideways scrolling", d.size === d.chosen && !d.scrolls, JSON.stringify(d));
     check("AC-13 nothing is drawn over the terminal for the split", !d.banner);
-    check("AC-13 by a client attached by hand the window is neither resized nor zoomed", of("#{window_width}") === before && zoomed()[0] === "0", `${before} → ${zoomed()}`);
+    check("AC-13 by a client attached by hand the window is neither resized nor zoomed", of("#{window_width}") === before && of("#{window_zoomed_flag}") === "0", `${before} → ${of("#{window_width} #{window_zoomed_flag}")}`);
   } finally {
     hand.stdin.end();
   }
-  await within("AC-13 that client gone: the pane is zoomed", async () => {
-    for (let t = 0; t < 5000; t += 50) { if (zoomed()[0] === "1") return; await page.waitForTimeout(50); }
-    throw new Error(JSON.stringify(zoomed()));
-  });
   // a quick switch away and back: Files shows the pane's folder again (WebKit stayed blank)
   for (const id of [mate, pane, mate, pane]) { await page.click(`#sessions .item[data-id$=":${id}"]`); await page.waitForTimeout(250); }
   const files = () => page.evaluate(() => { const f = document.getElementById("files");

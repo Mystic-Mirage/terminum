@@ -41,3 +41,9 @@ export const shownPane = async (page, { tmux, work }) => await page.evaluate(() 
 export const cleanup = () => {};
 /** playwright-core, ui/'s devDependency (PLAYWRIGHT_CORE may name another copy). */
 export const playwright = () => import(process.env.PLAYWRIGHT_CORE ?? new URL("../../ui/node_modules/playwright-core/index.mjs", import.meta.url).href);
+
+/** Whether `pane` is zoomed to the whole of its window (AC-13). */
+export function fills(tmux, pane) {
+  const [zoomed, active, width, whole] = tmux("display", "-p", "-t", pane, "#{window_zoomed_flag} #{pane_active} #{pane_width} #{window_width}").split(" ");
+  return zoomed === "1" && active === "1" && width === whole;
+}

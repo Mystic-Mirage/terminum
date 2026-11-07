@@ -42,10 +42,9 @@ pub struct State {
     pub last_new: Option<Instant>,
     /// typed, not yet handed to tmux
     pub queue: super::typing::Queue,
-    /// the window this page last resized and when (a window at most once a second, AC-13)
-    pub resized_at: Option<((String, String), Instant)>,
-    /// a key came while a resize waits for its second: that resize is for typing (AC-13)
-    pub typed_waiting: bool,
+    /// the window this page last resized, when, and whether a key came while that resize waits
+    /// for its second, which makes it one for typing (a window at most once a second, AC-13)
+    pub resized_at: Option<((String, String), Instant, bool)>,
 }
 
 /// How a page is looked at: `On` is the active page (in sight and, on a computer, focused), which

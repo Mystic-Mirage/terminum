@@ -18,7 +18,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { check, until } from "./check.mjs";
+import { check, fills, until } from "./check.mjs";
 import { watch } from "./e2e_widgetsteady.mjs";
 import { holdLock } from "./testrun.mjs";
 
@@ -129,12 +129,11 @@ async function quit(tmux, pane) {
  *  its pane is zoomed and it lays its input box out across the whole window; the box still takes keys. */
 async function teammate(tmux, pane, tui) {
   const mate = tmux("split-window", "-d", "-t", pane, "-h", "-l", "70%", "-P", "-F", "#{pane_id}");
-  const say = () => tmux("display", "-p", "-t", pane, "#{window_zoomed_flag} #{pane_active} #{pane_width} #{window_width}").split(" ");
-  const zoomed = await until(() => { const z = say(); return z[0] === "1" && z[1] === "1" && z[2] === z[3]; }, 5000);
-  check(`AC-13 real claude (${tui}): a teammate's split: its pane is zoomed to the window`, zoomed, say().join(" "));
+  const say = () => tmux("display", "-p", "-t", pane, "#{window_zoomed_flag} #{pane_active} #{pane_width} #{window_width}");
+  check(`AC-13 real claude (${tui}): a teammate's split: its pane is zoomed to the window`, await until(() => fills(tmux, pane), 5000), say());
   const rule = () => Math.max(0, ...tmux("capture-pane", "-p", "-t", pane).split("\n").map((l) => (l.match(/─+/) ?? [""])[0].length));
-  const across = await until(() => rule() >= Number(say()[3]) - 2, 5000);
-  check(`AC-13 real claude (${tui}): its input box runs across the window`, across, `${rule()} of ${say()[3]}`);
+  const across = await until(() => rule() >= Number(say().split(" ")[3]) - 2, 5000);
+  check(`AC-13 real claude (${tui}): its input box runs across the window`, across, `${rule()}: ${say()}`);
   tmux("send-keys", "-t", pane, "-l", "zoomkeys");
   const keys = await until(() => tmux("capture-pane", "-p", "-t", pane).includes("zoomkeys"), 5000);
   check(`AC-13 real claude (${tui}): zoomed, it takes keys`, keys);

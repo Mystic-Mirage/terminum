@@ -179,7 +179,7 @@ fn keep_limits(tx: &Transaction, project: &str, limits: Option<(f64, f64)>) -> R
     match limits {
         None => tx.execute("DELETE FROM project_limits WHERE project = ?1", [project]).map_err(sql)?,
         Some((warn, end)) => {
-            if !warn.is_finite() || !end.is_finite() || warn < 0.0 || end < 0.0 {
+            if warn < 0.0 || end < 0.0 {
                 return Err("A limit is a number of GiB, 0 for off.".to_string());
             }
             if end > 0.0 && warn > end {
@@ -191,16 +191,15 @@ fn keep_limits(tx: &Transaction, project: &str, limits: Option<(f64, f64)>) -> R
     Ok(())
 }
 
-/// Every project's limits, for the board's window.
-pub fn limits(tx: &Transaction) -> Result<Vec<Value>, String> {
-    rows(tx, "SELECT project, warn_gib, end_gib FROM project_limits", [], |r| Ok(json!({"project": r.get::<_, String>(0)?, "warn": r.get::<_, f64>(1)?, "end": r.get::<_, f64>(2)?})))
+/// Every project's limits: (project, warn, end).
+pub fn limits(tx: &Transaction) -> Result<Vec<(String, f64, f64)>, String> {
+    rows(tx, "SELECT project, warn_gib, end_gib FROM project_limits", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
 }
 
 async fn set_limits(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
-    let wanted = match (body["warn"].as_f64(), body["end"].as_f64(), body["warn"].is_null() && body["end"].is_null()) {
-        (Some(w), Some(e), _) => Ok(Some((w, e))),
-        (_, _, true) => Ok(None),
-        _ => Err("A limit is a number of GiB, 0 for off.".to_string()),
+    let wanted = match (&body["warn"], &body["end"]) {
+        (Value::Null, Value::Null) => Ok(None),
+        (w, e) => w.as_f64().zip(e.as_f64()).map(Some).ok_or_else(|| "A limit is a number of GiB, 0 for off.".to_string()),
     };
     let done = match wanted {
         Ok(limits) => store(&app, move |tx| keep_limits(tx, &project, limits).map(|()| json!({"ok": true}))).await,

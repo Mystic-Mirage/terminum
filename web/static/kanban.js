@@ -96,22 +96,26 @@ function sessionLine(t) {
   return line("stopped", s.agent ? "stopped, task open" : "no agent");
 }
 
+const cardBudget = (id) => [...cards.values()].flat().find((t) => t.id === id)?.budget_seconds;
+
 /** What its session uses and what stands idle in it (terminum-dispatcher.md AC-127 to AC-129): as of the last walk. */
 function usageWords(id) {
   const u = usage[id];
   if (!u) return "";
   const words = u.not_measured ? [u.not_measured] : [`CPU ${u.cpu}%`, `${u.gib} GiB`, `${u.minutes} min`];
+  const budget = cardBudget(id);
+  if (budget && u.budget_used !== undefined) words.unshift(`${Math.floor(u.budget_used / 60)} of ${budget / 60} min`);
   if (u.tokens) words.push(`${(u.tokens.input + u.tokens.output + u.tokens.cached).toLocaleString("en")} tokens`);
   else if (u.tokens === null) words.push("Tokens not known");
   for (const s of u.idle_subs ?? []) words.push(`idle: ${s.kind || "subagent"} ${s.id}`);
   return words.join(" · ");
 }
 
-function showUsage(c, t) {
-  const foot = c.querySelector(".cfoot"), words = usageWords(t.id), line = foot.querySelector(".cusage");
-  if (!words) return line?.remove();
-  if (line) line.textContent = words;
-  else foot.append(el("span", "cusage", words));
+function showUsage(c, id) {
+  const words = usageWords(id), line = c.querySelector(".cusage");
+  if (line?.textContent === words) return;
+  line?.remove();
+  if (words) c.querySelector(".cfoot").append(el("span", "cusage", words));
 }
 
 function showState(foot, t) {
@@ -148,10 +152,9 @@ function card(t) {
   foot.append(proj, el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   if (t.files) foot.append(el("span", "cfiles", `${t.files} file${t.files === 1 ? "" : "s"}`));
-  if (t.budget_seconds && t.budget_used !== undefined) foot.append(el("span", "cbudget", `${Math.floor(t.budget_used / 60)} of ${t.budget_seconds / 60} min`));
   showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
-  showUsage(c, t);
+  showUsage(c, t.id);
   showSession(c, t);
   c.addEventListener("click", () => openTask(t.id));
   c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) openTask(t.id); });
@@ -448,10 +451,7 @@ function listen() {
       else if (m.t === "taskmarks") { side.marks(m); needs.came(m); }
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
-        for (const t of [...cards.values()].flat()) {
-          const c = document.querySelector(`.card[data-id="${t.id}"]`);
-          if (c) showUsage(c, t);
-        }
+        for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
       }
       else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
       else if (m.t === "projects") { side.projects(m.items ?? [], m.order ?? []); clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }

@@ -19,14 +19,21 @@ pub const SUB_TELL: i64 = 600;
 pub const SUB_END: i64 = 1200;
 
 /// What a walk's reading of a session's memory says, by two walks in a row (AC-128).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Memory {
     pub gib: f64,
-    pub warn_gib: f64,
     pub end_gib: f64,
-    /// walks in a row over the warning, and over the end
-    pub over_warn: u32,
-    pub over_end: u32,
+    pub warn_due: bool,
+    pub end_due: bool,
+}
+
+impl Memory {
+    /// This walk's reading against the limits, 0 being off; `over`: the walks in a row each was passed.
+    pub fn read(gib: f64, warn_gib: f64, end_gib: f64, over: &mut (u32, u32)) -> Memory {
+        over.0 = if warn_gib > 0.0 && gib > warn_gib { over.0 + 1 } else { 0 };
+        over.1 = if end_gib > 0.0 && gib > end_gib { over.1 + 1 } else { 0 };
+        Memory { gib, end_gib, warn_due: over.0 >= 2, end_due: over.1 >= 2 }
+    }
 }
 
 /// What this walk read of the run's pane.
@@ -80,6 +87,13 @@ pub fn warn_at(total: i64) -> i64 {
 
 pub fn finished(status: &str) -> bool {
     matches!(status, "DONE" | "FAILED")
+}
+
+/// The task fails first, so the end Dispatcher causes counts for nothing; then the agent ends.
+fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
+    run.state = "gone".into();
+    acts.push(Act::Move { to: "FAILED", words });
+    acts.push(Act::End);
 }
 
 /// The walk's step for `run`: its clocks change here, what is to be done comes back.
@@ -170,12 +184,10 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         }
         let left = total - run.budget_used;
         if left <= 0 && !run.held {
-            run.state = "gone".into();
             if !run.warned {
                 acts.push(Act::Say("No warning could be given before the limit.".into()));
             }
-            acts.push(Act::Move { to: "FAILED", words: format!("Time budget of {} minutes used: the agent was ended.", total / 60) });
-            acts.push(Act::End);
+            end_failed(run, &mut acts, format!("Time budget of {} minutes used: the agent was ended.", total / 60));
             return acts;
         }
         if !run.warned && left <= warn_at(total) {
@@ -185,13 +197,11 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     }
     // what it consumes: two walks in a row, as summed memory counts shared pages many times (AC-128)
     if let Some(m) = f.memory.as_ref().filter(|_| alive && !finished(&run.status)) {
-        if m.end_gib > 0.0 && m.over_end >= 2 && free {
-            run.state = "gone".into();
-            acts.push(Act::Move { to: "FAILED", words: format!("Memory limit of {} GiB exceeded: {:.1} GiB", m.end_gib, m.gib) });
-            acts.push(Act::End);
+        if m.end_due && free {
+            end_failed(run, &mut acts, format!("Memory limit of {} GiB exceeded: {:.1} GiB", m.end_gib, m.gib));
             return acts;
         }
-        if m.warn_gib > 0.0 && m.over_warn >= 2 && !run.memory_warned {
+        if m.warn_due && !run.memory_warned {
             run.memory_warned = true;
             acts.push(Act::MemoryWarn(m.gib));
         }
@@ -221,24 +231,20 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     acts
 }
 
-/// What becomes of a subagent silent for `silent` seconds, as far as it was told.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// How far a subagent has been dealt with, by how long it has been silent and idle (AC-127). A busy
+/// tree, or an open tool, runs neither clock: the caller does not ask.
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub enum SubStep {
+    #[default]
     Nothing,
     Tell,
     CannotEnd,
 }
 
-/// `told`: how far this subagent has got: 0, 1 asked, 2 said it cannot be ended. A busy tree, or an
-/// open tool, runs neither clock: the caller does not ask (AC-127).
-pub fn subagent_step(silent: i64, told: u8) -> SubStep {
-    if silent >= SUB_END && told < 2 {
-        SubStep::CannotEnd
-    } else if silent >= SUB_TELL && told < 1 {
-        SubStep::Tell
-    } else {
-        SubStep::Nothing
-    }
+/// The step `silent` seconds reach; it is done once, when it passes what was `told`.
+pub fn subagent_step(silent: i64, told: SubStep) -> Option<SubStep> {
+    let reached = if silent >= SUB_END { SubStep::CannotEnd } else if silent >= SUB_TELL { SubStep::Tell } else { SubStep::Nothing };
+    (reached > told).then_some(reached)
 }
 
 #[cfg(test)]

@@ -4,8 +4,9 @@
 //! so what came meanwhile (a human's move, a hook) stands. Typing and closing come after it.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::plan::{self, Act, Facts};
 use super::runs::{self, Run};
@@ -65,7 +66,6 @@ struct Read {
     id: String,
     facts: Facts,
     ended: bool,
-    used: i64,
 }
 
 /// What the transaction left to do outside it.
@@ -74,13 +74,13 @@ struct Later {
     act: Act,
 }
 
-/// What a beat's transaction leaves: acts, tasks changed, tasks whose minutes a card shows.
-type Walked = (Vec<Later>, Vec<String>, Vec<String>);
+/// What a beat's transaction leaves: acts, tasks changed, seconds of budget used by task.
+type Walked = (Vec<Later>, Vec<String>, HashMap<String, i64>);
 
 /// In one transaction: every run as it stands now, its clocks, what `plan` says. Moves and words are
 /// done here; what is not written is not done (AC-131).
 fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<Walked, String> {
-    let (mut later, mut changed, mut minutes) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     let live: HashMap<String, Run> = runs::live(tx)?.into_iter().map(|r| (r.id.clone(), r)).collect();
     for read in reads {
         let Some(mut r) = live.get(&read.id).cloned() else { continue };
@@ -105,9 +105,8 @@ fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<
         if seen > GAP {
             acts.push(Act::Say(format!("Clocks paused {} minutes: no walk saw them pass", seen / 60)));
         }
-        // a card shows the time used: every page hears once a minute
-        if r.budget.is_some() && (r.budget_used / 60) != (read.used / 60) {
-            minutes.push(r.task_id.clone());
+        if r.budget.is_some() {
+            used.insert(r.task_id.clone(), r.budget_used);
         }
         runs::save(tx, &r)?;
         if facts.pane && !facts.marked {
@@ -128,7 +127,7 @@ fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<
             }
         }
     }
-    Ok((later, changed, minutes))
+    Ok((later, changed, used))
 }
 
 /// Closes the pane: its mark checked just before; with no result the screen's last 200 rows stay on
@@ -162,33 +161,55 @@ async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words:
     }
 }
 
-/// The agent and what runs under it: the pane's mark checked just before (AC-126).
+/// The agent and what runs under it, tmux's word taken just before: its mark, and no exit recorded,
+/// as a program a human then starts at the shell it leaves is none of this (AC-126). A `ps` that does
+/// not answer is tried again; what could not be ended is said.
 async fn end_agent(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str) {
-    if start::is_marked(server, pane, &run.id).await.is_err() {
-        return;
+    let grace = (Duration::from_secs(10) / scale() as u32).max(Duration::from_millis(500));
+    let mut why = String::new();
+    for _ in 0..3 {
+        let said = server.run(format!("display -p -t {pane} '#{{@terminum-run}}\t#{{@terminum-exit}}\t#{{pane_pid}}'")).await.unwrap_or_default();
+        let fields: Vec<&str> = said.first().map_or(Vec::new(), |l| l.split('\t').collect());
+        let ([mark, exit, root], true) = (<[&str; 3]>::try_from(fields.as_slice()).unwrap_or(["", "", ""]), !said.is_empty()) else { return };
+        if mark != run.id || !exit.is_empty() {
+            return;                                    // it has gone by itself, or the pane is no more this run's
+        }
+        match procs::end(app, server, root, grace).await {
+            Ok(n) => {
+                tracing::info!(event = "dispatcher.end", task = %run.task_id, signalled = n);
+                return;
+            }
+            Err(e) => why = e,
+        }
+        tokio::time::sleep((BEAT / scale() as u32).max(Duration::from_millis(500))).await;
     }
-    let Ok(said) = server.run(format!("display -p -t {pane} '#{{pane_pid}}'")).await else { return };
-    let Some(root) = said.first().cloned() else { return };
-    procs::end(app, server, &root, (Duration::from_secs(10) / scale() as u32).max(Duration::from_millis(500))).await;
+    let (r, words) = (run.clone(), format!("The agent could not be ended: {why}. It may still run."));
+    tracing::warn!(event = "dispatcher.end", task = %run.task_id, error = %why);
+    let _ = store(app, move |tx| say(tx, &r, &words)).await;
+    crate::tasks::api::told(app, &run.task_id);
 }
 
 /// Words for the agent: on its next tool call while it works, through the gate while it idles.
-async fn tell(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, text: String, what: &str) {
+pub(super) async fn tell(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, text: String, what: &str) {
     let key = server.key(pane);
-    let words = if app.hooks.working(&key) || run.open_tools > 0 {
-        app.task_lines.push(&key, &run.task_id, text);
-        format!("{what} waits for the agent's next tool call.")
-    } else {
-        match gate::deliver(app, run, server, pane, &text, false).await {
-            Ok(()) => format!("{what} was given."),
-            Err(why) => {
-                app.task_lines.push(&key, &run.task_id, text);
-                format!("{what} waits for the agent's next tool call: {why}.")
+    let sent = if app.hooks.working(&key) || run.open_tools > 0 { Err(None) } else { gate::deliver(app, run, server, pane, &text, false).await.map_err(Some) };
+    let words = match sent {
+        Ok(()) => format!("{what} was given."),
+        Err(why) => {
+            app.task_lines.push(&key, &run.task_id, text);
+            match why {
+                Some(why) => format!("{what} waits for the agent's next tool call: {why}."),
+                None => format!("{what} waits for the agent's next tool call."),
             }
         }
     };
     let r = run.clone();
     let _ = store(app, move |tx| say(tx, &r, &words)).await;
+}
+
+/// A line every open page shows for a moment.
+fn note(app: &Shared, msg: String) {
+    app.pages.tell(&serde_json::json!({"t": "note", "msg": msg}).to_string());
 }
 
 async fn do_later(app: &Shared, l: Later) {
@@ -203,7 +224,7 @@ async fn do_later(app: &Shared, l: Later) {
         Act::MemoryWarn(gib) => {
             let text = format!("[terminum Dispatcher] {task}: its session uses {gib:.1} GiB of memory. End what it does not need.");
             tell(app, &l.run, &server, &pane, text, "The memory warning").await;
-            app.pages.tell(&serde_json::json!({"t": "note", "msg": format!("{task}'s session uses {gib:.1} GiB of memory")}).to_string());
+            note(app, format!("{task}'s session uses {gib:.1} GiB of memory"));
             Ok(())
         }
         Act::End => {
@@ -239,19 +260,18 @@ async fn do_later(app: &Shared, l: Later) {
 /// ended alone: it runs inside the agent (AC-127, OQ-122). A busy tree runs neither clock.
 async fn watch_subagents(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, key: &str, busy: bool) {
     let due: Vec<(String, plan::SubStep)> = {
-        let mut subs = app.dispatcher.subs.lock();
-        let Some(of_pane) = subs.get_mut(key) else { return };
-        of_pane.iter_mut().filter_map(|(id, sub)| {
-            if busy || run.open_tools > 0 {
-                sub.last = std::time::Instant::now();
-                return None;
+        let mut watch = app.dispatcher.watch.lock();
+        let Some(w) = watch.get_mut(key) else { return };
+        if busy || run.open_tools > 0 {
+            for sub in w.subs.values_mut() {
+                sub.last = Instant::now();
             }
-            let step = plan::subagent_step(sub.last.elapsed().as_secs() as i64 * scale(), sub.told);
-            match step {
-                plan::SubStep::Nothing => None,
-                plan::SubStep::Tell => { sub.told = 1; Some((id.clone(), step)) }
-                plan::SubStep::CannotEnd => { sub.told = 2; Some((id.clone(), step)) }
-            }
+            return;
+        }
+        w.subs.iter_mut().filter_map(|(id, sub)| {
+            let step = plan::subagent_step(sub.last.elapsed().as_secs() as i64 * scale(), sub.told)?;
+            sub.told = step;
+            Some((id.clone(), step))
         }).collect()
     };
     for (id, step) in due {
@@ -259,35 +279,74 @@ async fn watch_subagents(app: &Shared, run: &Run, server: &Arc<Server>, pane: &s
             let text = format!("[terminum Dispatcher] A subagent of {} has been silent for 10 minutes. End it if it is stuck.", run.task_id);
             tell(app, run, server, pane, text, "The request about a silent subagent").await;
         } else {
-            let (r, words) = (run.clone(), format!("Subagent {} cannot be ended alone: it runs inside the agent", crate::plans::rules::clean(&id)));
-            app.pages.tell(&serde_json::json!({"t": "note", "msg": format!("{}: {words}", run.task_id)}).to_string());
+            let (r, words) = (run.clone(), format!("Subagent {id} cannot be ended alone: it runs inside the agent"));
+            note(app, format!("{}: {words}", run.task_id));
             let _ = store(app, move |tx| say(tx, &r, &words)).await;
         }
         crate::tasks::api::told(app, &run.task_id);
     }
 }
 
-/// What a project's session may use: its project's limits where set, else the global ones (AC-128).
-fn limits_of(tx: &rusqlite::Transaction) -> Result<HashMap<String, (f64, f64)>, String> {
-    Ok(ops::rows(tx, "SELECT project, warn_gib, end_gib FROM project_limits", [], |r| Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?))))?.into_iter().collect())
+/// What one walk read of a server: its panes, and what runs under them, if asked and answered.
+struct Seen {
+    panes: Option<HashMap<String, Pane>>,
+    tree: Option<procs::Tree>,
+    /// its `ps` was not asked this beat: a host with no run is read less often
+    skipped: bool,
 }
 
-/// A line of `taskusage`: what a card shows of its session (AC-128, AC-129).
-fn usage_line(app: &Shared, key: &str, seen: Option<(f64, procs::Under)>, far: bool) -> serde_json::Value {
-    let tokens = app.dispatcher.tokens.lock().get(key).cloned();
-    let idle: Vec<serde_json::Value> = app.dispatcher.subs.lock().get(key).map(|m| m.iter().filter(|(_, s)| s.told > 0).map(|(id, s)| serde_json::json!({"id": crate::plans::rules::clean(id), "kind": crate::plans::rules::clean(&s.kind)})).collect()).unwrap_or_default();
+/// A host with no run of Dispatcher's is read one beat in this many, and only with a page open.
+const IDLE_HOST_BEATS: u64 = 4;
+
+/// Every wanted pane's server: its list first, and only where one stands its `ps`, so a stale link
+/// or a dead host costs no ssh; each on its own time, a slow host delaying only itself.
+async fn read_servers(app: &Shared, wanted: &[String], with_run: &HashSet<String>) -> HashMap<String, Seen> {
+    let servers: HashMap<String, Arc<Server>> = wanted.iter().filter_map(|k| app.tmux.resolve(k)).map(|(s, _)| (s.id(), s)).collect();
+    let beat = app.dispatcher.beat.fetch_add(1, Ordering::Relaxed);
+    let read = servers.into_values().map(|server| async move {
+        let panes = panes_of(&server).await;
+        let wants = panes.as_ref().is_some_and(|list| wanted.iter().filter_map(|k| app.tmux.resolve(k)).any(|(s, p)| s.id() == server.id() && list.contains_key(&p)));
+        let due = server.is_local() || with_run.contains(&server.id()) || (beat.is_multiple_of(IDLE_HOST_BEATS) && app.pages.count() > 0);
+        let tree = if wants && due { procs::read(app, &server).await } else { None };
+        (server.id(), Seen { panes, tree, skipped: wants && !due })
+    });
+    futures_util::future::join_all(read).await.into_iter().collect()
+}
+
+/// What a card shows of its session (AC-128, AC-129): as of this walk, with its budget's time.
+fn usage_line(app: &Shared, key: &str, seen: &Seen, pane: &str, used: Option<i64>) -> serde_json::Value {
+    let mut watch = app.dispatcher.watch.lock();
+    let w = watch.entry(key.to_string()).or_default();
+    let idle: Vec<serde_json::Value> = w.subs.iter().filter(|(_, s)| s.told != plan::SubStep::Nothing).map(|(id, s)| serde_json::json!({"id": id, "kind": s.kind})).collect();
     let mut v = serde_json::json!({"idle_subs": idle});
-    if let Some(t) = tokens {
-        v["tokens"] = t;
+    if let Some(t) = &w.tokens {
+        v["tokens"] = t.clone();
     }
-    match seen {
-        Some((cpu, u)) => {
+    if let Some(used) = used {
+        v["budget_used"] = serde_json::json!(used);
+    }
+    if seen.skipped {
+        if let Some(last) = &w.line {
+            for k in ["cpu", "gib", "minutes", "not_measured"] {
+                if !last[k].is_null() {
+                    v[k] = last[k].clone();
+                }
+            }
+        }
+        return v;
+    }
+    let under = seen.panes.as_ref().and_then(|l| l.get(pane)).zip(seen.tree.as_ref()).map(|(p, t)| procs::under(t, &p.pid));
+    match under {
+        Some(u) => {
+            let now = Instant::now();
+            let cpu = w.cpu.replace((u.cpu, now)).map_or(0.0, |(was, at)| (u.cpu - was).max(0.0) / at.elapsed().as_secs_f64().max(0.1) * 100.0);
             v["cpu"] = serde_json::json!(cpu.round());
-            v["gib"] = serde_json::json!((u.rss_kib as f64 / 1_048_576.0 * 10.0).round() / 10.0);
+            v["gib"] = serde_json::json!((u.gib() * 10.0).round() / 10.0);
             v["minutes"] = serde_json::json!(u.age / 60);
         }
-        None => v["not_measured"] = serde_json::json!(if far { "Host out of reach" } else { "Not measured: ps did not answer" }),
+        None => v["not_measured"] = serde_json::json!(if seen.panes.is_none() { "Host out of reach" } else { "Not measured: ps did not answer" }),
     }
+    w.line = Some(v.clone());
     v
 }
 
@@ -296,23 +355,18 @@ async fn walk(app: &Shared) {
     let Ok((all, linked, limits)) = store(app, |tx| Ok((
         runs::live(tx)?,
         ops::rows(tx, "SELECT 'T-' || number, session_key FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?,
-        limits_of(tx)?,
+        crate::tasks::agents::limits(tx)?,
     ))).await else { return };
     *app.dispatcher.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
     if all.is_empty() && linked.is_empty() {
         return;
     }
+    let limits: HashMap<String, (f64, f64)> = limits.into_iter().map(|(project, warn, end)| (project, (warn, end))).collect();
     let (global_warn, global_end) = { let s = app.looks.settings.read(); (s.memory_warn_gib, s.memory_end_gib) };
-    let keys = all.iter().filter_map(|r| r.pane_key.clone()).chain(linked.iter().map(|(_, k)| k.clone()));
-    let servers: HashMap<String, Arc<Server>> = keys.filter_map(|k| app.tmux.resolve(&k)).map(|(s, _)| (s.id(), s)).collect();
-    let read = futures_util::future::join_all(servers.values().map(|s| async move { (s.id(), panes_of(s).await, procs::read(app, s).await) })).await;
-    let (mut lists, mut trees) = (HashMap::new(), HashMap::new());
-    for (id, list, tree) in read {
-        lists.insert(id.clone(), list);
-        trees.insert(id, tree);
-    }
+    let with_run: HashSet<String> = all.iter().filter_map(|r| r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k))).map(|(s, _)| s.id()).collect();
+    let wanted: Vec<String> = all.iter().filter_map(|r| r.pane_key.clone()).chain(linked.iter().map(|(_, k)| k.clone())).collect();
+    let seen = read_servers(app, &wanted, &with_run).await;
     let now = ops::now();
-    let beat_seconds = (BEAT.as_secs() as f64 / scale() as f64).max(0.2);
     let (mut reads, mut subagents) = (Vec::new(), Vec::new());
     for r in &all {
         if r.is_starting() {
@@ -321,36 +375,33 @@ async fn walk(app: &Shared) {
         }
         // no server for its key, or out of reach: nothing is known of its pane, and no clock runs (AC-130)
         let Some((server, pane)) = r.pane_key.as_deref().and_then(|k| app.tmux.resolve(k)) else { continue };
-        let Some(Some(list)) = lists.get(&server.id()) else { continue };
+        let Some(s) = seen.get(&server.id()) else { continue };
+        let Some(list) = &s.panes else { continue };
         let key = server.key(&pane);
         let p = list.get(&pane);
-        let measured = trees.get(&server.id()).and_then(|t| t.as_ref()).zip(p).map(|(t, p)| procs::under(t, &p.pid));
+        let measured = s.tree.as_ref().zip(p).map(|(t, p)| procs::under(t, &p.pid));
         // ps did not answer: the agent stands while tmux says no exit, and no limit fires on missing numbers
         let under = measured.as_ref().map_or(p.is_some_and(|p| p.exit.is_none()), |u| u.any);
-        let busy = measured.as_ref().is_some_and(|u| {
-            let mut last = app.dispatcher.cpu.lock();
-            let was = last.insert(r.id.clone(), u.cpu).unwrap_or(u.cpu);
-            u.cpu - was >= CPU_ACTIVE / scale() as f64
-        });
+        let (busy, memory) = {
+            let mut watch = app.dispatcher.watch.lock();
+            let w = watch.entry(key.clone()).or_default();
+            let busy = measured.as_ref().is_some_and(|u| w.cpu.is_some_and(|(was, _)| u.cpu - was >= CPU_ACTIVE / scale() as f64));
+            let memory = measured.as_ref().map(|u| {
+                let (warn, end) = limits.get(&r.project).copied().unwrap_or((global_warn, global_end));
+                plan::Memory::read(u.gib(), warn, end, &mut w.over)
+            });
+            (busy, memory)
+        };
         let (waiting, failed, ended) = match listed(app, &key) {
             Listed::Waiting(why) => (Some(why), None, false),
             Listed::Failed(why) => (None, Some(why), false),
             Listed::TurnEnded => (None, None, true),
             Listed::Other => (None, None, false),
         };
-        // after its agent, anything running there is a human's: in front, or stopped behind the shell
-        let program = p.filter(|p| p.exit.is_some()).and_then(|p| {
-            if !is_shell(&p.command) { Some(p.command.clone()) } else if under { Some("a job of its shell".to_string()) } else { None }
-        });
-        let memory = measured.as_ref().map(|u| {
-            let gib = u.rss_kib as f64 / 1_048_576.0;
-            let (warn_gib, end_gib) = limits.get(&r.project).copied().unwrap_or((global_warn, global_end));
-            let mut over = app.dispatcher.over.lock();
-            let count = over.entry(r.id.clone()).or_default();
-            count.0 = if warn_gib > 0.0 && gib > warn_gib { count.0 + 1 } else { 0 };
-            count.1 = if end_gib > 0.0 && gib > end_gib { count.1 + 1 } else { 0 };
-            plan::Memory { gib, warn_gib, end_gib, over_warn: count.0, over_end: count.1 }
-        });
+        // after its agent, what runs in front is a human's: it stays theirs. A job behind the shell keeps
+        // the 2 hours from running: a prompt's own helpers come and go, and must not leave it open for good
+        let program = p.filter(|p| p.exit.is_some() && !is_shell(&p.command)).map(|p| p.command.clone());
+        let job = under && p.is_some_and(|p| p.exit.is_some());
         let facts = Facts {
             pane: p.is_some(),
             marked: p.is_some_and(|p| p.mark == r.id),
@@ -358,7 +409,7 @@ async fn walk(app: &Shared) {
             alive: under && p.is_some_and(|p| p.exit.is_none()),
             waiting,
             failed,
-            active: app.dispatcher.take_active(&key) || busy,
+            active: app.dispatcher.take_active(&key) || busy || job,
             program,
             memory,
             ..Default::default()
@@ -366,17 +417,14 @@ async fn walk(app: &Shared) {
         if facts.alive {
             subagents.push((r.clone(), server.clone(), pane.clone(), key, busy));
         }
-        reads.push(Read { id: r.id.clone(), facts, ended, used: r.budget_used });
+        reads.push(Read { id: r.id.clone(), facts, ended });
     }
-    let (later, changed, minutes) = match store(app, move |tx| walk_store(tx, reads, now)).await {
+    let (later, changed, used) = match store(app, move |tx| walk_store(tx, reads, now)).await {
         Ok(done) => done,
         Err(e) => return tracing::warn!(event = "dispatcher.walk", error = %e),
     };
     for task in changed.into_iter().collect::<HashSet<_>>() {
         crate::tasks::api::told(app, &task);
-    }
-    for task in minutes {
-        crate::tasks::api::change_heard(app, &task);
     }
     for l in later {
         do_later(app, l).await;
@@ -388,19 +436,16 @@ async fn walk(app: &Shared) {
     let mut items = serde_json::Map::new();
     for (task, key) in linked {
         let Some((server, pane)) = app.tmux.resolve(&key) else { continue };
-        let Some(list) = lists.get(&server.id()) else { continue };
-        let far = list.is_none();
-        if list.as_ref().is_some_and(|l| !l.contains_key(&pane)) {
+        let Some(s) = seen.get(&server.id()) else { continue };
+        if s.panes.as_ref().is_some_and(|l| !l.contains_key(&pane)) {
             continue;
         }
-        let seen = list.as_ref().and_then(|l| l.get(&pane)).zip(trees.get(&server.id()).and_then(|t| t.as_ref())).map(|(p, t)| {
-            let u = procs::under(t, &p.pid);
-            let mut last = app.dispatcher.usage_cpu.lock();
-            let was = last.insert(key.clone(), u.cpu).unwrap_or(u.cpu);
-            ((u.cpu - was).max(0.0) / beat_seconds * 100.0, u)
-        });
-        items.insert(task, usage_line(app, &key, seen, far));
+        let line = usage_line(app, &key, s, &pane, used.get(&task).copied());
+        items.insert(task, line);
     }
+    // what no walk watches any more goes with it
+    let kept: HashSet<&str> = wanted.iter().map(String::as_str).collect();
+    app.dispatcher.watch.lock().retain(|k, _| kept.contains(k.as_str()));
     let message = serde_json::json!({"t": "taskusage", "items": items}).to_string();
     let mut told = app.dispatcher.usage.lock();
     if *told != message {
@@ -418,7 +463,7 @@ pub async fn run(app: Shared) {
         let a = app.clone();
         if let Err(e) = tokio::spawn(async move { walk(&a).await }).await {
             tracing::error!(event = "dispatcher.panic", error = %e);
-            app.pages.tell(&serde_json::json!({"t": "note", "msg": "Dispatcher's walk failed: see terminumd's log. It goes on at the next beat."}).to_string());
+            note(&app, "Dispatcher's walk failed: see terminumd's log. It goes on at the next beat.".to_string());
         }
         tokio::select! {
             () = tokio::time::sleep((BEAT / scale() as u32).max(Duration::from_millis(200))) => {}

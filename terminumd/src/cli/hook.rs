@@ -45,6 +45,14 @@ pub fn main(agent: &str) -> i32 {
             // a closed stdout is the agent's choice: never a panic, still 0
             let _ = writeln!(std::io::stdout().lock(), "{line}");
         }
+        // a task's session: the transcript is read after its turn's end has gone, so nothing waits on it
+        let asked = answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["tokens"] == true));
+        if asked && let Some(tokens) = super::hooktokens::of_event(agent, &input) {
+            let mut said = ev.clone();
+            said["event"] = json!("Tokens");
+            said["tokens"] = tokens;
+            let _ = super::sinks::post_all(&super::sinks::all(), "/hook", &said, BUDGET);
+        }
     }
     0
 }
@@ -147,9 +155,6 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
     // one bit of its last message: the message itself stays here (AC-39)
     if name == "Stop" && input.get("last_assistant_message").and_then(Value::as_str).is_some_and(ends_asking) {
         out.insert("asks".into(), json!(true));
-    }
-    if matches!(name.as_str(), "Stop" | "SessionEnd") && let Some(tokens) = super::hooktokens::of_event(agent, input) {
-        out.insert("tokens".into(), tokens);
     }
     if let Some(p) = super::hookplan::plan(input) {
         out.insert("plan".into(), p);

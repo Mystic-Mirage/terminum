@@ -3,7 +3,7 @@
 //! its own machine within `terminum hook`'s time. Three integers leave it: no path, no text.
 
 use std::collections::HashMap;
-use std::io::BufRead;
+use std::io::{BufRead, Seek, SeekFrom};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 /// Past these it says nothing rather than overrun the hook's 3 s.
 const MOST_BYTES: u64 = 256 << 20;
 const MOST_TIME: Duration = Duration::from_millis(1500);
+const CODEX_TAIL: u64 = 1 << 20;
 
 #[derive(Default, Clone, Copy)]
 struct Sum {
@@ -23,48 +24,40 @@ fn int(v: &Value, key: &str) -> u64 {
     v[key].as_u64().unwrap_or(0)
 }
 
-/// Claude Code's lines: `message.usage` per message; a message comes in several lines, the last stands.
-fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
-    let mut by_message: HashMap<String, Sum> = HashMap::new();
-    let mut unnamed = Sum::default();
-    for line in reader.lines() {
+/// Each line holding `needle`, parsed, to `each`; past `until`: None.
+fn each_line(reader: impl BufRead, until: Instant, needle: &str, mut each: impl FnMut(usize, &Value)) -> Option<()> {
+    for (at, line) in reader.lines().enumerate() {
         let line = line.ok()?;
         if Instant::now() >= until {
             return None;
         }
-        if !line.contains("\"usage\"") {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
-        let Some(u) = v.pointer("/message/usage") else { continue };
-        let s = Sum { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cached: int(u, "cache_read_input_tokens") + int(u, "cache_creation_input_tokens") };
-        match v.pointer("/message/id").and_then(Value::as_str) {
-            Some(id) => { by_message.insert(id.to_string(), s); }
-            None => { unnamed.input += s.input; unnamed.output += s.output; unnamed.cached += s.cached; }
+        if line.contains(needle) && let Ok(v) = serde_json::from_str::<Value>(&line) {
+            each(at, &v);
         }
     }
-    if by_message.is_empty() && unnamed.input + unnamed.output == 0 {
-        return None;
-    }
-    Some(by_message.values().fold(unnamed, |a, s| Sum { input: a.input + s.input, output: a.output + s.output, cached: a.cached + s.cached }))
+    Some(())
+}
+
+/// Claude Code's lines: `message.usage` per message; a message comes in several lines, the last stands.
+fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
+    let mut by_message: HashMap<String, Sum> = HashMap::new();
+    each_line(reader, until, "\"usage\"", |at, v| {
+        if let Some(u) = v.pointer("/message/usage") {
+            let id = v.pointer("/message/id").and_then(Value::as_str).map_or_else(|| at.to_string(), str::to_string);
+            by_message.insert(id, Sum { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cached: int(u, "cache_read_input_tokens") + int(u, "cache_creation_input_tokens") });
+        }
+    })?;
+    (!by_message.is_empty()).then(|| by_message.values().fold(Sum::default(), |a, s| Sum { input: a.input + s.input, output: a.output + s.output, cached: a.cached + s.cached }))
 }
 
 /// Codex's lines: a `token_count` event holds the session's total; the last stands.
 fn codex(reader: impl BufRead, until: Instant) -> Option<Sum> {
     let mut last = None;
-    for line in reader.lines() {
-        let line = line.ok()?;
-        if Instant::now() >= until {
-            return None;
-        }
-        if !line.contains("token_count") {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+    each_line(reader, until, "token_count", |_, v| {
         if let Some(u) = v.pointer("/payload/info/total_token_usage") {
             last = Some(Sum { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cached: int(u, "cached_input_tokens") });
         }
-    }
+    })?;
     last
 }
 
@@ -74,12 +67,20 @@ pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
     let path = input.get("transcript_path").and_then(Value::as_str)?;
     let until = Instant::now() + MOST_TIME;
     let read = || -> Option<Sum> {
-        let file = std::fs::File::open(path).ok()?;
-        if file.metadata().ok()?.len() > MOST_BYTES {
-            return None;
+        // a regular file: a FIFO or a device named there would block past any limit
+        let meta = std::fs::metadata(path).ok().filter(|m| m.is_file() && m.len() <= MOST_BYTES)?;
+        let mut file = std::fs::File::open(path).ok()?;
+        if agent == "codex" {
+            // the last total stands: the end of the file holds it, at no cost as a session grows
+            file.seek(SeekFrom::Start(meta.len().saturating_sub(CODEX_TAIL))).ok()?;
+            let tail = codex(std::io::BufReader::new(&file), until);
+            if tail.is_some() {
+                return tail;
+            }
+            file.seek(SeekFrom::Start(0)).ok()?;
+            return codex(std::io::BufReader::new(&file), until);
         }
-        let reader = std::io::BufReader::new(file);
-        if agent == "codex" { codex(reader, until) } else { claude(reader, until) }
+        claude(std::io::BufReader::new(file), until)
     };
     Some(read().map_or(Value::Null, |s| json!({"input": s.input, "output": s.output, "cached": s.cached})))
 }
@@ -118,6 +119,7 @@ mod tests {
     fn ac129_what_cannot_be_read_is_said_as_not_known() {
         assert_eq!(of_event("claude", &json!({})), None, "no transcript named: nothing to say");
         assert_eq!(of_event("claude", &json!({"transcript_path": "/no/such/file"})), Some(Value::Null), "the file gone");
+        assert_eq!(of_event("claude", &json!({"transcript_path": "/dev/zero"})), Some(Value::Null), "no regular file: never read");
         let p = written("tokens-odd", "{\"another\":\"format\"}\nnot json at all\n");
         assert_eq!(of_event("claude", &json!({"transcript_path": p.clone()})), Some(Value::Null), "a new version's format");
         assert_eq!(of_event("codex", &json!({"transcript_path": p})), Some(Value::Null));

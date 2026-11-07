@@ -557,10 +557,9 @@ sequenceDiagram
 | AC-122 | New work on an archived task does not return it: there is no archive yet (`terminum-kanban.md` AC-118). | `terminumd/src/dispatcher/hooks.rs` |
 | AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |
 | AC-131 | A restored tmux server's new pane is not followed: its run says its window was closed. | `terminumd/src/dispatcher/plan.rs` |
-| AC-125 | A real host's walk has no `ps`: a job behind its shell is not seen there. | `terminumd/src/dispatcher/walk.rs` |
 | AC-131 | §9's walk budget has no bench yet (`scripts/bench_board.py`). | `terminumd/src/dispatcher/walk.rs` |
 | AC-121 | A real Codex's hooks need its own trust (AS-124), not checked here beyond its failure's words. | `terminumd/src/dispatcher/start.rs` |
-| AC-126 | A subagent in a pane of its own is not ended with its agent: its pane is not tied to its hook ID (AS-126); a host's agent is not ended from here (AC-130). | `terminumd/src/dispatcher/walk.rs` |
+| AC-126 | A subagent in a pane of its own is not ended with its agent: its pane is not tied to its hook ID (AS-126). | `terminumd/src/dispatcher/walk.rs` |
 | AC-127 | A subagent is never ended alone, as none is tied to a process or pane yet (OQ-122, AS-126): it is said. | `terminumd/src/dispatcher/walk.rs` |
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
@@ -653,11 +652,11 @@ Only the following pass: a T-number with fixed words and the column and human's 
 - Dispatcher types only as the gate allows; signals by (pid, start time) read just before; never by name or pattern; the pane's shell is spared. `terminum-remote.md` §9 lists these among what terminumd ends on a host.
 - A hook's fields are data: only a shape-checked session ID reaches a shell.
 - `ps` reads no command lines beyond a program's name: arguments can hold secrets.
-- Transcripts are read only by `terminum hook` on their own machine; three integers leave it.
+- Transcripts are read only by `terminum hook` on their own machine, a regular file, only for a task's session and after its turn's end has gone; three integers leave it, and terminumd keeps only integers.
 - Agents run with the user's own permission settings.
 - A project agent's command is the human's own words, run as they would type them: the board is the only way terminum offers to change it, no boundary against a process of the user's (`SECURITY.md`); RUN's dialog shows it in full.
 
-**What a card shows.** Every walk's `taskusage {items: {"T-12": {"cpu": 12, "gib": 1.2, "minutes": 14, "tokens": {"input": 1200, "output": 34, "cached": 5}, "idle_subs": [{"id": "sub-1", "kind": "reviewer"}]}}}` to every page, when it changed; `"tokens": null`: not known; `"not_measured": "Host out of reach"`. A host's `ps` and `kill` go over one ssh command each with its recipe, 12 s at most.
+**What a card shows.** Every walk's `taskusage {items: {"T-12": {"cpu": 12, "gib": 1.2, "minutes": 14, "tokens": {"input": 1200, "output": 34, "cached": 5}, "idle_subs": [{"id": "sub-1", "kind": "reviewer"}]}}}` to every page, when it changed; `"tokens": null`: not known; `"not_measured": "Host out of reach"`. `budget_used` goes with it. A host's `ps` and `kill` go over one ssh command each with its recipe, 12 s at most, and only where a wanted pane stands: a host with no run is read one beat in four with a page open. tmux's control link was tried for them: `run-shell`'s output comes outside its command's block.
 
 **Logging.** `dispatcher: T-12 run 3 FAILED: budget 3600 s used, SIGTERM pid 48213, SIGKILL none`; `dispatcher: T-12 run 3 not delivered: screen not known (claude 2.3)`.
 

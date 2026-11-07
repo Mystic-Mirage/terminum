@@ -231,34 +231,38 @@ fn ac126_no_budget_no_clock() {
     assert_eq!(r.budget_used, 0);
 }
 
-fn memory(gib: f64, over_warn: u32, over_end: u32) -> Option<Memory> {
-    Some(Memory { gib, warn_gib: 4.0, end_gib: 8.0, over_warn, over_end })
+fn walks(gib: f64, count: &mut (u32, u32)) -> Option<Memory> {
+    Some(Memory::read(gib, 4.0, 8.0, count))
 }
 
 #[test]
 fn ac128_memory_warns_once_after_two_walks_and_ends_after_two() {
-    let mut r = run("IN PROGRESS");
-    assert!(step(&mut r, &Facts { memory: memory(5.0, 1, 0), ..up(30) }).is_empty(), "one walk is not enough");
-    assert_eq!(step(&mut r, &Facts { memory: memory(5.1, 2, 0), ..up(30) }), vec![Act::MemoryWarn(5.1)]);
-    assert!(step(&mut r, &Facts { memory: memory(5.1, 3, 0), ..up(30) }).is_empty(), "once");
-    assert!(step(&mut r, &Facts { memory: memory(9.2, 4, 1), ..up(30) }).is_empty());
-    let acts = step(&mut r, &Facts { memory: memory(9.2, 5, 2), ..up(30) });
+    let (mut r, mut count) = (run("IN PROGRESS"), (0, 0));
+    assert!(step(&mut r, &Facts { memory: walks(5.0, &mut count), ..up(30) }).is_empty(), "one walk is not enough");
+    assert_eq!(step(&mut r, &Facts { memory: walks(5.1, &mut count), ..up(30) }), vec![Act::MemoryWarn(5.1)]);
+    assert!(step(&mut r, &Facts { memory: walks(5.1, &mut count), ..up(30) }).is_empty(), "once");
+    assert!(step(&mut r, &Facts { memory: walks(9.2, &mut count), ..up(30) }).is_empty());
+    let acts = step(&mut r, &Facts { memory: walks(9.2, &mut count), ..up(30) });
     assert_eq!(acts, vec![Act::Move { to: "FAILED", words: "Memory limit of 8 GiB exceeded: 9.2 GiB".into() }, Act::End]);
 }
 
 #[test]
-fn ac128_a_limit_of_zero_is_off() {
-    let mut r = run("IN PROGRESS");
-    let off = Memory { gib: 99.0, warn_gib: 0.0, end_gib: 0.0, over_warn: 9, over_end: 9 };
-    assert!(step(&mut r, &Facts { memory: Some(off), ..up(30) }).is_empty());
+fn ac128_a_limit_of_zero_is_off_and_a_dip_starts_the_count_again() {
+    let mut count = (5, 5);
+    let m = Memory::read(99.0, 0.0, 0.0, &mut count);
+    assert!(!m.warn_due && !m.end_due);
+    assert_eq!(count, (0, 0));
+    let mut count = (1, 1);
+    Memory::read(1.0, 4.0, 8.0, &mut count);
+    assert_eq!(count, (0, 0));
 }
 
 #[test]
 fn ac127_a_silent_subagent_gets_one_request_then_it_is_said() {
-    assert_eq!(subagent_step(599, 0), SubStep::Nothing);
-    assert_eq!(subagent_step(600, 0), SubStep::Tell);
-    assert_eq!(subagent_step(900, 1), SubStep::Nothing, "once");
-    assert_eq!(subagent_step(1200, 1), SubStep::CannotEnd);
-    assert_eq!(subagent_step(1200, 0), SubStep::CannotEnd, "a jump past both");
-    assert_eq!(subagent_step(9000, 2), SubStep::Nothing, "said once");
+    assert_eq!(subagent_step(599, SubStep::Nothing), None);
+    assert_eq!(subagent_step(600, SubStep::Nothing), Some(SubStep::Tell));
+    assert_eq!(subagent_step(900, SubStep::Tell), None, "once");
+    assert_eq!(subagent_step(1200, SubStep::Tell), Some(SubStep::CannotEnd));
+    assert_eq!(subagent_step(1200, SubStep::Nothing), Some(SubStep::CannotEnd), "a jump past both");
+    assert_eq!(subagent_step(9000, SubStep::CannotEnd), None, "said once");
 }

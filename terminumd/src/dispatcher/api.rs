@@ -209,8 +209,17 @@ async fn what_runs(app: &Shared, server: &Server, pane: &str) -> Result<Option<S
     if !walk::is_shell(name) {
         return Ok(Some(name.to_string()));
     }
-    let tree = procs::read(app, server).await.ok_or("ps did not answer")?;
-    Ok(procs::under(&tree, pid).any.then(|| "a job of its shell".to_string()))
+    // the moment after an agent's end its wrapper and a prompt's helpers still run: what stays is a job
+    for look in 0..3 {
+        let tree = procs::read(app, server).await.ok_or("ps did not answer")?;
+        if !procs::under(&tree, pid).any {
+            return Ok(None);
+        }
+        if look < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        }
+    }
+    Ok(Some("a job of its shell".to_string()))
 }
 
 /// Only its shell remains: the agent starts there anew, by the resume when a conversation is known;
@@ -223,7 +232,7 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
     }
     let line = start::resume_command(r).unwrap_or_else(|_| r.command.clone());
     let new = next_run(app, r, again).await?;
-    start::respawn(server, pane, &r.id, &new, &r.folder, &line).await?;
+    start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await?;
     let (key, n) = (server.key(pane), new.clone());
     app.dispatcher.panes.lock().insert(key.clone());
     store(app, move |tx| runs::change(tx, &n, |now| now.pane_key = Some(key)).map(drop)).await?;
@@ -287,8 +296,12 @@ async fn first_run(app: &Shared, t: &Task, body: Press) -> Result<Value, String>
     agents::check_folder(&chosen)?;
     let server = server_of(app, a.host.as_deref())?;
     if let Some(host) = &a.host {
-        if !crate::hosts::link::agents_state(app, host).starts_with("up") {
+        let state = crate::hosts::link::agents_state(app, host);
+        if state == "off" {
             return Err(format!("Run terminum hooks install on {host} first"));
+        }
+        if !state.starts_with("up") {
+            return Err(format!("The link to {host}'s agents is not up: {state}"));
         }
     } else {
         if !folder_there(&chosen).await {
@@ -334,28 +347,27 @@ pub fn human_moved(app: &Shared, task: &Task) {
         let k = key.clone();
         let Ok(Some(r)) = store(&app, move |tx| runs::in_pane(tx, &k)).await else { return };
         let Some((server, pane)) = app.tmux.resolve(&key) else { return };
-        if r.state != "working" || !matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
-            return;
-        }
         deliver_lines(&app, &r, &server, &pane, &key).await;
     });
 }
 
-/// What waits for the session's next context goes in now, if the gate lets it; a miss leaves it there.
+/// What waits for the session's next context goes in now, while its agent idles at an empty box; a
+/// miss leaves it there.
 async fn deliver_lines(app: &Shared, r: &Run, server: &Server, pane: &str, key: &str) {
-    {
-        let lines = app.task_lines.take(key);
-        if lines.is_empty() {
-            return;
+    if r.state != "working" || !matches!(gate::read(server, pane, &r.kind).await, Ok(Screen::Empty)) {
+        return;
+    }
+    let lines = app.task_lines.take(key);
+    if lines.is_empty() {
+        return;
+    }
+    let text = lines.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>().join(" ");
+    if let Err(why) = gate::deliver(app, r, server, pane, &text, false).await {
+        for (task, line) in lines {
+            app.task_lines.push(key, &task, line);
         }
-        let text = lines.iter().map(|(_, l)| l.as_str()).collect::<Vec<_>>().join(" ");
-        if let Err(why) = gate::deliver(app, r, server, pane, &text, false).await {
-            for (task, line) in lines {
-                app.task_lines.push(key, &task, line);
-            }
-            let run = r.clone();
-            let _ = store(app, move |tx| say(tx, &run, &format!("Not delivered: {why}"))).await;
-        }
+        let run = r.clone();
+        let _ = store(app, move |tx| say(tx, &run, &format!("Not delivered: {why}"))).await;
     }
 }
 
@@ -363,7 +375,7 @@ async fn deliver_lines(app: &Shared, r: &Run, server: &Server, pane: &str, key: 
 /// warning is (AC-126).
 pub fn budget_changed(app: &Shared, task: &Task) {
     let Some(key) = task.session.clone().filter(|k| app.dispatcher.has_run(k)) else { return };
-    let (app, id, words) = (app.clone(), task.id.clone(), task.budget_seconds.map_or_else(
+    let (app, words) = (app.clone(), task.budget_seconds.map_or_else(
         || format!("[terminum Dispatcher] {}: its time budget is off.", task.id),
         |s| format!("[terminum Dispatcher] {}: its time budget is now {} minutes.", task.id, s / 60)));
     tokio::spawn(async move {
@@ -372,10 +384,8 @@ pub fn budget_changed(app: &Shared, task: &Task) {
             let Some(r) = runs::in_pane(tx, &k)? else { return Ok(None) };
             runs::change(tx, &r.id, |now| now.warned = false).map(Some)
         }).await else { return };
-        app.task_lines.push(&key, &id, words);
-        let Some((server, pane)) = app.tmux.resolve(&key) else { return };
-        if r.state == "working" && matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
-            deliver_lines(&app, &r, &server, &pane, &key).await;
+        if let Some((server, pane)) = app.tmux.resolve(&key) {
+            walk::tell(&app, &r, &server, &pane, words, "The new budget").await;
         }
     });
 }

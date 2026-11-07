@@ -13,7 +13,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, unix_request  # noqa: E402
+from e2e_ws import Terminumd, check, summary, tmux_on, unix_request  # noqa: E402
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
@@ -62,7 +62,9 @@ def main():
         task = lambda title: call("/api/tasks", "POST", {"title": title, "project": project})[1]["id"]  # noqa: E731
         run = lambda i: call(f"/api/tasks/{i}/run", "POST", {"agent": agent})  # noqa: E731
 
-        attached = until(lambda: next((h for h in unix_request(t.sock, "GET", "/hosts")[1].get("hosts", []) if h["name"] == "devbox"), {}).get("state") == "attached")
+        host = lambda: next((h for h in unix_request(t.sock, "GET", "/hosts")[1].get("hosts", []) if h["name"] == "devbox"), {})  # noqa: E731
+        shown = lambda pane, fmt: tmux_on(REMOTE_SOCKET, "display", "-p", "-t", pane, fmt).strip()  # noqa: E731
+        attached = until(lambda: host().get("state") == "attached")
         check("setup: the host is attached", attached)
 
         # hooks missing there: said, nothing starts
@@ -72,7 +74,7 @@ def main():
 
         st, body = unix_request(t.sock, "POST", "/hosts/agents-on", {"name": "devbox"})
         check("setup: agents on", st == 200, body)
-        up = until(lambda: str(next((h for h in unix_request(t.sock, "GET", "/hosts")[1].get("hosts", []) if h["name"] == "devbox"), {}).get("agents", "")).startswith("up"))
+        up = until(lambda: str(host().get("agents", "")).startswith("up"))
         check("setup: the link is up", up)
 
         # RUN there: window, gate, hook, finish_task
@@ -84,7 +86,7 @@ def main():
         key = call(f"/api/tasks/{done}")[1]["session"]["key"]
         check("AC-130 its pane is the host's", key.startswith("tmux:devbox:"), key)
         pane = key.rsplit(":", 1)[1]
-        mark = subprocess.run(["tmux", "-L", REMOTE_SOCKET, "display", "-p", "-t", pane, "#{@terminum-run}"], capture_output=True, text=True, check=False).stdout.strip()
+        mark = shown(pane, "#{@terminum-run}")
         check("AC-125 marked on the host's tmux", bool(mark), mark)
 
         # the walk reads the agent's end by the host's ps and exit
@@ -99,7 +101,7 @@ def main():
         run(timed)
         check("AC-130 at the limit the task is FAILED", until(lambda: status(timed) == "FAILED"), history(timed))
         tkey = call(f"/api/tasks/{timed}")[1]["session"]["key"].rsplit(":", 1)[1]
-        ended = until(lambda: subprocess.run(["tmux", "-L", REMOTE_SOCKET, "display", "-p", "-t", tkey, "#{@terminum-exit}"], capture_output=True, text=True, check=False).stdout.strip(), 10)
+        ended = until(lambda: shown(tkey, "#{@terminum-exit}"), 10)
         check("AC-130 its agent is ended over the host's link", bool(ended), ended)
     finally:
         t.stop()

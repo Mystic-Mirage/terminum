@@ -51,6 +51,11 @@ impl Marks {
         changed
     }
 
+    /// Whether a task not done stands linked to session `key`.
+    pub fn has_session(&self, key: &str) -> bool {
+        self.held.lock().sessions.contains_key(key)
+    }
+
     fn message(&self) -> String {
         let held = self.held.lock();
         let lines: Vec<_> = held.attention.iter().filter(|a| a.2).map(|(id, status, _, why)| {

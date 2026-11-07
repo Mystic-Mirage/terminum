@@ -255,8 +255,11 @@ pub fn resume_command(run: &Run) -> Result<String, String> {
 
 /// The agent starts anew in a pane where only its shell remains (AC-122): the old run's mark checked,
 /// the new one's set, the exit cleared.
-pub async fn respawn(server: &Arc<Server>, pane: &str, old: &str, new: &str, folder: &str, command: &str) -> Result<(), String> {
+pub async fn respawn(app: &Shared, server: &Arc<Server>, pane: &str, old: &str, new: &str, folder: &str, command: &str) -> Result<(), String> {
     is_marked(server, pane, old).await?;
     mark(server, pane, new).await?;
+    if let Some(w) = app.dispatcher.watch.lock().get_mut(&server.key(pane)) {
+        w.subs.clear();                                // a new agent: none of the last one's
+    }
     server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
 }

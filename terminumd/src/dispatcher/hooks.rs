@@ -75,10 +75,10 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
 
 /// Pane `key`'s agent spoke: its run, if Dispatcher started it. A pane with none costs a set's lookup.
 pub fn heard(app: &Shared, key: &str, ev: &Value) {
-    app.dispatcher.heard_facts(key, ev);
     if !app.dispatcher.has_run(key) {
         return;
     }
+    app.dispatcher.heard_facts(key, ev);
     let (app, key, ev) = (app.clone(), key.to_string(), ev.clone());
     tokio::spawn(async move {
         let typed = ev["event"] == "UserPromptSubmit" && ev["prompt"].as_str().is_some_and(|p| app.dispatcher.was_typed(&key, p));

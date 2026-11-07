@@ -144,11 +144,6 @@ pub fn last_agent(tx: &Transaction, project: &str) -> Result<Option<String>, Str
     tx.query_row("SELECT r.agent_id FROM runs r JOIN tasks t ON t.id = r.task WHERE t.project = ?1 ORDER BY r.rowid DESC LIMIT 1", [project], |r| r.get(0)).optional().map_err(sql)
 }
 
-/// The seconds a live run has used, by task: a card shows them against its budget (AC-126).
-pub fn budgets_used(tx: &Transaction) -> Result<HashMap<String, i64>, String> {
-    Ok(rows(tx, "SELECT r.task, r.budget_used FROM runs r JOIN tasks t ON t.id = r.task WHERE r.state NOT IN ('closed', 'left') AND t.budget_seconds IS NOT NULL", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
-}
-
 /// What a card says of its task's run: starting, asking, or `no_result`: DONE with no result from the agent (AC-123).
 pub fn card_marks(tx: &Transaction) -> Result<HashMap<String, String>, String> {
     Ok(rows(tx, "SELECT r.task, CASE WHEN r.state IN ('starting', 'asking', 'typed') THEN r.state ELSE 'no_result' END FROM runs r JOIN tasks t ON t.id = r.task

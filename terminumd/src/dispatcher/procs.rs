@@ -10,10 +10,11 @@ use std::time::Duration;
 use crate::app::Shared;
 use crate::tmux::Server;
 
-/// How long a host's `ps` is waited for: past it, nothing is known of that host this walk.
-const HOST_WAIT: Duration = Duration::from_secs(12);
+/// How long a `ps` or `kill` is waited for: past it, nothing is known of that machine this walk.
+const WAIT: Duration = Duration::from_secs(12);
+const PS: [&str; 3] = ["ps", "-Ao", "pid=,ppid=,time=,rss=,etime=,lstart="];
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Proc {
     pub pid: String,
     /// CPU seconds so far
@@ -21,6 +22,7 @@ pub struct Proc {
     pub rss_kib: u64,
     /// seconds it has run
     pub age: u64,
+    pub start: String,
 }
 
 /// Children by parent.
@@ -36,107 +38,129 @@ pub struct Under {
     pub age: u64,
 }
 
+impl Under {
+    pub fn gib(&self) -> f64 {
+        self.rss_kib as f64 / 1_048_576.0
+    }
+}
+
 fn seconds(t: &str) -> f64 {
     let (days, rest) = t.split_once('-').map_or((0.0, t), |(d, r)| (d.parse().unwrap_or(0.0), r));
     rest.split(':').fold(0.0, |sum, part| sum * 60.0 + part.parse::<f64>().unwrap_or(0.0)) + days * 86400.0
 }
 
-/// `ps -o pid=,ppid=,time=,rss=,etime=`'s lines.
+/// `ps`'s lines; what is not of its shape (a `ps` that took other options) makes no row.
 pub fn parse(out: &str) -> Tree {
     let mut tree = Tree::new();
     for line in out.lines() {
         let f: Vec<&str> = line.split_whitespace().collect();
-        if let [pid, ppid, time, rss, etime] = f[..] {
-            tree.entry(ppid.to_string()).or_default().push(Proc { pid: pid.to_string(), cpu: seconds(time), rss_kib: rss.parse().unwrap_or(0), age: seconds(etime) as u64 });
+        if f.len() >= 6 {
+            tree.entry(f[1].to_string()).or_default().push(Proc { pid: f[0].to_string(), cpu: seconds(f[2]), rss_kib: f[3].parse().unwrap_or(0), age: seconds(f[4]) as u64, start: f[5..].join(" ") });
         }
     }
     tree
 }
 
-pub fn under(tree: &Tree, root: &str) -> Under {
-    let (mut sum, mut stack) = (Under::default(), vec![root.to_string()]);
+/// What runs under `root`, parents before their children.
+fn descendants<'t>(tree: &'t Tree, root: &str) -> Vec<&'t Proc> {
+    let (mut found, mut stack) = (Vec::new(), vec![root.to_string()]);
     while let Some(p) = stack.pop() {
         for kid in tree.get(&p).into_iter().flatten() {
-            sum.any = true;
-            sum.cpu += kid.cpu;
-            sum.rss_kib += kid.rss_kib;
-            sum.age = sum.age.max(kid.age);
+            found.push(kid);
             stack.push(kid.pid.clone());
         }
     }
-    sum
+    found
 }
 
-/// `words` run on `server`'s machine: on this Mac, or over its host's link with a limit. Its output.
+pub fn under(tree: &Tree, root: &str) -> Under {
+    descendants(tree, root).into_iter().fold(Under::default(), |sum, p| Under { any: true, cpu: sum.cpu + p.cpu, rss_kib: sum.rss_kib + p.rss_kib, age: sum.age.max(p.age) })
+}
+
+/// `words` run on `server`'s machine, within WAIT: on this Mac, or by one ssh command with its recipe.
 async fn run(app: &Shared, server: &Server, words: &[&str]) -> Option<String> {
-    if server.is_local() {
-        let out = tokio::process::Command::new(words[0]).args(&words[1..]).output().await.ok()?;
-        return out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned());
-    }
-    let recipe = crate::hosts::recipe_of(app, &server.name)?;
-    let mut c = crate::hosts::ssh_command(crate::hosts::ssh_bin(), &recipe, &["-o", "ControlPath=none"]);
-    crate::hosts::recipe::with_command(&mut c, &recipe, &words.join(" "));
+    let mut c = if server.is_local() {
+        let mut c = tokio::process::Command::new(words[0]);
+        c.args(&words[1..]);
+        c
+    } else {
+        let recipe = crate::hosts::recipe_of(app, &server.name)?;
+        let mut c = crate::hosts::ssh_command(crate::hosts::ssh_bin(), &recipe, &["-o", "ControlPath=none"]);
+        crate::hosts::recipe::with_command(&mut c, &recipe, &words.join(" "));
+        c
+    };
     c.stdin(std::process::Stdio::null()).kill_on_drop(true);
-    let out = tokio::time::timeout(HOST_WAIT, c.output()).await.ok()?.ok()?;
+    let out = tokio::time::timeout(WAIT, c.output()).await.ok()?.ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// One `ps` of `server`'s machine; none: nothing is known.
 pub async fn read(app: &Shared, server: &Server) -> Option<Tree> {
-    run(app, server, &["ps", "-Ao", "pid=,ppid=,time=,rss=,etime="]).await.map(|o| parse(&o))
+    run(app, server, &PS).await.map(|o| parse(&o))
 }
 
-/// What runs under `root`, each by pid and start time; deepest first, so an agent's children go first.
-async fn with_start(app: &Shared, server: &Server, root: &str) -> Vec<(String, String)> {
-    let Some(text) = run(app, server, &["ps", "-Ao", "pid=,ppid=,lstart="]).await else { return Vec::new() };
-    let rows: Vec<(String, String, String)> = text.lines().filter_map(|l| {
-        let mut f = l.split_whitespace();
-        Some((f.next()?.to_string(), f.next()?.to_string(), f.collect::<Vec<_>>().join(" ")))
-    }).collect();
-    let (mut found, mut stack) = (Vec::new(), vec![root.to_string()]);
-    while let Some(p) = stack.pop() {
-        for (pid, _, start) in rows.iter().filter(|(_, ppid, _)| *ppid == p) {
-            found.push((pid.clone(), start.clone()));
-            stack.push(pid.clone());
-        }
-    }
-    found.reverse();
-    found
+/// A real pid: what `kill` may be given (0 would be the caller's own group, 1 is never ours).
+fn is_pid(pid: &str) -> bool {
+    pid.bytes().all(|b| b.is_ascii_digit()) && pid.parse::<u32>().is_ok_and(|p| p > 1)
 }
 
 async fn signal(app: &Shared, server: &Server, name: &str, pids: &[String]) {
-    let pids: Vec<&str> = pids.iter().map(String::as_str).filter(|p| p.bytes().all(|b| b.is_ascii_digit())).collect();
-    if pids.is_empty() {
-        return;
+    let pids: Vec<&str> = pids.iter().map(String::as_str).filter(|p| is_pid(p)).collect();
+    if !pids.is_empty() {
+        let mut words = vec!["kill", name];
+        words.extend(pids);
+        let _ = run(app, server, &words).await;
     }
-    let mut words = vec!["kill", name];
-    words.extend(pids);
-    let _ = run(app, server, &words).await;
 }
 
-/// SIGTERM to what runs under `root`, and after `grace` SIGKILL to those still the same (AC-126).
-pub async fn end(app: &Shared, server: &Arc<Server>, root: &str, grace: Duration) {
-    let targets = with_start(app, server, root).await;
+/// SIGTERM to what runs under `root`, deepest first, and after `grace` SIGKILL to those still the
+/// same pid and start time (AC-126). How many were signalled; `Err`: `ps` did not answer, none were.
+pub async fn end(app: &Shared, server: &Arc<Server>, root: &str, grace: Duration) -> Result<usize, String> {
+    if !is_pid(root) {
+        return Err(format!("{root} is no pane's process"));
+    }
+    let tree = read(app, server).await.ok_or("ps did not answer")?;
+    let targets: Vec<(String, String)> = descendants(&tree, root).into_iter().rev().map(|p| (p.pid.clone(), p.start.clone())).collect();
     signal(app, server, "-TERM", &targets.iter().map(|t| t.0.clone()).collect::<Vec<_>>()).await;
     tokio::time::sleep(grace).await;
-    let now = with_start(app, server, root).await;
-    signal(app, server, "-KILL", &targets.iter().filter(|t| now.contains(t)).map(|t| t.0.clone()).collect::<Vec<_>>()).await;
+    if let Some(now) = read(app, server).await {
+        let still: Vec<(String, String)> = descendants(&now, root).into_iter().map(|p| (p.pid.clone(), p.start.clone())).collect();
+        signal(app, server, "-KILL", &targets.iter().filter(|t| still.contains(t)).map(|t| t.0.clone()).collect::<Vec<_>>()).await;
+    }
+    Ok(targets.len())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const START: &str = "Thu Oct  8 16:17:25 2026";
+
     #[test]
     fn ac128_a_tree_sums_what_runs_under_its_root() {
-        let t = parse("  10 1 0:03.50 100 01:00\n  11 10 1:00.00 2000 1-00:00:10\n  12 11 0:00.25 300 00:05\n  20 1 0:09.00 999 00:01\n");
-        let u = under(&t, "1");
-        assert_eq!(u.rss_kib, 100 + 2000 + 300 + 999);
+        let t = parse(&format!("  10 1 0:03.50 100 01:00 {START}\n  11 10 1:00.00 2000 1-00:00:10 {START}\n  12 11 0:00.25 300 00:05 {START}\n  20 1 0:09.00 999 00:01 {START}\n"));
+        assert_eq!(under(&t, "1").rss_kib, 100 + 2000 + 300 + 999);
         let u = under(&t, "10");
         assert!(u.any);
         assert_eq!(u.rss_kib, 2300);
         assert!((u.cpu - 60.25).abs() < 0.01, "{}", u.cpu);
         assert_eq!(u.age, 86410, "the oldest: days too");
         assert_eq!(under(&t, "12"), Under::default(), "nothing under it: only its shell remains");
+    }
+
+    #[test]
+    fn ac126_a_parent_comes_before_its_children_and_its_start_is_kept() {
+        let t = parse(&format!("  11 10 0:01 1 00:05 {START}\n  12 11 0:01 1 00:05 {START}\n"));
+        let order: Vec<&str> = descendants(&t, "10").iter().map(|p| p.pid.as_str()).collect();
+        assert_eq!(order, ["11", "12"], "reversed for signals: deepest first");
+        assert_eq!(descendants(&t, "10")[0].start, "Thu Oct 8 16:17:25 2026");
+    }
+
+    #[test]
+    fn ac126_only_a_real_pid_is_signalled() {
+        assert!(is_pid("4321"));
+        for not in ["0", "1", "", "-1", "12 34", "1;rm", "$(x)"] {
+            assert!(!is_pid(not), "{not}");
+        }
     }
 }

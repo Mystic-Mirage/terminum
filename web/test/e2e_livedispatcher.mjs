@@ -196,8 +196,11 @@ export async function liveDispatcher(page, opts) {
   check("AC-121 a press on other words is asked again, and nothing starts", /text changed/.test(stale.error) && await status(changed) === "TODO", JSON.stringify(stale));
 
   // AC-126 the budget
-  const refusedBudget = await j(`/api/tasks/${(await task("short budget"))}`, "PATCH", { budget_minutes: 3 });
+  const shortBudget = await task("short budget");
+  const refusedBudget = await j(`/api/tasks/${shortBudget}`, "PATCH", { budget_minutes: 3 });
   check("AC-126 under 5 minutes is refused with its words", refusedBudget.error === "Budget: 5 minutes to 7 days", JSON.stringify(refusedBudget));
+  const oddBudget = await j(`/api/tasks/${shortBudget}`, "PATCH", { budget_minutes: "sixty" });
+  check("AC-126 what is no number is refused, never read as no budget", oddBudget.error === "Budget: 5 minutes to 7 days", JSON.stringify(oddBudget));
   const timed = await task("timed WORKS");
   await j(`/api/tasks/${timed}`, "PATCH", { budget_minutes: 62 });   // its last 2 minutes: one tick of this clock
   check("AC-126 the prompt says the budget", /You have 62 minutes for this task/.test((await j(`/api/tasks/${timed}/run`)).prompt));
@@ -207,13 +210,22 @@ export async function liveDispatcher(page, opts) {
   const timedPane = await paneOf(timed);
   check("AC-126 the agent ended: SIGTERM, recorded", await until(() => tmux("display", "-p", "-t", timedPane, "#{@terminum-exit}").trim() !== "", 8000), tmux("display", "-p", "-t", timedPane, "#{@terminum-exit}"));
   check("AC-126 its pane and shell stay", tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(timedPane));
+  const shellPid = tmux("display", "-p", "-t", timedPane, "#{pane_pid}").trim();
+  check("AC-126 the shell is spared", (() => { try { process.kill(Number(shellPid), 0); return true; } catch { return false; } })(), shellPid);
+  check("AC-126 a sibling pane is untouched", tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").some((l) => l.trim() === otherPane));
+  // a program a human starts at the shell it left is none of a later limit: the exit is recorded
+  tmux("send-keys", "-t", timedPane, "-l", "sleep 30");
+  tmux("send-keys", "-t", timedPane, "Enter");
+  await nap(1200);
+  check("AC-126 a human's program there runs on", /sleep/.test(tmux("display", "-p", "-t", timedPane, "#{pane_current_command}")), tmux("display", "-p", "-t", timedPane, "#{pane_current_command}"));
+  tmux("send-keys", "-t", timedPane, "C-c");
   await nap(1500);
   check("AC-123 the end it caused counts for nothing", await status(timed) === "FAILED");
   const stubborn = await agent("Stubborn", "--stubborn");
   const hard = await task("stubborn WORKS");
   await j(`/api/tasks/${hard}`, "PATCH", { budget_minutes: 5 });
   await run(hard, { agent: stubborn });
-  check("AC-126 one that ignores SIGTERM is ended by SIGKILL", await hasStatus(hard, "FAILED", 25000) && await until(async () => /^(137|-?\d+)$/.test(tmux("display", "-p", "-t", await paneOf(hard), "#{@terminum-exit}").trim()), 10000), tmux("display", "-p", "-t", await paneOf(hard), "#{@terminum-exit}"));
+  check("AC-126 one that ignores SIGTERM is ended by SIGKILL", await hasStatus(hard, "FAILED", 25000) && await until(async () => /^(137|9|143)$/.test(tmux("display", "-p", "-t", await paneOf(hard), "#{@terminum-exit}").trim()), 10000), tmux("display", "-p", "-t", await paneOf(hard), "#{@terminum-exit}"));
   const changing = await task("budget changes STOPS");
   await run(changing);
   await hasStatus(changing, "IN PROGRESS", 15000);
@@ -301,7 +313,7 @@ export async function liveDispatcher(page, opts) {
  *  whole way: box, gate, prompt, hook, finish_task, the exit, the resume. */
 export async function liveDispatcherReal(page, opts) {
   const { work } = opts;
-  const { j } = boardKit(page, opts);
+  const { j, card } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "RealRuns", dir: work })).id;
   const add = async (name, kind, command) => (await j(`/api/task-projects/${project}/agents`, "POST", { name, kind, command })).id;
   const { status, history, paneOf, hasStatus } = taskKit(j);
@@ -311,6 +323,11 @@ export async function liveDispatcherReal(page, opts) {
   check("AC-121 real Claude Code: RUN starts", !!ran.run, JSON.stringify(ran));
   check("AC-121 real Claude Code: the gate reads its box, the hook says it took the prompt", await until(async () => ["IN PROGRESS", "DONE"].includes(await status(t)), 90000), await history(t));
   check("AC-123 real Claude Code: finish_task is DONE", await hasStatus(t, "DONE", 180000), await history(t));
+  await page.goto(`${opts.base}/kanban/?project=${project}`);
+  await page.waitForSelector(card(t));
+  check("AC-128 real Claude Code: the card shows CPU, memory and running time", await until(async () => /CPU \d+% · [\d.]+ GiB · \d+ min/.test(await page.textContent(`${card(t)} .cusage`).catch(() => "")), 60000), await page.textContent(card(t)));
+  // the installed `terminum hook` is what a real agent runs: this holds once this build is installed
+  if (process.env.TM_TEST_REAL_TOKENS) check("AC-129 real Claude Code: and the tokens of its transcript", await until(async () => /[\d,]+ tokens/.test(await page.textContent(`${card(t)} .cusage`).catch(() => "")), 60000), await page.textContent(card(t)));
   // its own /exit: the exit code; then RUN goes on by the resume, in the same pane
   const pane = await paneOf(t);
   opts.tmux("send-keys", "-t", pane, "-l", "/exit");

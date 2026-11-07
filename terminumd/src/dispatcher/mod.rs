@@ -16,6 +16,8 @@ mod walk;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+use std::sync::atomic::AtomicU64;
+
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
@@ -42,19 +44,29 @@ pub struct Dispatcher {
     typed: Mutex<Vec<(String, String, Instant)>>,
     /// runs whose start is being watched
     starting: Mutex<HashSet<String>>,
-    /// each run's tree's CPU seconds at the last walk
-    cpu: Mutex<HashMap<String, f64>>,
     /// a walk is due now (a session ended)
     soon: Notify,
-    /// each pane's subagents, as its hooks said (AC-127)
-    subs: Mutex<HashMap<String, HashMap<String, Sub>>>,
-    /// each pane's tokens as its last turn's end said; null: not known (AC-129)
-    tokens: Mutex<HashMap<String, serde_json::Value>>,
-    /// walks in a row over a memory limit, by run (AC-128)
-    over: Mutex<HashMap<String, (u32, u32)>>,
-    /// what pages were last told of tasks' sessions (`taskusage`), and each pane's CPU seconds then
+    /// what a walk or a hook learned of each pane it watches
+    watch: Mutex<HashMap<String, PaneWatch>>,
+    /// what pages were last told of tasks' sessions (`taskusage`)
     usage: Mutex<String>,
-    usage_cpu: Mutex<HashMap<String, f64>>,
+    /// beats so far: a host with no run is read less often
+    beat: AtomicU64,
+}
+
+/// What is known of a watched pane beyond the store; a restart learns it anew.
+#[derive(Default)]
+struct PaneWatch {
+    /// its tree's CPU seconds at the last reading, and when
+    cpu: Option<(f64, Instant)>,
+    /// walks in a row over a memory limit (AC-128)
+    over: (u32, u32),
+    /// its subagents as its hooks said (AC-127); bounded: a hook's fields are data
+    subs: HashMap<String, Sub>,
+    /// the tokens of its last turn's end; null: not known (AC-129)
+    tokens: Option<serde_json::Value>,
+    /// the last line pages were told of it: a host read less often keeps it
+    line: Option<serde_json::Value>,
 }
 
 /// A subagent as its hooks said.
@@ -62,8 +74,11 @@ pub struct Dispatcher {
 struct Sub {
     kind: String,
     last: Instant,
-    told: u8,
+    told: plan::SubStep,
 }
+
+/// Subagents kept per pane: a made-up hook adds no more.
+const MOST_SUBS: usize = 64;
 
 impl Dispatcher {
     /// Activity in pane `key` (§9): a hook's event, a character a human typed.
@@ -81,20 +96,36 @@ impl Dispatcher {
         self.panes.lock().contains(key)
     }
 
-    /// A hook's facts of any pane: its subagents and tokens, for its card (AC-127, AC-129).
-    pub fn heard_facts(&self, key: &str, ev: &serde_json::Value) {
-        if let Some(tokens) = ev.get("tokens") {
-            self.tokens.lock().insert(key.to_string(), tokens.clone());
+    /// A hook's facts of a watched pane: a new agent starts clean; its subagents, shape-checked (AC-127).
+    fn heard_facts(&self, key: &str, ev: &serde_json::Value) {
+        let mut watch = self.watch.lock();
+        let pane = watch.entry(key.to_string()).or_default();
+        if ev["event"] == "SessionStart" {
+            pane.subs.clear();
         }
-        let Some(id) = ev["sub"].as_str() else { return };
-        let mut subs = self.subs.lock();
-        let of_pane = subs.entry(key.to_string()).or_default();
+        let Some(id) = ev["sub"].as_str().filter(|id| id.len() <= 100 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')) else { return };
         if ev["event"] == "SubagentStop" {
-            of_pane.remove(id);
-        } else {
-            let sub = of_pane.entry(id.to_string()).or_insert_with(|| Sub { kind: ev["subtype"].as_str().unwrap_or("").to_string(), last: Instant::now(), told: 0 });
-            sub.last = Instant::now();
+            pane.subs.remove(id);
+        } else if pane.subs.contains_key(id) || pane.subs.len() < MOST_SUBS {
+            let kind: String = crate::plans::rules::clean(ev["subtype"].as_str().unwrap_or("")).chars().take(60).collect();
+            pane.subs.entry(id.to_string()).or_insert_with(|| Sub { kind, last: Instant::now(), told: plan::SubStep::Nothing }).last = Instant::now();
         }
+    }
+
+    /// A hook's three integers, or null when they are not (AC-129): nothing else of them is kept.
+    pub fn heard_tokens(&self, key: &str, ev: &serde_json::Value) {
+        let t = &ev["tokens"];
+        let numbers = [&t["input"], &t["output"], &t["cached"]].map(serde_json::Value::as_u64);
+        let kept = match numbers {
+            [Some(input), Some(output), Some(cached)] => serde_json::json!({"input": input, "output": output, "cached": cached}),
+            _ => serde_json::Value::Null,
+        };
+        self.watch.lock().entry(key.to_string()).or_default().tokens = Some(kept);
+    }
+
+    /// Whether a turn's end in pane `key` should say its tokens: only a task's session shows them.
+    pub fn wants_tokens(&self, key: &str) -> bool {
+        self.has_run(key)
     }
 
     fn remember_typed(&self, key: &str, text: &str) {

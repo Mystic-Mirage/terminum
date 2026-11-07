@@ -134,18 +134,15 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
     };
     let with_counts = q.get("counts").is_some_and(|c| c == "1");
-    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }, crate::dispatcher::runs::card_marks(tx)?, crate::dispatcher::runs::budgets_used(tx)?))).await;
+    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }, crate::dispatcher::runs::card_marks(tx)?))).await;
     match done {
-        Ok((tasks, counts, run_marks, budgets)) => {
+        Ok((tasks, counts, run_marks)) => {
             let layout = app.layout.read();
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
             let shown: Vec<Value> = tasks.iter().map(|t| {
                 let mut v = with_session(t, t.session.as_deref().and_then(|k| rows.get(k).copied()));
                 if let Some(state) = run_marks.get(&t.key) {
                     v["run"] = json!(state);
-                }
-                if let Some(used) = budgets.get(&t.key) {
-                    v["budget_used"] = json!(used);
                 }
                 v
             }).collect();
@@ -171,7 +168,7 @@ async fn meta(State(app): State<Shared>) -> Response {
         ))).unwrap_or_default();
         (users, agents, limits, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
-    Json(json!({"projects": projects, "agents": agents, "limits": limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {
@@ -261,8 +258,15 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     let reorder = before.is_some() || body.get("order_end").is_some();
     let before = before.and_then(Value::as_str).map(str::to_string);
     let session = body.get("session").cloned();
-    let budget = body.get("budget_minutes").map(Value::as_i64);
-    let budget_changed = budget.is_some();
+    // only null takes it off: another value is refused, never read as none (AC-126)
+    let budget = match body.get("budget_minutes") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(v) => match v.as_i64() {
+            Some(m) => Some(Some(m)),
+            None => return refuse(StatusCode::BAD_REQUEST, "Budget: 5 minutes to 7 days"),
+        },
+    };
     let done = store(&app, move |tx| {
         let at = ops::now();
         let was = ops::get(tx, &wanted)?;
@@ -308,7 +312,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         super::tell::human_moved(&app, &task).await;
         crate::dispatcher::api::human_moved(&app, &task);
     }
-    if budget_changed {
+    if budget.is_some() {
         crate::dispatcher::api::budget_changed(&app, &task);
     }
     told(&app, &task.id);

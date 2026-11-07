@@ -123,7 +123,8 @@ export function agentsSection({ getMeta, chosen, reload }) {
         await reload();
       } catch (e) { $("limitserror").textContent = e.message; $("limitserror").hidden = false; }
     };
-    $("limitsok").onclick = () => keep({ warn: $("limitwarn").value === "" ? null : Number($("limitwarn").value), end: $("limitend").value === "" ? null : Number($("limitend").value) });
+    const gib = (id) => ($(id).value === "" ? null : Number($(id).value));
+    $("limitsok").onclick = () => keep({ warn: gib("limitwarn"), end: gib("limitend") });
     $("limitsglobal").onclick = () => keep({ warn: null, end: null });
     box.showModal();
   }

@@ -120,6 +120,10 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     if server.session_of(pane).is_none() {
         return StatusCode::NO_CONTENT.into_response();  // a pane it does not list: nothing is made up
     }
+    if ev["event"] == "Tokens" {
+        app.dispatcher.heard_tokens(&server.key(pane), &ev);   // terminum-dispatcher.md AC-129: asked for below
+        return StatusCode::NO_CONTENT.into_response();
+    }
     let _dispatch = app.hooks.dispatch.lock();
     let key = server.key(pane);
     let Some(changed) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
@@ -146,9 +150,17 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     let remind = crate::plans::hook_event(&app, &key, &ev);
     // a human's move rides the same event (AC-114)
     let context = if crate::plans::carries_context(&ev) { crate::tasks::tell::with_lines(&app, &key, remind) } else { remind };
-    match context {
-        Some(text) => Json(json!({"remind": text})).into_response(),
-        None => StatusCode::NO_CONTENT.into_response(),
+    // a task's session: its hook sums the tokens, after this turn's end has gone (AC-129)
+    let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.wants_tokens(&key) || app.task_marks.has_session(&key));
+    match (context, tokens) {
+        (None, false) => StatusCode::NO_CONTENT.into_response(),
+        (text, _) => {
+            let mut answer = json!({"tokens": tokens});
+            if let Some(text) = text {
+                answer["remind"] = json!(text);
+            }
+            Json(answer).into_response()
+        }
     }
 }
 

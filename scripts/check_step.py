@@ -34,12 +34,17 @@ def own_processes(folder, group):
     return found
 
 
-def alive(pid):
+def send(pid, number):
+    """Signal `number` to `pid`; True while it is there (0 only asks): one that ended meanwhile is no error."""
     try:
-        os.kill(pid, 0)
+        os.kill(pid, number)
         return True
     except ProcessLookupError:
         return False
+
+
+def alive(pid):
+    return send(pid, 0)
 
 
 def files_in(folder):
@@ -80,7 +85,7 @@ def main(command):
         for pid, name in processes:
             left += 1
             print(f"LEFT process {pid}: {name}", file=sys.stderr)
-            os.kill(pid, signal.SIGTERM)
+            send(pid, signal.SIGTERM)
         # an interactive shell ignores SIGTERM; one spinning on a terminal gone, SIGHUP too
         stays = [pid for pid, _ in processes]
         end = time.monotonic() + KILL_AFTER_S
@@ -88,7 +93,7 @@ def main(command):
             time.sleep(0.1)
             stays = [pid for pid in stays if alive(pid)]
         for pid in stays:
-            os.kill(pid, signal.SIGKILL)
+            send(pid, signal.SIGKILL)
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)

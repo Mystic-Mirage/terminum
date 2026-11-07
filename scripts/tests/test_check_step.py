@@ -147,9 +147,11 @@ class Stubborn(unittest.TestCase):
         from e2e_ws import end_tmux
         from testrun import own
         name = own("tm-test-stubborn")
-        subprocess.run(["tmux", "-f", "/dev/null", "-L", name, "new-session", "-d", "sh -c \"trap '' HUP TERM; exec sleep 63\""], check=True)
-        pid = int(subprocess.run(["tmux", "-L", name, "display", "-p", "#{pane_pid}"], capture_output=True, text=True).stdout)
-        end_tmux(name)
+        try:
+            subprocess.run(["tmux", "-f", "/dev/null", "-L", name, "new-session", "-d", "sh -c \"trap '' HUP TERM; exec sleep 63\""], check=True)
+            pid = int(subprocess.run(["tmux", "-L", name, "display", "-p", "#{pane_pid}"], capture_output=True, text=True).stdout)
+        finally:
+            end_tmux(name)
         self.assertTrue(gone(pid), f"{pid} still runs")
 
 

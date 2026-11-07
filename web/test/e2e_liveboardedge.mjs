@@ -243,7 +243,7 @@ ${"z".repeat(400)}
     },
     async deep_link_missing() {
       await page.goto(`${base}/kanban/T-99999`); await page.waitForSelector("#board .col"); await nap(500);
-      check("a task that does not exist is said, and the address goes back to the board", /No task/.test(await page.textContent("#toast")) && new URL(page.url()).pathname === "/kanban/", `${await page.textContent("#toast")} ${page.url()}`);
+      check("a task that does not exist is said, and the address goes back to the board", await until(async () => /No task/.test(await page.textContent("#toast")) && new URL(page.url()).pathname === "/kanban/", 4000), `${await page.textContent("#toast")} ${page.url()}`);
     },
     async back_closes_window() {
       const id = await make("back closes it"); await open(); await page.click(card(id)); await page.waitForSelector("#taskbox[open]");

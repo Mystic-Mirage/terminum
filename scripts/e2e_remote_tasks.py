@@ -34,7 +34,7 @@ def main():
     with open(stub, "w", encoding="utf8") as f:
         f.write(STUB)
     os.chmod(stub, 0o700)
-    t.env.update(TM_SSH=os.path.join(HERE, "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=REMOTE_SOCKET, FAKE_SSH_PIDS=os.path.join(t.root, "ssh-pids"))
+    t.through_fake_ssh(home, REMOTE_SOCKET, os.path.join(t.root, "ssh-pids"))
     subprocess.run(["tmux", "-L", REMOTE_SOCKET, "kill-server"], stderr=subprocess.DEVNULL, check=False)
     try:
         t.start()

@@ -78,6 +78,11 @@ def wait_layout(ws, pred, timeout=5):
     return m["groups"] if m else None
 
 
+def wait_host(ws, test, timeout=5, name="devbox"):
+    """The groups of the first layout in which the host's own group passes test(group), or None."""
+    return wait_layout(ws, lambda groups: (g := host_group(groups, name)) is not None and test(g), timeout)
+
+
 class WS:
     """A page's WebSocket: JSON messages in and out."""
 
@@ -184,6 +189,10 @@ class Terminumd:
         self.env["HISTFILE"] = "/dev/null"   # an ending shell would write it into the folder being removed
         self.proc = None
         self.log_path = os.path.join(self.root, "terminumd.log")
+
+    def through_fake_ssh(self, home, socket_name, pids, **more):
+        """Its ssh is fake_ssh.py: `home` the far side's, `socket_name` its tmux, `pids` the file of its stand-ins; `more`: more of the environment."""
+        self.env.update(TM_SSH=os.path.join(ROOT, "scripts", "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=socket_name, FAKE_SSH_PIDS=pids, **more)
 
     @property
     def sock(self):

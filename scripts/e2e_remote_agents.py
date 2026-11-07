@@ -27,7 +27,6 @@ from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own  # noqa: E402
 
-HERE = os.path.dirname(os.path.abspath(__file__))
 PORT, LOCAL_SOCKET, REMOTE_SOCKET = free_port(), own("tm-test-alocal"), own("tm-test-aremote")
 STUB = """#!/bin/sh
 echo "$*" >> "$HOME/claude-argv"
@@ -146,7 +145,7 @@ def main():
     open(stub, "w").write(STUB)
     os.chmod(stub, stat.S_IRWXU)
     pids = os.path.join(t.root, "ssh-pids")
-    t.env.update(TM_SSH=os.path.join(HERE, "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=REMOTE_SOCKET, FAKE_SSH_PIDS=pids)
+    t.through_fake_ssh(home, REMOTE_SOCKET, pids)
     os.system(f"tmux -L {REMOTE_SOCKET} kill-server 2>/dev/null")
     other = None
     try:

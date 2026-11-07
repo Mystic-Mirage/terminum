@@ -3,7 +3,7 @@
 // selects nothing on a long press, so input.js selects the word itself; these keep that word
 // in sight while the keyboard closes and offer Copy, as iOS shows no menu for a selection the
 // page made.
-import { selectedText, termRange } from "./seltext.js";
+import { copyPreview, hiddenNote, selectedText, termRange, unhidden } from "./seltext.js";
 
 /** Keeps the selection at viewport height y for `ms` while the page settles: the keyboard
  *  closing grows the page, which then scrolls to its end (app.js fitViewport runs first). At
@@ -87,4 +87,17 @@ export function copyByCommand(text) {
     sel.removeAllRanges();
     if (was) sel.addRange(was);
   }
+}
+
+/** Copies `got`: what hides what a line runs left out; the clipboard API needs HTTPS (or localhost), elsewhere `fallback`.
+ *  What to say of it, and whether the clipboard API took it. */
+export async function copyText(got, fallback = copyByCommand) {
+  const { text, left } = unhidden(got), said = `Copied ${copyPreview(text)}${hiddenNote(left)}`;
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return { said, api: true };
+    } catch { /* fall through */ }
+  }
+  return { said: fallback(text) ? said : "Copying is blocked here; use the system Copy menu.", api: false };
 }

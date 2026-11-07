@@ -52,6 +52,8 @@ pub struct Task {
     pub subtasks: i64,
     /// the time a RUN's agent has for it (terminum-dispatcher.md AC-126)
     pub budget_seconds: Option<i64>,
+    /// off the board since then (AC-118)
+    pub archived_at: Option<i64>,
     /// the row's key and place in its column: the rules', never shown
     #[serde(skip)]
     pub(crate) key: String,
@@ -63,7 +65,7 @@ pub(super) const TASK: &str = "SELECT t.number, t.project, (SELECT 'T-' || p.num
     t.owner, u.name, u.kind, t.by_agent, t.session_key,
     (SELECT count(*) FROM files f WHERE f.task = t.id),
     (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.status = 'DONE'),
-    (SELECT count(*) FROM tasks s WHERE s.parent = t.id), t.id, t.rank, t.budget_seconds
+    (SELECT count(*) FROM tasks s WHERE s.parent = t.id), t.id, t.rank, t.budget_seconds, t.archived_at
     FROM tasks t JOIN users u ON u.id = t.owner";
 
 pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
@@ -82,7 +84,7 @@ pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
         files: r.get(11)?,
         subtasks_done: r.get(12)?,
         subtasks: r.get(13)?,
-        budget_seconds: r.get(16)?,
+        budget_seconds: r.get(16)?, archived_at: r.get(17)?,
         key: r.get(14)?,
         rank: r.get(15)?,
     })
@@ -217,9 +219,11 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     get(tx, &format!("T-{number}"))
 }
 
-/// A session works on one task at a time (AC-113): refused while another than `but` stands in IN PROGRESS.
+/// A session works on one task at a time (AC-113), but for those one run gave it together (terminum-dispatcher.md
+/// AC-138): refused while another than `but` stands in IN PROGRESS.
 fn check_free(tx: &Transaction, session: &str, but: &str) -> Result<(), String> {
-    let other: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL", (session, but), |r| r.get(0))
+    let other: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM run_tasks a JOIN run_tasks b ON a.run = b.run JOIN runs r ON r.id = a.run WHERE a.task = tasks.id AND b.task = ?2 AND r.state NOT IN ('closed', 'left'))", (session, but), |r| r.get(0))
         .optional().map_err(sql)?;
     match other {
         Some(other) => Err(format!("Session {} already works on {other}. Finish or move {other} first.", pane_of(session))),
@@ -236,7 +240,8 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
     if task.status == status {
         return Ok(());
     }
-    if status == "IN PROGRESS"
+    // Dispatcher's own move follows its run: another's task in that session is that task's matter
+    if status == "IN PROGRESS" && author != super::store::DISPATCHER
         && let Some(session) = &task.session {
             check_free(tx, session, &task.key)?;
         }
@@ -357,6 +362,21 @@ pub enum ProjectMove {
     SessionFollows(String),
     /// it has a session: nothing moved until the human says what becomes of that
     Ask,
+}
+
+/// Whether a human's last comment on it says just this: a press tried again keeps it once.
+pub fn last_comment_is(tx: &Transaction, id: &str, text: &str) -> Result<bool, String> {
+    let key = key_of(tx, id)?;
+    let last: Option<String> = tx.query_row("SELECT text FROM events WHERE task = ?1 AND kind = 'comment' ORDER BY at DESC, rowid DESC LIMIT 1", [&key], |r| r.get(0)).optional().map_err(sql)?;
+    Ok(last.as_deref() == Some(text))
+}
+
+/// Takes a task off the board, or brings it back to where it stood (AC-118).
+pub fn archive(tx: &Transaction, author: &str, id: &str, on: bool, at: i64) -> Result<(), String> {
+    let key = key_of(tx, id)?;
+    tx.execute("UPDATE tasks SET archived_at = CASE WHEN ?1 THEN ?2 END, updated_at = ?2 WHERE id = ?3", (on, at, &key)).map_err(sql)?;
+    let who = user_name(tx, author)?;
+    log(tx, &key, author, "archive", &format!("{who} {}", if on { "archived it" } else { "brought it back" }), None, at).map(|_| ())
 }
 
 /// A human moves a task to `project` (AC-113): a session goes with it (`choice` "move") unless it

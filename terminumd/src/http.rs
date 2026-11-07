@@ -155,3 +155,27 @@ mod tests {
         assert_eq!(panel_file("nope.js", &h).status(), StatusCode::NOT_FOUND);
     }
 }
+
+#[cfg(test)]
+mod page_tests {
+    /// The session list is one widget on two pages (terminum-kanban.md AC-135): its markup is the same, but for the
+    /// board's way back; the server serves files as they are, so they are two files kept alike by this.
+    #[test]
+    fn same_session_list() {
+        const INDEX: &str = include_str!("../../web/static/index.html");
+        const BOARD: &str = include_str!("../../web/static/kanban.html");
+        let part = |page: &str, from: &str, to: &str| {
+            let at = page.find(from).unwrap_or_else(|| panic!("no {from}"));
+            let end = at + page[at..].find(to).unwrap_or_else(|| panic!("no {to}")) + to.len();
+            page[at..end].to_string()
+        };
+        let list = |page: &str| part(page, "<!-- the session list:", "<!-- /the session list -->");
+        let (a, b) = (list(INDEX), list(BOARD));
+        let way_back = part(&b, "      <a id=\"tosessions\"", "</a>\n");
+        assert_eq!(a, b.replace(&way_back, ""));
+        for dialog in ["rowmenu", "lastlines", "agentsbox"] {
+            let from = format!("<dialog id=\"{dialog}\"");
+            assert_eq!(part(INDEX, &from, "</dialog>"), part(BOARD, &from, "</dialog>"), "{dialog}");
+        }
+    }
+}

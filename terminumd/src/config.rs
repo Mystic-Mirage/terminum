@@ -147,3 +147,8 @@ impl Env {
         }
     }
 }
+
+/// A test's private store: `TM_TEST_HOOKS` with its own `TM_APP_DIR`; an installed terminumd's service passes neither (`cli/launch.rs`).
+pub fn test_store() -> bool {
+    std::env::var("TM_TEST_HOOKS").is_ok() && std::env::var("TM_APP_DIR").is_ok()
+}

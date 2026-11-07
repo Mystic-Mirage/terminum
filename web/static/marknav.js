@@ -10,7 +10,8 @@
 // Undo for 5 s: only then terminumd is told. The bar after a jump has the same Resolve. The
 // reminders' button's pane is the same navigator of the open reminders only, those up first (AC-91).
 import { icon } from "./icons.js";
-import { chatText, el, INSERT, openReminder, when } from "./marks.js";
+import { openReminder, when } from "./listparts.js";
+import { chatText, el, INSERT } from "./marks.js";
 import { oneLine, titleOf } from "./marktext.js";
 import { agentMark } from "./nav.js";
 import { markdownView } from "./widgetui.js";

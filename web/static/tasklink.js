@@ -7,17 +7,16 @@ export const taskUrl = (id) => `/kanban/${id}`;
 /** The board's new-task window, for a session and its project (AC-106). */
 export const newTaskUrl = (session, project) => `/kanban/?new=1&session=${encodeURIComponent(session)}${project ? `&for=${encodeURIComponent(project)}` : ""}`;
 
-/** The session page showing session `key` (terminum-kanban.md AC-134). */
-export const sessionUrl = (key) => `/sessions/?open=${encodeURIComponent(key)}`;
+/** A session's own address on its page: `#/<key>/`, as readable as a key can stay (AC-134). */
+export const sessionHash = (key) => `#/${encodeURIComponent(key).replaceAll("%3A", ":")}/`;
 
-/** The session this page's address asks for, once: the address goes back to the page's. */
-export function askedSession() {
-  const asked = new URLSearchParams(location.search), key = asked.get("open");
-  if (key) {
-    asked.delete("open");
-    history.replaceState(null, "", `${location.pathname}${asked.size ? `?${asked}` : ""}`);
-  }
-  return key;
+/** The session page showing session `key`; `then` "plan": with its Plan pane open. */
+export const sessionUrl = (key, then) => `/sessions/${then ? `?then=${then}` : ""}${sessionHash(key)}`;
+
+/** The session this page's address names, if any. */
+export function addressedSession() {
+  const said = /^#\/(.+?)\/?$/.exec(location.hash)?.[1];
+  try { return said ? decodeURIComponent(said) : null; } catch { return null; }
 }
 
 /** Text for that window to take, once; in private mode it opens empty. */

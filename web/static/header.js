@@ -29,7 +29,7 @@ export function headerParts(group, item, follow = following()) {
 }
 
 /** copy(text): the page's Copy (input.js), the selection kept. Returns show(found). */
-export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, tasks, toast, onShown }) {
+export function pageHeader({ narrow, copy, renaming, setAgent, send, sid, toChat, tasks, toast, onShown }) {
   const plan = planPane({ send, sid, toChat, tasks });   // the shown session's plan (AC-97): its progress here, its pane
   let peeking = 0, shown = null;
   const unpeek = () => { clearTimeout(peeking); peeking = 0; $("bar").classList.remove("peek"); };
@@ -73,6 +73,8 @@ export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, tasks,
     if (!renaming()) $("rename").hidden = !found;
   }
   show.plan = plan;
+  // its buttons (✎, Plan, Copy) are theirs; a narrow window's title shows the full name and path (☰ opens the list)
+  $("current").onclick = (e) => { if (!e.target.closest("button")) narrow.matches ? show.peek() : $("filter").focus(); };
   /** The full name and path for PEEK ms, the header's buttons slid aside; again: back at once. */
   show.peek = () => {
     if (peeking) return unpeek();

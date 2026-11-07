@@ -66,7 +66,7 @@ const store = {
 if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
-const tasks = pageTasks({ box: $("asks"), embedded, say: (...a) => toast(...a) });
+const tasks = pageTasks({ box: $("asks"), embedded, say: (...a) => toast(...a), show: (id) => { if (id !== st.sid) select(id); } });
 const st = {
   groups: [], sid: embedded ?? tasks.asked ?? store.get("sid", null), projects: [], listOrder: [],
   size: null, base: null, step: store.get("sizeStep", 0),
@@ -215,7 +215,6 @@ $("attachfab").addEventListener("click", pickFile);
 $("attachfab").addEventListener("mousedown", (e) => e.preventDefault());   // the terminal keeps the keys
 files.bindDrop($("term"));
 
-
 const tools = navTools({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
   onResize: () => view.keepBottom(applyFit), onRenamed: () => (computer.matches ? focusTerminal() : document.activeElement?.blur()) });
 dockGrip({ store, cellWidth: () => view.charRatio() * view.chosenSize(), onResize: () => view.keepBottom(applyFit) });   // docked Files' width (AC-70)
@@ -272,7 +271,7 @@ function onMessage(m) {
   trace.received(m);
   bookmarks.seen(m);
   rail?.seen(m);
-  ask.seen(m); asked.seen(m); rowMenu.seen(m);
+  ask.seen(m); asked.seen(m); rowMenu.seen(m); tools.seen(m);
   switch (m.t) {
     case "layout": st.groups = m.groups; tasks.layout(m.groups); place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
@@ -290,9 +289,6 @@ function onMessage(m) {
     case "restore": if (!embedded) menu.showRestore(m.report); break;
     case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files
     case "quickmade": quick.made(m); break;
-    case "hostadded": case "hostagents": tools.hostAnswer(m); break;
-    case "tmuxadded": tools.tmuxAdded(); break;
-    case "tmuxsessions": tools.tmuxChoices(m); break;
     case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg)) status(m.msg); break;   // empty: tmux is back
     case "update": if (!embedded) menu.showUpdate(m.latest); break;
     case "note": toast(m.msg, 4000); break;
@@ -328,6 +324,7 @@ const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
 
 function pick(id) {
   const of = !narrow.matches && findItem(st.groups, id)?.item.quickOf;   // a quick shell's row: its pane, with it
+  tasks.address(of || id, true);
   select(of || id); closeDrawer();
   if (of) quick.focus(); else focusTerminal();
 }
@@ -371,10 +368,11 @@ function toggleGroup(key) {
 }
 
 // The header (header.js): the title, then the folder with its Copy, the window, what runs there.
-const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
+const showCurrent = pageHeader({ narrow, copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
   send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), tasks: () => taskMarksOf(st.sid), toast, onShown: tools.sayStalls });
 
 function select(id, force = false) {
+  if (id) tasks.address(id);
   if (id === st.sid && !force && view.screen.length) return;
   st.sid = id; store.set("sid", id); place.note(); seeWaits(st.groups, id);
   recent.shown(id);
@@ -390,7 +388,7 @@ function select(id, force = false) {
   drawNav(); syncControls();
 }
 
-const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focusInput: () => input.focus(), peek: () => showCurrent.peek() });
+const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focusInput: () => input.focus() });
 
 // ---------- theme ----------
 

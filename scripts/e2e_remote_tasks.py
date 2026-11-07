@@ -51,6 +51,9 @@ def main():
         check("setup: an agent on the host", st == 200, added)
         agent = added["id"]
         status = lambda i: call(f"/api/tasks/{i}")[1]["status"]  # noqa: E731
+        refused = call("/api/tasks", "POST", {"title": "no human move", "project": project})[1]["id"]
+        st, said = call(f"/api/tasks/{refused}", "PATCH", {"status": "DONE"})
+        check("AC-107 a human moves a task only by running it", st == 400 and "running it" in said.get("error", "") and status(refused) == "TODO", said)
         history = lambda i: " | ".join(e.get("text") or "" for e in call(f"/api/tasks/{i}")[1]["history"])  # noqa: E731
         task = lambda title: call("/api/tasks", "POST", {"title": title, "project": project})[1]["id"]  # noqa: E731
         run = lambda i: call(f"/api/tasks/{i}/run", "POST", {"agent": agent})  # noqa: E731

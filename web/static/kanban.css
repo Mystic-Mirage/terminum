@@ -1,62 +1,92 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* The board at /kanban/ (terminum-kanban.md). Its keys, fields, menus and dialogs are the page's kinds
    (controls.css); here only their place, and what is the board's own: a column and a card. */
-body.board-page { display: flex; flex-direction: column; height: var(--app-h, 100dvh); margin: 0; overflow: hidden; background: var(--surface-0); color: var(--t-fg); }
-
-/* its head: the session list's line, its keys centred 28 px from the top */
-#boardhead { position: relative; z-index: 30; flex: none; display: flex; align-items: center; gap: var(--sp-2); min-height: var(--h-bar); box-sizing: border-box; padding: var(--sp-1) var(--gutter); padding-top: max(var(--sp-1), env(safe-area-inset-top)); }
+body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); color: var(--t-fg); }
+/* left the session page's widget, right the board: the same two parts, the same line between them (style.css, layout.css);
+   the widget's foot stays on the session page */
+.board-page :is(.nav-foot, #tip) { display: none; }
+.board-page #bar { flex: none; padding-left: var(--gutter); padding-right: var(--gutter); }   /* on the columns' edges */
+.board-page #sessions { padding-bottom: var(--gutter); }
+.board-page .search kbd { display: none; }   /* its head holds one key more: the word stays whole */
+#barsessions { flex: none; }
+#app:not(.nav-hidden) #barsessions { display: none; }
+#tosessions { flex: none; }
 #filters { display: flex; align-items: center; gap: var(--sp-2); flex: 1 1 auto; min-width: 0; }
-#filters .search { flex: 0 1 220px; height: var(--key-h); }
-#picks { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-@media (min-width: 861px) { #boardhead #filtersbtn { display: none; } }
+#filters .search { flex: 0 1 220px; min-width: 110px; height: var(--key-h); }   /* the field gives way first */
+#filters > :not(.search), #boardacts { flex: none; }
+#picks { display: flex; align-items: center; gap: var(--sp-2); }
+/* its room is what the session list leaves: with too little, the filters stand behind one key */
+.board-page #main { container: board / inline-size; }
+#bar #filtersbtn { display: none; }
+@container board (max-width: 800px) {
+  #bar #filtersbtn { display: inline-flex; }
+  #filters { flex-wrap: wrap; }
+  #picks { flex-basis: 100%; }
+  #picks:not(.open) { display: none; }
+}
 #boardacts { display: flex; gap: var(--sp-2); margin-left: auto; }
-#boardhead .seg { flex: none; }
-#boardhead .seg a { height: calc(var(--key-h) - var(--sp-0) * 2); }   /* the track as tall as the keys beside it */
 
-/* a filter: a key, its popover menu of ticks; a filter on says how many */
-.pick { position: relative; }
-.pick summary { list-style: none; cursor: pointer; }
+/* a filter: a key with its arrow, its plate of ticks under it; a filter on says how many (as todobem's select and list) */
+.pick { position: relative; --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.pick summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--sp-1); }
 .pick summary::-webkit-details-marker { display: none; }
+.pick summary::after { content: ""; flex: none; width: 10px; height: 6px; margin-left: var(--sp-1); background: currentColor; opacity: .7; transition: transform var(--dur-pop, .15s);
+  -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; }
+.pick[open] summary::after { transform: rotate(180deg); }
 :is(.pick summary, .colhead) .count { font-size: var(--fs-micro); font-weight: var(--fw-body); font-variant-numeric: tabular-nums; }
-/* the project: its key says which, with its color's dot; its menu's name chooses it alone, its tick adds it */
+#newproject { display: inline-flex; align-items: center; gap: var(--sp-1); }
+/* the project: its key says which, with its color's dot; its menu's name chooses it alone, its tick adds it, its pencil edits it */
 #fproject { flex: none; }
-#fproject summary { max-width: 180px; }
+#fproject summary { max-width: 200px; }
 .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--proj); }
+#fproject .box { min-width: 240px; }
 .projrow { display: flex; align-items: center; }
-.projrow .projtick { flex: none; width: auto; padding-right: 0; }
-.projrow button { flex: 1 1 0; min-width: 0; }
-.pick > .box { position: absolute; z-index: 20; top: calc(100% + var(--sp-1)); left: 0; min-width: 190px; max-height: 50dvh; overflow: auto; }
+#fproject .projrow .projtick { flex: none; width: auto; padding-right: 0; }
+#fproject .projrow .projname { flex: 1 1 auto; width: auto; min-width: 0; }
+#fproject .projrow .projedit { flex: none; width: var(--icon-key-list); height: var(--icon-key-list); padding: 0; justify-content: center; color: var(--muted); }
+.pick > .box { position: absolute; z-index: 20; top: calc(100% + var(--sp-1)); left: 0; min-width: 190px; max-height: 50dvh; overflow: auto; box-shadow: var(--shadow-far); }
 
 /* the columns: a surface each, their cards a step over it */
-#board { display: grid; grid-template-columns: 280px repeat(5, minmax(200px, 1fr)); gap: var(--sp-2); flex: 1 1 auto; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); overflow-x: auto; }
+#board { display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: var(--sp-2); flex: 1 1 auto; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); overflow-x: auto; }
 .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-radius: var(--r-lg); background: var(--surface-1); }
 .col.over { background: var(--surface-2); }
 .colhead { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); height: 32px; flex: none; margin: 0; padding: 0 var(--sp-3); font-size: var(--fs-label); font-weight: var(--fw-head); }
 .colhead .count { color: var(--muted); }
-.cards { display: flex; flex-direction: column; gap: var(--sp-2); padding: 0 var(--sp-2) var(--sp-2); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
-/* the project's sessions: the session list's, a column that stays while the others scroll by (AC-135) */
-#sidecol { position: sticky; left: 0; z-index: 2; }
-#sidecol #sessions { min-height: 0; }
-/* a project's agents, under its sessions: what RUN can start (terminum-dispatcher.md AC-137) */
-.agents { flex: none; max-height: 40%; display: flex; flex-direction: column; min-height: 0; }
-.agents .colhead { display: flex; }
-.agents .colhead .icon { --ik: var(--icon-key-list); }
-.agentkeys { display: flex; gap: var(--icon-gap); }
-.agentlist { overflow-y: auto; padding: 0 var(--sp-2) var(--sp-2); min-height: 0; }
-.agentlist .pbar { opacity: .75; }
-.agentlist .colempty { margin: 0 var(--sp-1); }
+.cards { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2) var(--sp-2); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+/* a project's agents, over the columns: what RUN can start (terminum-dispatcher.md AC-137) */
+#agentbar { flex: none; padding: var(--sp-2) var(--gutter) 0; min-width: 0; }
+.agents { display: flex; align-items: stretch; gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; }
+.agents::-webkit-scrollbar { display: none; }
+.agents > .icon { flex: none; align-self: center; }
+.agentkeys { display: flex; flex: none; align-items: center; gap: var(--icon-gap); }
+.agentlist { display: flex; gap: var(--sp-2); min-width: 0; }
+.agentlist .colempty { margin: 0; align-self: center; white-space: nowrap; }
+.agentlist .item { position: relative; flex: none; width: 240px; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
+.agproj { margin-left: auto; padding-left: var(--sp-2); flex: none; font-size: var(--fs-meta); font-weight: var(--fw-body); color: var(--muted); }
+.agentcard:hover .agproj { visibility: hidden; }   /* its pencil stands there */
+/* what it does now: its lamp lit while it is busy */
+.agstatus { display: flex; align-items: center; gap: var(--sp-1); padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agstatus::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--surface-4); }
+.agentcard.busy .agstatus { color: var(--t-fg); }
+.agentcard.busy .agstatus::before { background: var(--ag); box-shadow: 0 0 7px var(--ag); }
+.agedit { position: absolute; top: var(--sp-1); right: var(--sp-1); display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-xs); color: var(--muted); }
+.agedit:hover { color: var(--t-fg); background: var(--surface-3); }
+@media (hover: hover) { .agentcard:not(:hover, :focus-within) .agedit { opacity: 0; } }
+.agentlist .item.over { background: var(--surface-3); box-shadow: inset 0 0 0 2px var(--accent); }
+.dragtask #agentbar .item:not(.busy) { background: var(--surface-2); }
+.dragtask #agentbar .item.busy { opacity: var(--key-disabled); cursor: not-allowed; }
+.agentlist .pbar { opacity: .75; }
+.agentlist .pbar.busy { opacity: 1; }
+.pickhint { margin: 0; align-self: center; flex: none; font-size: var(--fs-small); color: var(--accent); white-space: nowrap; }
+.fieldvalue { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--key-h); font-size: var(--fs-body); color: var(--t-fg); }
 #agentdrop { margin-right: auto; color: var(--danger-text); }
-@media (min-width: 861px) {
-  #board.noside { grid-template-columns: repeat(5, minmax(220px, 1fr)); }
-  #board.noside #sidecol { display: none; }
-}
 .colempty { margin: var(--sp-1) var(--sp-1) 0; font-size: var(--fs-small); color: var(--muted); }
 .colmore { align-self: center; flex: none; }
 
 .card { position: relative; flex: none; display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2); border-radius: var(--r-sm); background: var(--surface-3); box-shadow: var(--m-edge); cursor: pointer; min-width: 0; }
-.card:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.card:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }   /* inside the card: its column's scroll would cut it */
 .card.lifted { opacity: var(--key-disabled); }
 @media (hover: hover) { .card:hover { background: var(--surface-4); } }
 .chead { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
@@ -64,8 +94,12 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 .csev { padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); line-height: 16px; font-variant-numeric: tabular-nums; background: var(--surface-1); }
 .csev.P0 { color: var(--danger-ink); background: var(--danger-fill); }
 .csev.P1 { color: var(--danger-ink); background: var(--warn-fill); }
-.cmove { --ik: var(--icon-key-list); margin-left: auto; }
-@media (hover: hover) { .card:not(:hover, :focus-within) .cmove { opacity: 0; } }
+.crun { --ik: var(--icon-key-list); margin-left: auto; }
+@media (hover: hover) { .card:not(:hover, :focus-within) .crun { opacity: 0; } }
+.card.picked { box-shadow: var(--m-edge), inset 0 0 0 2px var(--accent); }
+/* the agent a task is on: its color's dot, then its name (terminum-dispatcher.md AC-138) */
+.cagent { display: inline-flex; align-items: center; gap: var(--sp-1); color: color-mix(in srgb, var(--ag) 75%, var(--t-fg)); }
+.cagent::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--ag); }
 .ctitle { font-size: var(--fs-row); font-weight: var(--fw-ctl); line-height: var(--lh-ui); overflow-wrap: anywhere; }
 .cfoot { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); font-size: var(--fs-meta); color: var(--muted); min-width: 0; }
 .cfoot > span { overflow-wrap: anywhere; }
@@ -94,8 +128,27 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 .runfacts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--term-font); }
 .runprompt { margin: 0; max-height: 240px; overflow: auto; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-label); white-space: pre-wrap; overflow-wrap: anywhere; }
 .runmarked { margin: 0; font-size: var(--fs-label); color: var(--waiting); }
-#runadd, #runjust, #runfresh { margin-right: auto; }
+#runadd, #runfresh { margin-right: auto; }
+#runmessage { width: 100%; box-sizing: border-box; }
+#runform { gap: var(--sp-3); }
+#runhow .runfacts { margin-top: var(--sp-2); }
 #runbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
+
+/* a project's window */
+#projectbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
+#projectform, #projectfields { display: flex; flex-direction: column; gap: var(--sp-3); }
+#projectagents { display: flex; flex-direction: column; gap: var(--sp-2); }
+#projectagents .agentlist { flex-direction: column; }
+#projectagents .item { width: auto; }
+#projectdelete { margin-right: auto; color: var(--danger-text); }
+
+/* its windows: the page's own type; what is typed for a machine stays in the terminal's */
+.board-page dialog.dlg { font-family: var(--ui); font-size: var(--fs-body); }
+.board-page dialog.dlg :is(button, select, input, textarea, h2) { font-family: var(--ui); }
+.board-page dialog.dlg :is(#runfolder, #agentdir, #agentcommand, #projectdir, .runprompt, textarea.droparea, #newtext) { font-family: var(--term-font); }
+.more summary { cursor: pointer; font-size: var(--fs-label); color: var(--muted); user-select: none; }
+.more[open] summary { margin-bottom: var(--sp-2); }
+.fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 /* its windows */
 #agentbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
@@ -103,14 +156,14 @@ body.board-page { display: flex; flex-direction: column; height: var(--app-h, 10
 #taskbody { display: flex; flex-direction: column; gap: var(--sp-3); max-height: calc(100dvh - 130px); overflow-y: auto; }
 #taskbody > * { min-width: 0; }
 dialog .markdown pre { max-width: 100%; overflow-x: auto; }
-#movebox { width: 240px; margin: 0; }
-#movebox form { gap: 0; }
-#movebox form:focus { outline: none; }
-.movehead { margin: 0; padding: var(--sp-1) 10px; font-family: var(--ui); font-size: var(--fs-meta); color: var(--muted); }
-.fieldrow { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.fieldrow { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; font-size: var(--fs-label); color: var(--muted); }
 .fieldgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--sp-2); }
 .edithead { display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-label); color: var(--muted); }
-#newadd { margin-right: auto; }
+#newadd, .evenleft { margin-right: auto; }
+/* a text that takes files: its edge says so at rest and lights under a drag (AC-106) */
+textarea.droparea { outline: 1px dashed var(--line); outline-offset: -1px; }
+section.droparea { border-radius: var(--r-sm); }
+.droparea.dropping { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 8%, var(--field-fill)); }
 #taskbody textarea.field { width: 100%; box-sizing: border-box; }
 #newtext { width: 100%; box-sizing: border-box; }
 dialog .markdown { font-family: var(--ui); font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; min-width: 0; }
@@ -135,11 +188,11 @@ dialog .markdown img { max-width: 100%; }
 /* a phone or a narrow window: one column, a swipe away from the next; the head gives the cards the room */
 #colswitch { display: none; }
 @media (max-width: 860px) {
-  #boardhead { flex-wrap: wrap; }
+  #app:not(.nav-hidden) #barsessions { display: grid; }
+  #newproject span { display: none; }
   #filters { order: 3; flex: 1 1 100%; flex-wrap: wrap; }
-  #filters .search { flex: 1 1 0; }
-  #picks { flex: 1 1 100%; flex-wrap: wrap; }
-  #picks:not(.open) { display: none; }
+  #filters .search { flex: 1 1 0; min-width: 80px; }
+  #picks { flex-wrap: wrap; }
   .pick > .box { position: fixed; top: auto; left: var(--gutter); right: var(--gutter); max-height: 60dvh; }
   #colswitch { display: flex; flex: none; overflow-x: auto; scrollbar-width: none; margin: var(--sp-2) var(--gutter) 0; }
   #colswitch::-webkit-scrollbar { display: none; }
@@ -148,18 +201,15 @@ dialog .markdown img { max-width: 100%; }
   #board::-webkit-scrollbar { display: none; }
   .col { flex: 0 0 100%; box-sizing: border-box; scroll-snap-align: start; scroll-snap-stop: always; background: none; border-radius: 0; }
   .colhead { display: none; }
-  #sidecol { position: static; order: 1; }
-  #boardhead #sidetoggle { display: none; }
   .csession .item { min-height: var(--key-h-touch); box-sizing: border-box; align-items: center; }
-  .agents { max-height: 50%; }
-  #fproject summary { max-width: 120px; }
+  #fproject summary { max-width: 104px; }
   .cards { padding: 0 var(--gutter) var(--gutter); }
   .card { padding: var(--sp-3); }
   .chead { min-height: var(--icon-key-list); }
-  .cmove { margin: calc(var(--sp-1) * -1) calc(var(--sp-1) * -1) calc(var(--sp-1) * -1) auto; }
+  .crun { margin: calc(var(--sp-1) * -1) calc(var(--sp-1) * -1) calc(var(--sp-1) * -1) auto; }
   .ctitle { font-size: var(--fs-title); }
   .cfoot { font-size: var(--fs-label); }
-  .fieldgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fieldgrid, .fieldgrid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fieldgrid > :first-child:nth-last-child(odd) { grid-column: 1 / -1; }
   #taskbody { max-height: none; overflow: visible; }   /* the sheet scrolls, once */
   .ev { font-size: var(--fs-small); }

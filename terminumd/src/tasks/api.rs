@@ -15,6 +15,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 
 use super::files;
+use crate::dispatcher::runs;
 use super::ops::{self, Edit, NewTask, ProjectMove, Task};
 use super::query::{self, Query};
 use super::store::{DEFAULT_PROJECT, HUMAN};
@@ -27,12 +28,14 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks/meta", get(meta))
         .route("/api/tasks/start-empty", post(start_empty))
         .route("/api/task-projects", post(new_project))
+        .route("/api/task-projects/{id}", patch(edit_project))
         .merge(super::agents::routes())
         .merge(crate::dispatcher::api::routes())
         .route("/api/tasks/{id}", get(window).patch(change))
         .route("/api/tasks/{id}/comments", post(add_comment))
         .route("/api/tasks/{id}/comments/{event}", patch(edit_comment).delete(drop_comment))
         .route("/api/tasks/{id}/purge", post(purge))
+        .route("/api/tasks/{id}/archive", post(archive))
         .route("/api/task-files", post(upload).layer(DefaultBodyLimit::max(files::MOST_BYTES + 1024)))
         .route("/api/task-files/{id}", get(download).delete(remove_file))
 }
@@ -130,13 +133,20 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         reach: None,
         text: q.get("q").cloned(),
         with_subtasks: false,
+        archived: q.get("archived").is_some_and(|c| c == "1"),
         after: q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0),
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
     };
     let with_counts = q.get("counts").is_some_and(|c| c == "1");
-    let done = store(&app, move |tx| Ok((query::list(tx, &filter)?, if with_counts { Some(query::counts(tx, &filter)?) } else { None }, crate::dispatcher::runs::card_marks(tx)?))).await;
+    let done = store(&app, move |tx| {
+        let tasks = query::list(tx, &filter)?;
+        let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
+        let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
+        let counts = if with_counts { Some((query::counts(tx, &filter)?, runs::busy_agents(&runs::live(tx)?))) } else { None };
+        Ok((tasks, counts, run_marks, on_agents))
+    }).await;
     match done {
-        Ok((tasks, counts, run_marks)) => {
+        Ok((tasks, counts, run_marks, on_agents)) => {
             let layout = app.layout.read();
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_items(layout.as_array().map_or(&[], |a| a.as_slice())).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
             let shown: Vec<Value> = tasks.iter().map(|t| {
@@ -144,9 +154,13 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                 if let Some(state) = run_marks.get(&t.key) {
                     v["run"] = json!(state);
                 }
+                if let Some(agent) = on_agents.get(&t.key) {
+                    v["agent"] = agent.clone();
+                }
                 v
             }).collect();
-            Json(json!({"tasks": shown, "counts": counts})).into_response()
+            let (counts, busy) = counts.unzip();
+            Json(json!({"tasks": shown, "counts": counts, "busy": busy})).into_response()
         }
         Err(e) => refuse(StatusCode::SERVICE_UNAVAILABLE, e),
     }
@@ -160,15 +174,16 @@ async fn meta(State(app): State<Shared>) -> Response {
         .map(|it| json!({"key": it["id"], "title": it["title"]})).collect();
     // the store's lock waits out a running query: off the async workers, its state too
     let a = app.clone();
-    let (users, agents, limits, problem, set_aside) = tokio::task::spawn_blocking(move || {
-        let (users, agents, limits) = a.tasks.with(|tx| Ok((
+    let (users, agents, limits, last_agents, problem, set_aside) = tokio::task::spawn_blocking(move || {
+        let (users, agents, limits, last_agents) = a.tasks.with(|tx| Ok((
             ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
             super::agents::list(tx)?,
             super::agents::limits(tx)?,
+            runs::last_agents(tx)?,
         ))).unwrap_or_default();
-        (users, agents, limits, a.tasks.problem(), a.tasks.is_set_aside())
+        (users, agents, limits, last_agents, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
-    Json(json!({"projects": projects, "agents": agents, "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {
@@ -191,6 +206,17 @@ async fn new_project(State(app): State<Shared>, Json(body): Json<Value>) -> Resp
     let a = app.clone();
     let done = off(move || a.projects.lock().create(&name, host, dir)).await;
     told_projects(&app, done.map(|id| json!({"id": id})))
+}
+
+/// A project's name and folder from its window (AC-139); its server stays: its sessions are there.
+async fn edit_project(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
+    if id == DEFAULT_PROJECT {
+        return refuse(StatusCode::BAD_REQUEST, "Default is no real project: it has no name or folder to change.");
+    }
+    let (name, dir) = (text(&body, "name"), text(&body, "dir"));
+    let a = app.clone();
+    let done = off(move || a.projects.lock().edit(&id, name.as_deref(), dir)).await;
+    told_projects(&app, done.map(|()| json!({"ok": true})))
 }
 
 fn text(v: &Value, key: &str) -> Option<String> {
@@ -231,13 +257,22 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
 /// A task's window: its fields, text, comments and history, files.
 async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
     let wanted = id.clone();
-    let done = store(&app, move |tx| Ok((ops::get(tx, &wanted)?, ops::text_of(tx, &wanted)?, ops::history(tx, &wanted)?, files::of_task(tx, &wanted)?))).await;
-    answer(done.map(|(t, body, history, attached)| {
+    let done = store(&app, move |tx| {
+        let t = ops::get(tx, &wanted)?;
+        let held = runs::holding(tx, &t.key)?.map(|r| r.names());
+        let agent = runs::card_agents(tx, &[&t.key])?.remove(&t.key);
+        Ok((ops::text_of(tx, &wanted)?, ops::history(tx, &wanted)?, files::of_task(tx, &wanted)?, held, agent, t))
+    }).await;
+    answer(done.map(|(body, history, attached, held, agent, t)| {
         let mut v = card(&app, &t);
         v["text_rev"] = json!(text_rev(&body));
         v["text"] = json!(body);
         v["history"] = history;
         v["files"] = json!(attached);
+        v["run_holds"] = json!(held);
+        if let Some(agent) = agent {
+            v["agent"] = agent;
+        }
         v
     }))
 }
@@ -248,12 +283,16 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         return refuse(StatusCode::BAD_REQUEST, "That session is gone.");
     }
     let began_from = text(&body, "text_rev");
+    // a task moves when it runs and when its run ends: a human runs it (terminum-dispatcher.md AC-138)
+    let to_status = text(&body, "status");
+    if to_status.is_some() && !crate::config::test_store() {   // the live tests place cards by it
+        return refuse(StatusCode::BAD_REQUEST, "A task moves by running it: drop it on an agent, or press Run.");
+    }
     let wanted = id.clone();
-    let moved_to = text(&body, "status");
-    let to_status = moved_to.clone();
     let to_project = text(&body, "project");
     let choice = text(&body, "session_choice");
     let edit = Edit { title: text(&body, "title"), text: text(&body, "text"), severity: text(&body, "severity"), owner: text(&body, "owner") };
+    let dropped = ids(&body, "files");
     let before = body.get("before").filter(|b| !b.is_null());
     let reorder = before.is_some() || body.get("order_end").is_some();
     let before = before.and_then(Value::as_str).map(str::to_string);
@@ -274,6 +313,10 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         if began_from.is_some_and(|rev| rev != text_rev(&ops::text_of(tx, &wanted).unwrap_or_default())) {
             return Ok(Err((StatusCode::PRECONDITION_FAILED, "The text changed meanwhile.")));
         }
+        // its run holds it and its session until it ends, or the human gives up (AC-138)
+        if (to_project.is_some() || session.is_some()) && runs::holding(tx, &was.key)?.is_some() {
+            return Ok(Err((StatusCode::BAD_REQUEST, "Its run holds it: give up on the run first.")));
+        }
         let mut follow = None;
         if let Some(project) = &to_project {
             match ops::change_project(tx, HUMAN, &wanted, project, choice.as_deref(), at)? {
@@ -287,19 +330,19 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
             ops::link(tx, HUMAN, &wanted, s.as_str(), at)?;
         }
         ops::edit(tx, HUMAN, &wanted, edit, at)?;
+        files::attach(tx, &dropped, &wanted, None)?;   // what was dropped in its text as it was edited (AC-109)
         if let Some(minutes) = budget {
             ops::set_budget(tx, HUMAN, &wanted, minutes, at)?;
         }
         if let Some(status) = &to_status {
             ops::move_to(tx, HUMAN, &wanted, status, at)?;
-            crate::dispatcher::runs::hold(tx, &was.key)?;   // it stands until RUN or their own prompt (AC-124)
         }
         if reorder {
             ops::reorder(tx, &wanted, before.as_deref(), at)?;
         }
-        Ok(Ok((ops::get(tx, &wanted)?, was, follow)))
+        Ok(Ok((ops::get(tx, &wanted)?, follow)))
     }).await;
-    let (task, was, follow) = match done {
+    let (task, follow) = match done {
         Ok(Ok(d)) => d,
         Ok(Err((status, why))) => return refuse(status, why),
         Err(e) => return refuse(StatusCode::BAD_REQUEST, e),
@@ -308,10 +351,6 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         Some((session, project)) => follow_session(&app, session, project).await.err(),
         None => None,
     };
-    if moved_to.is_some() && was.status != task.status {
-        super::tell::human_moved(&app, &task).await;
-        crate::dispatcher::api::human_moved(&app, &task);
-    }
     if budget.is_some() {
         crate::dispatcher::api::budget_changed(&app, &task);
     }
@@ -364,6 +403,19 @@ async fn drop_comment(State(app): State<Shared>, Path((id, event)): Path<(String
 async fn scrub(app: &Shared) {
     let a = app.clone();
     let _ = tokio::task::spawn_blocking(move || a.tasks.checkpoint()).await;
+}
+
+/// Off the board, or back (AC-118); a run that holds it ends first.
+async fn archive(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
+    let (wanted, on) = (id.clone(), body["on"].as_bool().unwrap_or(true));
+    let done = store(&app, move |tx| {
+        let key = ops::key_of(tx, &wanted)?;
+        if runs::holding(tx, &key)?.is_some() {
+            return Err("Its run holds it: give up on the run first.".to_string());
+        }
+        ops::archive(tx, HUMAN, &wanted, on, ops::now())
+    }).await;
+    told_answer(&app, &id, done.map(|()| json!({"ok": true})))
 }
 
 async fn purge(State(app): State<Shared>, Path(id): Path<String>) -> Response {

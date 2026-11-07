@@ -135,9 +135,8 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
       // what terminumd and tmux see of the pane, for a bug report (AC-100)
       button("Diagnostics…", "diag", () => { hide(); diag.open(id); }),
       document.createElement("hr"),
-      // the view's splits are the session's quick shell (AC-88): it is shown, its shell beside it
-      splits(it),
-      document.createElement("hr"),
+      // the view's splits are the session's quick shell (AC-88): it is shown, its shell beside it; the board has no view
+      ...(split ? [splits(it), document.createElement("hr")] : []),
       button("Move to the Top", "top", () => move(0), movable && i > 0),
       button("Move Up", "up", () => move(i - 1), movable && i > 0),
       button("Move Down", "down", () => move(i + 1), movable && i < last),
@@ -352,5 +351,5 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     box.dataset.for = "";
     open(x, y, byFinger, keepKeys);
   }
-  return { headMenu, groupMenu, newInProject, hide, show, rename, held, seen: (m) => { kept.seen(m); diag.seen(m); } };
+  return { headMenu, groupMenu, newInProject, hide, show, rename, held, deleteProject: (p) => deleteProject(p, p.members.filter((k) => item(k)).length), seen: (m) => { kept.seen(m); diag.seen(m); } };
 }

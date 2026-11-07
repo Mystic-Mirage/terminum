@@ -12,11 +12,11 @@
 :root { --grain: none; }
 @media (pointer: coarse) { :root { --grain-opacity: .06; } :root.light { --grain-opacity: .04; } }
 
-:is(#nav, #bar, .winhead, #sidehead, #menu, #hostmenu, #rowmenu, #updmenu, #toast, #findbox, .footform, #paused, #boardhead)::after {
+:is(#nav, #bar, .winhead, #sidehead, #menu, #hostmenu, #rowmenu, #updmenu, #toast, #findbox, .footform, #paused)::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
   background: var(--grain); opacity: var(--grain-opacity); }
 
 /* a reader who asked the system for more contrast gets the flat surfaces back */
 @media (prefers-contrast: more) {
-  :is(#nav, #bar, .winhead, #sidehead, #menu, #hostmenu, #rowmenu, #updmenu, #toast, #findbox, .footform, #paused, #boardhead)::after { display: none; }
+  :is(#nav, #bar, .winhead, #sidehead, #menu, #hostmenu, #rowmenu, #updmenu, #toast, #findbox, .footform, #paused)::after { display: none; }
 }

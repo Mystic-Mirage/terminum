@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the board's parts share: terminumd's routes, small DOM helpers, dialogs and files.
 import * as signin from "./signin.js";
-import { el } from "./listparts.js";
+import { PROJECT_HUES, el, hueColor, iconButton } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
 export const THIS_MAC = "This Mac";
+export const DEFAULT = "default";                  // terminumd's Default project
+/** A server's choices: none is this Mac. */
+export const hostOptions = (hosts) => [["", THIS_MAC], ...hosts.map((h) => [h, h])];
+/** An agent's color: its place in the projects' palette (terminum-dispatcher.md AC-138). */
+export const agentColor = (a) => hueColor(PROJECT_HUES[(a.color ?? 0) % PROJECT_HUES.length]);
 export const $ = (id) => document.getElementById(id);
 
 /** A page with no sign-in goes to /sessions/, whose form signs in. */
@@ -46,6 +51,23 @@ export function button(cls, text, onClick) {
 export function fillSelect(select, options, chosen) {
   select.replaceChildren(...options.map(([value, label]) => { const o = el("option", null, label); o.value = value; return o; }));
   select.value = options.some(([value]) => value === chosen) ? chosen : options[0]?.[0] ?? "";
+}
+
+/** A project's `agents` for `select`: a busy one not to be chosen; the first of `wanted` free, else the first free.
+ *  `none`: the label of a choice of no agent, first. */
+export function fillAgents(select, agents, busy, wanted, none = null) {
+  const free = agents.filter((a) => !busy(a));
+  const pick = wanted.find((id) => free.some((a) => a.id === id)) ?? free[0]?.id ?? "";
+  fillSelect(select, [...(none ? [["", none]] : []), ...agents.map((a) => [a.id, busy(a) ? `${a.name} (busy with ${busy(a)})` : a.name])], pick);
+  for (const o of select.options) o.disabled = !!o.value && !free.some((a) => a.id === o.value);
+}
+
+/** The agent a task is on, in its color (terminum-dispatcher.md AC-138). */
+export function agentChip(agent) {
+  const a = el("span", "cagent", agent.name);
+  a.style.setProperty("--ag", agentColor(agent));
+  a.title = `${agent.name} does it, or did`;
+  return a;
 }
 
 /** The sessions a task can be linked to. */

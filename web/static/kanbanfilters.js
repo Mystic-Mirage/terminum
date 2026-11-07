@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The board's filters, kept in its URL (terminum-kanban.md AC-111), and the project it shows, which
 // this browser remembers (AC-135).
-import { el, projectInk, read, write } from "./listparts.js";
+import { el, iconButton, projectInk, read, write } from "./listparts.js";
 import { $, SEVERITIES, button } from "./kanbanutil.js";
 
 const CHOSEN = "board.project";
@@ -27,22 +27,22 @@ function address(next) {
 export const filters = () => {
   const q = new URLSearchParams(location.search);
   const list = (k) => (q.get(k) ?? "").split(",").filter(Boolean);
-  return { project: list("project"), severity: list("severity"), owner: q.get("owner") ?? "", q: q.get("q") ?? "" };
+  return { project: list("project"), severity: list("severity"), owner: q.get("owner") ?? "", q: q.get("q") ?? "", archived: q.get("archived") ?? "" };
 };
 
 /** What Clear filters takes off: the project is a choice, not a filter (AC-135). */
-export const narrowed = () => { const f = filters(); return f.severity.length || f.owner || f.q; };
+export const narrowed = () => { const f = filters(); return f.severity.length || f.owner || f.q || f.archived; };
 /** A task made now may not show. */
 export const hasFilter = () => narrowed() || filters().project.length;
 
 export function query(extra = {}) {
   const f = filters(), p = new URLSearchParams();
-  for (const [k, v] of Object.entries({ project: f.project.join(","), severity: f.severity.join(","), owner: f.owner, q: f.q, ...extra })) if (v !== "" && v !== undefined) p.set(k, v);
+  for (const [k, v] of Object.entries({ project: f.project.join(","), severity: f.severity.join(","), owner: f.owner, q: f.q, archived: f.archived, ...extra })) if (v !== "" && v !== undefined) p.set(k, v);
   return p.toString();
 }
 
-/** The filters' keys over `getMeta()`'s projects; `changed` after any change, `newProject` for its menu's item. */
-export function filterBar({ getMeta, changed, newProject }) {
+/** The filters' keys over `getMeta()`'s projects; `changed` after any change, `editProject(p)` from a project's pencil. */
+export function filterBar({ getMeta, changed, editProject }) {
   function setFilters(next) {
     address(next);
     if ("project" in next) write(CHOSEN, next.project.join(",") || null);
@@ -50,7 +50,7 @@ export function filterBar({ getMeta, changed, newProject }) {
     changed();
   }
 
-  /** The ticks of one filter's menu. */
+  /** The ticks of one filter's menu; its key says how many are on. */
   function picks(box, options, chosen, onChange) {
     const inner = box.querySelector("div");
     inner.replaceChildren(...options.map(({ id, name }) => {
@@ -70,7 +70,7 @@ export function filterBar({ getMeta, changed, newProject }) {
     return d;
   };
 
-  /** Its menu: a name chooses that project alone, a tick adds it to those shown (AC-135). */
+  /** Its menu: a name chooses that project alone, a tick adds it to those shown, a pencil edits it (AC-135). */
   function drawProjects(chosen) {
     const box = $("fproject"), { projects } = getMeta();
     const only = (ids) => { box.open = false; setFilters({ project: ids }); };
@@ -80,12 +80,13 @@ export function filterBar({ getMeta, changed, newProject }) {
       const c = tick(chosen.includes(p.id), (on) => setFilters({ project: toggled(filters().project, p.id, on) }));
       c.setAttribute("aria-label", `Show ${p.name} too`);
       also.append(c);
-      const name = button(null, "", () => only([p.id]));
+      const name = button("projname", "", () => only([p.id]));
       name.append(dot(p), el("span", "pname", p.name));
-      line.append(also, name);
+      const edit = iconButton("projedit", "pencil", `Edit ${p.name}`, `Edit ${p.name}: its folder and its agents`, () => { box.open = false; editProject(p); });
+      line.append(also, name, edit);
       return line;
     });
-    box.querySelector("div").replaceChildren(button(null, "All projects", () => only([])), ...rows, newProject());
+    box.querySelector("div").replaceChildren(button(null, "All projects", () => only([])), ...rows);
     const first = projects.find((p) => p.id === chosen[0]);
     const words = !chosen.length ? "All projects" : `${first?.name ?? chosen[0]}${chosen.length > 1 ? ` +${chosen.length - 1}` : ""}`;
     box.querySelector("summary").replaceChildren(...(first ? [dot(first)] : []), el("span", "pname", words));
@@ -97,7 +98,8 @@ export function filterBar({ getMeta, changed, newProject }) {
     picks($("fseverity"), SEVERITIES.map((s) => ({ id: s, name: s })), f.severity, (id, on) => setFilters({ severity: toggled(filters().severity, id, on) }));
     picks($("fowner"), [{ id: "humans", name: "People" }, { id: "agents", name: "Agents" }], f.owner ? [f.owner] : [], (id, on) => setFilters({ owner: on ? id : "" }));
     if ($("find").value !== f.q) $("find").value = f.q;
-    const on = f.severity.length + (f.owner ? 1 : 0);
+    const on = f.severity.length + (f.owner ? 1 : 0) + (f.archived ? 1 : 0);
+    $("farchived").setAttribute("aria-pressed", String(!!f.archived));
     $("clearfilters").hidden = !narrowed();
     $("filtersbtn").textContent = on ? `Filters ${on}` : "Filters";
     if (on) $("picks").classList.add("open");
@@ -112,7 +114,8 @@ export function filterBar({ getMeta, changed, newProject }) {
     $("filtersbtn").setAttribute("aria-expanded", String(open));
   });
   $("find").addEventListener("input", () => { clearTimeout($("find").wait); $("find").wait = setTimeout(() => setFilters({ q: $("find").value }), 200); });
-  $("clearfilters").addEventListener("click", () => setFilters({ severity: [], owner: "", q: "" }));
+  $("farchived").addEventListener("click", () => setFilters({ archived: filters().archived ? "" : "1" }));
+  $("clearfilters").addEventListener("click", () => setFilters({ severity: [], owner: "", q: "", archived: "" }));
 
   // an address that names none: the project this browser last chose
   const kept = read(CHOSEN);

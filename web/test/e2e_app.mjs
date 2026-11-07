@@ -258,7 +258,7 @@ export async function webApp(browser) {
   await page.waitForTimeout(400);
   const typed = sent.slice(before).filter((m) => m.t === "in").map((m) => m.data).join("");
   check("AC-52 web app: a file dropped on the terminal is uploaded and its quoted path pasted, without Enter",
-    typed.includes("'/tmp/up/a b.txt'") && !typed.includes("\r") && page.url() === `${ORIGIN}/`, JSON.stringify(typed));
+    typed.includes("'/tmp/up/a b.txt'") && !typed.includes("\r") && new URL(page.url()).pathname === "/", JSON.stringify(typed));
   // rows dragged from Files: their paths put at the input, nothing uploaded; another host's refused (AC-36)
   const dropRows = (data) => $eval((data) => {
     const dt = new DataTransfer();

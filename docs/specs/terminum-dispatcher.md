@@ -66,7 +66,7 @@ Open questions:
 | AC-121 | [MUST / P0] | RUN opens a window on the chosen project agent's server and folder, starts it by its command, pastes the task through the gate and starts the work: IN PROGRESS once the agent takes it, FAILED with the reason if not. |
 | AC-122 | [MUST / P0] | RUN again takes the human's comment on: in the live session, in that pane when only its shell remains, else in a new window continuing the agent's conversation; a human's new prompt in the session returns the task to IN PROGRESS. |
 | AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` is DONE; a turn with no result gets one request per run, then WAIT FOR HUMAN; an hour with no activity at all is DONE, marked no result; a clean session end is DONE; a dead agent or a turn's failure is FAILED. |
-| AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on; a human's move is never undone by terminum's own signals. |
+| AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 2 hours after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
 | AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can, and says so where it cannot. |
@@ -74,6 +74,7 @@ Open questions:
 | AC-129 | [SHOULD / P1] | A card shows the tokens its session used. |
 | AC-130 | [SHOULD / P1] | All of the above hold for sessions on remote hosts; a host out of reach is said, and a lost link adds nothing to any clock. |
 | AC-137 | [MUST / P0] | A project lists the agents that can work on it: a name, Claude Code or Codex, a server, a folder and the command that starts it; the board is the only way terminum offers to add, change or delete one. |
+| AC-138 | [MUST / P0] | A project's agents stand over the board with their color, kind, effort and what they do; a task, or several chosen, dropped on a free one runs in one session with a short message; the agent is busy until they end and its turn is over; a finished task stays on its agent; a run that cannot be reached can be given up. |
 | AC-131 | [MUST / P0] | Dispatcher is one named system user, walks its tasks on a fixed beat, goes on where it was after terminumd restarts, and never acts on time it did not see pass. |
 
 ## 5. BDD scenarios
@@ -83,8 +84,8 @@ Open questions:
 ```gherkin
 Scenario: AC-121 happy path — first run
   Given T-12 in TODO of project api, folder ~/work/api, with no session
-  When the user presses RUN in its window, or drags it to IN PROGRESS
-  Then a dialog offers the project's agents (AC-137), the last one chosen for that project already picked, and shows its folder, its server, its command in full and the text that will be sent, a part written by an agent or a host marked so
+  When the user presses Run on its card or in its window, or drops it on an agent (AC-138)
+  Then a dialog offers the project's agents (AC-137), the last one chosen for that project already picked, and a press away shows its folder, its server, its command in full and the text that will be sent, a part written by an agent or a host marked so
   When the user presses Run
   Then Dispatcher opens a window after the project's last session, in that folder, with the window command of §9, a member of the project, marked with the pane option @terminum-run
   And it writes "Session started: claude in window api:4, on this Mac." on T-12 and links the pane; the card stays in TODO with a "starting" mark
@@ -99,7 +100,7 @@ Scenario: AC-121 happy path — the prompt
 
 Scenario: AC-121 edge — a project with no agents
   Given project api with no agent
-  When the user presses RUN or drags T-12 to IN PROGRESS
+  When the user presses Run on T-12 or drops it on an agent
   Then the dialog says "No agents in api yet" and offers Add an agent (AC-137); once one is kept it is picked, and Run goes on
 
 Scenario: AC-121 edge — where it opens
@@ -108,10 +109,10 @@ Scenario: AC-121 edge — where it opens
   Given Default, which has no folder
   Then the dialog asks the folder for this run and keeps it on the task alone
 
-Scenario: AC-121 edge — a drag with a linked session
+Scenario: AC-121 edge — a linked session
   Given T-12 linked to a session Dispatcher did not start
-  When the user drags it to IN PROGRESS
-  Then it moves and terminum-kanban.md AC-114 tells that session; Dispatcher starts nothing and RUN says "Unlink the session to run it"
+  When the user presses Run
+  Then Dispatcher starts nothing and RUN says "Unlink the session to run it"
 
 Scenario: AC-121 edge — a question before the box
   When the screen shows the agent's own question: a folder's trust, an update, a login
@@ -145,7 +146,7 @@ Scenario: AC-121 failure — refused before starting
 ```gherkin
 Scenario: AC-137 happy path — adding one
   Given project api chosen on the board, its folder /Users/alex/work/api
-  When the user presses Add agent under the Sessions column
+  When the user presses the [+] after the agents over the columns, or Add agent in its project's window (terminum-kanban.md AC-139)
   Then a window asks Project (api), Name (Claude Code), Kind (Claude Code or Codex), Server (the project's: This Mac or one of the hosts of terminum-remote.md), Folder (empty: the project's) and Command (claude for Claude Code, codex for Codex)
   When the user keeps "Opus reviewer", Claude Code, This Mac, an empty folder and "claude --model opus"
   Then it stands under Agents with its kind's mark, its name and its server and command, for every page within 2 s, and across a restart
@@ -298,7 +299,7 @@ Scenario: AC-123 failure — the agent died
 
 Scenario: AC-123 edge — only its sessions
   Given a task linked to a session Dispatcher did not start
-  Then nothing here moves it; it is moved by the human or its agent; its IN PROGRESS outliving the session stays, the card says "session closed", and a human moves it
+  Then nothing here moves it; it is moved by its agent; its IN PROGRESS outliving the session stays and the card says "session closed"
 ```
 
 ### AC-124 — Waiting for a human [MUST / P0]
@@ -319,11 +320,6 @@ Scenario: AC-124 edge — short waits
 Scenario: AC-124 edge — no time limit on a wait
   Given T-12 waits for an answer for 3 days, read from the event and the screen, past the hook state's lease
   Then the session stays, no time runs out, and the count on the Kanban tab stands
-
-Scenario: AC-124 edge — a human's move wins
-  When a human moves T-12 anywhere while its agent works or waits
-  Then only RUN or a prompt the human types moves it back to IN PROGRESS; no turn's start or end does, and no prompt terminum typed does
-  And while it stands outside IN PROGRESS the budget does not count though the agent goes on, and the card says so
 
 Scenario: AC-124 edge — the agent's own move
   When the agent calls move_task {to: "WAIT FOR HUMAN"}
@@ -478,6 +474,76 @@ Scenario: AC-130 failure — hooks missing there
   Then RUN says "Run terminum hooks install on devbox.example first" and starts nothing
 ```
 
+### AC-138 — The agents' pool [MUST / P0]
+
+```gherkin
+Scenario: AC-138 happy path — over the board
+  Given Billing with agents Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
+  Then three rectangles stand over the columns, each in its color, with its name, kind, effort and "free"
+  And with several projects shown each says its project
+
+Scenario: AC-138 happy path — one task dropped
+  When the user drags T-12 onto Opus reviewer
+  Then a window "Run T-12 on Opus reviewer" opens with the message first; what runs and what goes are folded, a press away
+  When the user writes "keep the public API" and presses Run, or ⌘Enter
+  Then the agent's lamp lights and its rectangle says "working: T-12", T-12 is IN PROGRESS with Opus reviewer's name on its card, and its session stands in the list
+  And the message is in the prompt and on the task as a comment
+
+Scenario: AC-138 happy path — several
+  When the user ⌘ or Ctrl+presses T-12 and T-13
+  Then both are marked and a line says "2 chosen: press an agent or drop them on it. Esc lets them go."
+  When the user drags either onto a free agent, or presses one
+  Then the window opens for both, each one's text shown with what an agent wrote said so, and Run starts one session
+  And the prompt names T-12 and T-13 by number with the human's message: no text of theirs: an agent can write those, and this reaches an agent as the user's words
+  And finish_task on T-12 leaves T-13 IN PROGRESS and the session working on it; the walk's waits, budget and limits go by what is open
+
+Scenario: AC-138 happy path — free again
+  When T-12 and T-13 are DONE or FAILED and the agent's turn is over
+  Then its rectangle says "free", the cards stay on it, and it takes new tasks in a new session; the idle one closes by AC-125
+  When the human closes the session with a task open
+  Then the task is FAILED (AC-123) and the agent is free
+
+Scenario: AC-138 edge — busy
+  Given Opus reviewer works on T-12
+  When the user drops or presses T-13 on it
+  Then no window opens and a toast says "Opus reviewer is busy with T-12: it takes more when its session closes or they end."
+  And POST /api/tasks/T-13/run {"agent": ...} answers the same, in the transaction that would take the agent: two presses never both find it free
+  When the user presses a busy agent with nothing chosen
+  Then its session opens; a free agent, or the pencil on any, opens its window
+
+Scenario: AC-138 edge — run again
+  Given T-12 DONE on Opus reviewer, its session idle, the agent free
+  When the user presses Run on it
+  Then it goes on in that session; only T-12 returns to IN PROGRESS
+  When the user drops it on Fast fixer
+  Then a new session starts there, the card now on Fast fixer
+  Given T-13 of the same run still open
+  Then T-12 is refused: "T-12 shares its session with T-13: it can run again when they end."
+
+Scenario: AC-138 edge — several tasks of two projects
+  When the user drops T-12 of Billing and T-20 of Web on an agent
+  Then a toast says "T-12 and T-20 are in different projects." and nothing starts
+
+Scenario: AC-138 edge — its run holds it
+  Given T-12 in a run with an agent busy
+  When a human changes its project or session, or archives it, or its agent calls move_task {to: "TODO"} or take_task on another
+  Then each is refused saying its run holds it
+
+Scenario: AC-138 edge — giving up
+  Given T-12's run on a host out of reach, or no longer wanted
+  When the user presses Give up in T-12's window and confirms
+  Then its open tasks are FAILED "The human gave up on it.", the agent is free, and Dispatcher lets go of the window, which stays
+
+Scenario: AC-138 edge — an agent deleted
+  Given T-12 DONE on Opus reviewer
+  When the agent is deleted
+  Then the card keeps the name and color its run knew
+
+Scenario: AC-138 failure — effort
+  When an agent's effort is not one of its kind's, or its command holds ; | & or #
+  Then its window says "codex has no effort max." or "An effort goes on one program's command: this one has ; | & or #. Write it in the command."
+```
+
 ### AC-131 — Dispatcher itself [MUST / P0]
 
 ```gherkin
@@ -527,7 +593,7 @@ stateDiagram-v2
   DONE --> ARCHIVED: 2 days (terminum-kanban.md AC-118)
 ```
 
-A human may also move a task between any columns (`terminum-kanban.md` AC-107), and such a move stands until RUN or a human's prompt. A wait for an answer stops the idle and budget clocks; a wait after "no result" stops the budget only.
+A wait for an answer stops the idle and budget clocks; a wait after "no result" stops the budget only.
 
 ```mermaid
 sequenceDiagram
@@ -550,11 +616,27 @@ sequenceDiagram
   D->>DB: comment: session ended
 ```
 
+### A run's journeys (AC-138)
+
+```mermaid
+flowchart LR
+  N["New task: title"] -->|"Run"| S["Session on the agent picked"]
+  D["Drag or chosen tasks"] -->|"drop or press a free agent"| W["Window: message"]
+  W -->|"Run or Cmd+Enter"| S
+  C["Card's Run key"] --> W
+  S --> B["Agent busy, lamp lit, card on it"]
+  B -->|"tasks end, turn over"| F["Agent free, cards stay"]
+  B -->|"session closed or Give up"| F
+```
+
+New task and Run is two presses; a drop and Run one drag and one press. What to check before it goes stays folded unless several go or an agent wrote the text.
+
 ## 7. Current behavior and gaps
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-122 | New work on an archived task does not return it: there is no archive yet (`terminum-kanban.md` AC-118). | `terminumd/src/dispatcher/hooks.rs` |
+| AC-122 | A human's own prompt in the session of an archived task does not return it; Run does. | `terminumd/src/dispatcher/hooks.rs` |
+| AC-138 | Several tasks are chosen with a pointer's ⌘ or Ctrl: a phone or the keyboard runs one at a time. Clearing one task's budget takes the limit off the run. | `web/static/kanban.js`, `terminumd/src/dispatcher/runs.rs` |
 | AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |
 | AC-131 | A restored tmux server's new pane is not followed: its run says its window was closed. | `terminumd/src/dispatcher/plan.rs` |
 | AC-131 | §9's walk budget has no bench yet (`scripts/bench_board.py`). | `terminumd/src/dispatcher/walk.rs` |
@@ -627,7 +709,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 5. Read the screen again: the text or Claude's fold marker stands in the box, with no dialog.
 6. Enter.
 
-Only the following pass: a T-number with fixed words and the column and human's user name, never a title or a comment (`terminum-kanban.md` AC-114); the prompt of a human's RUN. terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123).
+Only the following pass: a T-number with fixed words, never a title or a comment; the prompt of a human's RUN: for one task its title and text, for several their numbers and the human's message alone (AC-138). terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123).
 
 **Times.** Constants, not settings: no need for another value is known. Tests drive them with an injected clock (`TM_TEST_CLOCK_SCALE`, read only with a test's `TM_APP_DIR`).
 
@@ -668,7 +750,7 @@ Measure first: AS-122, AS-125, AS-126, AS-127. Stage 1 rests on them; the gate's
 
 | Stage | Cases | What a user can do |
 |---|---|---|
-| Stage 1 | AC-137, AC-121, AC-122, AC-123, AC-124, AC-125, AC-131, with `terminum-kanban.md` AC-117 | Press RUN and walk away: tasks start, wait, end and close by themselves on this Mac, and a human hears what needs them. |
+| Stage 1 | AC-138, AC-137, AC-121, AC-122, AC-123, AC-124, AC-125, AC-131, with `terminum-kanban.md` AC-117 | Press RUN and walk away: tasks start, wait, end and close by themselves on this Mac, and a human hears what needs them. |
 | Stage 2 | AC-126 | Time budgets: the one irreversible act on healthy work, once the walk and clocks have run for real. |
 | Stage 3 | AC-127, AC-128, AC-129, AC-130 | Subagents watched, consumption shown and limited, and all of it on remote hosts. |
 
@@ -677,6 +759,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 ## 11. Checklist with Definition of Done
 
 - [x] AC-121 — `cargo test dispatcher::screen`, `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
+- [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs` with the test clock

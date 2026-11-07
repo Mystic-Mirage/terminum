@@ -12,9 +12,9 @@ let timer = 0;
 /** Where the toast's top goes in #main, or "" (style.css's) when nothing is laid out. */
 function top() {
   const term = $("term"), bar = $("bar");
-  const from = term?.offsetParent ? term.offsetTop : bar?.offsetParent ? bar.offsetTop + bar.offsetHeight : null;   // the board has neither
+  const from = term?.offsetParent ? term.offsetTop : bar?.offsetParent ? bar.offsetTop + bar.offsetHeight : null;
   if (from === null) return "";
-  const over = ["markbar", "paused"].map($).filter((e) => !e.hidden && e.offsetParent);
+  const over = ["markbar", "paused"].map($).filter((e) => e && !e.hidden && e.offsetParent);   // the board has neither
   const said = underBanners(0) - $("main").getBoundingClientRect().top + 8;   // what is said over the terminal
   return `${Math.max(from + GAP, said, ...over.map((e) => e.offsetTop + e.offsetHeight + 8))}px`;
 }

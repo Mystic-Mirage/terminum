@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Tasks' files (AC-106, AC-109): bytes in `kanban-files/<id>` beside the store, 0600 in a 0700
+//! Tasks' files (AC-106, AC-109): bytes in `attachments/<id>` beside the store, 0600 in a 0700
 //! folder, a row in the store. A file dropped in a window not yet saved has no task; such a file
 //! goes after 7 days. Nothing here runs or is opened on the page's origin.
 
@@ -31,7 +31,16 @@ impl File {
 }
 
 pub fn folder(dir: &Path) -> PathBuf {
-    dir.join("kanban-files")
+    dir.join("attachments")
+}
+
+/// A store made under the folder's first name keeps its files: moved once, before anything reads them.
+pub fn move_old_folder(dir: &Path) -> std::io::Result<()> {
+    let (old, new) = (dir.join("kanban-files"), folder(dir));
+    if old.exists() && !new.exists() {
+        std::fs::rename(old, new)?;
+    }
+    Ok(())
 }
 
 /// `id` as a file's name: what terminumd made, never a path.
@@ -162,6 +171,18 @@ mod tests {
     use super::*;
     use crate::tasks::ops::{create, NewTask};
     use crate::tasks::store::{Store, HUMAN};
+
+    #[test]
+    fn ac109_the_folder_s_first_name_moves_once() {
+        let dir = crate::testutil::fresh_dir("files-moved");
+        std::fs::create_dir(dir.join("kanban-files")).unwrap();
+        std::fs::write(dir.join("kanban-files").join("x"), "kept").unwrap();
+        move_old_folder(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(folder(&dir).join("x")).unwrap(), "kept");
+        std::fs::create_dir(dir.join("kanban-files")).unwrap();
+        move_old_folder(&dir).unwrap();
+        assert!(folder(&dir).join("x").exists(), "what stands under the new name is never written over");
+    }
 
     fn fresh(name: &str) -> (Store, PathBuf) {
         let dir = crate::testutil::fresh_dir(name);

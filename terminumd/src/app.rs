@@ -91,7 +91,7 @@ pub struct App {
     pub projects: Mutex<crate::page::projects::Projects>,
     /// the tasks' store (terminum-kanban.md AC-119)
     pub tasks: Arc<crate::tasks::store::Store>,
-    /// lines of humans' moves waiting for a pane's next hook (AC-114)
+    /// Dispatcher's words waiting for a pane's next hook
     pub task_lines: crate::tasks::tell::Lines,
     pub dispatcher: crate::dispatcher::Dispatcher,
     pub task_marks: crate::tasks::marks::Marks,

@@ -3,9 +3,10 @@
 // column the user can hide (remembered per browser); "/" opens it and filters.
 const $ = (id) => document.getElementById(id);
 
-export function sessionDrawer({ narrow, store, drawNav, focusInput, peek }) {
+/** `hiddenKey`: what this page remembers hiding by: the board's is its own (terminum-kanban.md AC-135). */
+export function sessionDrawer({ narrow, store, drawNav, focusInput = () => {}, hiddenKey = "navHidden" }) {
   function openDrawer() {
-    if (!narrow.matches) { $("app").classList.remove("nav-hidden"); store.set("navHidden", false); return; }
+    if (!narrow.matches) { $("app").classList.remove("nav-hidden"); store.set(hiddenKey, false); return; }
     $("app").classList.add("nav-open");
     $("navbtn").setAttribute("aria-expanded", "true");
     $("sessions").querySelector(".item.on")?.scrollIntoView({ block: "center" });
@@ -15,9 +16,6 @@ export function sessionDrawer({ narrow, store, drawNav, focusInput, peek }) {
     $("navbtn").setAttribute("aria-expanded", "false");
   }
   $("navbtn").onclick = openDrawer;
-  // its buttons (✎, Plan, Copy) are theirs; a narrow window's title shows the full name and path (☰ opens the list)
-  $("current").onclick = (e) => { if (!e.target.closest("button")) narrow.matches ? peek() : $("filter").focus(); };
-
   $("scrim").onclick = closeDrawer;
   $("drawerclose").onclick = closeDrawer;
   // "/" filters the sessions, unless the keys go to a field or the terminal
@@ -29,13 +27,13 @@ export function sessionDrawer({ narrow, store, drawNav, focusInput, peek }) {
   });
   $("navclose").onclick = () => {
     if (narrow.matches) return closeDrawer();
-    $("app").classList.add("nav-hidden"); store.set("navHidden", true);
+    $("app").classList.add("nav-hidden"); store.set(hiddenKey, true);
   };
   $("filter").addEventListener("input", drawNav);
   $("filter").addEventListener("keydown", (e) => {
     if (e.key === "Enter") $("sessions").querySelector(".item")?.click();
     if (e.key === "Escape") { $("filter").value = ""; drawNav(); focusInput(); }
   });
-  if (store.get("navHidden", false)) $("app").classList.add("nav-hidden");
+  if (store.get(hiddenKey, false)) $("app").classList.add("nav-hidden");
   return { openDrawer, closeDrawer };
 }

@@ -4,8 +4,8 @@ import { HeldDelete, WORD } from "./heldelete.js";
 import { inSelection, kbdTouch, MENU_AFTER, selectWordAt, TAP } from "./kbdtouch.js";
 import { clipboardInsert, ctrlChar, encodeKey } from "./keys.js";
 import { sendOnModEnter } from "./modenter.js";
-import { copyPreview, hiddenNote, selectedText, unhidden } from "./seltext.js";
-import { copyByCommand, keepSelectionAt } from "./touchcopy.js";
+import { hiddenNote, selectedText, unhidden } from "./seltext.js";
+import { copyByCommand, copyText, keepSelectionAt } from "./touchcopy.js";
 import { composing } from "./trace.js";
 import { inWidget } from "./widgetui.js";
 
@@ -309,18 +309,11 @@ export class Input {
   async copySelection(given, keep = false) {
     const got = given ?? selectedText(this.term) ?? String(getSelection());
     if (!got) return this.options.status("Select text first, then press Copy.");
-    const { text, left } = unhidden(got), said = `Copied ${copyPreview(text)}${hiddenNote(left)}`;
     this.keepSelection = keep;
     try {
-      if (window.isSecureContext && navigator.clipboard?.writeText) {
-        try {
-          await navigator.clipboard.writeText(text);
-          this.afterCopy();                        // ⌘V next
-          return this.options.status(said);
-        } catch { /* fall through */ }
-      }
-      const ok = given ? copyByCommand(text) : document.execCommand("copy");
-      this.options.status(ok ? said : "Copying is blocked here; use the system Copy menu.");
+      const { said, api } = await copyText(got, given ? copyByCommand : () => document.execCommand("copy"));
+      if (api) this.afterCopy();                   // ⌘V next
+      this.options.status(said);
     } finally {
       this.keepSelection = false;
     }

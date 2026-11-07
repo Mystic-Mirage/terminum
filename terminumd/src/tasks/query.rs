@@ -19,6 +19,8 @@ pub struct Query {
     pub reach: Option<(String, Option<String>)>,
     pub text: Option<String>,
     pub with_subtasks: bool,
+    /// the archived ones instead of the board's (AC-118)
+    pub archived: bool,
     pub after: i64,
     pub limit: i64,
 }
@@ -50,7 +52,7 @@ pub fn within_reach(tx: &Transaction, number: i64, pane: &str, project: Option<&
 
 /// `WHERE …` of what `q` asks, over `tasks t JOIN users u`, and its arguments.
 fn filter_of(q: &Query) -> (String, Vec<String>) {
-    let mut text = String::from(" WHERE t.archived_at IS NULL");
+    let mut text = String::from(if q.archived { " WHERE t.archived_at IS NOT NULL" } else { " WHERE t.archived_at IS NULL" });
     let mut args: Vec<String> = Vec::new();
     for (column, values) in [("t.project", &q.projects), ("t.severity", &q.severities), ("t.status", &q.statuses)] {
         if !values.is_empty() {

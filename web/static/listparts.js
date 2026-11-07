@@ -34,3 +34,29 @@ export const projectColor = (p) => hueColor(projectHue(p));
 export const colored = (p) => p?.color >= 0;
 /** A project's color for words and dots, Default's the muted. */
 export const projectInk = (p) => (colored(p) ? projectColor(p) : "var(--muted)");
+
+/** A reminder not resolved (AC-91). */
+export const openReminder = (i) => !!i.remind && !i.resolved;
+/** pane id -> {mark, remind}: the list's marks of a session with bookmarks or open reminders. */
+export function markedSessions(items) {
+  const m = new Map();
+  for (const b of items) {
+    const mark = !b.remind, remind = openReminder(b);
+    if (b.orphaned || !(mark || remind)) continue;
+    const v = m.get(b.sid) ?? { mark: false, remind: false };
+    v.mark ||= mark; v.remind ||= remind;
+    m.set(b.sid, v);
+  }
+  return m;
+}
+
+export const when = (s) => new Date(s * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+/** A frame to `src` with no step of the page's Back: a frame put in anew leaves no history, a moved one a step
+ *  Back would undo first (terminum-kanban.md AC-134). */
+export function frameTo(frame, src) {
+  const home = frame.parentNode, next = frame.nextSibling;
+  frame.remove();
+  frame.src = src;
+  home.insertBefore(frame, next);
+}

@@ -87,6 +87,9 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
     let local = Server::new("local", socket, link, changed.clone());
     let dir = cfg.dir.clone();
     // an Agent keeps no tasks: the Mac's terminumd holds the one store
+    if !cfg.agent {
+        tasks::files::move_old_folder(&dir).unwrap_or_else(|e| tracing::warn!(event = "tasks.attachments", error = %e));
+    }
     let tasks = Arc::new(if cfg.agent { tasks::store::Store::absent() } else { tasks::store::Store::open(dir.join("kanban.sqlite")) });
     let projects = if cfg.agent { Default::default() } else { page::projects::Projects::load(tasks.clone(), &dir.join("projects.json")) };
     let task_marks = tasks::marks::Marks::default();

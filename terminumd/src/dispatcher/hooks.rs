@@ -6,7 +6,7 @@
 use serde_json::Value;
 
 use super::runs::{self, Run};
-use super::{move_task, store};
+use super::{move_all, move_one, move_task, store};
 use crate::app::Shared;
 use crate::plans::rules;
 use crate::tasks::ops;
@@ -34,19 +34,22 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.new_work();
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
             let project = ops::project_row(tx, &r.project)?.0;
-            ops::set_owner(tx, &r.task, &ops::agent_user(tx, &r.kind, &project)?, ops::now())?;
-            if r.status != "IN PROGRESS" {
-                move_task(tx, r, "IN PROGRESS", "The agent took it.")?;
-                moved = true;
+            let agent = ops::agent_user(tx, &r.kind, &project)?;
+            for id in &r.ids {
+                ops::set_owner(tx, &ops::key_of(tx, id)?, &agent, ops::now())?;
             }
+            move_all(tx, r, "IN PROGRESS", "The agent took it.")?;
+            moved = true;
         }
         "UserPromptSubmit" if typed => active = false,
         "UserPromptSubmit" => {
-            // a human's own prompt: new work (AC-122)
+            // a human's own prompt: new work (AC-122); to which of several finished tasks, it does not say
             active = true;
             r.new_work();
-            if r.status != "IN PROGRESS" {
-                move_task(tx, r, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
+            if r.status != "IN PROGRESS" && (r.ids.len() == 1 || !r.open.is_empty()) {
+                for id in r.targets() {
+                    move_one(tx, id, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
+                }
                 moved = true;
             }
         }
@@ -59,7 +62,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.turn_ended = true;
             r.open_tools = 0;
             active = true;
-            if !r.held && !super::plan::finished(&r.status) {
+            if !super::plan::finished(&r.status) {
                 let why: String = rules::clean(ev["error"].as_str().unwrap_or("an error")).chars().take(60).collect();
                 move_task(tx, r, "FAILED", &format!("The agent's turn failed: {why}"))?;
                 moved = true;
@@ -91,15 +94,15 @@ pub fn heard(app: &Shared, key: &str, ev: &Value) {
             if r != was {
                 runs::save(tx, &r)?;
             }
-            Ok(Some((r.task_id.clone(), moved, active)))
+            Ok(Some((r, moved, active)))
         }).await;
         match done {
-            Ok(Some((task, moved, active))) => {
+            Ok(Some((r, moved, active))) => {
                 if active {
                     app.dispatcher.touched(&key);
                 }
                 if moved {
-                    crate::tasks::api::told(&app, &task);
+                    super::told_all(&app, &r);
                 }
             }
             Ok(None) => return,

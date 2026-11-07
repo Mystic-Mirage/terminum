@@ -3,15 +3,17 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, api, fileMarkdown, fillSelect, onFiles, onSend, renderInto, sessionOptions, showError, upload } from "./kanbanutil.js";
+import { $, DEFAULT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, renderInto, sessionOptions, showError, upload } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
-export function taskForm({ getMeta, getFilter, onMade }) {
+/** `onRun(task, agent)`: a task made by Run starts at once on the agent chosen (terminum-dispatcher.md AC-138);
+ *  `agentsBusy()`: what each busy agent does. */
+export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
   const box = $("newbox");
   let files = [], uploads = 0, offered = "";
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
-  const canCreate = (busy = false) => { $("newcreate").disabled = busy || uploads > 0; };
+  const canCreate = (busy = false) => { $("newcreate").disabled = $("newrun").disabled = busy || uploads > 0; };
 
   const error = (text) => showError($("newerror"), text);
   const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files });
@@ -63,10 +65,18 @@ export function taskForm({ getMeta, getFilter, onMade }) {
     if (preview) renderInto($("newshown"), $("newtext").value);
   }
 
+  /** The project's agents: the one its last run had, else the first free. */
+  function showAgents() {
+    const meta = getMeta(), project = $("newproj").value, all = meta.agents.filter((a) => a.project === project), now = agentsBusy();
+    const busy = (a) => now[a.id]?.tasks;
+    fillAgents($("newagent"), all, busy, [meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
+  }
+
   function open(given = {}) {
     const meta = getMeta(), saved = read(DRAFT) ?? {};
-    const filter = getFilter().project;
-    fillSelect($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? saved.project ?? (filter.length === 1 ? filter[0] : "default"));
+    const filter = getFilter().project;   // a draft with nothing typed says nothing of where it goes
+    fillSelect($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? (saved.title || saved.text ? saved.project : null) ?? (filter.length === 1 ? filter[0] : DEFAULT));
+    showAgents();
     fillSelect($("newsession"), sessionOptions(meta), given.session ?? saved.session ?? "");
     $("newsev").value = saved.severity ?? "P2";
     fillSelect($("newowner"), meta.users.map((u) => [u.id, u.name]), saved.owner ?? "human");
@@ -80,24 +90,25 @@ export function taskForm({ getMeta, getFilter, onMade }) {
     $("newtitle").focus();
   }
 
-  async function create() {
+  async function create(run = false) {
     error(null);
     if ($("newcreate").disabled) return;
-    const d = draft();
+    const d = draft(), agent = $("newagent").value;
     canCreate(true);
     try {
       const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, session: d.session || undefined, files: files.map((f) => f.id) } });
       write(DRAFT, null);
       files = [];
       box.close();
-      onMade(made);
+      if (run) onRun(made, agent); else onMade(made);
     } catch (e) { error(e.message); $("newtitle").focus(); } finally { canCreate(); }
   }
 
-  $("newcreate").addEventListener("click", create);
+  $("newcreate").addEventListener("click", () => create());
+  $("newrun").addEventListener("click", () => create(true));
   // Enter in the title is Create; what is typed never goes by a slip: Discard asks
   box.querySelector("form").addEventListener("submit", (e) => { e.preventDefault(); create(); });
-  onSend($("newtext"), create);
+  onSend($("newtext"), () => create());
   $("newdiscard").addEventListener("click", async () => {
     const typed = $("newtitle").value.trim() || $("newtext").value.trim() || files.length;
     if (typed && !await askConfirm("Discard this task? What you typed and its files go.", "Discard")) return;
@@ -108,16 +119,18 @@ export function taskForm({ getMeta, getFilter, onMade }) {
   $("newclose").addEventListener("click", () => { keep(); box.close(); });
   box.addEventListener("cancel", keep);
   box.querySelector("form").addEventListener("input", keep);
+  $("newproj").addEventListener("change", showAgents);
   $("newwrite").addEventListener("click", () => view(false));
   $("newpreview").addEventListener("click", () => view(true));
   $("newadd").addEventListener("click", () => $("newpick").click());
   $("newpick").addEventListener("change", (e) => { add([...e.target.files]); e.target.value = ""; });
-  onFiles($("newtext"), box, add, (on) => box.classList.toggle("dropping", on));
+  onFiles($("newtext"), box, add, (on) => $("newtext").classList.toggle("dropping", on));
 
   /** The pickers follow the projects and sessions while the window is open; a chosen one gone is said. */
   function refresh() {
     if (!box.open) return;
     const meta = getMeta(), projects = meta.projects.map((p) => [p.id, p.name]), sessions = sessionOptions(meta), now = JSON.stringify([projects, sessions]);
+    showAgents();
     if (now === offered) return;
     offered = now;
     const project = $("newproj").value, session = $("newsession").value;

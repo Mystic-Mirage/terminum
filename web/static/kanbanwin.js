@@ -3,7 +3,7 @@
 // and history. A comment by a human closes with CLOSE; RUN comes with Dispatcher.
 import { askConfirm, choose } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, COLUMNS, SEVERITIES, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, renderInto, say, sessionOptions, upload } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, renderInto, say, sessionOptions, upload } from "./kanbanutil.js";
 
 const time = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 const EDITS = ".tasktext textarea, .markdown textarea";   // a text or a comment being edited
@@ -83,8 +83,12 @@ export function taskWindow({ getMeta, runs }) {
     if (key && !sessions.some(([k]) => k === key)) sessions.push([key, "Closed session"]);
     const owners = meta.users.map((u) => [u.id, u.name]);
     if (!owners.some(([u]) => u === t.owner)) owners.push([t.owner, t.owner_name]);
+    const stands = el("div", "fieldrow", "Status");
+    const value = el("span", "fieldvalue", t.archived_at ? "Archived" : t.status);
+    if (t.agent) value.append(agentChip(t.agent));
+    stands.append(value);
     grid.append(
-      select("Status", COLUMNS.map((c) => [c, c]), t.status, (status) => patch(t.id, { status })),
+      stands,
       select("Severity", SEVERITIES.map((s) => [s, s]), t.severity, (severity) => patch(t.id, { severity })),
       select("Owner", owners, t.owner, (owner) => patch(t.id, { owner })),
       select("Project", meta.projects.map((p) => [p.id, p.name]), t.project, (project) => patch(t.id, { project })),
@@ -101,17 +105,46 @@ export function taskWindow({ getMeta, runs }) {
     }
   };
 
+  /** Files for a text: each kept by terminumd, linked in the text (AC-106, AC-109). */
+  async function addFiles(list, area, kept) {
+    for (const f of list) {
+      try {
+        const file = await upload(f, getMeta().most_bytes);
+        kept(file);
+        area.value += `${area.value && !area.value.endsWith("\n") ? "\n" : ""}${fileMarkdown(file)}\n`;
+        area.dispatchEvent(new Event("input"));
+      } catch (e) { say(e.message); }
+    }
+  }
+
+  /** A text field that takes files dropped or pasted. */
+  function takesFiles(area, kept) {
+    area.classList.add("droparea");
+    onFiles(area, area, (list) => addFiles(list, area, kept), (on) => area.classList.toggle("dropping", on));
+  }
+
   function text(t) {
     const wrap = el("section", "tasktext");
     const shownText = el("div", "markdown");
     renderInto(shownText, t.text);
-    const edit = button(null, "Edit", () => {
+    /** Its editor, with files already dropped on the text shown. */
+    let editing = false;
+    const startEdit = (files = []) => {
+      editing = true;
+      wrap.classList.remove("droparea", "dropping");
       const area = editor(t.text, "Text, Markdown");
       area.rows = 10;
-      const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_rev: t.text_rev })) refresh(true); });
+      area.placeholder = "Markdown. Drop or paste files here.";
+      const dropped = [], kept = (file) => dropped.push(file.id);
+      takesFiles(area, kept);
+      const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_rev: t.text_rev, files: dropped })) refresh(true); });
       wrap.replaceChildren(area, row(button(null, "Cancel", () => refresh(true)), save));
       area.focus();
-    });
+      addFiles(files, area, kept);
+    };
+    const edit = button(null, "Edit", () => startEdit());
+    wrap.classList.add("droparea");
+    onFiles(wrap, wrap, (list) => { if (!editing) startEdit(list); }, (on) => wrap.classList.toggle("dropping", on && !editing));
     const purge = button(null, "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
       () => api(`/api/tasks/${t.id}/purge`, { method: "POST" })));
     wrap.append(shownText, row(edit, t.text ? purge : null));
@@ -178,17 +211,8 @@ export function taskWindow({ getMeta, runs }) {
     area.addEventListener("input", () => write(draft, area.value));
     // the files of a comment being written: kept with its text, or the sweep would take them
     const dropped = () => read(filesKey) ?? [];
-    onFiles(area, area, async (list) => {
-      for (const f of list) {
-        try {
-          const kept = await upload(f, getMeta().most_bytes);
-          write(filesKey, [...dropped(), kept.id]);
-          area.value += `${area.value && !area.value.endsWith("\n") ? "\n" : ""}${fileMarkdown(kept)}\n`;
-          write(draft, area.value);
-        } catch (e) { say(e.message); }
-      }
-    });
-    const close = button("primary", "CLOSE", async () => {
+    takesFiles(area, (file) => write(filesKey, [...dropped(), file.id]));
+    const close = button(t.run_holds ? "primary" : null, "Close", async () => {
       if (area.value.trim()) {
         try {
           await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: area.value, files: dropped() } });
@@ -198,10 +222,10 @@ export function taskWindow({ getMeta, runs }) {
       }
       tryClose();
     });
-    // RUN: the comment goes with it, and on in its session or a new one (terminum-dispatcher.md AC-122)
-    const run = button(null, "RUN", async () => {
+    // Run: the comment goes with it, and on in its session or a new one (terminum-dispatcher.md AC-122)
+    const run = button(t.run_holds ? null : "primary", "Run", async () => {
       try {
-        if (await runs.open(t, { words: area.value, files: dropped() }) !== "run") return;
+        if (await runs.open([t], { words: area.value, files: dropped() }) !== true) return;
       } catch (e) { say(e.message); return; }
       write(draft, null);
       write(filesKey, null);
@@ -209,7 +233,13 @@ export function taskWindow({ getMeta, runs }) {
     });
     onSend(area, () => close.click());
     close.title = "Keep the comment and close: nothing moves, the session hears nothing";
-    wrap.append(area, row(run, close));
+    // its run cannot be reached or is no longer wanted: its tasks fail, the window stays (terminum-dispatcher.md AC-138)
+    const giveUp = t.run_holds ? button(null, "Give up", () => confirmed(`Give up on this run? ${t.run_holds} go to FAILED. Dispatcher lets go of its window, which stays open, and an agent in it may go on.`, "Give up",
+      () => api(`/api/tasks/${t.id}/give-up`, { method: "POST" }))) : null;
+    // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
+    const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
+    shelve.classList.add("evenleft");
+    wrap.append(area, row(t.run_holds ? null : shelve, giveUp, close, t.run_holds ? null : run));
     return wrap;
   }
 
@@ -248,10 +278,11 @@ export function taskWindow({ getMeta, runs }) {
    *  of (`news`) and answers the same draws nothing: no Markdown again, no picture fetched again. */
   async function refresh(saved = false, news = false) {
     if (!box.open || !shown) return;
-    if (!saved && body.querySelector(EDITS)) return;
+    const editing = () => !saved && body.querySelector(EDITS);
+    if (editing()) return;
     try {
       const t = await api(`/api/tasks/${shown.id}`);
-      if (!news || JSON.stringify(t) !== drawn) draw(t);
+      if (!editing() && (!news || JSON.stringify(t) !== drawn)) draw(t);   // an editor opened while it was read stays
     } catch (e) { say(e.message); }
   }
 

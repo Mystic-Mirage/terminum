@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Against a real private terminumd and tmux (e2e_live.mjs): two panes of one project and one outside
-// it, each running the built `terminum mcp` as its agent. terminum-kanban.md AC-114 and AC-115: an
-// agent's task tools and rights; a human's move reaches its session as fixed words on its next hook.
+// it, each running the built `terminum mcp` as its agent. terminum-kanban.md AC-115: an agent's task
+// tools and rights.
 // terminum-terminal.md AC-33 and AC-91: bookmarks and reminders are the user's, a session's own; a
 // turn's end puts up only that session's reminders; a project deleted leaves a session its records, a
 // closed session orphans them.
@@ -114,17 +114,8 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     const notHers = await b.tool("move_task", { id: t1, to: "DONE" });
     check("AC-115 live: another session's is not moved", notHers.error && notHers.text.includes("You can read it and comment"), notHers.text);
 
-    // a human's move rides the session's next hook, as fixed words, once
     fs.writeFileSync(path.join(a.dir, "begin.json"), JSON.stringify({ session_id: "s-notes", cwd: work, hook_event_name: "SessionStart", source: "startup" }));
     await a.inPane("terminum hook claude < begin.json");
-    await page.evaluate(async (t) => fetch(`/api/tasks/${t}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "WAIT FOR HUMAN" }) }), t1);
-    const hookBase = { session_id: "s-notes", cwd: work, prompt_id: "p1", permission_mode: "default" };
-    fs.writeFileSync(path.join(a.dir, "batch.json"), JSON.stringify({ ...hookBase, hook_event_name: "PostToolBatch" }));
-    const told = await a.inPane("terminum hook claude < batch.json");
-    check("AC-114 live: the session's next hook carries the line", told.includes(`[terminum] ${t1} moved to WAIT FOR HUMAN by `) && told.includes("additionalContext"), told);
-    check("AC-114 live: with no title of the task", !told.includes("Gap in the parser"), told);
-    check("AC-114 live: once", !(await a.inPane("terminum hook claude < batch.json")).includes(t1));
-    check("AC-114 live: its history says so", await until(async () => (await task(t1)).history.some((e) => e.text === "Told the session")));
     const done = await a.tool("finish_task", { id: t1, result: "**Fixed** it" });
     const finished = await task(t1);
     check("AC-115 live: finish_task: DONE, its result a comment by the agent", !done.error && finished.status === "DONE" && finished.history.some((e) => e.kind === "comment" && e.text === "**Fixed** it" && e.author_kind === "agent"), done.text);

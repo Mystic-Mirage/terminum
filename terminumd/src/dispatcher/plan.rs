@@ -99,8 +99,7 @@ fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
 /// The walk's step for `run`: its clocks change here, what is to be done comes back.
 pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     let mut acts = Vec::new();
-    let free = !run.held;                              // a human's move stands (AC-124)
-    let movable = free && !finished(&run.status);
+    let movable = !finished(&run.status);
     if !f.pane || !f.marked {
         run.state = "closed".into();
         if f.pane {
@@ -141,14 +140,14 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     match (&f.waiting, alive) {
         (Some(why), true) => {
             run.waited_for += f.dt;
-            if run.waited_for >= WAIT && run.status == "IN PROGRESS" && free {
+            if run.waited_for >= WAIT && run.status == "IN PROGRESS" {
                 run.wait_moved = true;
                 acts.push(Act::Move { to: "WAIT FOR HUMAN", words: if why.is_empty() { "It asks in its window".into() } else { why.clone() } });
             }
         }
         _ => {
             run.waited_for = 0;
-            if run.wait_moved && run.status == "WAIT FOR HUMAN" && alive && f.active && free {
+            if run.wait_moved && run.status == "WAIT FOR HUMAN" && alive && f.active {
                 run.wait_moved = false;
                 acts.push(Act::Move { to: "IN PROGRESS", words: "The agent went on.".into() });
             }
@@ -160,7 +159,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     } else if f.waiting.is_none() {
         run.idle_for += f.dt;
     }
-    if alive && free && f.waiting.is_none() {
+    if alive && f.waiting.is_none() {
         if run.status == "IN PROGRESS" && run.turn_ended {
             if run.idle_for >= NUDGE && !run.nudged {
                 run.nudged = true;
@@ -182,7 +181,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             run.budget_used += f.dt;
         }
         let left = total - run.budget_used;
-        if left <= 0 && !run.held {
+        if left <= 0 {
             if !run.warned {
                 acts.push(Act::Say("No warning could be given before the limit.".into()));
             }
@@ -196,7 +195,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     }
     // what it consumes: two walks in a row, as summed memory counts shared pages many times (AC-128)
     if let Some(m) = f.memory.as_ref().filter(|_| alive && !finished(&run.status)) {
-        if m.end_due && free {
+        if m.end_due {
             end_failed(run, &mut acts, format!("Memory limit of {} GiB exceeded: {:.1} GiB", m.end_gib, m.gib));
             return acts;
         }

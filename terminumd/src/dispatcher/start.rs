@@ -92,7 +92,7 @@ pub struct Opening<'a> {
     pub folder: &'a str,
     pub command: &'a str,
     pub run: &'a str,
-    pub task: &'a str,
+    pub tasks: &'a [String],
     pub program: &'a str,
 }
 
@@ -111,9 +111,11 @@ pub async fn open(app: &Shared, o: Opening<'_>) -> Result<(), String> {
         crate::page::projects::tell(app);
     }
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };
-    let (run, task, words) = (o.run.to_string(), o.task.to_string(), format!("Session started: {} in window {place}, {on}.", o.program));
+    let (run, tasks, words) = (o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program));
     store(app, move |tx| {
-        ops::link(tx, DISPATCHER, &task, Some(&key), ops::now())?;
+        for task in &tasks {
+            ops::link(tx, DISPATCHER, task, Some(&key), ops::now())?;
+        }
         let r = runs::change(tx, &run, |r| r.pane_key = Some(key.clone()))?;
         say(tx, &r, &words)
     }).await
@@ -131,12 +133,12 @@ async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, why: 
     let id = r.id.clone();
     let done = store(app, move |tx| {
         let now = runs::change(tx, &id, |r| { r.state = "gone".into(); r.prompt = None; })?;
-        if now.held || super::plan::finished(&now.status) { say(tx, &now, &words) } else { move_task(tx, &now, "FAILED", &words) }
+        if super::plan::finished(&now.status) { say(tx, &now, &words) } else { move_task(tx, &now, "FAILED", &words) }
     }).await;
     if let Err(e) = done {
         tracing::warn!(event = "dispatcher.start", error = %e);
     }
-    crate::tasks::api::told(app, &r.task_id);
+    super::told_all(app, r);
 }
 
 /// The window command's record for `pane`, if the wrapper got there.
@@ -162,10 +164,10 @@ async fn now_asking(app: &Shared, r: &Run) {
     let id = r.id.clone();
     let moved = store(app, move |tx| {
         let now = runs::change(tx, &id, |r| r.state = "asking".into())?;
-        if now.held { Ok(false) } else { move_task(tx, &now, "WAIT FOR HUMAN", "Answer in its window").map(|()| true) }
+        move_task(tx, &now, "WAIT FOR HUMAN", "Answer in its window")
     }).await;
-    if moved.unwrap_or(false) {
-        crate::tasks::api::told(app, &r.task_id);
+    if moved.is_ok() {
+        super::told_all(app, r);
     }
 }
 

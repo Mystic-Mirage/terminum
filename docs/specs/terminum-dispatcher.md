@@ -995,4 +995,4 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-144 — `cargo test tasks::store`, `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-144 — `cargo test tasks::store`, `cargo test tasks::agents` (a project or an agent deleted), `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

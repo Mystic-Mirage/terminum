@@ -173,6 +173,7 @@ fn ac109_an_agent_s_file_stays_inside_its_folder_or_comes_as_text() {
     assert!(call(&s, &dir, &w, "get_file", json!({"task": id, "name": "note.txt"})).unwrap_err().contains("host"));
 }
 
+/// terminum-kanban.md AC-145: only what is left to do, said as such
 #[test]
 fn ac145_what_is_left_to_do_says_its_kind_and_severity() {
     let ((s, dir), w) = (fresh("tools-left"), who(Some("api")));

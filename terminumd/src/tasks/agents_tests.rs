@@ -152,3 +152,32 @@ fn ac137_what_an_agent_wrote_stands_under_its_new_name() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac144_a_project_or_an_agent_deleted_leaves_the_rest_standing() {
+    use crate::dispatcher::runs::{self, Run};
+    let s = open("agents-lives");
+    s.with(|tx| {
+        project(tx, "api")?;
+        let a = add(tx, &opus())?;
+        let other = add(tx, &Given { name: "Fast fixer".into(), ..opus() })?;
+        let t = crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "t".into(), project: Some("api".into()), ..Default::default() }, 1)?;
+        let mine = list(tx)?.into_iter().find(|x| x.id == a).unwrap();
+        let run = runs::add(tx, &Run::of(&mine, None, "/srv/api".into(), "api".into(), None), std::slice::from_ref(&t.key), 1)?;
+        // a project deleted: its tasks and runs stand in Default, the pool as it was
+        crate::tasks::projects::move_tasks_to_default(tx, "api", "api", 2)?;
+        tx.execute("DELETE FROM projects WHERE id = 'api'", []).map_err(sql)?;
+        assert_eq!(crate::tasks::ops::get(tx, &t.id)?.project, DEFAULT_PROJECT);
+        assert_eq!(runs::change(tx, &run, |_| {})?.project, DEFAULT_PROJECT, "a run goes with its tasks");
+        assert_eq!(list(tx)?.len(), 2, "the pool does not change");
+        // an agent with a session open stays; once it is closed, deleting it frees its slot and the run keeps its name
+        assert!(remove(tx, &a).unwrap_err().contains("has a session open"));
+        runs::change(tx, &run, |r| r.state = "closed".into())?;
+        remove(tx, &a)?;
+        let kept = runs::change(tx, &run, |_| {})?;
+        assert_eq!((kept.agent_name.as_str(), kept.agent_color), (mine.name.as_str(), mine.color), "the name and color it knew");
+        assert!(runs::holding_agent(tx, &a)?.is_none());
+        assert_eq!(list(tx)?.into_iter().map(|x| x.id).collect::<Vec<_>>(), vec![other], "the other agent stands");
+        Ok(())
+    }).unwrap();
+}

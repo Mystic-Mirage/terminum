@@ -780,7 +780,6 @@ Comments and history are one table, `events`: a window lists them in one order. 
 | AC-116 | The task's link opens the record's session, not its line: the record, which knows the line, is gone by then. | `web/static/marks.js` |
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
-| AC-145 | create_task takes any title, and a severity is optional. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -879,4 +878,4 @@ Depends on: nothing more.
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-120 — `cargo test tasks::tools` (pages, a host's file), `scripts/e2e_remote_agents.py` (get_file on a host, with files off), `scripts/e2e_remote_sshd_agents.py`
-- [ ] AC-145 — to come: `cargo test tasks::tools`, `cargo test cli::mcp`
+- [x] AC-145 — `cargo test tasks::tools` (refused with what to do), `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`

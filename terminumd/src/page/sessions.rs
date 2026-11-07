@@ -81,7 +81,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
         return;
     }
     let result = match t {
-        "new" => new_window(app, page, asked_on, &s("group")).await,
+        "new" => new_window(app, page, at.as_ref(), &s("group")).await,
         "newsession" => new_session(app, page, asked_on, &s("name")).await,
         "split" => split(app, page, asked_on, &s("id"), &s("how")).await,
         "clone" => clone_window(app, page, asked_on, &s("id"), msg["project"].as_str()).await,
@@ -107,10 +107,10 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
     }
 }
 
-async fn new_window(app: &Shared, page: &Page, asked_on: Option<&str>, wid: &str) -> Result<(), String> {
+async fn new_window(app: &Shared, page: &Page, at: Option<&(String, Arc<Server>, String)>, wid: &str) -> Result<(), String> {
     let (server, session) = group(app, wid).ok_or("That session is gone.")?;
-    // after the shown pane's window, in its folder, when it is in this session
-    let shown = page.state.lock().shown.as_ref().filter(|s| s.server.id() == server.id()).map(|s| s.pane.clone());
+    // after the window of the pane shown when it was asked, in its folder, when it is in this session (AC-132)
+    let shown = at.filter(|(_, s, _)| s.id() == server.id()).map(|(_, _, pane)| pane.clone());
     let place = match &shown {
         Some(pane) => server.run(format!("display -p -t {pane} '#{{session_name}}\t#{{window_id}}'")).await.ok().and_then(|l| l.into_iter().next())
             .and_then(|l| l.split_once('\t').map(|(s, w)| (s.to_string(), w.to_string()))).filter(|(s, _)| *s == session),
@@ -125,7 +125,7 @@ async fn new_window(app: &Shared, page: &Page, asked_on: Option<&str>, wid: &str
         None => format!("-t {}", args::quote(&format!("={session}:"))),
     };
     let pane = open_window(&server, &target, &dir).await?;
-    created(app, page, asked_on, &server, &pane, note).await;
+    created(app, page, at.map(|(key, ..)| key.as_str()), &server, &pane, note).await;
     Ok(())
 }
 

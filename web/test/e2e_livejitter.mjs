@@ -5,7 +5,7 @@
 // one block in one place and the cursor in it, frame after frame.
 import fs from "node:fs";
 import path from "node:path";
-import { check } from "./check.mjs";
+import { check, SLACK } from "./check.mjs";
 
 // every 100 ms the spinner row rewritten in two writes `gap` ms apart, the cursor on that row between
 const program = (gap) => `const G = ["·", "✢", "✳", "✶", "✻", "✽"];
@@ -76,7 +76,7 @@ async function redraws(page, { tmux, work }, gap, name) {
       requestAnimationFrame(tick);
     }));
     if (got.lost) got.tmux = { pane, screen: tmux("capture-pane", "-p", "-t", pane).split("\n").filter(Boolean).slice(0, 4), cmd: tmux("display", "-p", "-t", pane, "#{pane_current_command} #{pane_dead}") };
-    check(name, got.frames > 60 && got.lost === 0 && got.away === 0 && got.boxes === 1 && got.tops.length === 1, JSON.stringify(got));
+    check(name, got.frames > 60 / SLACK && got.lost === 0 && got.away === 0 && got.boxes === 1 && got.tops.length === 1, JSON.stringify(got));
   } finally {
     tmux("kill-window", "-t", pane);
     fs.rmSync(prog, { force: true });

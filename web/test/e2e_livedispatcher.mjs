@@ -226,6 +226,11 @@ export async function liveDispatcher(page, opts) {
   await page.reload();
   await page.waitForSelector("#sessions .item");
   check("AC-117 a closed line stays closed", await until(async () => await page.evaluate(() => document.querySelectorAll("#asks .taskline").length) <= left, 4000));
+  // this test's windows go, their agents' states with them: what follows measures a quiet page
+  for (const line of tmux("list-panes", "-a", "-F", "#{pane_id} #{@terminum-run}").split("\n")) {
+    const [id, mark] = line.trim().split(" ");
+    if (mark) tmux("kill-pane", "-t", id);
+  }
   await backToSessions();
 }
 

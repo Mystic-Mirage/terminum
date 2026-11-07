@@ -310,6 +310,31 @@ mod tests {
         ctl
     }
 
+    /// AC-132: a row's Last lines and diagnostics wait on that row's server, never on the shown pane's.
+    #[tokio::test]
+    async fn ac132_lastlines_and_diag_of_a_row_go_past_a_hung_shown_server() {
+        let (root, app) = crate::testutil::app("row-lanes");
+        let link = crate::tmux::server::Link::Ssh { ssh: "unused".into(), args: Vec::new() };
+        let host = Server::new("devbox", "default", link, app.changed.clone());
+        app.tmux.add_host(host.clone());
+        let (page, mut rx) = Pages::default().add(true, trace::Recorder::new(root.join("trace"))).unwrap();
+        let _ctl = shown(&page, "tm-test-row-lanes");
+        let hung = shown_lane(&page);
+        let key = host.key("%1");
+        assert_eq!(lane_of(&app, &page, &json!({"t": "diag", "id": key})), host.id());
+        assert_eq!(lane_of(&app, &page, &json!({"t": "diag", "id": "tmux:gone:default:%1"})), hung, "no such row: the shown pane's");
+        for kind in ["lastlines", "diag"] {
+            assert!(super::super::reads::spawn(&page, &format!("{kind} {hung}"), std::future::pending()));
+            handle(&app, &page, json!({"t": kind, "id": key})).await;
+            let said = tokio::time::timeout(Duration::from_secs(2), rx.recv()).await.expect("it waited behind the shown server").unwrap();
+            let said: Value = serde_json::from_str(&said).unwrap();
+            assert_eq!((said["t"].as_str(), said["id"].as_str()), (Some(kind), Some(key.as_str())), "{said}");
+            assert!(said["error"].as_str().is_some_and(|e| e.contains("does not answer")), "{said}");
+        }
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[tokio::test]
     async fn a_hidden_terminal_stops_screens_only_and_showing_it_wakes_the_stream() {
         let dir = crate::testutil::temp_root().join(format!("tm-screens-{}", std::process::id()));

@@ -3,8 +3,10 @@
 """`make release`: leftovers cleared, the full checks, then scripts/release.py (spec AC-104). While it
 runs, landings still push but leave the primary checkout where it is, so a release is never stopped by
 a tree changing under it. Failing tests, here or on the Mac test runner, are what stops a release; a
-problem clearing leftovers, or a runner that could not run them, is said. `--rehearse` (`make rehearse`)
-runs the same chain with no mark and stops before anything is signed or public."""
+problem clearing leftovers, or a runner that could not run them, is said. The full run starts on a quiet
+machine, one at a time (scripts/load_gate.py, AC-140); still busy after 15 minutes, the release ends
+before any test. `--rehearse` (`make rehearse`) runs the same chain with no mark and stops before
+anything is signed or public."""
 import os
 from pathlib import Path
 import re
@@ -14,6 +16,7 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import load_gate  # noqa: E402
 import release  # noqa: E402
 from worktree import mark_path, primary_of, releasing  # noqa: E402
 
@@ -42,12 +45,18 @@ def mac_checks(repo):
 
 
 def chain(repo, tag, rehearsing):
-    """Leftovers, the full checks, the Mac test runner's, then scripts/release.py."""
+    """Leftovers, a quiet machine, the full checks, the Mac test runner's, then scripts/release.py."""
     subprocess.run([sys.executable, "scripts/leftovers.py", "--end"], cwd=repo)
     head = release.run("git", "rev-parse", "HEAD", cwd=repo)
-    if subprocess.run(["bash", "scripts/check_all.sh"], cwd=repo).returncode:
-        print("release: failing tests stop it: nothing is public", file=sys.stderr)
-        return 1
+    with load_gate.Turn(repo) as turn:
+        if subprocess.run(["bash", "scripts/check_all.sh", "--passed"], cwd=repo).returncode:   # a pass waits for nothing
+            busy = load_gate.wait(busy=turn.take)
+            if busy:
+                print(f"release: the build server is not available for a release: {busy}: nothing is public", file=sys.stderr)
+                return 1
+        if subprocess.run(["bash", "scripts/check_all.sh"], cwd=repo, env={**os.environ, "TM_GATE_PASSED": "1"}).returncode:
+            print("release: failing tests stop it: nothing is public", file=sys.stderr)
+            return 1
     failed, why = mac_checks(repo)
     if failed:
         print("release: failing tests on the Mac test runner stop it: nothing is public", file=sys.stderr)

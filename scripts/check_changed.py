@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""A worktree's targeted checks (spec AC-104): the build, the tests of what changed, the tests
-that cite the acceptance cases it touches, and the critical functions. The full run is the
-release's gate, not this (`make check`, CLAUDE.md §10).
+"""A worktree's targeted checks (spec AC-104): the tests of what changed, the tests that cite the
+acceptance cases it touches, and the critical functions; a pass is kept per content
+(.checks/changed-<id>.ok), so the same content runs once. Before its first timed step it waits for a
+quiet machine (scripts/load_gate.py, AC-140). --land: a landing's smoke set on its merged result, the
+basics on one platform, no timed check. The full run is the release's gate, not this (`make check`).
 
-  check_changed.py [--print] [--base <ref>]     default origin/main; --print only says the plan
+  check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
+  check_changed.py --land | --passed | --tree-id        the smoke set; 0 if this content passed; its id
 Each step's output goes to .checks/changed.<step>.log, one line here, as scripts/check_all.sh does."""
 import argparse
+import hashlib
 from pathlib import Path
 import re
 import subprocess
@@ -15,12 +19,17 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
+from load_gate import for_task  # noqa: E402
+from worktree import releasing  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 HEAD_LINES = 6  # a source file names its cases at its top
 # what breaks everything when it breaks: signing in, the tmux client, a pane's page
 CRITICAL_CARGO = ["auth::", "tmux::", "page::client"]
 DOCKER = re.compile(r"e2e_remote_sshd")  # needs Docker and built binaries as arguments: by hand, never here
+SCAN = "env -u TM_PORT -u TM_APP_DIR bash scripts/security_check.sh"
+NICE = "nice -n 10"   # several trees build at once: their builds leave room for the rest
+DEBUG_BUILD = f"cd terminumd && {NICE} cargo build --locked"   # what the e2e checks run; no release build
 
 
 def git(*args, cwd=REPO):
@@ -32,6 +41,18 @@ def changed_files(base, cwd=REPO):
     named = set(git("diff", "--name-only", merge_base, cwd=cwd).splitlines())
     named |= set(git("ls-files", "-o", "--exclude-standard", cwd=cwd).splitlines())
     return sorted(named), merge_base
+
+
+def tree_id(root=REPO):
+    """The content of every tracked and new file, not the commit: committing a checked tree keeps its pass."""
+    files = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], cwd=root, capture_output=True, check=True).stdout
+    digest = hashlib.sha256()
+    for name in sorted(filter(None, files.split(b"\0"))):
+        try:
+            digest.update(name + b"\0" + (root / name.decode()).read_bytes() + b"\0")
+        except (FileNotFoundError, IsADirectoryError):   # deleted, not yet staged; a submodule
+            digest.update(name + b"\0-\0")
+    return digest.hexdigest()[:16]
 
 
 def is_doc(path):
@@ -100,7 +121,7 @@ def plan(files, cases, root=REPO, tests_of_cases=None):
     """[(step's name, shell command)] for these changed files and touched cases."""
     code = [f for f in files if not is_doc(f)]
     # the repository is public, and a landing pushes by itself: always scanned first
-    steps = [("security", "env -u TM_PORT -u TM_APP_DIR bash scripts/security_check.sh")]
+    steps = [("security", SCAN)]
     if any(is_doc(f) for f in files):
         steps.append(("docs", "-python3 scripts/check_docs.py"))
     if not code:
@@ -116,13 +137,14 @@ def plan(files, cases, root=REPO, tests_of_cases=None):
     # every e2e_live*.mjs is a part of e2e_live.mjs, so it runs with the critical step
     shows = bool(rust) or any(f.startswith(("web/static/", "ui/src/")) for f in code) or any(f.startswith("web/test/e2e_live") for f in tests)
     e2e = [f for f in sorted(tests) if re.fullmatch(r"scripts/e2e_\w+\.py", f) and not DOCKER.search(f)]
-    steps.append(("build", "make build"))
-    if e2e or shows:  # what the e2e checks run
-        steps.append(("debug-build", "cd terminumd && cargo build --locked"))
+    if rust or modules or ui or web or e2e or shows:  # the Panel's files: the browsers load them, terminumd embeds them
+        steps.append(("ui", "make ui"))
+    if e2e or shows:
+        steps.append(("debug-build", DEBUG_BUILD))
     if rust:
-        steps.append(("clippy", "cd terminumd && cargo clippy --locked --all-targets -- -D warnings"))
+        steps.append(("clippy", f"cd terminumd && {NICE} cargo clippy --locked --all-targets -- -D warnings"))
     if rust or modules:
-        steps.append(("cargo", "cd terminumd && cargo test --locked -- " + " ".join(sorted(modules | set(CRITICAL_CARGO)))))
+        steps.append(("cargo", f"cd terminumd && {NICE} cargo test --locked -- " + " ".join(sorted(modules | set(CRITICAL_CARGO)))))
     if any(f.startswith("scripts/") or f == "Makefile" or f.startswith(".claude/") for f in tests):
         steps.append(("scripts", "python3 -m unittest discover -s scripts/tests"))
     if ui:
@@ -139,17 +161,37 @@ def plan(files, cases, root=REPO, tests_of_cases=None):
     return steps
 
 
-def run(steps, root=REPO):
+def land_plan(files):
+    """A landing's smoke set on its merged result (AC-104): the basics on one platform, no timed check."""
+    steps = [("security", SCAN)]
+    if any(not is_doc(f) for f in files):
+        steps += [("ui", "make ui"), ("debug-build", DEBUG_BUILD),
+                  ("cargo", f"cd terminumd && {NICE} cargo test --locked -- " + " ".join(CRITICAL_CARGO)),
+                  ("e2e_core", "python3 scripts/e2e_core.py"),
+                  ("smoke", "node web/test/e2e_live.mjs chromium smoke")]
+    return steps
+
+
+def timed(name):
+    """A step whose checks measure time, which a busy machine fails (AC-140)."""
+    return name in ("panel", "page", "critical") or name.startswith("e2e_")
+
+
+def run(steps, root=REPO, gate=True, nice=False):
+    """gate: a quiet machine is waited for before the first timed step; nice: every step yields (a release runs)."""
     logs = root / ".checks"
     logs.mkdir(exist_ok=True)
     failed = []
     for name, command in steps:
+        if gate and timed(name):
+            for_task(root)
+            gate = False
         optional = command.startswith("-")
         started = time.monotonic()
         log = logs / f"changed.{name}.log"
         with log.open("w") as out:
             # under make check's guard (AC-102): a step that leaves a process or a file fails here too
-            guarded = [sys.executable, "-I", str(root / "scripts" / "check_step.py"), "sh", "-c", command.lstrip("-")]
+            guarded = ["nice", "-n", "10"] * nice + [sys.executable, "-I", str(root / "scripts" / "check_step.py"), "sh", "-c", command.lstrip("-")]
             code = subprocess.run(guarded, cwd=root, stdout=out, stderr=subprocess.STDOUT).returncode
         seconds = round(time.monotonic() - started)
         if code == 0 or optional:
@@ -164,9 +206,24 @@ def run(steps, root=REPO):
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--print", action="store_true", dest="only_print")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument("--land", action="store_true")
+    parser.add_argument("--passed", action="store_true")
+    parser.add_argument("--tree-id", action="store_true")
     parser.add_argument("--base", default="origin/main")
     args = parser.parse_args(argv)
+    ident = tree_id()
+    if args.tree_id:
+        print(ident)
+        return 0
+    passed = REPO / ".checks" / f"changed-{ident}.ok"
+    if args.passed:
+        return 0 if passed.exists() else 1
     files, merge_base = changed_files(args.base)
+    if args.land:
+        failed = run(land_plan(files), gate=False, nice=releasing(REPO))
+        print(f"smoke: FAIL {' '.join(failed)}" if failed else "smoke: PASS")
+        return 1 if failed else 0
     steps = plan(files, touched_cases(files, merge_base))
     print(f"changed: {len(files)} files against {merge_base[:9]}")
     # a new case in a change with no code may be what is not built yet; with code it has tests
@@ -178,8 +235,13 @@ def main(argv):
         for name, command in steps:
             print(f"  {name}: {command}")
         return 0
+    if passed.exists() and not args.force:
+        print(f"targeted: passed already on {ident}")
+        return 0
     failed = run(steps)
     print(f"targeted: FAIL {' '.join(failed)}" if failed else "targeted: PASS")
+    if not failed and tree_id() == ident:   # changed during the run: no pass recorded
+        passed.write_text(time.strftime("%Y-%m-%d %H:%M\n"))
     return 1 if failed else 0
 
 

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Lands a finished worktree on origin/main (spec AC-104): merged with origin/main in the tree, its
-targeted checks green on that result, pushed, the primary checkout fast-forwarded and the tree deleted.
-Several trees land at once: each tests alone, and only the last look and the push take turns. A tree is
-merged with what others landed meanwhile; its checks run again if they changed the same files, and it
-builds again if they changed any code. During a release the primary checkout stays where it is (scripts/release_turn.py).
+smoke set green on that result, pushed, the primary checkout fast-forwarded and the tree deleted. Its
+targeted checks passed on its own content count (scripts/check_changed.py records it); they run again
+on the merged result when none is recorded or origin/main changed the same files. Several trees land at
+once: each tests alone, and only the last look and the push take turns. A tree is merged with what
+others landed meanwhile, its smoke set run again on each merge. During a release the primary checkout
+stays where it is (scripts/release_turn.py), and the smoke set yields to it (nice).
 
   land.py <slug>    from the primary checkout (`make land SLUG=<slug>`), the work committed;
                     TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code
@@ -90,26 +92,24 @@ def update_primary(primary):
     return "; ".join(line for line in lines if line != "Aborting")[:300] or "git said nothing"
 
 
-def checks_of(tree):
-    return subprocess.run([sys.executable, "scripts/check_changed.py"], cwd=tree).returncode == 0
-
-
-def builds(tree):
-    return subprocess.run(["make", "build"], cwd=tree, stdout=subprocess.DEVNULL).returncode == 0
+def checks_of(tree, *flags):
+    return subprocess.run([sys.executable, "scripts/check_changed.py", *flags], cwd=tree).returncode == 0
 
 
 def has_code(files):
     return any(not is_doc(f) for f in files)
 
 
-def land(tree, check=checks_of, build=lambda tree: builds(tree), say=print, after=lambda files: None):
+def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land"), passed=lambda tree: checks_of(tree, "--passed"),
+         say=print, after=lambda files: None):
     """Returns the commit landed. Stop if it did not land. `after(its files)` runs still in turn."""
     if git("status", "--porcelain", cwd=tree).stdout.strip():
         raise Stop(1, f"{tree} has uncommitted changes: commit them first")
     git("fetch", "--quiet", "origin", cwd=tree)
     if git("merge-base", "--is-ancestor", "HEAD", BASE, cwd=tree, check=False).returncode == 0:
         return git("rev-parse", "HEAD", cwd=tree).stdout.strip()  # nothing of its own to land
-    tested_at = None
+    checked = passed(tree)   # the tree's own content, before the merge
+    smoked = None
     own_files = files_between(BASE, "HEAD", tree)
     for _ in range(TRIES):
         git("fetch", "--quiet", "origin", cwd=tree)
@@ -119,12 +119,15 @@ def land(tree, check=checks_of, build=lambda tree: builds(tree), say=print, afte
         if not has_base(tree):
             merge_base_in(tree)
             say(f"merged {BASE} ({base_now[:9]})")
-        if tested_at is None or ours & others:
+        if not checked or ours & others:
             if not check(tree):
                 raise Stop(1, f"targeted checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
-            tested_at = git("rev-parse", "HEAD", cwd=tree).stdout.strip()
-        elif has_code(others) and has_code(ours) and not build(tree):  # a renamed function, a new caller
-            raise Stop(1, f"the build fails merged with {BASE}: {tree} stays, nothing pushed")
+            checked = True
+        head = git("rev-parse", "HEAD", cwd=tree).stdout.strip()
+        if head != smoked:   # a renamed function, a new caller: what others landed meets this tree's code
+            if not smoke(tree):
+                raise Stop(1, f"smoke checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
+            smoked = head
         with Turn(tree):
             git("fetch", "--quiet", "origin", cwd=tree)
             if not has_base(tree):

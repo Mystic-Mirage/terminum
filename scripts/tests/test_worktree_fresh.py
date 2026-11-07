@@ -47,6 +47,14 @@ class Fresh(Repo):
         self.assertIn("changed files this branch changes", "".join(worktree_fresh.fresh(cwd=same)))
         self.assertIn("git merge --ff-only origin/main", "".join(worktree_fresh.fresh(cwd=idle)), "no work yet: old code for nothing")
 
+    def test_a_tree_hears_when_origin_main_changed_how_it_is_checked_or_landed(self):  # AC-104
+        own, _ = worktree.add("own", cwd=self.primary)
+        commit(own, "own.txt")
+        self.push_from_another_clone("scripts/land.py")
+        self.forget_fetch()
+        self.assertIn("origin/main changed the checks or the landing (scripts/land.py): read it there and merge it",
+                      "".join(worktree_fresh.fresh(cwd=own)))
+
     def test_git_fetch_runs_at_most_every_five_minutes_and_a_failure_stays_said(self):
         self.push_from_another_clone()
         self.assertEqual(worktree.count("HEAD..origin/main", self.primary), 0)

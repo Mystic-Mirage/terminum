@@ -5,25 +5,14 @@
 # file (not the commit: committing a checked tree keeps its pass). Started again on the same
 # tree it says when it passed and runs nothing (--force runs again), so a follow-up never pays
 # for a run the tree already had. A tree changed during the run (another session, an edit)
-# records no pass. While iterating, run only the changed area's checks (cargo test <module>,
-# node web/test/e2e_all.mjs <check…>).
+# records no pass. It starts on a quiet machine (scripts/load_gate.py, AC-140): exit 75 when the
+# load stays high for 15 minutes; TM_GATE_PASSED=1 (make release, which waited already) skips that.
+# While iterating, run only the changed area's checks (cargo test <module>, node web/test/e2e_all.mjs <check…>).
 #
-#   make check        or   bash scripts/check_all.sh [--force]
+#   make check        or   bash scripts/check_all.sh [--force | --passed]   --passed: 0 if it passed here
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
-tree_id() {
-  python3 -I - <<'PY'
-import hashlib, subprocess
-files = subprocess.run(["git", "ls-files", "-co", "--exclude-standard", "-z"], capture_output=True, check=True).stdout.split(b"\0")
-h = hashlib.sha256()
-for name in sorted(filter(None, files)):
-    try:
-        h.update(name + b"\0" + open(name, "rb").read() + b"\0")
-    except (FileNotFoundError, IsADirectoryError):   # deleted, not yet staged; a submodule
-        h.update(name + b"\0-\0")
-print(h.hexdigest()[:16])
-PY
-}
+tree_id() { python3 -I scripts/check_changed.py --tree-id; }   # the targeted checks' id: one rule
 id=$(tree_id) || { echo "check: no tree id (not a git checkout?)" >&2; exit 2; }
 mkdir -p .checks
 failed=()
@@ -33,6 +22,7 @@ step() {   # step <name> <command…>: its output to the log, one line here; wha
   if python3 -I scripts/check_step.py "$@" >"$log" 2>&1; then echo "ok   $name ($((SECONDS - t0)) s)"
   else echo "FAIL $name ($((SECONDS - t0)) s): $log"; tail -n 15 "$log" | sed 's/^/     /'; failed+=("$name"); fi
 }
+if [ "${1:-}" = --passed ]; then [ -f ".checks/$id.ok" ] && [ ! -f ".checks/$id.docker-skip" ]; exit; fi
 if [ "${1:-}" != --force ] && [ -f ".checks/$id.ok" ]; then
   if [ -f ".checks/$id.docker-skip" ] && python3 scripts/check_docker.py --can-run; then   # a pass without Docker, and it works now
     echo "check: passed on $id without Docker, which works now: its step runs"
@@ -43,6 +33,7 @@ if [ "${1:-}" != --force ] && [ -f ".checks/$id.ok" ]; then
   [ ! -f ".checks/$id.docker-skip" ] || echo "SKIP docker: $(cat ".checks/$id.docker-skip")"
   echo "check: passed already on $id at $(cat ".checks/$id.ok") (--force runs it again)"; exit 0
 fi
+[ -n "${TM_GATE_PASSED:-}" ] || python3 -I scripts/load_gate.py || exit   # 75: the machine stayed busy
 find .checks -name '*.log' ! -name "$id.*" -delete   # earlier trees' logs; their passes stay
 # the commit-time scan (CLAUDE.md §2) only knows other machines' names from the patterns file
 [ -n "$(git config core.hooksPath)" ] || echo "WARN no git hooks: make hooks (security_check before each commit)"

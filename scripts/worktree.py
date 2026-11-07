@@ -8,7 +8,7 @@
   link [<path>]   share the primary checkout's local files with the tree at <path> (default:
       this one): symlinks to its .toolchain, local.mk, CLAUDE.local.md, project-memory and
       .claude/settings.local.json; clones (copy-on-write where the disk can) of ui/node_modules
-      when the lockfiles match and of terminumd/target/release (its dependencies' builds)
+      when the lockfiles match and of terminumd/target's release and debug dependencies' builds
   list            every worktree: branch, uncommitted files, commits not in origin/main,
       processes working in it
   remove <slug|path> [--discard]
@@ -156,6 +156,22 @@ def clone(source, target):
     return run.returncode == 0
 
 
+OWN_BUILDS = ("terminumd", "libterminumd", "terminusd")   # the crate's own: the tree's code rebuilds them
+
+
+def clone_builds(source, target):
+    """A cargo profile's folder with its dependencies' builds only: the crate's own are most of a debug
+    folder's files (tens of thousands) and the tree rebuilds them anyway."""
+    target.mkdir(parents=True)
+    if not all(clone(source / sub, target / sub) for sub in ("build", ".fingerprint") if (source / sub).is_dir()):
+        return False
+    deps = [str(p) for p in (source / "deps").iterdir() if not p.name.startswith(OWN_BUILDS)] if (source / "deps").is_dir() else []
+    (target / "deps").mkdir()
+    how = ["-c"] if sys.platform == "darwin" else ["--reflink=always"]
+    return all(subprocess.run(["cp", "-R", *how, *deps[i:i + 500], str(target / "deps")], capture_output=True).returncode == 0
+               for i in range(0, len(deps), 500))
+
+
 def guard(primary):
     """An invalid .git above the trees: a removed tree's folder that a stray write makes again finds
     this, and git there fails, instead of finding the primary checkout's and working on its main."""
@@ -202,19 +218,17 @@ def link_modules(tree, primary):
 
 
 def link_target(tree, primary):
-    source, target = primary / "terminumd/target/release", tree / "terminumd/target"
+    target = tree / "terminumd/target"
     if target.exists():
         return "kept own terminumd/target"
-    if not source.is_dir():
-        return "terminumd/target: cargo builds it (the primary has no release build)"
-    target.mkdir(parents=True)
-    if not clone(source, target / "release"):
-        target.rmdir()
-        return "terminumd/target: no clone on this disk; cargo builds it"
-    for entry in (target / "release").iterdir():  # the primary's own binaries: never this tree's
-        if entry.is_file() or entry.is_symlink():
-            entry.unlink()
-    return "cloned terminumd/target/release (its dependencies' builds; terminumd itself rebuilds)"
+    profiles = [p for p in ("release", "debug") if (primary / "terminumd/target" / p).is_dir()]
+    if not profiles:
+        return "terminumd/target: cargo builds it (the primary has no build)"
+    for profile in profiles:
+        if not clone_builds(primary / "terminumd/target" / profile, target / profile):
+            shutil.rmtree(target, ignore_errors=True)
+            return "terminumd/target: no clone on this disk; cargo builds it"
+    return f"cloned terminumd/target/{{{','.join(profiles)}}} (their dependencies' builds; terminumd itself rebuilds)"
 
 
 def add(slug, kind="feat", base="origin/main", cwd="."):

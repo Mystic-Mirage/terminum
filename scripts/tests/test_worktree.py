@@ -48,6 +48,9 @@ class Repo(unittest.TestCase):
         (self.primary / "terminumd/target/release/deps").mkdir(parents=True)
         (self.primary / "terminumd/target/release/deps/libdep.rlib").write_text("dep")
         (self.primary / "terminumd/target/release/terminumd").write_text("primary's binary")
+        (self.primary / "terminumd/target/debug/deps").mkdir(parents=True)
+        (self.primary / "terminumd/target/debug/deps/libdep.rlib").write_text("dep")
+        (self.primary / "terminumd/target/debug/deps/terminumd-0123456789abcdef").write_text("the crate's own test binary")
         (self.primary / ".toolchain/bin").mkdir(parents=True)
         (self.primary / ".toolchain/bin/zig").write_text("zig")
         (self.primary / "local.mk").write_text("TM_CODESIGN_IDENTITY=x\n")
@@ -109,6 +112,8 @@ class Worktrees(Repo):
             self.assertGreaterEqual(modules.stat().st_mtime, (path / "ui/package-lock.json").stat().st_mtime)
             self.assertTrue((path / "terminumd/target/release/deps/libdep.rlib").exists())
             self.assertFalse((path / "terminumd/target/release/terminumd").exists(), "the primary's binary")
+            self.assertTrue((path / "terminumd/target/debug/deps/libdep.rlib").exists(), "a warm debug build (AC-104)")
+            self.assertFalse((path / "terminumd/target/debug/deps/terminumd-0123456789abcdef").exists(), "the crate's own: rebuilt")
         else:  # a disk without reflinks (ext4): make and cargo build them, nothing half made is left
             self.assertFalse(modules.exists() or (path / "terminumd/target").exists())
             self.assertIn("no clone on this disk", "\n".join(lines))

@@ -49,10 +49,15 @@ class Landing(unittest.TestCase):
         self.commit(self.primary, "a.txt", "one\n")
         self.commit(self.primary, "b.txt", "one\n")
         git("push", "-q", "origin", "main", cwd=self.primary)
-        self.checks = []
-        builds = land.builds
-        land.builds = lambda _: True  # no Makefile here
-        self.addCleanup(setattr, land, "builds", builds)
+        self.checks, self.smokes = [], []
+
+        def checks_of(tree, *flags):   # no scripts here: the smoke set passes, no targeted pass is recorded
+            if flags == ("--land",):
+                self.smokes.append(tree.name)
+                return True
+            return False
+        self.addCleanup(setattr, land, "checks_of", land.checks_of)
+        land.checks_of = checks_of
 
     def commit(self, cwd, name, text):
         (cwd / name).write_text(text)
@@ -143,18 +148,41 @@ class Landing(unittest.TestCase):
         self.assertEqual(self.checks, ["one", "one"])
         self.assertEqual(git("show", "main:a.txt", cwd=self.origin), "zero\none\ntwo")
 
-    def test_a_clean_merge_with_others_code_builds_before_it_pushes(self):
+    def test_a_red_smoke_set_on_the_merge_pushes_nothing(self):  # AC-104
         one, other = self.tree("one"), self.tree("other")
         self.commit(one, "one.rs", "x\n")
         self.commit(other, "other.rs", "x\n")
-        def lands_other_first(tree):
-            land.land(other, check=lambda _: True, build=lambda _: True, say=lambda _: None)
-            return True
-        before_red = lambda _: False
+        land.land(other, check=self.green, say=lambda _: None)
         with self.assertRaises(land.Stop) as stop:
-            land.land(one, check=lands_other_first, build=before_red, say=lambda _: None)
-        self.assertIn("build fails", str(stop.exception))
+            land.land(one, check=self.green, smoke=lambda _: False, say=lambda _: None)
+        self.assertIn("smoke checks failed", str(stop.exception))
         self.assertNotIn("one.rs", git("ls-tree", "--name-only", "main", cwd=self.origin).split())
+
+    def test_a_pass_on_the_trees_own_content_is_not_run_again_and_the_smoke_set_runs(self):  # AC-104
+        tree = self.tree("one")
+        self.commit(tree, "one.txt", "x\n")
+        land.land(tree, check=self.green, passed=lambda _: True, say=lambda _: None)
+        self.assertEqual((self.checks, self.smokes), ([], ["one"]))
+
+    def test_a_pass_on_files_main_changed_since_runs_the_targeted_checks_on_the_merge(self):  # AC-104
+        tree = self.tree("one")
+        self.commit(tree, "a.txt", "one\ntwo\n")
+        self.commit(self.primary, "a.txt", "zero\none\n")
+        git("push", "-q", "origin", "main", cwd=self.primary)
+        land.land(tree, check=self.green, passed=lambda _: True, say=lambda _: None)
+        self.assertEqual((self.checks, self.smokes), (["one"], ["one"]))
+
+    def test_each_merge_gets_its_smoke_set(self):  # AC-104
+        one, other = self.tree("one"), self.tree("other")
+        self.commit(one, "one.txt", "x\n")
+        self.commit(other, "other.txt", "x\n")
+        def smoke_landing_other_first(tree):
+            self.smokes.append(tree.name)
+            if len(self.smokes) == 1:
+                land.land(other, check=lambda _: True, smoke=lambda _: True, say=lambda _: None)
+            return True
+        land.land(one, check=self.green, smoke=smoke_landing_other_first, say=lambda _: None)
+        self.assertEqual((self.checks, self.smokes), (["one"], ["one", "one"]))
 
     def test_a_refused_push_with_an_unmoved_base_says_why_at_once(self):
         tree = self.tree("one")

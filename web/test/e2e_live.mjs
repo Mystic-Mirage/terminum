@@ -3,9 +3,10 @@
 // user's): sign-in with the password, the list following tmux, a pane's screen, typing,
 // sizing for the view, a full-screen program as its grid and what it copies, Files docked beside the
 // terminal, custom.css, settings and themes changed live, and a terminumd restart.
-// Chromium and WebKit, at a wide (1400×900) and a phone (390×844) size.
+// Chromium and WebKit, at a wide (1400×900) and a phone (390×844) size. smoke: a landing's (AC-104):
+// signing in, the list, a pane drawn, typing and Files, at the wide size only.
 //
-//   node web/test/e2e_live.mjs [chromium|webkit]
+//   node web/test/e2e_live.mjs [chromium|webkit] [board|smoke]
 //     (needs terminumd built: cd terminumd && cargo build; and ui built: cd ui && npm run build)
 
 import { execFileSync, spawn } from "node:child_process";
@@ -128,6 +129,7 @@ const signIn = async (page) => {
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 30000 });
 };
 const BOARD_ALONE = process.argv.includes("board");
+const SMOKE = process.argv.includes("smoke");
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
@@ -176,22 +178,25 @@ async function wide(browser, name) {
   await page.keyboard.type(`cd ${WORK} && echo live-$((6*7))`);
   await page.keyboard.press("Enter");
   await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("live-42"), null, { timeout: 5000 }));
-  await livePaste(page, { home: HOME, name });
-  // a drop's own paths come from Finder's drag pasteboard (dragged.rs): macOS only, elsewhere terminumd says so
-  if (process.platform === "darwin") await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
-  else console.log("SKIP AC-36 files dropped from Finder: their own paths are found on macOS only (dragged.rs)");
-  const size = tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}");
-  check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
-  await liveQuick(page, { tmux, work: WORK });
-  await liveSplit(page, { tmux, work: WORK });
-  // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
-  const byhandName = `byhand-${name}`;
-  tmux("new-window", "-d", "-n", byhandName);
-  await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction((n) => document.getElementById("sessions").innerText.includes(n), byhandName, { timeout: 3000 }));
+  if (!SMOKE) {
+    await livePaste(page, { home: HOME, name });
+    // a drop's own paths come from Finder's drag pasteboard (dragged.rs): macOS only, elsewhere terminumd says so
+    if (process.platform === "darwin") await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
+    else console.log("SKIP AC-36 files dropped from Finder: their own paths are found on macOS only (dragged.rs)");
+    const size = tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}");
+    check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
+    await liveQuick(page, { tmux, work: WORK });
+    await liveSplit(page, { tmux, work: WORK });
+    // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
+    const byhandName = `byhand-${name}`;
+    tmux("new-window", "-d", "-n", byhandName);
+    await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction((n) => document.getElementById("sessions").innerText.includes(n), byhandName, { timeout: 3000 }));
+  }
   await within("AC-70 Files is docked and shows the pane's folder", async () => {
     const frame = await (await page.waitForSelector("#files:not([hidden])", { timeout: 5000 })).contentFrame();
     await frame.waitForFunction(() => document.body.innerText.includes("alpha.txt"), null, { timeout: 8000 });
   });
+  if (SMOKE) return ctx;
   const files = await (await page.$("#files")).contentFrame();
   await files.click("#new-file");
   // typed into the name's field once it is there (under load it came after 3 s, and the name went elsewhere)
@@ -360,7 +365,7 @@ try {
     const browser = await pw[name].launch(NO_SIGNALS);
     try {
       const ctx = await wide(browser, name);
-      await phone(browser, name);
+      if (!SMOKE) await phone(browser, name);
       await ctx.close();
     } catch (e) {
       check("ran to its end", false, String(e.stack ?? e).split("\n").slice(0, 3).join(" | "));

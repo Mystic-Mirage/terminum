@@ -17,6 +17,21 @@ def done(code=0, stdout="abc\n"):
     return subprocess.CompletedProcess([], code, stdout, "")
 
 
+class Turn:
+    """The one-full-run turn, always free here (scripts/tests/test_load_gate.py has the real one)."""
+    def __init__(self, _):
+        pass
+
+    def take(self):
+        return None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+
 class Chain(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -27,6 +42,8 @@ class Chain(unittest.TestCase):
         self.mac = (False, "")
         self.marked_during = None
         self.released = []
+        self.passed_before = False
+        self.busy = None
 
     def fake_release(self, tag, gate_head, said="", rehearsing=False):
         self.released.append((tag, gate_head, said, rehearsing))
@@ -35,7 +52,10 @@ class Chain(unittest.TestCase):
     def run_chain(self, argv):
         def fake_run(cmd, **kwargs):
             self.calls.append(cmd)
+            if cmd == ["bash", "scripts/check_all.sh", "--passed"]:
+                return done(0 if self.passed_before else 1)
             if cmd[:2] == ["bash", "scripts/check_all.sh"]:
+                self.gate_skipped = kwargs.get("env", {}).get("TM_GATE_PASSED") == "1"
                 return done(self.check_status)
             return done()
         with mock.patch.object(release_turn, "mark_path", return_value=self.mark), \
@@ -45,6 +65,8 @@ class Chain(unittest.TestCase):
                 mock.patch.object(release_turn, "primary_of", return_value=Path("/elsewhere")), \
                 mock.patch.object(release_turn.release, "release_notes") as notes, \
                 mock.patch.object(release_turn, "mac_checks", return_value=self.mac), \
+                mock.patch.object(release_turn.load_gate, "Turn", Turn), \
+                mock.patch.object(release_turn.load_gate, "wait", lambda **_: self.busy) as self.waited, \
                 mock.patch.object(release_turn.release, "main", self.fake_release):
             self.notes = notes
             return release_turn.main(argv)
@@ -55,6 +77,25 @@ class Chain(unittest.TestCase):
         self.assertTrue(self.marked_during)
         self.assertFalse(self.mark.exists())
         self.notes.assert_called_once()
+
+    def test_a_busy_build_server_ends_the_release_before_any_test(self):  # AC-140
+        self.busy = "load 31 over 8 for 15 minutes"
+        with mock.patch("sys.stderr") as err:
+            self.assertEqual(self.run_chain(["v1.0.0"]), 1)
+        self.assertIn("release: the build server is not available for a release: load 31 over 8 for 15 minutes: nothing is public",
+                      "".join(c.args[0] for c in err.write.call_args_list))
+        self.assertNotIn(["bash", "scripts/check_all.sh"], self.calls)
+        self.assertEqual(self.released, [])
+        self.assertFalse(self.mark.exists())
+
+    def test_the_full_run_after_the_gate_does_not_wait_again(self):  # AC-140
+        self.assertEqual(self.run_chain(["v1.0.0"]), 0)
+        self.assertTrue(self.gate_skipped)
+
+    def test_a_tree_that_passed_already_waits_for_nothing(self):  # AC-140
+        self.passed_before, self.busy = True, "load 31 over 8 for 15 minutes"
+        self.assertEqual(self.run_chain(["v1.0.0"]), 0)
+        self.assertEqual(len(self.released), 1)
 
     def test_failing_tests_here_or_on_the_mac_stop_it(self):
         self.check_status = 1

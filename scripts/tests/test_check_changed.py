@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""Which checks a change gets (spec AC-104); nothing is run."""
+"""Which checks a change gets (spec AC-104, AC-140); nothing is run."""
 import importlib.util
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location("check_changed", Path(__file__).resolve().parents[1] / "check_changed.py")
 check_changed = importlib.util.module_from_spec(SPEC)
@@ -23,7 +26,8 @@ class Plan(unittest.TestCase):
 
     def test_a_rust_change_builds_lints_tests_its_module_and_the_critical_ones(self):
         got = steps(["terminumd/src/hosts/tunnel.rs"])
-        self.assertIn("build", got)
+        self.assertNotIn("build", got, "no release build in a tree: the primary checkout's install builds it")
+        self.assertIn("debug-build", got)
         self.assertIn("clippy", got)
         self.assertIn("hosts::tunnel", got["cargo"])
         for critical in check_changed.CRITICAL_CARGO:
@@ -57,6 +61,7 @@ class Plan(unittest.TestCase):
     def test_a_script_runs_the_scripts_tests_only(self):
         got = steps(["scripts/worktree.py"])
         self.assertIn("scripts", got)
+        self.assertNotIn("ui", got)
         self.assertNotIn("critical", got)
         self.assertNotIn("cargo", got)
 
@@ -86,6 +91,71 @@ class Plan(unittest.TestCase):
     def test_every_plan_is_the_full_run_less(self):
         got = steps(["terminumd/src/hosts/tunnel.rs"])
         self.assertNotIn("make check", " ".join(got.values()))
+
+
+class Land(unittest.TestCase):
+    def test_a_landings_smoke_set_is_the_basics_on_one_platform(self):  # AC-104
+        got = dict(check_changed.land_plan(["terminumd/src/hosts/tunnel.rs", "docs/USAGE.md"]))
+        self.assertEqual(list(got), ["security", "ui", "debug-build", "cargo", "e2e_core", "smoke"])
+        self.assertEqual(got["smoke"], "node web/test/e2e_live.mjs chromium smoke")
+        self.assertNotIn("hosts::tunnel", got["cargo"], "the tree's own tests passed before it landed")
+        self.assertEqual(dict(check_changed.land_plan(["docs/USAGE.md"])), {"security": check_changed.SCAN})
+
+    def test_builds_leave_room_for_other_trees(self):  # AC-104
+        for got in (steps(["terminumd/src/hosts/tunnel.rs"]), dict(check_changed.land_plan(["terminumd/src/x.rs"]))):
+            for name in ("debug-build", "cargo"):
+                self.assertIn("nice -n 10 cargo", got[name])
+
+    def test_only_timed_steps_wait_for_a_quiet_machine(self):  # AC-140
+        self.assertEqual([n for n in ("security", "cargo", "panel", "page", "critical", "e2e_hooks", "smoke") if check_changed.timed(n)],
+                         ["panel", "page", "critical", "e2e_hooks"])
+
+
+class Run(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root, self.events = Path(tmp.name), []
+
+    def run_steps(self, steps, **kw):
+        def fake(cmd, **_):
+            self.events.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0)
+        with mock.patch.object(check_changed.subprocess, "run", fake), \
+                mock.patch.object(check_changed, "for_task", lambda _: self.events.append("gate")):
+            return check_changed.run(steps, root=self.root, **kw)
+
+    def test_the_first_timed_step_waits_once_for_a_quiet_machine(self):  # AC-140
+        self.run_steps([("cargo", "true"), ("page", "true"), ("e2e_hooks", "true")])
+        self.assertEqual([e if e == "gate" else e[-1] for e in self.events], ["true", "gate", "true", "true"])
+
+    def test_a_landings_steps_never_wait_and_yield_during_a_release(self):  # AC-104, AC-140
+        self.run_steps([("e2e_core", "true")], gate=False, nice=True)
+        self.assertEqual(self.events[0][:3], ["nice", "-n", "10"])
+        self.assertNotIn("gate", self.events)
+
+
+class Passed(unittest.TestCase):
+    def test_the_same_content_runs_once(self):  # AC-104
+        with tempfile.TemporaryDirectory() as tmp:
+            ran = []
+            with mock.patch.object(check_changed, "REPO", Path(tmp)), \
+                    mock.patch.object(check_changed, "tree_id", return_value="3f9a21c40b7d5e11"), \
+                    mock.patch.object(check_changed, "changed_files", return_value=(["docs/x.md"], "HEAD")), \
+                    mock.patch.object(check_changed, "touched_cases", return_value=set()), \
+                    mock.patch.object(check_changed, "run", lambda steps, **_: ran.append(steps) or []), \
+                    mock.patch("sys.stdout") as out:
+                (Path(tmp) / ".checks").mkdir()
+                self.assertEqual(check_changed.main(["--passed"]), 1)
+                self.assertEqual(check_changed.main([]), 0)
+                self.assertEqual(check_changed.main([]), 0)
+                self.assertEqual(check_changed.main(["--passed"]), 0)
+            self.assertEqual(len(ran), 1)
+            self.assertIn("targeted: passed already on 3f9a21c40b7d5e11", "".join(c.args[0] for c in out.write.call_args_list))
+
+    def test_the_id_is_the_content_not_the_commit(self):  # AC-104
+        self.assertEqual(check_changed.tree_id(), check_changed.tree_id())
+        self.assertRegex(check_changed.tree_id(), r"^[0-9a-f]{16}$")
 
 
 if __name__ == "__main__":

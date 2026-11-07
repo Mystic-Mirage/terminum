@@ -36,6 +36,12 @@ def commits(n):
     return f"{n} commit{'' if n == 1 else 's'}"
 
 
+# how a tree is checked and landed: a session works by them, so it hears when origin/main changed one
+PIPELINE = {"CLAUDE.md", "Makefile", ".claude/settings.json", "scripts/check_all.sh", "scripts/check_changed.py",
+            "scripts/check_step.py", "scripts/land.py", "scripts/load_gate.py", "scripts/release_turn.py",
+            "scripts/worktree.py", "scripts/worktree_fresh.py"}
+
+
 def behind_words(cwd):
     """Why a tree behind origin/main should hear of it, or None: main moves all the time and CLAUDE.md
     §9 merges it only when that matters."""
@@ -43,8 +49,11 @@ def behind_words(cwd):
     mine |= {line[3:] for line in git("status", "--porcelain", cwd=cwd).splitlines()}
     if not mine:
         return "it holds no work yet: git merge --ff-only origin/main"
-    if mine & set(git("diff", "--name-only", "HEAD...origin/main", cwd=cwd).splitlines()):
+    theirs = set(git("diff", "--name-only", "HEAD...origin/main", cwd=cwd).splitlines())
+    if mine & theirs:
         return "origin/main changed files this branch changes: read them there, merge per CLAUDE.md §9"
+    if theirs & PIPELINE:
+        return f"origin/main changed the checks or the landing ({', '.join(sorted(theirs & PIPELINE))}): read it there and merge it (CLAUDE.md §9)"
     return None
 
 

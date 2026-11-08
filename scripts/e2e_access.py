@@ -148,25 +148,27 @@ def main():
         st, other = login("correct horse")
         other = other["secret"]
         mine, mine2, theirs = t.page(secret), t.page(secret), t.page(other)
+        my_panel = WS(PORT, path="/fb/api/ws", protocols=["tm", secret])
+        my_panel.recv()                                # its first frame, the state
         out = {"Content-Type": "application/json", "Origin": f"http://{host}"}
         st, _, _ = raw(PORT, "POST", "/auth/logout", {**sess, **out}, b"{}")
         st1, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", sess)
         st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": other})
         check("AC-09 Sign out ends that browser's sign-in only", st == 204 and st1 == 401 and st2 == 200, (st, st1, st2))
-        check("AC-09 Sign out closes every page of that sign-in at once (another tab, another device), no other sign-in's",
-              closed(mine) and closed(mine2) and not closed(theirs, 1))
+        check("AC-09 Sign out closes every page and Files panel of that sign-in at once (another tab, another device), no other sign-in's",
+              closed(mine) and closed(mine2) and closed(my_panel) and not closed(theirs, 1))
         theirs.close()
         st, _, _ = raw(PORT, "GET", "/fb/api/events", {"Host": host, "X-TM-Session": other})
         check("AC-09 an agent's event stream is not served on the page's listener", st == 404, st)
-        st, fourth = login("correct horse")
-        fourth = fourth["secret"]
+        fourth = login("correct horse")[1]["secret"]
+        sess4 = {"Host": host, "X-TM-Session": fourth}
         page4 = t.page(fourth)
         os.chmod(t.app, 0o500)                         # signins.json cannot be written
         try:
-            st, body, _ = raw(PORT, "POST", "/auth/logout", {"Host": host, "X-TM-Session": fourth, **out}, b"{}")
+            st, body, _ = raw(PORT, "POST", "/auth/logout", {**sess4, **out}, b"{}")
         finally:
             os.chmod(t.app, 0o700)
-        st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": fourth})
+        st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", sess4)
         check("AC-09 a Sign out signins.json cannot keep still ends the sign-in and its pages, and says what a restart would do",
               st == 503 and body.get("error") == "signout_unsaved" and "terminum signout" in body.get("message", "") and st2 == 401
               and closed(page4), (st, body, st2))
@@ -176,7 +178,7 @@ def main():
         st, body = unix_request(t.sock, "POST", "/signout", {})
         st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": other})
         check("AC-09 terminum signout signs every browser out and closes its page", st == 200 and st2 == 401 and closed(ws), (st, st2))
-        check("AC-09 a Files panel's socket of a revoked sign-in ends at its next ping (15 s)", panel.status == 101 and closed(panel, 17))
+        check("AC-09 terminum signout closes a Files panel's socket at once", panel.status == 101 and closed(panel))
         st, third = login("correct horse")
         st, body = unix_request(t.sock, "POST", "/password", {"password": "battery staple"})
         st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": third["secret"]})

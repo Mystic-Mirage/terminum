@@ -440,7 +440,7 @@ Scenario: AC-09 edge — signed out
   When signins.json cannot be written at a Sign out, "terminum signout" or a new password
   Then the sign-ins end in terminumd all the same and their pages close; the answer (503 signout_unsaved; the CLI's error) says that until "terminum signout" succeeds a restart of terminumd would let them back; the page forgets its sign-in and shows that message in the form, or, when terminumd did not answer, that the sign-in may still be live and to run "terminum signout"
   When the page's sign-in has expired or was revoked ("terminum signout", a new password)
-  Then every socket of it (page, Files panel) ends at its next ping (15 s) at the latest, and no stream outlives it
+  Then every socket of it (page, Files panel) ends: a revoked one's at once, an expired one's at its next ping (15 s); no stream outlives it
   And the page drops it from its storage and shows the form with "Signed out: sign in again."; the page behind stays as it is, unsaved edits in its editor included, until the user signs in again
 Scenario: AC-09 edge — the sign-ins of an old install
   Given an install that holds sign-ins from one-time codes on 127.0.0.1:47900 or cookie sign-ins of a second listener

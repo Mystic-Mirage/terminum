@@ -87,12 +87,10 @@ pub fn agent(app: Shared) -> Router {
 
 /// Whether a request carries a valid sign-in.
 fn signed_in(app: &Shared, req: &Request) -> bool {
-    let h = req.headers();
-    let header = |n: &str| h.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
     // a browser sends Sec-Fetch-Site (Node's fetch sends only Sec-Fetch-Mode): it may present
     // only a credential, never the secret (AC-09)
-    let browser = h.contains_key("sec-fetch-site");
-    checks::signin_credential(header).is_some_and(|c| app.signins.check(&c, browser))
+    let browser = req.headers().contains_key("sec-fetch-site");
+    checks::credential_of(req.headers()).is_some_and(|c| app.signins.check(&c, browser))
 }
 
 async fn guard(State(app): State<Shared>, mut req: Request, next: Next) -> Response {

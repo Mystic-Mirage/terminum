@@ -166,18 +166,4 @@ impl Pages {
         }
     }
 
-    /// Every page closes: their browsers sign in again (a new password, `terminum signout`).
-    pub fn close_all(&self) {
-        for p in self.all() {
-            p.close();
-        }
-    }
-
-    /// The pages of a sign-in that ended (Sign out in one browser) close now, not at their next
-    /// ping: another tab or device of that sign-in types and reads no more (AC-09).
-    pub fn close_signed_out(&self, signins: &crate::auth::signin::Signins) {
-        for p in self.all().into_iter().filter(|p| !p.signed_in(signins)) {
-            p.close();
-        }
-    }
 }

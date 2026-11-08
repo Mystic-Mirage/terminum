@@ -84,13 +84,18 @@ pub async fn set_password(app: &Shared, password: &str) -> Result<Value, String>
     Ok(status(app))
 }
 
-/// Every sign-in ends and every page closes, even when signins.json cannot be written: then
-/// the error says that a restart would bring them back until `terminum signout` succeeds.
+/// Every sign-in ends, and with it every page and panel (`Signins::revocations`), even when
+/// signins.json cannot be written: then the error says what a restart would do.
 async fn end_all(app: &Shared) -> Result<(), String> {
     let a = app.clone();
-    let saved = crate::http::off(move || a.signins.revoke_all().map_err(|e| e.to_string())).await;
-    app.pages.close_all();
-    saved.map_err(|e| format!("Every browser is signed out, but signins.json could not be written ({e}): until terminum signout succeeds, a restart of terminumd would let the old sign-ins back."))
+    crate::http::off(move || a.signins.revoke_all().map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Every browser is signed out, but {}", unsaved(&e, "the old sign-ins")))
+}
+
+/// What a revocation signins.json could not keep leaves: `who` back after a restart.
+fn unsaved(e: &str, who: &str) -> String {
+    format!("signins.json could not be written ({e}): until terminum signout succeeds on the Mac, a restart of terminumd would let {who} back.")
 }
 
 /// One writer of web.json at a time: a password set while a sign-in strengthens the old one's
@@ -187,22 +192,21 @@ fn current(app: &Shared, auth: &Arc<WebAuth>) -> bool {
 }
 
 /// `POST /auth/logout`: this browser's sign-in ends (the one it presents, if any), and every
-/// page still open with it closes: another tab or device of the same sign-in. A credential
+/// page and panel still open with it closes (`Signins::revocations`): another tab or device of
+/// the same sign-in. A credential
 /// of another boot (an upgrade under the page) is 401 bad_session, which the page proves again
 /// and sends once more, so the sign-in it meant ends instead of living on unseen. One that
 /// cannot be removed from the file is 503 signout_unsaved: ended, but a restart would bring it back.
 pub async fn logout(State(app): State<Shared>, headers: HeaderMap) -> Response {
-    let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    if let Some(credential) = crate::auth::checks::signin_credential(header) {
+    if let Some(credential) = crate::auth::checks::credential_of(&headers) {
         let a = app.clone();
         match crate::http::blocking(move || a.signins.revoke(&credential)).await {
-            Ok(Ok(true)) => app.pages.close_signed_out(&app.signins),
+            Ok(Ok(true)) => {}
             Ok(Ok(false)) => return crate::auth::checks::Denial::new(401, "bad_session", "Missing or expired sign-in").into_response(),
             Ok(Err(e)) => {
-                // gone from memory all the same (`Signins::revoke`): its pages close, the page says the rest
+                // gone from memory all the same (`Signins::revoke`); the page says the rest
                 tracing::warn!(event = "signout.unsaved", error = %e);
-                app.pages.close_signed_out(&app.signins);
-                let message = format!("Signed out, but signins.json could not be written ({e}): until terminum signout succeeds on the Mac, a restart of terminumd would let this sign-in back.");
+                let message = format!("Signed out, but {}", unsaved(&e.to_string(), "this sign-in"));
                 return crate::http::err(StatusCode::SERVICE_UNAVAILABLE, "signout_unsaved", message);
             }
             Err(r) => return r,

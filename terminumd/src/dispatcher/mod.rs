@@ -11,7 +11,7 @@ mod hooks;
 pub mod plan;
 pub mod pool;
 pub mod usage;
-mod procs;
+pub(crate) mod procs;
 pub mod runs;
 pub mod screen;
 mod start;

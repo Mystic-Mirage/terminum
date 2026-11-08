@@ -89,6 +89,26 @@ async fn run(app: &Shared, server: &Server, words: &[&str]) -> Option<String> {
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// Whether `dir` is a folder on `server`'s machine (`terminum.md` AC-92): tmux opens a window in its home
+/// folder, saying nothing, when the one asked is not there. `None`: the host did not answer.
+pub async fn is_folder(app: &Shared, server: &Server, dir: &str) -> Option<bool> {
+    if server.is_local() {
+        return Some(std::path::Path::new(dir).is_dir());
+    }
+    // `~` stays outside the quotes, so the host's shell takes it for its home
+    let word = match dir.strip_prefix('~') {
+        Some("") => "~".to_string(),
+        Some(rest) if rest.starts_with('/') => format!("~/{}", crate::tmux::layout::sh(&rest[1..])),
+        _ => crate::tmux::layout::sh(dir),
+    };
+    let out = run(app, server, &["test", "-d", &word, "&&", "echo", YES, "||", "echo", NO]).await?;
+    // what the host's rc files print comes before
+    out.lines().rev().find_map(|l| match l.trim() { YES => Some(true), NO => Some(false), _ => None })
+}
+
+const YES: &str = "tm-folder-yes";
+const NO: &str = "tm-folder-no";
+
 /// One `ps` of `server`'s machine; none: nothing is known.
 pub async fn read(app: &Shared, server: &Server) -> Option<Tree> {
     run(app, server, &PS).await.map(|o| parse(&o))

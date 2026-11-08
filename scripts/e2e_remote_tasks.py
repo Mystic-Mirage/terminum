@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, end_tmux, summary, tmux_on, unix_request, wait_for  # noqa: E402
@@ -74,6 +75,21 @@ def main():
 
         attached = until(lambda: host().get("state") == "attached")
         check("setup: the host is attached", attached)
+
+        # a project's [+] on the host: its folder there, or said (terminum.md AC-92)
+        ws = t.page(secret)
+        gone = call("/api/task-projects", "POST", {"name": "Gone", "host": "devbox", "dir": os.path.join(home, "gone")})[1]["id"]
+        ws.send({"t": "projectwindow", "project": gone, "dir": ""})
+        said = ws.until(lambda m: m["t"] in ("created", "error"), 15) or {}
+        check("AC-92 a folder gone on the host: said, no window", said.get("t") == "error" and said.get("msg") == f"The folder {os.path.join(home, 'gone')} does not exist on devbox.", said)
+        time.sleep(1.1)   # one new window a second (AC-07)
+        ws.send({"t": "projectwindow", "project": project, "dir": ""})
+        made = ws.until(lambda m: m["t"] in ("created", "error"), 15) or {}
+        where = shown(made.get("id", "").rsplit(":", 1)[-1], "#{pane_current_path}") if made.get("t") == "created" else made
+        check("AC-92 its folder there: the window opens in it", where == os.path.realpath(folder), where)
+        held = shown(made.get("id", "").rsplit(":", 1)[-1], "#{session_name}") if made.get("t") == "created" else made
+        check("AC-92 on a host it opens in the session terminumd holds there", held == "terminum", held)
+        ws.s.close()
 
         # hooks missing there: said, nothing starts
         off = task("no hooks yet")

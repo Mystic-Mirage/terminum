@@ -189,7 +189,7 @@ pub fn host_group(server: &Server, files: Option<&str>) -> Value {
 
 /// One word for a POSIX shell and zsh: as is when plain, else single-quoted (a leading `=` too:
 /// zsh reads `=main` as the path of a program named main).
-fn sh(s: &str) -> String {
+pub(crate) fn sh(s: &str) -> String {
     if !s.is_empty() && !s.starts_with('=') && s.chars().all(|c| c.is_ascii_alphanumeric() || "@%_+=:,./-".contains(c)) {
         s.to_string()
     } else {

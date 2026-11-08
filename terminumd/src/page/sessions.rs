@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use super::client::error;
 use super::Page;
 use crate::app::Shared;
+use crate::tmux::server::HOST_SESSION;
 use crate::tmux::{args, Server};
 
 /// One new window, session or split a second per page (AC-07).
@@ -150,9 +151,12 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
         let ps = app.projects.lock();
         project.and_then(|p| ps.list().iter().find(|x| x.id == p)).or_else(|| ps.of(id)).map(|p| (p.id.clone(), p.dir.clone()))
     };
-    let usable = |d: &str| !d.is_empty() && args::check_text(d).is_ok() && (!server.is_local() || std::path::Path::new(d).is_dir());
+    let usable = match &joins {
+        Some((_, d)) => !d.is_empty() && args::check_text(d).is_ok() && crate::dispatcher::procs::is_folder(app, &server, d).await != Some(false),
+        None => false,
+    };
     let (dir, note) = match &joins {
-        Some((_, d)) if usable(d) => (d.clone(), None),
+        Some((_, d)) if usable => (d.clone(), None),
         _ => folder_of(&server, &pane).await,
     };
     let new = open_window(&server, &format!("-a -t {window}"), &dir).await?;
@@ -168,8 +172,9 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
     Ok(())
 }
 
-/// The [+] of a project with no session (AC-110): a window in its folder, on its host, in the tmux
-/// session named after it. `dir`, when given, is its folder from now on.
+/// The [+] of a project with no session (AC-110): a window in its folder, in the tmux session named
+/// after it, on a host in the one session terminumd holds there (terminum-remote.md OQ-81). `dir`, when
+/// given, is its folder from now on.
 async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, project: &str, dir: &str) -> Result<(), String> {
     let (name, host, kept) = {
         let ps = app.projects.lock();
@@ -185,10 +190,14 @@ async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, proje
         return Err("This project has no folder yet.".into());
     }
     args::check_text(&dir)?;
-    if server.is_local() && !std::path::Path::new(&dir).is_dir() {
-        return Err(format!("The folder {dir} does not exist."));
+    // a host that does not answer gets the window: tmux says what it can
+    if crate::dispatcher::procs::is_folder(app, &server, &dir).await == Some(false) {
+        return Err(match &host {
+            Some(h) => format!("The folder {dir} does not exist on {h}."),
+            None => format!("The folder {dir} does not exist."),
+        });
     }
-    let session = args::project_session(&name)?;
+    let session = if server.is_local() { args::project_session(&name)? } else { HOST_SESSION.to_string() };
     let exists = server.run(format!("has-session -t {}", args::quote(&format!("={session}")))).await.is_ok();
     let line = if exists {
         format!("new-window -t {} -c {} -P -F '#{{pane_id}}'", args::quote(&format!("={session}:")), args::format_arg(&dir))

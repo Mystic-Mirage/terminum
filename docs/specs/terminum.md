@@ -671,13 +671,18 @@ Scenario: AC-92 happy path — a project
   Then "docs" joins Group 1 (a session is in one project at most: added to another, it moves); Group 2 takes the next color
 Scenario: AC-92 happy path — new sessions, order, names
   When the user presses the project's [+]
-  Then the window opens as above (the session's own folder when the project's is gone) and joins the project; Clone of a project's session joins it right after that session
+  Then the window opens as above (the session's own folder when the project's is gone; a project of a host's, in the one session terminumd holds there, terminum-remote.md OQ-81) and joins the project; Clone of a project's session joins it right after that session
   When the user drags a session in it (as a row is dragged, AC-07), or picks a move in a session's menu
   Then its sessions are in that order
   When the user picks Rename… in the project's menu (its ⋯, or a right click on its header, as a row's menu) (or double-clicks its name) and types "API" (Enter or Rename)
   Then it is named "API" (1–40 characters; another length is refused)
   And Delete Project… asks and moves its sessions and tasks to Default (terminum-kanban.md AC-110)
   And the menu also has New Window (as its [+]), Move to the Top, Up, Down, to the Bottom (as the list shows them, off at an end), and Close Project… (red): it asks "Close the project <name> and its N sessions? The programs running in them end." and, confirmed, closes each of its sessions, the project staying with its tasks; Cancel closes nothing
+Scenario: AC-92 failure — a folder that is not there
+  Given project "api" on host devbox.example with no session, its folder /srv/api gone there
+  When the user presses its [+]
+  Then no window opens and the list says "The folder /srv/api does not exist on devbox.example.", as on this Mac it says "The folder /srv/api does not exist."
+  And Clone of a session of a project whose folder is gone opens in that session's own folder, on a host as here
 Scenario: AC-92 edge — the shown session closes
   When the session or pane a page shows closes (from any page, or its program ended)
   Then the page shows the first session the list has in the same project, top to bottom; outside projects the first of the same tmux group

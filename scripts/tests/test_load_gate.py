@@ -70,7 +70,7 @@ class Gate(unittest.TestCase):
     def test_the_limit_is_half_the_cores_unless_set(self):  # AC-146
         self.assertEqual(gate.limit(), 8)
         with mock.patch.dict(os.environ, {"TM_GATE_LOAD": ""}):
-            self.assertEqual(gate.limit(), (os.cpu_count() or 2) / 2)
+            self.assertEqual(gate.limit(), float(os.cpu_count() or 2))
 
     def test_a_tasks_checks_run_after_15_minutes_saying_so(self):  # AC-146
         m = Machine(31)

@@ -68,11 +68,23 @@ def touched_cases(files, merge_base, cwd=REPO):
     cases = set(AC.findall("\n".join(line for line in git("diff", "-U0", merge_base, cwd=cwd).splitlines()
                                      if line[:1] in "+-" and line[:3] not in ("+++", "---"))))
     for name in files:
-        path = cwd / name
-        if not is_doc(name) and path.is_file():
-            with path.open(errors="replace") as f:
-                cases |= set(AC.findall("".join(f.readline() for _ in range(HEAD_LINES))))
+        if not is_doc(name):
+            cases |= head_cases(cwd / name)
     return cases
+
+
+def head_cases(path):
+    if not path.is_file():
+        return set()
+    with path.open(errors="replace") as f:
+        return set(AC.findall("".join(f.readline() for _ in range(HEAD_LINES))))
+
+
+def caseless(files, cwd=REPO):
+    """Changed Rust sources that name no case at their top: no test is known to cite their area's cases,
+    so the e2e scripts of that area do not run (their module's cargo tests do)."""
+    return [f for f in files if f.startswith("terminumd/src/") and f.endswith(".rs") and "_tests" not in f
+            and (cwd / f).is_file() and not head_cases(cwd / f)]
 
 
 def module_of(path):
@@ -229,6 +241,8 @@ def main(argv):
         return 1 if failed else 0
     steps = plan(files, touched_cases(files, merge_base))
     print(f"changed: {len(files)} files against {merge_base[:9]}")
+    for name in caseless(files):
+        print(f"note: {name} names no case at its top: the e2e scripts of its area are not known")
     # a new case in a change with no code may be what is not built yet; with code it has tests
     untested = uncited(new_cases(git("diff", merge_base)), REPO) if any(not is_doc(f) for f in files) else []
     if untested and not args.only_print:

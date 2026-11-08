@@ -12,6 +12,7 @@ stays where it is (scripts/release_turn.py), and the smoke set yields to it (nic
                     TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code
 Exit: 0 landed; 1 checks failed or refused (the tree stays); 2 a merge conflict, left in the tree
 to resolve and commit before running this again. No force, ever."""
+import json
 import os
 from pathlib import Path
 import re
@@ -84,6 +85,28 @@ def update_primary(primary):
         return None
     lines = [line.strip() for line in (done.stderr or done.stdout).splitlines() if line.strip()]
     return "; ".join(line for line in lines if line != "Aborting")[:300] or "git said nothing"
+
+
+def ci_status(tree, run=subprocess.run):
+    """One line on GitHub CI's last run on main, as gh says: what a landing adds to; it never stops one."""
+    ask = ["gh", "run", "list", "--branch", "main", "--workflow", "ci", "--limit", "1", "--json", "status,conclusion,headSha,url"]
+    try:
+        done = run(ask, cwd=tree, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"CI on main: unknown ({e})"
+    if done.returncode:
+        return f"CI on main: unknown ({(done.stderr.strip().splitlines() or ['gh failed'])[-1]})"
+    try:
+        runs = json.loads(done.stdout or "[]")
+        if not runs:
+            return "CI on main: no run"
+        last = runs[0]
+        sha, state, url = last["headSha"], last["conclusion"] or last["status"], last["url"]
+    except (ValueError, KeyError, TypeError, IndexError) as e:
+        return f"CI on main: unknown (gh's answer: {e!r})"
+    head = git("rev-parse", BASE, cwd=tree).stdout.strip()
+    of = "" if sha == head else f", not {BASE}'s {head[:9]}"
+    return f"CI on main: {state} on {sha[:9]}{of}: {url}"
 
 
 def checks_of(tree, *flags):
@@ -166,12 +189,17 @@ def main(argv):
     tree = primary / ".worktrees" / argv[0]
     if not tree.is_dir():
         sys.exit(f"no worktree {tree}")
+    ci = ci_status(tree)
+    print(ci)   # said again last when not green: minutes of checks scroll the first out of sight
+    again = lambda: None if ci.startswith("CI on main: success") else print(ci)
     try:
         commit = land(tree, after=after_push(primary))
     except Stop as stop:
         print(f"land: {stop}", file=sys.stderr)
+        again()
         return stop.code
     print(f"landed {commit[:9]} on {BASE}")
+    again()
     os.chdir(primary)
     if not tree.is_dir():
         return 0

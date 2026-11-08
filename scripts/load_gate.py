@@ -3,7 +3,7 @@
 """A full run on a quiet machine (spec AC-146). Before a release's full run, and before a task's first
 timed check, the load average is looked at: over the limit it waits, a look each minute, and once the
 load is low it starts 3 minutes later, those minutes looked at too. After 15 minutes a release gives up;
-a task's checks run anyway, saying so. TM_GATE_LOAD sets the limit (half the cores: a guess).
+a task's checks run anyway, saying so. TM_GATE_LOAD sets the limit (the cores' count: above a working day's load, below a build's).
 
   load_gate.py    make check by hand: exit 0 to go, 75 when still busy after 15 minutes"""
 import os
@@ -25,7 +25,7 @@ def limit():
     try:
         return float(os.environ["TM_GATE_LOAD"])
     except (KeyError, ValueError):
-        return (os.cpu_count() or 2) / 2
+        return float(os.cpu_count() or 2)
 
 
 def fmt(number):

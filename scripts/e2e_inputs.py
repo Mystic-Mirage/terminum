@@ -43,7 +43,7 @@ def rows(t, until_n, timeout=10):
 
 def main():
     t = Terminumd(PORT, SOCKET, env={"TM_TEST_HOOKS": "1"})
-    work = tempfile.mkdtemp(prefix="tmi-", dir=short_tmp())
+    work = tempfile.mkdtemp(prefix="tmw-", dir=short_tmp())
     try:
         t.start()
         ws = t.page(headers=[f"User-Agent: {SAFARI}"])

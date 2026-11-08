@@ -29,6 +29,7 @@ mod http;
 mod inputs;
 mod listing;
 mod lists;
+mod messages;
 mod listing_sort;
 mod looks;
 mod manager;

@@ -157,14 +157,42 @@ impl Dispatcher {
 
     /// Whether `prompt` in pane `key` is what terminum typed there, on its first 20,000 characters (§9): once.
     fn was_typed(&self, key: &str, prompt: &str) -> bool {
-        let first = |s: &str| s.chars().filter(|c| !c.is_whitespace()).take(20_000).collect::<String>();
-        let wanted = first(prompt);
         let mut t = self.typed.lock();
-        t.retain(|(_, _, at)| at.elapsed() < TYPED_FOR);
-        match t.iter().position(|(k, text, _)| k == key && first(text) == wanted) {
+        match typed_at(&mut t, key, prompt) {
             Some(at) => { t.remove(at); true }
             None => false,
         }
+    }
+
+    /// Whether Dispatcher typed `prompt` into pane `key` (its message's sender, AC-147), leaving
+    /// it for `was_typed`.
+    pub fn typed_it(&self, key: &str, prompt: &str) -> bool {
+        typed_at(&mut self.typed.lock(), key, prompt).is_some()
+    }
+}
+
+/// Where in `t` (what Dispatcher typed lately) `prompt` of pane `key` is.
+fn typed_at(t: &mut Vec<(String, String, Instant)>, key: &str, prompt: &str) -> Option<usize> {
+    let first = |s: &str| s.chars().filter(|c| !c.is_whitespace()).take(20_000).collect::<String>();
+    let wanted = first(prompt);
+    t.retain(|(_, _, at)| at.elapsed() < TYPED_FOR);
+    t.iter().position(|(k, text, _)| k == key && first(text) == wanted)
+}
+
+#[cfg(test)]
+mod typed_tests {
+    /// A prompt Dispatcher typed is its message (AC-147) and still its own for the gate (§9), once.
+    #[tokio::test]
+    async fn ac147_a_prompt_dispatcher_typed_is_told_apart_and_left_for_its_gate() {
+        let (root, app) = crate::testutil::app("dispatcher-typed");
+        let d = &app.dispatcher;
+        d.remember_typed("k1", "T-0412: do it");
+        assert!(d.typed_it("k1", "T-0412:  do it") && !d.typed_it("k2", "T-0412: do it") && !d.typed_it("k1", "my own words"));
+        assert!(d.typed_it("k1", "T-0412: do it"), "asking takes nothing");
+        assert!(d.was_typed("k1", "T-0412: do it"));
+        assert!(!d.was_typed("k1", "T-0412: do it") && !d.typed_it("k1", "T-0412: do it"), "the gate's once");
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
 

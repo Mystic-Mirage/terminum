@@ -138,25 +138,33 @@ const screenText = (page) => page.evaluate(() => document.getElementById("screen
 async function wide(browser, name) {
   runningIn(`${name} 1400×900`);
   // reduced motion: a window stands where a press lands (e2e_motion.mjs checks the motion)
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
-  const page = await ctx.newPage();
   const errors = [];
   // WebKit reports a load that failed as the page's error, "Fetch API cannot load … due to access control
   // checks", though the code caught it (the Panel's reads while terminumd restarts: AC-14, AC-34); said, not counted
-  page.on("pageerror", (e) => {
+  const onError = (e) => {
     const said = String(e.stack ?? e);
     // the stack's first line: Playwright cuts a message at its first colon, the one in "http:"
     if (/^(Error: )?Fetch API cannot load \S+ due to access control checks\.?$/.test(said.split("\n")[0])) console.log(`NOTE [${name}] WebKit's own report of a failed load: ${said.split("\n")[0]}`);
     else errors.push(said);
-  });
-  await signIn(page);
+  };
+  let ctx, page;
+  /** A signed-in page in a context of its own, the last one closed: with one page through the whole
+   *  run, Linux WebKit's web process reached 1.6 GB under CI's 2 GiB and was killed for memory */
+  const renew = async () => {
+    await ctx?.close();
+    ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
+    page = await ctx.newPage();
+    page.on("pageerror", onError);
+    await signIn(page);
+  };
+  await renew();
   if (process.env.TM_TEST_REAL_AGENTS) {
     await liveDispatcherReal(page, { base: BASE, tmux, work: process.env.TM_TEST_REAL_DIR ?? WORK, bin: BIN, home: HOME, app: APP });
     return ctx;
   }
   if (POOL_ALONE) {
     await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-    await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
+    await renew(); await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
     return ctx;
   }
   if (TASKS_ALONE) {
@@ -165,12 +173,12 @@ async function wide(browser, name) {
   }
   if (BOARD_ALONE) {
     await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-    await liveBoard(page, { base: BASE, tmux, work: WORK, shots: process.env.TM_TEST_SHOTS });
-    await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
-    await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
-    await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
-    await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-    await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS });
+    await renew(); await liveBoard(page, { base: BASE, tmux, work: WORK, shots: process.env.TM_TEST_SHOTS });
+    await renew(); await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
+    await renew(); await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
+    await renew(); await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
+    await renew(); await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await renew(); await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS });
     return ctx;
   }
   check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/sessions/" && !new URL(page.url()).search);
@@ -236,12 +244,12 @@ async function wide(browser, name) {
   await livePrograms(page, { tmux, work: WORK });
   await livePlans(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, signIn, name });
   await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-  await liveBoard(page, { base: BASE, tmux, work: WORK });
-  await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
-  await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-  await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-  await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-  await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
+  await renew(); await liveBoard(page, { base: BASE, tmux, work: WORK });
+  await renew(); await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
+  await renew(); await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+  await renew(); await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+  await renew(); await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+  await renew(); await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");

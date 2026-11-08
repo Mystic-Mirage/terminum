@@ -21,6 +21,7 @@ from testrun import free_port, own, short_tmp  # noqa: E402
 PORT, SOCKET, OWN = free_port(), own("tm-test-szs"), own("tm-test-szo")
 tmux = partial(tmux_on, SOCKET)
 other = partial(tmux_on, OWN)
+EVERY = 1.0   # seconds: a page's resizes of one window are this far apart (terminumd/src/page/sizing.rs)
 
 
 def main():
@@ -45,21 +46,25 @@ def main():
         ws.send({"t": "size", "cols": 80, "rows": 24, "typing": False})
         ws.until(lambda m: m["t"] == "sized" and not m.get("error"), 5)
         os.kill(pid, signal.SIGSTOP)                       # it stalls with the next resize unanswered
+        # a page resizes a window at most once a second (sizing.rs EVERY): a resize inside that
+        # second waits it out and then sizes whatever pane is shown by then, so the next one
+        # comes past it and goes to tmux at once, while `there` is still shown
+        time.sleep(EVERY + 0.5)
         ws.send({"t": "size", "cols": 100, "rows": 32, "typing": True})
-        time.sleep(1)                                      # past the resize's settling: it waits on the stalled server
+        time.sleep(1)                                      # its task sends the resize long before the next message: it waits on the stalled server
         ws.send({"t": "sub", "id": here})                  # the user moves on meanwhile
         ws.until(lambda m: m["t"] == "screen", 5)
         os.kill(pid, signal.SIGKILL)                       # and it goes
         said = ["screen"]
         def watch(m):
-            if m["t"] == "sized" and m.get("error"):
-                said.append(m)
+            if m["t"] == "sized" and (m.get("error") or m.get("sid") == here):
+                said.append(m)                             # a resize of `here`: the resize was sent too late
             elif m["t"] == "screen":
                 said.append("screen")
             return said.count("screen") and any(x != "screen" for x in said)
         ws.until(watch, 20)
         refused = next((x for x in said if x != "screen"), None)
-        check("the refusal came", refused is not None, refused)
+        check("the refusal came", refused is not None and refused.get("error"), refused)
         check("AC-13 a failed resize names the pane it was for, not the one shown now",
               refused is not None and refused.get("sid") == there and refused.get("sid") != here, (refused, here, there))
     finally:

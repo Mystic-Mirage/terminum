@@ -113,6 +113,9 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
             m = incoming.next() => match m { Some(Ok(m)) => m, _ => break },
             _ = &mut closed => break,
         };
+        if page.is_closed() {
+            break;                                // signed out while this message was on its way: not handled
+        }
         let text = match m {
             Message::Text(t) => t.to_string(),
             Message::Close(_) => break,

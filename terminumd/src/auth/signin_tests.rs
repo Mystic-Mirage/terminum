@@ -136,6 +136,27 @@ fn a_file_that_cannot_be_written_makes_no_sign_in() {
 }
 
 #[test]
+fn every_sign_in_leaving_memory_ticks_its_sockets() {
+    let dir = fresh_dir("signin-ticks");
+    let s = Signins::load(&dir);
+    let mut rx = s.revocations();
+    let first = s.create("a").unwrap();
+    assert!(!rx.has_changed().unwrap(), "a new sign-in closes nothing");
+    for _ in 1..MAX_SIGNINS {
+        s.create("more").unwrap();
+    }
+    assert!(!rx.has_changed().unwrap());
+    s.create("the 21st").unwrap();
+    assert!(rx.has_changed().unwrap() && !s.check(&first, false), "the oldest dropped: its sockets recheck");
+    rx.mark_unchanged();
+    s.revoke("not one of them").unwrap();
+    assert!(!rx.has_changed().unwrap(), "nothing revoked, nothing ticks");
+    s.revoke_all().unwrap();
+    assert!(rx.has_changed().unwrap());
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn a_sign_out_the_file_cannot_keep_still_ends_the_sign_in_here() {
     let dir = fresh_dir("signin-unsaved");
     let s = Signins::load(&dir);

@@ -127,6 +127,9 @@ export async function webSignin(browser) {
   const unheard = await signOutWith(browser, (route) => route.abort());
   check("AC-09 sign-in: a Sign out terminumd never heard forgets the sign-in and says it may still be live, and how to end it",
     unheard.said.includes("run: terminum signout") && unheard.stored === null, JSON.stringify(unheard));
+  const refused = await signOutWith(browser, (route) => route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "bad_origin", message: "Origin http://x is not allowed" }) }));
+  check("AC-09 sign-in: a Sign out terminumd refused before it ran says terminumd's message, that the sign-in may still be live, and how to end it",
+    refused.said.startsWith("Origin http://x is not allowed") && refused.said.includes("run: terminum signout") && refused.stored === null, JSON.stringify(refused));
 
   // no password set yet: the form says how to set one and waits
   const none = await openPage(browser, { secret: SECRET, auth: { login: "none", message: "No password is set yet. On the Mac, run: terminum password" } });

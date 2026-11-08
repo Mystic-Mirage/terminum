@@ -123,11 +123,12 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
   async function signOut() {
     const was = ws; ws = null; was?.close();
     const r = await fetch("/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
+    const m = r && !r.ok && r.status !== 401 ? await r.json().catch(() => ({})) : {};
     signin.forget();
-    if (!r) return showLogin("terminum's server did not answer, so this sign-in may still be live: on the Mac, run: terminum signout");
-    if (r.ok || r.status === 401) return showLogin();
-    const m = await r.json().catch(() => ({}));
-    showLogin(m.message || `Sign-out failed (${r.status}).`);
+    if (!r || (!r.ok && r.status !== 401 && m.error !== "signout_unsaved")) {
+      return showLogin(`${r ? m.message || `Sign-out failed (${r.status})` : "terminum's server did not answer"}, so this sign-in may still be live: on the Mac, run: terminum signout`);
+    }
+    showLogin(m.message || "");
   }
 
   // A page Safari brings back from memory connects again, and so learns the current build.

@@ -105,7 +105,8 @@ impl Item {
 }
 
 /// The sign-ins, in memory and in `<app dir>/signins.json`, and this process's boot.
-/// `revoked` ticks whenever sign-ins leave memory: every socket of one rechecks its credential then.
+/// `revoked` ticks whenever sign-ins leave memory (revoked, expired, the oldest beyond 20): every
+/// socket rechecks its credential then.
 /// `create`, `revoke` and `revoke_all` write the file (blocking: an async caller runs them off
 /// its workers); `check` and `hello` read memory only, never waiting for a write (`writer`
 /// serializes the writes; `items` is held only to read or swap).
@@ -154,11 +155,16 @@ impl Signins {
             by: by.chars().filter(|c| !c.is_control()).take(100).collect(),
         };
         let _writing = self.writer.lock();
-        let mut next: Vec<Item> = self.items.lock().iter().filter(|i| i.expires > now).cloned().collect();
+        let had = self.items.lock().clone();
+        let mut next: Vec<Item> = had.iter().filter(|i| i.expires > now).cloned().collect();
         next.push(item);
         keep_newest(&mut next, MAX_SIGNINS);
         self.save(&next)?;
+        let dropped = next.len() <= had.len();           // an expired one, or the oldest beyond 20, left
         *self.items.lock() = next;
+        if dropped {
+            self.revoked.send_modify(|n| *n += 1);
+        }
         Ok(secret)
     }
 

@@ -36,10 +36,12 @@ let slots = { agents: {}, full: [], full_projects: [] };   // what each agent's 
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
 let loading = 0, changing = 0, chain = Promise.resolve();
+const failed = { meta: "", tasks: "" };          // why the last read of each failed: said until one comes (AC-105)
 
-/** Above the board; a store set aside offers its way on, and only then is an empty one made (AC-119). */
-function banner(text) {
-  const box = $("boardbanner");
+/** Above the board: a read that failed, else the store's problem; a store set aside offers its way on, and only then
+ *  is an empty one made (AC-119). */
+function banner() {
+  const box = $("boardbanner"), text = failed.meta || failed.tasks || meta.problem;
   box.textContent = text ?? "";
   box.hidden = !text;
   if (text && meta.set_aside) {
@@ -70,10 +72,12 @@ async function load() {
     counts = parts[0].counts;
     slots = parts[0].slots ?? slots;
     agents.draw();
-    banner(meta.problem ?? "");
+    failed.tasks = "";
+    banner();
     draw();
   } catch (e) {
-    banner(`The board is out of date: ${e.message}`);
+    failed.tasks = `The board is out of date: ${e.message}`;
+    banner();
   }
 }
 
@@ -321,6 +325,7 @@ const colors = () => { if (meta.theme) pageColors(withScheme(meta.theme, meta.sc
 async function loadMeta() {
   try {
     meta = await api("/api/tasks/meta");
+    failed.meta = "";
     colors();
     const gone = filters().project.filter((p) => !meta.projects.some((x) => x.id === p));
     if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); bar.setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
@@ -328,8 +333,11 @@ async function loadMeta() {
     agents.draw();
     project.refresh();
   } catch (e) {
-    banner(`The board is out of date: ${e.message}`);
+    failed.meta = `The board is out of date: ${e.message}`;
+    clearTimeout(loadMeta.again);
+    loadMeta.again = setTimeout(loadMeta, 2000);   // its projects and filters: read again by themselves, as the columns are
   }
+  banner();
 }
 
 /** A task a filter hides is said when made: it does not just vanish. terminumd says what its filters show. */

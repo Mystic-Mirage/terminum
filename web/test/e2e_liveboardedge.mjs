@@ -88,6 +88,15 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       await j(`/api/tasks/${id}`, "PATCH", { status: "FAILED" });
       check("  and hears changes again", await until(async () => await colOf(id) === "FAILED", 8000), await colOf(id));
     },
+    async meta_read_lost() {
+      // its projects and filters lost to the network, as WebKit lost them once on CI: never unsaid by the columns' read
+      await page.route("**/api/tasks/meta", (r) => r.abort());
+      const columns = page.waitForResponse((r) => r.url().includes("/api/tasks?"));
+      await page.goto(`${base}/kanban/?severity=P0`); await columns; await nap(300);
+      check("its projects and filters not read: the board says so, after its columns came too", await page.isVisible("#boardbanner") && /out of date/.test(await page.textContent("#boardbanner")), await page.textContent("#boardbanner"));
+      await page.unroute("**/api/tasks/meta");
+      check("  read again by themselves: the banner goes, the filters show", await until(async () => !(await page.isVisible("#boardbanner")) && await page.isVisible("#clearfilters")), await page.textContent("#boardbanner"));
+    },
     async reads_what_changed() {
       const id = await make("heard with no read"), p2 = await page.context().newPage();
       let toPage, columns = 0, windows = 0;
@@ -363,7 +372,7 @@ ${"z".repeat(400)}
     },
   };
   for (const [name, f] of Object.entries(probes)) {
-    tag = AGENT.has(name) ? "AC-136" : "AC-133";
+    tag = AGENT.has(name) ? "AC-136" : name === "meta_read_lost" ? "AC-105" : "AC-133";
     await nap(200);                                // a window closed just now goes Back in its own time
     try { await f(); } catch (e) { ranToItsEnd(e, `${tag} ${name} ran to its end`); await page.unroute("**/*").catch(() => {}); }
     await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); }).catch(() => {});

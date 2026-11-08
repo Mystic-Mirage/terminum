@@ -1,69 +1,90 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A project's agents over the columns, and their window (terminum-dispatcher.md AC-137, AC-138): what a
-// task is dropped on to run: each a rectangle with its color, name, kind, effort and what it does now.
+// The pool over the columns, and its window (terminum-dispatcher.md AC-137, AC-138): what a task is dropped
+// on to run: each a rectangle with its color, name, kind, effort and a dot per live session. None is a project's.
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm } from "./dialogs.js";
-import { projectInk } from "./listparts.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
 import { el, iconButton } from "./listparts.js";
-import { $, DEFAULT, THIS_MAC, agentColor, api, fillSelect, hostOptions, showError } from "./kanbanutil.js";
+import { $, button, agentColor, api, countOf, fillSelect, showError } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
-/** `chosen()`: the projects shown, none for all; `getMeta()`: terminumd's projects, agents and hosts; `busy()`: what
- *  each busy agent does; `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop
- *  would run on an agent; `run(tasks, agent)`. */
-export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging, given, run, openSession }) {
+/** `getMeta()`: terminumd's agents; `chosen()`: the projects shown, none for all; `slots()`: what each agent's slots hold, as terminumd counts them;
+ *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
+ *  agent; `run(tasks, agent)`. */
+export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow, dragging, given, run, openSession }) {
   const box = el("section", "agents"), list = el("div", "agentlist");
-  const add = iconButton("icon", "plus", "Add agent", "Add an agent to a project", () => open());
-  add.id = "addagent";
+  const addKey = iconButton("icon", "plus", "Add agent", "Add an agent to the pool", () => open());
+  addKey.id = "addagent";
   const hint = el("p", "pickhint");
   hint.hidden = true;
-  box.append(list, add, hint);
-  const field = { project: $("agentproject"), name: $("agentname"), kind: $("agentkind"), host: $("agenthost"), effort: $("agenteffort"), dir: $("agentdir"), command: $("agentcommand") };
+  box.append(list, addKey, hint);
+  const field = { name: $("agentname"), kind: $("agentkind"), effort: $("agenteffort"), command: $("agentcommand"), at_once: $("agentatonce"), week_limit: $("agentweek"), month_limit: $("agentmonth") };
   const dialog = $("agentbox"), error = $("agenterror");
   let editing = null, snapshot = "";
 
-  /** What it does now, in a word or two; its tasks when busy. */
-  function doing(now) {
-    if (!now) return "free";
-    const row = now.key ? liveRow(now.key) : null;
-    const state = ["starting", "typed"].includes(now.state) ? "starting" : now.state === "asking" || row?.state === "waiting" ? "waits for you" : "working";
-    return `${state}: ${now.tasks}`;
+  const slots = (a) => counted().agents[a.id] ?? [];
+  /** At a limit, as terminumd says: its own, or the one project shown's. */
+  const full = (a) => counted().full.includes(a.id) || (chosen().length === 1 && counted().full_projects.includes(chosen()[0]));
+
+  const WORDS = { starting: "starting", working: "working", waits: "waits for you", idle: "idle" };
+  /** What a session does now. */
+  function doing(s) {
+    if (s.idle) return "idle";
+    const row = s.key ? liveRow(s.key) : null;
+    return ["starting", "typed"].includes(s.state) ? "starting" : s.state === "asking" || row?.state === "waiting" ? "waits" : "working";
   }
 
-  /** Its rectangle: its color, name, kind, effort and what it does now. */
-  function row(a, several) {
-    const p = getMeta().projects.find((x) => x.id === a.project), now = busy()[a.id];
-    const b = el("button", `item agentcard${now ? " busy" : ""}`);
+  /** Its last 7 and 30 days (AC-143): of its limit when it has one, else the tokens; past a limit in the danger color. */
+  function spentOf(a) {
+    const s = a.spent, part = (word, used, limit) => (limit ? `${word} ${Math.round((used / (limit * 1e6)) * 100)}%` : `${word} ${countOf(used)}`);
+    const line = el("span", "agspent", `${part("week", s.week, a.week_limit)} · ${part("month", s.month, a.month_limit)}`);
+    line.classList.toggle("over", (a.week_limit && s.week > a.week_limit * 1e6) || (a.month_limit && s.month > a.month_limit * 1e6));
+    line.title = `${s.week.toLocaleString("en")} tokens in 7 days, ${s.month.toLocaleString("en")} in 30, of every project: terminum's own count`;
+    return line;
+  }
+
+  /** A session's dot: blinking while it works, still when it waits or idles; a press on it opens it. */
+  function dot(s) {
+    const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now}`);
+    d.dataset.key = s.key ?? "";
+    d.title = [s.tasks, getMeta().projects.find((p) => p.id === s.project)?.name, WORDS[now]].filter(Boolean).join(" · ");
+    return d;
+  }
+
+  /** Its rectangle: its color, name, kind, effort and a dot for each session of what is shown; its limit counts them all. */
+  function row(a) {
+    const shown = chosen(), mine = slots(a).filter((s) => !shown.length || shown.includes(s.project));
+    const b = el("button", `item agentcard${full(a) ? " busy" : ""}`);
     b.type = "button";
     b.dataset.agent = a.id;
-    const bar = el("span", `pbar${now ? " busy" : ""}`);
+    const bar = el("span", `pbar${slots(a).length ? " busy" : ""}`);
     bar.style.setProperty("--dot", agentColor(a));
     b.style.setProperty("--ag", agentColor(a));
-    const txt = el("span", "txt"), line = el("span", "head"), words = doing(now);
+    const txt = el("span", "txt"), line = el("span", "head"), dots = el("span", "agdots");
+    dots.append(...mine.map(dot));
+    if (a.at_once > 1) dots.append(el("small", "agcount", `${slots(a).length}/${a.at_once}`));
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
-    if (several) line.append(el("span", "agproj", p?.name ?? a.project));
-    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), el("span", "agstatus", words));
+    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), spentOf(a), dots);
     b.append(bar, txt);
-    b.title = [a.name, words, a.host ?? THIS_MAC, a.dir || "the project's folder", a.line].join(" · ");
+    b.title = [a.name, `${slots(a).length} of ${a.at_once} at once`, a.line].join(" · ");
     return b;
   }
 
-  /** Over the columns it takes tasks: dropped or pressed, terminumd says if it cannot; else a press opens what it does, or it. */
-  function target(a, several) {
-    const b = row(a, several), now = busy()[a.id];
+  /** Over the columns it takes tasks: dropped or pressed, terminumd says if it cannot; a dot opens its session, else a press opens its window. */
+  function target(a) {
+    const b = row(a);
     b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
-    b.addEventListener("click", () => {
-      const tasks = given();
+    b.addEventListener("click", (e) => {
+      const tasks = given(), key = e.target.closest?.(".agdot")?.dataset.key;
       if (tasks) run(tasks, a.id);
-      else if (now?.key) openSession(now.key);
+      else if (key) openSession(key);
       else open(a);
     });
     b.addEventListener("dragover", (e) => {
       if (!dragging()) return;
       e.preventDefault();
-      if (!now && dragging().every((t) => t.project === a.project)) b.classList.add("over");
+      if (!full(a)) b.classList.add("over");
     });
     b.addEventListener("dragleave", () => b.classList.remove("over"));
     b.addEventListener("drop", (e) => {
@@ -78,20 +99,19 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging
   let drawn = "";
   /** Anew only when what it shows changed, and not under a drag: a press spanning a read keeps its key. */
   function draw() {
-    const picked = chosen(), tasks = given();
-    const agents = getMeta().agents.filter((a) => !picked.length || picked.includes(a.project));
-    const now = JSON.stringify([agents, picked.length !== 1, agents.map((a) => [busy()[a.id], doing(busy()[a.id])]), getMeta().projects, tasks?.length]);
+    const tasks = given(), agents = getMeta().agents;
+    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
     if (dragging() || now === drawn) return;
     drawn = now;
-    list.replaceChildren(...agents.map((a) => target(a, picked.length !== 1)));
+    list.replaceChildren(...agents.map(target));
     if (!agents.length) list.append(el("p", "colempty", "No agents yet: add one to run tasks."));
     hint.hidden = !tasks;
     if (tasks) hint.textContent = `${tasks.length} chosen: press an agent or drop them on it. Esc lets them go.`;
   }
 
-  /** The rows of `project`'s agents, for its own window: a press opens one. */
-  const rowsOf = (project) => getMeta().agents.filter((a) => a.project === project).map((a) => {
-    const b = row(a, false);
+  /** The pool's rows, for a project's window: a press opens one. */
+  const rows = () => getMeta().agents.map((a) => {
+    const b = row(a);
     b.addEventListener("click", () => open(a));
     return b;
   });
@@ -108,14 +128,14 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging
   // what a kind fills in follows the kind; what the user wrote stays
   field.kind.addEventListener("change", () => {
     const kind = field.kind.value;
-    if (!field.name.value.trim() || KINDS.some((k) => field.name.value.startsWith(agentName(k)))) field.name.value = freeName(kind, field.project.value);
+    if (!field.name.value.trim() || KINDS.some((k) => field.name.value.startsWith(agentName(k)))) field.name.value = freeName(kind);
     if (!field.command.value.trim() || KINDS.includes(field.command.value)) field.command.value = kind;
     fillEfforts(field.effort.value);
   });
 
-  /** A kind's name not yet taken in `project`: Claude Code, Claude Code 2… */
-  function freeName(kind, project) {
-    const taken = new Set(getMeta().agents.filter((x) => x.project === project).map((x) => x.name));
+  /** A kind's name not yet taken in the pool: Claude Code, Claude Code 2… */
+  function freeName(kind) {
+    const taken = new Set(getMeta().agents.map((x) => x.name));
     const base = agentName(kind);
     if (!taken.has(base)) return base;
     let n = 2;
@@ -123,21 +143,13 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging
     return `${base} ${n}`;
   }
 
-  /** Its window: a new one in the project shown, or `a` to change; `given`: a new one in that project. */
-  function open(a = null, given = null) {
-    const { projects, hosts } = getMeta();
+  /** Its window: a new one, or `a` to change. */
+  function open(a = null) {
     editing = a;
-    const picked = chosen();
-    const project = a?.project ?? given ?? (picked.length === 1 ? picked[0] : DEFAULT);
-    const of = projects.find((p) => p.id === project);
-    const v = a ?? { host: of?.host, dir: "", kind: "claude", name: freeName("claude", project), command: "claude", effort: "" };
-    fillSelect(field.project, projects.map((p) => [p.id, p.name]), project);
-    field.project.disabled = !!a;
-    field.project.closest("label").hidden = !!a || !!given;   // its project's window said which
-    fillSelect(field.host, hostOptions(hosts), v.host ?? "");
-    for (const k of ["kind", "name", "dir", "command"]) field[k].value = v[k];
+    const v = a ?? { kind: "claude", name: freeName("claude"), command: "claude", effort: "", at_once: 1, week_limit: null, month_limit: null };
+    for (const k of ["kind", "name", "command", "at_once", "week_limit", "month_limit"]) field[k].value = v[k] ?? "";
     fillEfforts(v.effort);
-    field.dir.placeholder = of?.dir || "The project's folder";
+    showSessions(a);
     $("agenthead").textContent = a ? a.name : "Add agent";
     $("agentok").textContent = a ? "Save" : "Add";
     $("agentdrop").hidden = !a;
@@ -157,8 +169,9 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging
   }
 
   function keep() {
-    const { project, ...body } = values();
-    return send(editing ? `/api/task-agents/${editing.id}` : `/api/task-projects/${project}/agents`, { method: editing ? "PATCH" : "POST", body });
+    const limit = (f) => (f.value === "" ? null : Number(f.value));
+    const body = { ...values(), at_once: Number(field.at_once.value), week_limit: limit(field.week_limit), month_limit: limit(field.month_limit) };
+    return send(editing ? `/api/task-agents/${editing.id}` : "/api/task-agents", { method: editing ? "PATCH" : "POST", body });
   }
 
   $("agentok").addEventListener("click", keep);
@@ -175,31 +188,25 @@ export function agentsSection({ getMeta, chosen, reload, busy, liveRow, dragging
     if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
   });
 
-  /** A project's memory limits (terminum-dispatcher.md AC-128): empty goes by the global ones; 0 turns one off. */
-  function openLimits(project) {
-    const box = $("limitsbox"), { projects, limits: all = [] } = getMeta();
-    const now = all.find((l) => l.project === project);
-    $("limitstext").textContent = `For ${projects.find((p) => p.id === project)?.name ?? project}; 0 turns one off.`;
-    $("limitwarn").value = now?.warn ?? "";
-    $("limitend").value = now?.end ?? "";
-    $("limitserror").hidden = true;
-    const keep = async (body) => {
-      try {
-        await api(`/api/task-projects/${project}/limits`, { method: "PUT", body });
-        box.close();
-        await reload();
-      } catch (e) { $("limitserror").textContent = e.message; $("limitserror").hidden = false; }
-    };
-    const gib = (id) => ($(id).value === "" ? null : Number($(id).value));
-    $("limitsok").onclick = () => keep({ warn: gib("limitwarn"), end: gib("limitend") });
-    $("limitsglobal").onclick = () => keep({ warn: null, end: null });
-    box.showModal();
+  /** Its sessions in its window, each with Let go: a + Session's, or one on a host out of reach (AC-142). */
+  function showSessions(a) {
+    const list = $("agentsessions"), mine = a ? slots(a) : [];
+    list.replaceChildren(...mine.map((s) => {
+      const li = el("li");
+      const go = button(null, "Let go", async () => {
+        if (!await askConfirm(`Let go of ${s.tasks || "this session"}? Its open tasks fail; the window stays.`, "Let go")) return;
+        try { await api(`/api/runs/${s.run}/let-go`, { method: "POST" }); li.remove(); list.hidden = !list.children.length; } catch (e) { say(e.message); }
+      });
+      li.append(el("span", null, [s.tasks || "+ Session", getMeta().projects.find((p) => p.id === s.project)?.name].filter(Boolean).join(" · ")), go);
+      return li;
+    }));
+    list.hidden = !mine.length;
   }
 
-  /** A new one in `project`; once its window closes. */
-  const addTo = (project) => {
-    open(null, project);
+  /** A new one; once its window closes. */
+  const add = () => {
+    open();
     return new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
   };
-  return { box, draw, addTo, rowsOf, openLimits };
+  return { box, draw, add, rows };
 }

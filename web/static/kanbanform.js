@@ -8,16 +8,18 @@ import { $, DEFAULT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend,
 const DRAFT = "tm.taskdraft";
 
 /** `onRun(task, agent)`: a task made by Run starts at once on the agent chosen (terminum-dispatcher.md AC-138);
- *  `agentsBusy()`: what each busy agent does. */
-export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
+ *  `slots()`: who is at a limit, as terminumd counts it. */
+export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const box = $("newbox");
-  let files = [], uploads = 0, offered = "";
+  let files = [], uploads = 0, offered = "", parent = null, record = null, chose = null;   // chose: the agent the user picked in this window, "" for none
+  /** Each its own draft: a subtask's never takes a new task's. */
+  const draftKey = () => (parent ? `${DRAFT}.${parent}` : DRAFT);
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
   const canCreate = (busy = false) => { $("newcreate").disabled = $("newrun").disabled = busy || uploads > 0; };
 
   const error = (text) => showError($("newerror"), text);
   const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files });
-  const keep = () => write(DRAFT, draft());
+  const keep = () => write(draftKey(), draft());
 
   function showFiles() {
     $("newfiles").replaceChildren(...files.map((f) => {
@@ -65,22 +67,29 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
     if (preview) renderInto($("newshown"), $("newtext").value);
   }
 
-  /** The project's agents: the one its last run had, else the first free. */
+  /** The pool: the agent the user picked while it is free, else the project's last run's, else the first free;
+   *  none picked stays none, whatever changes meanwhile (AC-106). */
   function showAgents() {
-    const meta = getMeta(), project = $("newproj").value, all = meta.agents.filter((a) => a.project === project), now = agentsBusy();
-    const busy = (a) => now[a.id]?.tasks;
-    fillAgents($("newagent"), all, busy, [meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
+    const meta = getMeta(), project = $("newproj").value, all = meta.agents, now = slots();
+    const busy = (a) => (now.full.includes(a.id) ? "at its limit" : now.full_projects.includes(project) ? "the project is at its limit" : "");
+    fillAgents($("newagent"), all, busy, [chose, meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
   }
 
+  /** `given.parent`: a subtask of that task, in its project (AC-112). */
   function open(given = {}) {
-    const meta = getMeta(), saved = read(DRAFT) ?? {};
+    parent = given.parent ?? null;
+    record = given.record ?? null;                    // goes once the task is kept (AC-116)
+    const meta = getMeta(), saved = read(draftKey()) ?? {};
+    $("newhead").textContent = parent ? `New subtask of ${parent}` : "New task";
+    $("newproj").disabled = !!parent;
     const filter = getFilter().project;   // a draft with nothing typed says nothing of where it goes
     fillSelect($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? (saved.title || saved.text ? saved.project : null) ?? (filter.length === 1 ? filter[0] : DEFAULT));
+    chose = null;
     showAgents();
     fillSelect($("newsession"), sessionOptions(meta), given.session ?? saved.session ?? "");
     $("newsev").value = saved.severity ?? "P2";
     fillSelect($("newowner"), meta.users.map((u) => [u.id, u.name]), saved.owner ?? "human");
-    $("newtitle").value = saved.title ?? "";
+    $("newtitle").value = given.title ?? saved.title ?? "";
     $("newtext").value = given.text ? `${saved.text ? `${saved.text}\n\n` : ""}${given.text}` : saved.text ?? "";
     files = saved.files ?? [];
     showFiles();
@@ -96,8 +105,8 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
     const d = draft(), agent = $("newagent").value;
     canCreate(true);
     try {
-      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, session: d.session || undefined, files: files.map((f) => f.id) } });
-      write(DRAFT, null);
+      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, session: d.session || undefined, parent: parent ?? undefined, files: files.map((f) => f.id), record: record ?? undefined } });
+      write(draftKey(), null);
       files = [];
       box.close();
       if (run) onRun(made, agent); else onMade(made);
@@ -112,7 +121,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
   $("newdiscard").addEventListener("click", async () => {
     const typed = $("newtitle").value.trim() || $("newtext").value.trim() || files.length;
     if (typed && !await askConfirm("Discard this task? What you typed and its files go.", "Discard")) return;
-    write(DRAFT, null);
+    write(draftKey(), null);
     files = [];
     box.close();
   });
@@ -120,6 +129,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
   box.addEventListener("cancel", keep);
   box.querySelector("form").addEventListener("input", keep);
   $("newproj").addEventListener("change", showAgents);
+  $("newagent").addEventListener("change", () => { chose = $("newagent").value; });
   $("newwrite").addEventListener("click", () => view(false));
   $("newpreview").addEventListener("click", () => view(true));
   $("newadd").addEventListener("click", () => $("newpick").click());

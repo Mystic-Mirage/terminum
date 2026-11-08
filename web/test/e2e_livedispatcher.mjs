@@ -24,7 +24,7 @@ export async function liveDispatcher(page, opts) {
   const { base, tmux, work, shots, stop, start } = opts;
   const { j, keyOf, card, open, backToSessions, cli } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Runs", dir: work })).id;
-  const agent = async (name, more = "", kind = "claude") => (await j(`/api/task-projects/${project}/agents`, "POST", { name, kind, command: `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}` })).id;
+  const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { name, kind, command: `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}` })).id;
   const plain = await agent("Plain");
   const task = async (title, text = "") => (await j("/api/tasks", "POST", { title, text, project })).id;
   // an agent takes more only when free (AC-138): a run here has its own, so one left open stands in no other's way
@@ -41,9 +41,10 @@ export async function liveDispatcher(page, opts) {
   await page.click(`${card(first)} .crun`);
   check("AC-121 a card's play key asks which agent", await until(() => page.$("#runbox[open]")));
   check("AC-121 it stays where it was until one takes it", await status(first) === "TODO");
-  check("AC-121 the dialog offers the project's agents", await page.inputValue("#runagent") === plain);
+  check("AC-121 the dialog offers the pool", await page.$eval("#runagent", (e, id) => [...e.options].some((o) => o.value === id), plain));
+  await page.selectOption("#runagent", plain);
   check("AC-121 it shows the command in full", (await page.textContent("#runcommand")).includes("fake_agent.py"), await page.textContent("#runcommand"));
-  check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.inputValue("#runfolder") === work, await page.inputValue("#runfolder"));
+  check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
   check("AC-121 and the text that will be sent, in its order", /^The human ran task T-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nWhen it is done, call finish_task/.test(prompt), prompt);
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
@@ -58,23 +59,13 @@ export async function liveDispatcher(page, opts) {
   check("AC-123 finish_task is DONE", await hasStatus(first, "DONE", 15000), await history(first));
   const h = await history(first);
   check("AC-125 its start is on the task", /Session started: claude in window Runs:\d+, on this Mac\./.test(h), h);
-  check("AC-121 the owner is the agent", (await j(`/api/tasks/${first}`)).owner_name === "claude · Runs", (await j(`/api/tasks/${first}`)).owner_name);
+  check("AC-121 the owner is the pool's agent that runs it", (await j(`/api/tasks/${first}`)).owner_name === "Plain", (await j(`/api/tasks/${first}`)).owner_name);
   check("AC-121 the task's history says Dispatcher moved it", /Dispatcher moved it from TODO to IN PROGRESS/.test(h), h);
 
-  // AC-121: the same project's next run starts with the last chosen picked; a project with no agents says so
-  const alone = (await j("/api/task-projects", "POST", { name: "NoAgents" })).id;
-  const lonely = (await j("/api/tasks", "POST", { title: "no agent to run it", project: alone })).id;
-  await page.goto(`${base}/kanban/?project=${alone}`);
-  await page.waitForSelector(card(lonely));
-  await page.click(`${card(lonely)} .crun`);
-  check("AC-121 a project with no agents says so and offers one", await until(async () => /No agents in NoAgents yet/.test(await page.textContent("#runnone"))) && await page.isVisible("#runadd") && await page.isDisabled("#rungo"));
-  await page.click('#runbox button[value="cancel"]');
-  check("AC-121 Cancel moves nothing", await status(lonely) === "TODO");
-  check("AC-121 no agent: the route says so", /No agents in/.test((await run((await j("/api/tasks", "POST", { title: "x", project: alone })).id, { agent: "nope" })).error));
-
   // refused before starting
-  const badDir = await task("folder gone");
-  const no = await run(badDir, { agent: plain, folder: "/no/such/folder/at/all" });
+  const nowhere = (await j("/api/task-projects", "POST", { name: "Nowhere", dir: "/no/such/folder/at/all" })).id;
+  const badDir = (await j("/api/tasks", "POST", { title: "folder gone", project: nowhere })).id;
+  const no = await run(badDir);
   check("AC-121 a folder that does not exist is said and nothing starts", /does not exist on this Mac/.test(no.error) && await status(badDir) === "TODO" && !(await j(`/api/tasks/${badDir}`)).session, JSON.stringify(no));
   const linked = await task("linked by hand");
   const otherPane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", "byhand").trim();
@@ -171,7 +162,7 @@ export async function liveDispatcher(page, opts) {
 
   // what the tty holds when its agent has gone never reaches the shell it leaves (§9 Window command)
   const nothing = path.join(work, "typed-into-the-shell");
-  const sleepy = (await j(`/api/task-projects/${project}/agents`, "POST", { name: "Sleepy", kind: "claude", command: "sleep 2" })).id;
+  const sleepy = (await j("/api/task-agents", "POST", { name: "Sleepy", kind: "claude", command: "sleep 2" })).id;
   const drained = await task("drained");
   await run(drained, { agent: sleepy });
   const drainedPane = await until(() => paneOf(drained)) && await paneOf(drained);
@@ -256,13 +247,19 @@ export async function liveDispatcher(page, opts) {
   await j(`/api/task-projects/${project}/limits`, "PUT", { warn: null, end: null });
   check("AC-128 the global ones are back", !(await j("/api/tasks/meta")).limits.some((l) => l.project === project));
 
-  // AC-129 tokens: three integers from its turn's end
+  // AC-129 tokens: four integers from its turn's end; cache reads do not count
   const tokens = await task("counts TOKENS");
   await run(tokens);
   await hasStatus(tokens, "IN PROGRESS", 15000);
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(card(tokens));
-  check("AC-129 the card shows the tokens its session used", await until(async () => /1,239 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), await page.textContent(card(tokens)));
+  check("AC-129 the card shows the tokens its session used", await until(async () => /1,234 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), await page.textContent(card(tokens)));
+  check("AC-143 its agent's week and month count it", (await j("/api/tasks/meta")).agents.some((a) => a.spent?.week >= 1234 && a.spent?.month >= 1234));
+  await j(`/api/tasks/${tokens}/give-up`, "POST");
+  let spent;
+  check("AC-129 what grew is kept in the store, with the model's price", await until(async () => (spent = (await j(`/api/tasks?id=${tokens}`)).tasks?.[0]?.spent)?.input === 1200, 20000)
+    && spent.counted === 1234 && spent.output === 34 && spent.cache_read === 5 && Math.abs(spent.usd - (1200 * 4 + 34 * 20 + 5 * 0.2) / 1e6) < 1e-9, JSON.stringify(spent));
+  check("AC-129 a finished card says what it spent, an estimate in dollars", await until(async () => /1\.2k · ≈\uFE0E?\$0\.01/.test(await page.textContent(`${card(tokens)} .cspent`).catch(() => "")), 20000), await page.textContent(card(tokens)).catch(() => ""));
 
   // AC-125 closing, with the screen kept when there is no result
   const closes = await task("closes CLEAN");
@@ -310,7 +307,7 @@ export async function liveDispatcherReal(page, opts) {
   const { work } = opts;
   const { j, card } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "RealRuns", dir: work })).id;
-  const add = async (name, kind, command) => (await j(`/api/task-projects/${project}/agents`, "POST", { name, kind, command })).id;
+  const add = async (name, kind, command) => (await j("/api/task-agents", "POST", { name, kind, command })).id;
   const { status, history, paneOf, hasStatus } = taskKit(j);
   const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__finish_task");
   const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result ok", project })).id;
@@ -346,10 +343,10 @@ export async function liveDispatcherReal(page, opts) {
   const [first, second] = [await makes("First of two", "Finish this task with the result one."), await makes("Second of two", "Finish this task with the result two.")];
   const both = await j(`/api/tasks/${first}/run`, "POST", { agent: pool, also: [second], comment: "Do both, briefly." });
   check("AC-138 real Claude Code: one press runs two tasks", !!both.run, JSON.stringify(both));
-  check("AC-138 real Claude Code: its agent is busy", /is busy with/.test((await j(`/api/tasks/${await makes("A third", "")}/run`, "POST", { agent: pool })).error ?? ""));
+  check("AC-141 real Claude Code: its agent is at its limit", /at its limit of 1/.test((await j(`/api/tasks/${await makes("A third", "")}/run`, "POST", { agent: pool })).error ?? ""));
   check("AC-138 real Claude Code: both end DONE, from one session", await hasStatus(first, "DONE", 240000) && await hasStatus(second, "DONE", 120000) && await paneOf(first) === await paneOf(second), `${await history(first)} || ${await history(second)}`);
   check("AC-138 real Claude Code: and each result is its own", /\bone\b/.test(await history(first)) && /\btwo\b/.test(await history(second)), `${await history(first)} || ${await history(second)}`);
-  check("AC-138 real Claude Code: its agent is free again, the cards stay on it", await until(async () => !(await j("/api/tasks?counts=1")).busy[pool], 90000) && (await j(`/api/tasks/${first}`)).agent?.name === "Real pool");
+  check("AC-138 real Claude Code: its session idles, the cards stay on it", await until(async () => (await j("/api/tasks?counts=1")).slots.agents[pool]?.every((s) => s.idle), 90000) && (await j(`/api/tasks/${first}`)).agent?.name === "Real pool");
   if (!process.env.TM_TEST_REAL_CODEX) return;
   const codex = await add("Real Codex", "codex", "codex");
   const x = (await j("/api/tasks", "POST", { title: "Reply with the word ok", project })).id;

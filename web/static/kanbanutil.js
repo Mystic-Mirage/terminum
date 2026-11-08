@@ -54,11 +54,11 @@ export function fillSelect(select, options, chosen) {
 }
 
 /** A project's `agents` for `select`: a busy one not to be chosen; the first of `wanted` free, else the first free.
- *  `none`: the label of a choice of no agent, first. */
+ *  `none`: the label of a choice of no agent, first; "" in `wanted` picks it. */
 export function fillAgents(select, agents, busy, wanted, none = null) {
   const free = agents.filter((a) => !busy(a));
-  const pick = wanted.find((id) => free.some((a) => a.id === id)) ?? free[0]?.id ?? "";
-  fillSelect(select, [...(none ? [["", none]] : []), ...agents.map((a) => [a.id, busy(a) ? `${a.name} (busy with ${busy(a)})` : a.name])], pick);
+  const pick = wanted.find((id) => (id === "" ? none : free.some((a) => a.id === id))) ?? free[0]?.id ?? "";
+  fillSelect(select, [...(none ? [["", none]] : []), ...agents.map((a) => [a.id, busy(a) ? `${a.name} (${busy(a)})` : a.name])], pick);
   for (const o of select.options) o.disabled = !!o.value && !free.some((a) => a.id === o.value);
 }
 
@@ -138,4 +138,9 @@ export async function renderInto(box, text) {
     if (id) a.addEventListener("click", (e) => { e.preventDefault(); download(id, a.textContent).catch((err) => say(err.message)); });
     else { a.target = "_blank"; a.rel = "noopener noreferrer"; }
   }
+}
+
+/** 1,234 as 1.2k, 4,800,000 as 4.8M. */
+export function countOf(n) {
+  return n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace(/\.0$/, "")}k` : String(n);
 }

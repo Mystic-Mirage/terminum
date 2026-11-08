@@ -1,24 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// RUN's window (terminum-dispatcher.md AC-121, AC-122, AC-138): which of the project's free agents starts
-// the tasks, where, by what command and with what message; the agent dropped on, or the last chosen, already
-// picked: one press. Several tasks go by their numbers; what each says shows here first.
+// RUN's window (terminum-dispatcher.md AC-121, AC-122, AC-138): which of the pool's free agents starts the
+// tasks and with what message; where is the project's (AC-140), said here; the agent dropped on, or the last
+// chosen, already picked: one press. Several tasks go by their numbers; what each says shows here first.
 import { $, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
 
-/** `addAgent(project)` opens the agents' window; `done()` after a run started. */
-export function runWindow({ addAgent, done }) {
+/** `addAgent()` opens the agents' window; `noFolder(project, words)`: terminumd says nothing can start there; `done()` after a run started. */
+export function runWindow({ addAgent, noFolder, done }) {
   const box = $("runbox");
   let tasks = [], offer = null, attached = [], fresh = false, dropped = null, answer = () => {};
 
   const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
-  const free = () => offer.agents.filter((a) => !a.busy);
+  /** At a limit with nothing that could make room: not to be chosen. */
+  const stuck = (a) => (a.full && !a.full.close ? "at its limit" : "");
+  const free = () => offer.agents.filter((a) => !stuck(a));
+  let said = "";                                   // what the window says whatever agent is chosen
 
+  /** The chosen agent's, else the window's own words; at its limit with an idle holder, one press closes it and runs (AC-141). */
   function showAgent() {
-    const a = chosen(), dir = a?.dir || offer.project_dir;
-    $("runserver").textContent = a?.host ?? THIS_MAC;
-    $("runcommand").textContent = a?.line ?? "";
-    $("runfolder").placeholder = dir || "Where it runs";
-    if (!$("runfolder").dataset.typed) $("runfolder").value = dir ?? "";
+    const close = chosen()?.full?.close, words = said || (close ? chosen().full.words : "");
+    $("runnone").textContent = words;
+    $("runnone").hidden = !words;
+    $("rungo").textContent = close ? `Close ${close.tasks}'s session and run` : "Run";
+    $("runserver").textContent = offer.host ?? THIS_MAC;
+    $("runfolder").textContent = offer.dir;
+    $("runcommand").textContent = chosen()?.line ?? "";
   }
 
   function draw(scratch) {
@@ -26,9 +32,8 @@ export function runWindow({ addAgent, done }) {
     const first = fresh || offer.first, none = first && !offer.agents.length, allBusy = first && !none && !free().length;
     const names = tasks.map((t) => t.id).join(", "), on = offer.agents.find((a) => a.id === dropped);
     $("runhead").textContent = !first ? `Run ${names} again` : on ? `Run ${names} on ${on.name}` : `Run ${names}`;
-    const words = none ? `No agents in ${offer.project_name} yet.` : allBusy ? `All of ${offer.project_name}'s agents are busy: one takes more when its session closes or its tasks end.` : first ? "" : "It goes on in its session, with what you write.";
-    $("runnone").textContent = words;
-    $("runnone").hidden = !words;
+    const words = none ? "No agents yet." : allBusy ? `All agents are busy: one takes more when its session closes or its tasks end.` : first ? "" : "It goes on in its session, with what you write.";
+    said = words;
     // the agent it was dropped on is said by the title; what a person checks only sometimes stays folded
     $("runagentrow").hidden = !first || none || !!on;
     $("runhow").hidden = !first || none;
@@ -39,11 +44,10 @@ export function runWindow({ addAgent, done }) {
     $("runfresh").hidden = first;
     $("rungo").disabled = none || allBusy;
     if (first) {
-      fillAgents($("runagent"), offer.agents, (a) => a.busy, [dropped, offer.last]);
+      fillAgents($("runagent"), offer.agents, stuck, [dropped, offer.last]);
       $("runprompt").textContent = offer.prompt;
-      delete $("runfolder").dataset.typed;
-      showAgent();
     }
+    showAgent();
   }
 
   const others = () => tasks.slice(1).map((t) => t.id);
@@ -60,6 +64,10 @@ export function runWindow({ addAgent, done }) {
     attached = files;
     $("runmessage").value = words;
     await read();
+    if (offer.no_folder) {
+      noFolder(offer.project, offer.no_folder);
+      return false;
+    }
     draw(false);
     say(why);
     box.returnValue = "";
@@ -72,7 +80,8 @@ export function runWindow({ addAgent, done }) {
     say("");
     $("rungo").disabled = true;
     try {
-      await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: fresh || offer.first ? $("runagent").value : null, folder: $("runfolder").value, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });   // going on, it is its session's agent
+      const first = fresh || offer.first;
+      await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : null, close: first ? chosen()?.full?.close?.run : undefined, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });   // going on, it is its session's agent
       box.close("run");
       done();
     } catch (e) { say(e.message); }
@@ -82,10 +91,9 @@ export function runWindow({ addAgent, done }) {
   $("rungo").addEventListener("click", go);
   onSend($("runmessage"), go);
   $("runagent").addEventListener("change", showAgent);
-  $("runfolder").addEventListener("input", () => { $("runfolder").dataset.typed = "1"; });
   $("runfresh").addEventListener("click", () => draw(true));
   $("runadd").addEventListener("click", async () => {
-    await addAgent(offer.project);
+    await addAgent();
     await read();
     draw(true);
   });

@@ -30,6 +30,8 @@ pub fn routes() -> Router<Shared> {
         .route("/api/task-projects", post(new_project))
         .route("/api/task-projects/{id}", patch(edit_project))
         .merge(super::agents::routes())
+        .merge(super::limits::routes())
+        .merge(super::folder::routes())
         .merge(crate::dispatcher::api::routes())
         .route("/api/tasks/{id}", get(window).patch(change))
         .route("/api/tasks/{id}/comments", post(add_comment))
@@ -140,7 +142,7 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         number: q.get("id").and_then(|id| ops::number_of(id).ok()),
         reach: None,
         text: q.get("q").cloned(),
-        with_subtasks: false,
+        with_subtasks: q.get("subtasks").is_some_and(|c| c == "1"),
         archived: q.get("archived").is_some_and(|c| c == "1"),
         after: q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0),
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
@@ -150,11 +152,14 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         let tasks = query::list(tx, &filter)?;
         let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
         let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
-        let counts = if with_counts { Some((query::counts(tx, &filter)?, runs::busy_agents(&runs::live(tx)?))) } else { None };
-        Ok((tasks, counts, run_marks, on_agents))
+        // only a finished task says what it spent (AC-129)
+        let finished: Vec<&str> = tasks.iter().filter(|t| crate::dispatcher::plan::finished(&t.status)).map(|t| t.key.as_str()).collect();
+        let spent = crate::dispatcher::usage::of_tasks(tx, &finished)?;
+        let counts = if with_counts { Some((query::counts(tx, &filter)?, crate::dispatcher::pool::board(tx)?)) } else { None };
+        Ok((tasks, counts, run_marks, on_agents, spent))
     }).await;
     match done {
-        Ok((tasks, counts, run_marks, on_agents)) => {
+        Ok((tasks, counts, run_marks, on_agents, spent)) => {
             let layout = app.layout.read();
             let linked = tasks.iter().any(|t| t.session.is_some());
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_rows(&layout).filter(|_| linked).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
@@ -163,13 +168,16 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                 if let Some(state) = run_marks.get(&t.key) {
                     v["run"] = json!(state);
                 }
+                if let Some(s) = spent.get(&t.key) {
+                    v["spent"] = s.clone();
+                }
                 if let Some(agent) = on_agents.get(&t.key) {
                     v["agent"] = agent.clone();
                 }
                 v
             }).collect();
-            let (counts, busy) = counts.unzip();
-            let mut page = json!({"counts": counts, "busy": busy});
+            let (counts, slots) = counts.unzip();
+            let mut page = json!({"counts": counts, "slots": slots});
             page["tasks"] = Value::Array(shown);       // json! would copy every card
             Json(page).into_response()
         }
@@ -183,18 +191,25 @@ async fn meta(State(app): State<Shared>) -> Response {
         .map(|it| json!({"key": it["id"], "title": it["title"]})).collect();
     // the store's lock waits out a running query: off the async workers, its state too
     let a = app.clone();
-    let (projects, users, agents, limits, last_agents, problem, set_aside) = tokio::task::spawn_blocking(move || {
-        let projects: Vec<Value> = std::iter::once(json!({"id": DEFAULT_PROJECT, "name": "Default"}))
+    let (mut projects, users, agents, limits, last_agents, at_once, problem, set_aside) = tokio::task::spawn_blocking(move || {
+        let projects: Vec<Value> = std::iter::once(json!({"id": DEFAULT_PROJECT, "name": "Default", "dir": "~"}))
             .chain(a.projects.lock().list().iter().map(|p| json!({"id": p.id, "name": p.name, "color": p.color, "dir": p.dir, "host": p.host}))).collect();
-        let (users, agents, limits, last_agents) = a.tasks.with(|tx| Ok((
+        let (users, agents, limits, last_agents, at_once) = a.tasks.with(|tx| Ok((
             ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
-            super::agents::list(tx)?,
-            super::agents::limits(tx)?,
+            super::agents::listed(tx, ops::now())?,
+            super::limits::limits(tx)?,
             runs::last_agents(tx)?,
+            super::limits::agent_limits(tx)?,
         ))).unwrap_or_default();
-        (projects, users, agents, limits, last_agents, a.tasks.problem(), a.tasks.is_set_aside())
+        (projects, users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
-    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
+    let global_limits = { let s = app.looks.settings.read(); json!({"warn": s.memory_warn_gib, "end": s.memory_end_gib}) };
+    for p in &mut projects {
+        if let Some(limit) = p["id"].as_str().and_then(|id| at_once.get(id)) {
+            p["agent_limit"] = json!(limit);
+        }
+    }
+    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "global_limits": global_limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {
@@ -257,6 +272,13 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
     }).await;
     if let Ok(t) = &done {
         told(&app, &t.id);
+        if let Some(up) = &t.parent {
+            told(&app, up);                            // its card counts it, its window lists it (AC-112)
+        }
+        // the record it was made of goes once the task is kept (AC-116); refused, it stays
+        if let Some(record) = text(&body, "record") && let Err(e) = crate::page::marks::forget(&app, &record).await {
+            tracing::warn!(event = "tasks.record_kept", error = %e);
+        }
     }
     answer(done.map(|t| card(&app, &t)))
 }
@@ -267,10 +289,12 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         let t = ops::get(tx, &id)?;
         let held = runs::holding(tx, &t.key)?.map(|r| r.names());
         let agent = runs::card_agents(tx, &[&t.key])?.remove(&t.key);
-        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, held, agent, t))
+        let kids = query::subtasks(tx, &t.key)?;
+        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, held, agent, kids, t))
     }).await;
-    answer(done.map(|(body, history, attached, held, agent, t)| {
+    answer(done.map(|(body, history, attached, held, agent, kids, t)| {
         let mut v = card(&app, &t);
+        v["children"] = json!(kids);
         v["text_rev"] = json!(text_rev(&body));
         v["text"] = json!(body);
         v["history"] = history;

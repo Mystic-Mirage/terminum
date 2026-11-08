@@ -74,6 +74,8 @@ def main():
                     typed += part.replace("\r", " ").replace("\n", " ")
                 else:
                     ends = ends or "\r" in part
+                    if "\x15" in part:                # Ctrl+U clears the box, as both agents' do
+                        typed, part = "", part.rsplit("\x15", 1)[1]
                     typed += part.split("\r")[0]
             if not ends:
                 box()
@@ -101,7 +103,7 @@ def main():
             elif "TOKENS" in prompt:
                 path = os.path.join(os.getcwd(), f"transcript-{os.getpid()}.jsonl")
                 with open(path, "w", encoding="utf8") as f:
-                    f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "usage": {"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5}}}) + "\n")
+                    f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": {"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5}}}) + "\n")
                 hook("Stop", last_assistant_message="done", transcript_path=path)
             elif "WORKS" in prompt:
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop

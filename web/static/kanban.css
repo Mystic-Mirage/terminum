@@ -40,11 +40,11 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #fproject summary { max-width: 200px; }
 .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--proj); }
-#fproject .box { min-width: 240px; }
+#fproject .box { min-width: min(320px, calc(100vw - var(--sp-6) * 2)); }
 .projrow { display: flex; align-items: center; }
 #fproject .projrow .projtick { flex: none; width: auto; padding-right: 0; }
 #fproject .projrow .projname { flex: 1 1 auto; width: auto; min-width: 0; }
-#fproject .projrow .projedit { flex: none; width: var(--icon-key-list); height: var(--icon-key-list); padding: 0; justify-content: center; color: var(--muted); }
+#fproject .projrow :is(.projedit, .projsession) { flex: none; width: var(--icon-key-list); height: var(--icon-key-list); padding: 0; justify-content: center; color: var(--muted); }
 .pick > .box { position: absolute; z-index: 20; top: calc(100% + var(--sp-1)); left: 0; min-width: 190px; max-height: 50dvh; overflow: auto; box-shadow: var(--shadow-far); }
 
 /* the columns: a surface each, their cards a step over it */
@@ -64,13 +64,16 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agentlist .colempty { margin: 0; align-self: center; white-space: nowrap; }
 .agentlist .item { position: relative; flex: none; width: 240px; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
-.agproj { margin-left: auto; padding-left: var(--sp-2); flex: none; font-size: var(--fs-meta); font-weight: var(--fw-body); color: var(--muted); }
-.agentcard:hover .agproj { visibility: hidden; }   /* its pencil stands there */
-/* what it does now: its lamp lit while it is busy */
-.agstatus { display: flex; align-items: center; gap: var(--sp-1); padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.agstatus::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--surface-4); }
-.agentcard.busy .agstatus { color: var(--t-fg); }
-.agentcard.busy .agstatus::before { background: var(--ag); box-shadow: 0 0 7px var(--ag); }
+.agspent { padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.agspent.over { color: var(--danger-text); }
+.cspent { font-variant-numeric: tabular-nums; }
+/* a dot for each live session: blinking while it works, still when it waits or idles */
+.agdots { display: flex; align-items: center; gap: var(--sp-1); min-height: 12px; padding-left: 20px; }
+.agdot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--surface-4); cursor: pointer; }
+.agdot.on { --dot: var(--ag); background: var(--ag); animation: pulse-bar 1.4s ease-in-out infinite; }   /* the session list's pulse: a state, kept under Reduce Motion */
+.agdot.waits { background: var(--ag); }
+.agdot.idle { background: color-mix(in srgb, var(--ag) 35%, var(--surface-4)); }
+.agcount { font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 .agedit { position: absolute; top: var(--sp-1); right: var(--sp-1); display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-xs); color: var(--muted); }
 .agedit:hover { color: var(--t-fg); background: var(--surface-3); }
 @media (hover: hover) { .agentcard:not(:hover, :focus-within) .agedit { opacity: 0; } }
@@ -91,6 +94,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (hover: hover) { .card:hover { background: var(--surface-4); } }
 .chead { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
 .cid { font-variant-numeric: tabular-nums; }
+.cparent { font-size: var(--fs-small); color: var(--muted); }
+.projnofolder { flex: none; margin-left: auto; font-size: var(--fs-small); color: var(--danger-text); }
 .csev { padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); line-height: 16px; font-variant-numeric: tabular-nums; background: var(--surface-1); }
 .csev.P0 { color: var(--danger-ink); background: var(--danger-fill); }
 .csev.P1 { color: var(--danger-ink); background: var(--warn-fill); }
@@ -135,7 +140,16 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #runbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
 
 /* a project's window */
-#projectbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
+/* a folder of 200 characters reads whole, on its own lines (terminum-kanban.md AC-139) */
+#projectbox { width: min(960px, calc(100vw - var(--sp-6) * 2)); }
+.dirline { display: flex; gap: var(--sp-2); align-items: flex-start; }
+.dirline #projectdir { flex: 1; min-width: 0; resize: none; overflow-wrap: anywhere; }
+.dirline .textkey { flex: none; }
+#folderbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
+#folderpath { margin: 0; font-family: var(--term-font, monospace); font-size: var(--fs-label); overflow-wrap: anywhere; }
+#folderlist { margin: 0; padding: 0; list-style: none; height: min(50vh, 420px); overflow: auto; border-radius: var(--key-r); box-shadow: var(--field-edge); }
+.folderrow .lu { color: var(--accent); flex: none; }
+.folderrow .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #projectform, #projectfields { display: flex; flex-direction: column; gap: var(--sp-3); }
 #projectagents { display: flex; flex-direction: column; gap: var(--sp-2); }
 #projectagents .agentlist { flex-direction: column; }
@@ -145,7 +159,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* its windows: the page's own type; what is typed for a machine stays in the terminal's */
 .board-page dialog.dlg { font-family: var(--ui); font-size: var(--fs-body); }
 .board-page dialog.dlg :is(button, select, input, textarea, h2) { font-family: var(--ui); }
-.board-page dialog.dlg :is(#runfolder, #agentdir, #agentcommand, #projectdir, .runprompt, textarea.droparea, #newtext) { font-family: var(--term-font); }
+.board-page dialog.dlg :is(#agentcommand, #projectdir, .runprompt, textarea.droparea, #newtext) { font-family: var(--term-font); }
 .more summary { cursor: pointer; font-size: var(--fs-label); color: var(--muted); user-select: none; }
 .more[open] summary { margin-bottom: var(--sp-2); }
 .fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -167,10 +181,15 @@ section.droparea { border-radius: var(--r-sm); }
 #taskbody textarea.field, #newtext { width: 100%; box-sizing: border-box; }
 dialog .markdown { font-family: var(--ui); font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; min-width: 0; }
 dialog .markdown img { max-width: 100%; }
-.filelist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-label); }
-.filelist:empty { display: none; }
-.filelist li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; overflow-wrap: anywhere; }
-.filelist small { color: var(--muted); }
+.subtasks { display: flex; flex-direction: column; gap: var(--sp-1); }
+.subof { margin: 0; font-size: var(--fs-small); color: var(--muted); }
+#archivedlist { max-height: min(60dvh, 480px); overflow-y: auto; }
+#archivedlist li { align-items: center; }
+#archivedlist .linklike { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+:is(.filelist, .sublist) { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-label); }
+:is(.filelist, .sublist):empty { display: none; }
+:is(.filelist, .sublist) li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; overflow-wrap: anywhere; }
+:is(.filelist, .sublist) small { color: var(--muted); }
 .filelist .icon { --ik: var(--icon-key-list); margin-left: auto; }
 .linklike { font: inherit; padding: 0; color: var(--link, var(--accent)); text-decoration: underline; text-underline-offset: 2px; text-align: left; overflow-wrap: anywhere; }
 .history { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }

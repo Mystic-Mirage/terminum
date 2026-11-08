@@ -116,7 +116,7 @@ fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Res
     facts.active |= r.open_tools > 0;
     r.turn_ended |= read.ended;
     facts.others_open = match r.pane_key.as_deref().filter(|_| plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) {
-        Some(key) => tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks WHERE session_key = ?1 AND id != ?2 AND status NOT IN ('DONE', 'FAILED') AND archived_at IS NULL)", (key, &r.task), |x| x.get(0)).map_err(ops::sql)?,
+        Some(key) => runs::others_open(tx, key, &r.task)?,
         None => false,
     };
     r.last_walk = now;
@@ -219,7 +219,7 @@ async fn walk(app: &Shared) {
     let Ok((all, linked, limits)) = store(app, move |tx| Ok((
         a.dispatcher.read_runs(tx)?,
         ops::rows(tx, "SELECT 'T-' || number, session_key FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?,
-        crate::tasks::agents::limits(tx)?,
+        crate::tasks::limits::limits(tx)?,
     ))).await else { return };
     if all.is_empty() && linked.is_empty() {
         return;
@@ -278,7 +278,8 @@ async fn walk(app: &Shared) {
             memory,
             ..Default::default()
         };
-        if facts.alive {
+        // + Session's is the human's: nothing is typed in it, about its subagents either (AC-142)
+        if facts.alive && !r.ad_hoc() {
             subagents.push((r.clone(), server.clone(), pane.clone(), key, busy));
         }
         reads.push(Read { id: r.id.clone(), facts, ended });
@@ -315,12 +316,20 @@ async fn walk(app: &Shared) {
     // what no walk watches any more goes with it
     let kept: HashSet<&str> = wanted.iter().map(String::as_str).collect();
     app.dispatcher.watch.lock().retain(|k, _| kept.contains(k.as_str()));
-    let busy = store(app, runs::live).await.map_or(serde_json::Value::Null, |live| runs::busy_agents(&live));
-    let message = serde_json::json!({"t": "taskusage", "items": items, "busy": busy}).to_string();
+    let slots = store(app, super::pool::board).await.unwrap_or(serde_json::Value::Null);
+    let message = serde_json::json!({"t": "taskusage", "items": items, "slots": slots}).to_string();
     let mut told = app.dispatcher.usage.lock();
     if *told != message {
         app.pages.tell(&message);
         *told = message;
+    }
+}
+
+/// What has been DONE for 2 days leaves the board (terminum-kanban.md AC-118): it is tried again at the next beat.
+async fn archive_due(app: &Shared) {
+    match store(app, |tx| crate::tasks::archiving::due(tx, ops::now())).await {
+        Ok(gone) => gone.iter().for_each(|task| crate::tasks::api::told(app, task)),
+        Err(e) => tracing::warn!(event = "dispatcher.archive", error = %e),
     }
 }
 
@@ -331,7 +340,7 @@ pub async fn run(app: Shared) {
     }
     loop {
         let a = app.clone();
-        if let Err(e) = tokio::spawn(async move { walk(&a).await }).await {
+        if let Err(e) = tokio::spawn(async move { archive_due(&a).await; walk(&a).await }).await {
             tracing::error!(event = "dispatcher.panic", error = %e);
             acts::note(&app, "Dispatcher's walk failed: see terminumd's log. It goes on at the next beat.".to_string());
         }

@@ -3,6 +3,7 @@
 import { read, write } from "./listparts.js";
 
 const SELECTION = "tm.taskselection";
+const RECORD = "tm.taskrecord";
 
 export const taskUrl = (id) => `/kanban/${id}`;
 
@@ -21,11 +22,20 @@ export function addressedSession() {
   try { return said ? decodeURIComponent(said) : null; } catch { return null; }
 }
 
-/** Text for that window to take, once; in private mode it opens empty. */
+/** What that window takes, once; in private mode it opens empty. */
 export const leaveSelection = (text) => write(SELECTION, text);
 
 export function takeSelection() {
   const text = read(SELECTION) ?? "";
   write(SELECTION, null);
   return text;
+}
+
+/** A bookmark or reminder to make a task of (terminum-kanban.md AC-116): its id, title and text. */
+export const leaveRecord = (record) => write(RECORD, record);
+
+export function takeRecord() {
+  const record = read(RECORD);
+  write(RECORD, null);
+  return record;
 }

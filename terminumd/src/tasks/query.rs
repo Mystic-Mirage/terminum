@@ -94,7 +94,13 @@ pub(crate) const LIST_MOST: i64 = 200;
 pub fn list(tx: &Transaction, q: &Query) -> Result<Vec<Task>, String> {
     let (filter, args) = filter_of(q);
     let limit = if q.limit <= 0 { LIST_MOST } else { q.limit.min(LIST_MOST) };
-    rows(tx, &format!("{TASK}{filter} ORDER BY t.severity, t.rank LIMIT {limit} OFFSET {}", q.after.max(0)), rusqlite::params_from_iter(args.iter()), task_of)
+    let order = if q.archived { "t.archived_at DESC" } else { "t.severity, t.rank" };   // Archived: newest first (AC-118)
+    rows(tx, &format!("{TASK}{filter} ORDER BY {order} LIMIT {limit} OFFSET {}", q.after.max(0)), rusqlite::params_from_iter(args.iter()), task_of)
+}
+
+/// Those of a parent, in the order they were made (AC-112).
+pub fn subtasks(tx: &Transaction, parent: &str) -> Result<Vec<Task>, String> {
+    rows(tx, &format!("{TASK} WHERE t.parent = ?1 ORDER BY t.number"), [parent], task_of)
 }
 
 /// The count of each column under the filter (`q`'s `statuses` ignored), so a head says it.

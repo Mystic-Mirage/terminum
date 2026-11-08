@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The tokens of a turn's session (`terminum-dispatcher.md` AC-129), summed beside the transcript on
-//! its own machine within `terminum hook`'s time. Three integers leave it: no path, no text.
+//! its own machine within `terminum hook`'s time. Four integers and a model's name leave it: no path, no text.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Seek, SeekFrom};
@@ -10,20 +10,22 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::dispatcher::usage::{Totals, MOST_MODEL};
+
 /// Past these it says nothing rather than overrun the hook's 3 s.
 const MOST_BYTES: u64 = 256 << 20;
 const MOST_TIME: Duration = Duration::from_millis(1500);
 const CODEX_TAIL: u64 = 1 << 20;
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default)]
 struct Sum {
-    input: u64,
-    output: u64,
-    cached: u64,
+    tokens: Totals,
+    /// the last message's
+    model: Option<String>,
 }
 
-fn int(v: &Value, key: &str) -> u64 {
-    v[key].as_u64().unwrap_or(0)
+fn int(v: &Value, key: &str) -> i64 {
+    v[key].as_u64().map_or(0, |n| n.min(i64::MAX as u64) as i64)
 }
 
 /// Each line holding `needle`, parsed, to `each`; past `until`: None.
@@ -53,6 +55,7 @@ struct ClaudeLine {
 #[derive(Deserialize)]
 struct ClaudeMessage {
     id: Option<String>,
+    model: Option<String>,
     usage: Option<ClaudeUsage>,
 }
 
@@ -66,14 +69,19 @@ struct ClaudeUsage {
 
 /// Claude Code's lines: `message.usage` per message; a message comes in several lines, the last stands.
 fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
-    let mut by_message: HashMap<String, Sum> = HashMap::new();
+    let mut by_message: HashMap<String, Totals> = HashMap::new();
+    let mut model = None;
     each_line(reader, until, "\"usage\"", |at, line: ClaudeLine| {
         if let Some(u) = line.message.usage {
-            let cached = u.cache_read_input_tokens.unwrap_or(0) + u.cache_creation_input_tokens.unwrap_or(0);
-            by_message.insert(line.message.id.unwrap_or_else(|| at.to_string()), Sum { input: u.input_tokens.unwrap_or(0), output: u.output_tokens.unwrap_or(0), cached });
+            let n = |v: Option<u64>| v.map_or(0, |n| n.min(i64::MAX as u64) as i64);
+            by_message.insert(line.message.id.unwrap_or_else(|| at.to_string()), Totals { input: n(u.input_tokens), output: n(u.output_tokens),
+                cache_write: n(u.cache_creation_input_tokens), cache_read: n(u.cache_read_input_tokens) });
+            if let Some(m) = line.message.model {
+                model = Some(m.chars().take(MOST_MODEL).collect());
+            }
         }
     })?;
-    (!by_message.is_empty()).then(|| by_message.values().fold(Sum::default(), |a, s| Sum { input: a.input + s.input, output: a.output + s.output, cached: a.cached + s.cached }))
+    (!by_message.is_empty()).then(|| Sum { tokens: by_message.into_values().fold(Totals::default(), |a, t| a + t), model })
 }
 
 /// Codex's lines: a `token_count` event holds the session's total; the last stands.
@@ -81,13 +89,13 @@ fn codex(reader: impl BufRead, until: Instant) -> Option<Sum> {
     let mut last = None;
     each_line(reader, until, "token_count", |_, v: Value| {
         if let Some(u) = v.pointer("/payload/info/total_token_usage") {
-            last = Some(Sum { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cached: int(u, "cached_input_tokens") });
+            last = Some(Sum { tokens: Totals { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cache_read: int(u, "cached_input_tokens"), cache_write: 0 }, model: None });
         }
     })?;
     last
 }
 
-/// What goes with a turn's end: the three numbers, or `null` when they are not known (a new agent
+/// What goes with a turn's end: the four numbers and the model, or `null` when they are not known (a new agent
 /// version's format, a file gone, too long a read); nothing when the event names no transcript.
 pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
     let path = input.get("transcript_path").and_then(Value::as_str)?;
@@ -108,7 +116,11 @@ pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
         }
         claude(std::io::BufReader::new(file), until)
     };
-    Some(read().map_or(Value::Null, |s| json!({"input": s.input, "output": s.output, "cached": s.cached})))
+    Some(read().map_or(Value::Null, |s| {
+        let mut v = s.tokens.json();
+        v["model"] = json!(s.model);
+        v
+    }))
 }
 
 #[cfg(test)]
@@ -129,7 +141,7 @@ mod tests {
             r#"{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":7,"cache_read_input_tokens":5,"cache_creation_input_tokens":2}}}"#, "\n",
             r#"{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":3,"output_tokens":4}}}"#, "\n"));
         let got = of_event("claude", &json!({"transcript_path": p})).unwrap();
-        assert_eq!(got, json!({"input": 13, "output": 11, "cached": 7}), "three integers: no text, no path");
+        assert_eq!(got, json!({"input": 13, "output": 11, "cache_write": 2, "cache_read": 5, "model": null}), "four integers: no text, no path");
     }
 
     #[test]
@@ -140,7 +152,7 @@ mod tests {
             r#"{"message":{"content":[{"type":"text","text":"long"}],"usage":{"input_tokens":2,"output_tokens":1,"cache_read_input_tokens":null,"cache_creation":{"ephemeral_5m_input_tokens":9}}}}"#, "\n",
             r#"{"message":{"usage":{"input_tokens":3,"output_tokens":1}}}"#, "\n"));
         let got = of_event("claude", &json!({"transcript_path": p})).unwrap();
-        assert_eq!(got, json!({"input": 5, "output": 2, "cached": 0}), "no id: each line its own; no usage: not counted");
+        assert_eq!(got, json!({"input": 5, "output": 2, "cache_write": 0, "cache_read": 0, "model": null}), "no id: each line its own; no usage: not counted");
     }
 
     #[test]
@@ -149,7 +161,7 @@ mod tests {
             r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5,"cached_input_tokens":1,"output_tokens":2}}}}"#, "\n",
             r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#, "\n",
             r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"cached_input_tokens":3,"output_tokens":4}}}}"#, "\n"));
-        assert_eq!(of_event("codex", &json!({"transcript_path": p})).unwrap(), json!({"input": 9, "output": 4, "cached": 3}));
+        assert_eq!(of_event("codex", &json!({"transcript_path": p})).unwrap(), json!({"input": 9, "output": 4, "cache_write": 0, "cache_read": 3, "model": null}));
     }
 
     #[test]
@@ -160,5 +172,12 @@ mod tests {
         let p = written("tokens-odd", "{\"another\":\"format\"}\nnot json at all\n");
         assert_eq!(of_event("claude", &json!({"transcript_path": p.clone()})), Some(Value::Null), "a new version's format");
         assert_eq!(of_event("codex", &json!({"transcript_path": p})), Some(Value::Null));
+    }
+
+    #[test]
+    fn ac129_claude_its_model_goes_with_the_numbers() {
+        let p = written("tokens-model", concat!(
+            r#"{"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":10,"output_tokens":1}}}"#, "\n"));
+        assert_eq!(of_event("claude", &json!({"transcript_path": p})).unwrap()["model"], "claude-opus-5-5");
     }
 }

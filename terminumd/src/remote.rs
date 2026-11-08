@@ -224,6 +224,11 @@ pub fn register(app: &Shared, host: &str, agent: Option<(PathBuf, String)>) {
     }
 }
 
+/// Whether `host`'s files are on: its agent there takes files.
+pub fn files_on(app: &Shared, host: &str) -> bool {
+    app.remotes.get(host).is_some()
+}
+
 /// A pasted image or uploaded file saved on `host` through its agent (AC-85): its path there.
 pub async fn paste(app: &Shared, host: &str, name: &str, data: axum::body::Bytes) -> Result<String, String> {
     let Some(agent) = app.remotes.get(host) else {

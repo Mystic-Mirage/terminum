@@ -74,7 +74,7 @@ fn ac115_a_session_in_default_reaches_only_its_own_and_what_it_made() {
     let mine = task(&s, "default", Some(KEY));
     let others = task(&s, "default", Some(OTHER));
     let free = task(&s, "default", None);
-    let made = call(&s, &dir, &w, "create_task", json!({"title": "a gap"})).unwrap();
+    let made = call(&s, &dir, &w, "create_task", json!({"title": "Bug: a gap", "severity": "P2"})).unwrap();
     let made = made.trim_start_matches("Kept as ").trim_end_matches(", in TODO.").to_string();
     let listed = call(&s, &dir, &w, "list_tasks", json!({})).unwrap();
     for (id, seen) in [(&mine, true), (&made, true), (&others, false), (&free, false)] {
@@ -88,7 +88,7 @@ fn ac110_two_default_sessions_of_one_title_share_nothing() {
     let (s, dir) = fresh("tt-same-title");
     let a = who(None);
     let b = Who { key: OTHER.into(), ..who(None) };
-    let made = call(&s, &dir, &a, "create_task", json!({"title": "a's gap"})).unwrap();
+    let made = call(&s, &dir, &a, "create_task", json!({"title": "Debt: a's gap", "severity": "P3"})).unwrap();
     let id = made.trim_start_matches("Kept as ").trim_end_matches(", in TODO.").to_string();
     assert!(call(&s, &dir, &a, "get_task", json!({"id": id})).is_ok());
     assert!(call(&s, &dir, &b, "get_task", json!({"id": id})).is_err(), "the same title gives no reach");
@@ -136,12 +136,12 @@ fn ac115_a_free_task_can_be_taken_one_with_a_session_cannot() {
 fn ac115_a_new_task_is_marked_cleaned_and_not_kept_twice() {
     let (s, dir) = fresh("tt-new");
     let w = who(Some("api"));
-    let said = call(&s, &dir, &w, "create_task", json!({"title": "Gap\u{202e} in\u{7} retry", "text": "API_TOKEN=abc123 here", "severity": "P1"})).unwrap();
+    let said = call(&s, &dir, &w, "create_task", json!({"title": "Bug: Gap\u{202e} in\u{7} retry", "text": "API_TOKEN=abc123 here", "severity": "P1"})).unwrap();
     let id = said.trim_start_matches("Kept as ").trim_end_matches(", in TODO.").to_string();
     let (t, text) = s.with(|tx| Ok((ops::get(tx, &id)?, ops::text_of(tx, &id)?))).unwrap();
-    assert_eq!((t.title.as_str(), t.by_agent, t.session.clone(), t.status.as_str(), t.project.as_str(), t.severity.as_str()), ("Gap in retry", true, None, "TODO", "api", "P1"));
+    assert_eq!((t.title.as_str(), t.by_agent, t.session.clone(), t.status.as_str(), t.project.as_str(), t.severity.as_str()), ("Bug: Gap in retry", true, None, "TODO", "api", "P1"));
     assert!(text.contains("[redacted]") && !text.contains("abc123"), "{text}");
-    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "gap in  RETRY."})).unwrap_err(), format!("Not kept: {id} already says this. Read it with get_task, and comment if you have more."));
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Bug: gap in  RETRY.", "severity": "P1"})).unwrap_err(), format!("Not kept: {id} already says this. Read it with get_task, and comment if you have more."));
     assert_eq!(call(&s, &dir, &w, "create_task", json!({})).unwrap_err(), "title is required");
 }
 
@@ -171,4 +171,62 @@ fn ac109_an_agent_s_file_stays_inside_its_folder_or_comes_as_text() {
     let big = "x".repeat(TEXT_FILE_MOST + 1);
     assert!(call(&s, &dir, &w, "attach_file", json!({"task": id, "name": "big.txt", "text": big})).unwrap_err().contains("at most"));
     assert!(call(&s, &dir, &w, "get_file", json!({"task": id, "name": "note.txt"})).unwrap_err().contains("host"));
+}
+
+/// terminum-kanban.md AC-145: only what is left to do, said as such
+#[test]
+fn ac145_what_is_left_to_do_says_its_kind_and_severity() {
+    let ((s, dir), w) = (fresh("tools-left"), who(Some("api")));
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "a gap", "severity": "P2"})).unwrap_err(), "Start the title with Bug:, Feat: or Debt:.");
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Feat: a gap"})).unwrap_err(), "Give it a severity: P0, P1, P2 or P3.");
+    for title in ["Bug: drops a BOM", "Feat: paging", "Debt: two copies of a rule"] {
+        assert!(call(&s, &dir, &w, "create_task", json!({"title": title, "severity": "P2"})).unwrap().starts_with("Kept as"), "{title}");
+    }
+}
+
+#[test]
+fn ac142_a_session_with_no_task_takes_one_and_writes_as_its_agent_of_the_pool() {
+    let ((s, dir), w) = (fresh("tools-ad-hoc"), who(Some("api")));
+    let free = task(&s, "api", None);
+    s.with(|tx| {
+        let like = crate::dispatcher::runs::Run { agent_id: "a1".into(), agent_name: "Opus reviewer".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
+        let id = crate::dispatcher::runs::add(tx, &like, &[], 1)?;
+        crate::dispatcher::runs::change(tx, &id, |r| { r.state = "working".into(); r.pane_key = Some(KEY.into()); }).map(drop)
+    }).unwrap();
+    assert!(call(&s, &dir, &w, "take_task", json!({"id": free})).is_ok(), "+ Session's agent may take a task: it was given none");
+    call(&s, &dir, &w, "add_comment", json!({"id": free, "text": "on it"})).unwrap();
+    let author: String = s.with(|tx| tx.query_row("SELECT u.name FROM events e JOIN users u ON u.id = e.author WHERE e.kind = 'comment' ORDER BY e.rowid DESC LIMIT 1", [], |r| r.get(0)).map_err(|e| e.to_string())).unwrap();
+    assert_eq!(author, "Opus reviewer", "one agent, one name: the pool's");
+}
+
+#[test]
+fn ac120_a_long_get_task_comes_in_pages() {
+    let ((s, dir), w) = (fresh("tools-pages"), who(Some("api")));
+    let id = s.with(|tx| {
+        let t = ops::create(tx, HUMAN, NewTask { title: "long".into(), project: Some("api".into()), ..Default::default() }, 1)?;
+        for n in 0..105 {
+            ops::comment(tx, HUMAN, &t.id, &format!("comment {n} {}", "x".repeat(900)), 2)?;
+        }
+        Ok(t.id)
+    }).unwrap();
+    let first = call(&s, &dir, &w, "get_task", json!({"id": id})).unwrap();
+    assert!(first.len() < HISTORY_PAGE_BYTES + 2_000, "a page within the link's limit: {}", first.len());
+    assert!(first.contains("page 1 of 3: get_task with page \"2\" for the next") && first.contains("comment 0 ") && !first.contains("comment 104 "), "the first page says there is more");
+    let last = call(&s, &dir, &w, "get_task", json!({"id": id, "page": "3"})).unwrap();
+    let task: Value = serde_json::from_str(last.lines().last().unwrap()).unwrap();
+    assert!(last.contains("comment 104 ") && !last.contains("for the next") && task.get("text").is_none() && task["files"].is_i64(), "the last page: its text and files' list only on the first, here their number");
+    assert_eq!(call(&s, &dir, &w, "get_task", json!({"id": id, "page": "4"})).unwrap_err(), "page is 1 to 3");
+    assert!(call(&s, &dir, &w, "get_task", json!({"id": id, "page": "x"})).is_err());
+}
+
+#[test]
+fn ac120_a_host_s_get_file_goes_through_its_link() {
+    let ((s, dir), w) = (fresh("tools-hostfile"), who(Some("api")));
+    let id = s.with(|tx| ops::create(tx, HUMAN, NewTask { title: "t".into(), project: Some("api".into()), ..Default::default() }, 1).map(|t| t.id)).unwrap();
+    call(&s, &dir, &w, "attach_file", json!({"task": id, "name": "log.txt", "text": "hello"})).unwrap();
+    assert!(call(&s, &dir, &w, "get_file", json!({"task": id, "name": "log.txt"})).unwrap_err().contains("through its link"), "the route sends it, not run");
+    let (name, path) = s.with(|tx| task_file(tx, &dir, &w, &json!({"task": id, "name": "log.txt"}))).unwrap();
+    assert_eq!((name.as_str(), std::fs::read_to_string(path).unwrap().as_str()), ("log.txt", "hello"));
+    assert!(s.with(|tx| task_file(tx, &dir, &w, &json!({"task": id, "name": "none.txt"}))).unwrap_err().contains("has no file none.txt"));
+    assert!(s.with(|tx| task_file(tx, &dir, &who(Some("web")), &json!({"task": id, "name": "log.txt"}))).unwrap_err().contains("outside"), "judged as get_task");
 }

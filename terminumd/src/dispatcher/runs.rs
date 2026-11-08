@@ -11,7 +11,7 @@ use crate::tasks::ops::{rows, sql};
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Run {
     pub id: String,
-    /// the task it started from: its project's, and where what concerns none in particular is said
+    /// the task it started from, where what concerns none in particular is said; empty: + Session's, for all its life (AC-142)
     pub task: String,
     /// its tasks' IDs
     pub ids: Vec<String>,
@@ -67,9 +67,24 @@ impl Run {
         matches!(self.state.as_str(), "closed" | "left")
     }
 
-    /// Its agent takes no other task (AC-138): starting, a task open, or still in a turn after its last.
+    /// Its run still holds its tasks (AC-138): starting, a task open, or still in a turn after its last.
     pub fn busy(&self) -> bool {
-        !self.is_over() && (self.is_starting() || !self.open.is_empty() || (self.state == "working" && !self.turn_ended))
+        !self.ad_hoc() && !self.is_over() && (self.is_starting() || !self.open.is_empty() || (self.state == "working" && !self.turn_ended))
+    }
+
+    /// A run about to start `agent` in a project's place, nothing of it yet (AC-140, AC-141).
+    pub fn of(agent: &crate::tasks::agents::Agent, host: Option<String>, folder: String, project: String, prompt: Option<String>) -> Run {
+        Run { agent_id: agent.id.clone(), agent_name: agent.name.clone(), agent_color: agent.color, kind: agent.kind.clone(), command: agent.line.clone(), host, folder, project, prompt, ..Default::default() }
+    }
+
+    /// + Session's: no task, no prompt; Dispatcher only watches it (AC-142).
+    pub fn ad_hoc(&self) -> bool {
+        self.task.is_empty()
+    }
+
+    /// It holds a slot of its agent and of its project (AC-141): from RUN until it is closed, let go or its agent is gone.
+    pub fn holds_slot(&self) -> bool {
+        !self.is_over() && self.state != "gone"
     }
 
     /// What it is about now: its tasks still open, else all.
@@ -97,16 +112,16 @@ impl Run {
     }
 }
 
-const SELECT: &str = "SELECT r.id, r.task,
+const SELECT: &str = "SELECT r.id, COALESCE(r.task, ''),
     (SELECT group_concat('T-' || x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     (SELECT group_concat('T-' || x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND x.status NOT IN ('DONE', 'FAILED')),
-    (SELECT x.status FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id ORDER BY CASE x.status WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'FAILED' THEN 3 ELSE 4 END LIMIT 1),
-    t.project,
+    COALESCE((SELECT x.status FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id ORDER BY CASE x.status WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'FAILED' THEN 3 ELSE 4 END LIMIT 1), ''),
+    r.project,
     (SELECT sum(x.budget_seconds) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     r.agent_id, r.agent_name, r.agent_color, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
     r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.no_result_wait,
     NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = r.id AND m.result = 0), r.again_said, r.close_tried, r.last_walk, r.memory_warned
-    FROM runs r JOIN tasks t ON t.id = r.task";
+    FROM runs r";
 /// A run Dispatcher still holds, over `runs r`.
 pub(crate) const STILL: &str = "r.state NOT IN ('closed', 'left')";
 const STARTING: &str = "r.state IN ('starting', 'asking', 'typed')";
@@ -146,16 +161,16 @@ pub fn last_of(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
     one(tx, "r.id = (SELECT m.run FROM run_tasks m WHERE m.task = ?1 ORDER BY m.rowid DESC LIMIT 1)", task).optional().map_err(sql)
 }
 
-/// What keeps agent `agent` busy but run `but`, if anything (AC-138): read in the transaction that adds
-/// or goes on with a run, so two presses never both find it free.
-pub fn busy_with(tx: &Transaction, agent: &str, but: Option<&str>) -> Result<Option<Run>, String> {
-    Ok(live(tx)?.into_iter().find(|r| r.agent_id == agent && Some(r.id.as_str()) != but && r.busy()))
+/// A run holding one of agent `agent`'s slots, if any.
+pub fn holding_agent(tx: &Transaction, agent: &str) -> Result<Option<Run>, String> {
+    Ok(live(tx)?.into_iter().find(|r| r.agent_id == agent && r.holds_slot()))
 }
 
-/// What each busy agent does: its tasks, its run's state and its session (AC-138).
-pub fn busy_agents(all: &[Run]) -> serde_json::Value {
-    all.iter().filter(|r| r.busy()).map(|r| (r.agent_id.clone(), serde_json::json!({"tasks": r.names(), "state": r.state, "key": r.pane_key}))).collect::<serde_json::Map<_, _>>().into()
+/// Whether session `key` holds an open task other than `lead`'s: one taken there, no run's.
+pub fn others_open(tx: &Transaction, key: &str, lead: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM tasks WHERE session_key = ?1 AND id != ?2 AND status NOT IN ('DONE', 'FAILED') AND archived_at IS NULL)", (key, lead), |x| x.get(0)).map_err(sql)
 }
+
 
 pub(super) fn by_id(tx: &Transaction, id: &str) -> Result<Run, String> {
     one(tx, "r.id = ?1", id).map_err(sql)
@@ -169,11 +184,13 @@ pub fn change(tx: &Transaction, id: &str, f: impl FnOnce(&mut Run)) -> Result<Ru
     Ok(r)
 }
 
-/// A new run of `tasks` (keys, the first the one it starts from), starting, as `like` says: its fields but its id and clocks. Its id.
+/// A new run of `tasks` (keys, the first the one it starts from; none: + Session's), starting, as `like` says: its fields
+/// but its id and clocks. Its id.
 pub fn add(tx: &Transaction, like: &Run, tasks: &[String], at: i64) -> Result<String, String> {
     let id = crate::auth::crypto::random_hex::<8>();
-    tx.execute("INSERT INTO runs (id, task, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'starting', ?11, ?12)",
-               rusqlite::params![id, tasks[0], like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at]).map_err(sql)?;
+    tx.execute("INSERT INTO runs (id, task, project, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13)",
+               rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at]).map_err(sql)?;
     for task in tasks {
         tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, task)).map_err(sql)?;
     }
@@ -204,16 +221,16 @@ fn set_result(tx: &Transaction, task: &str, given: bool) -> Result<(), String> {
 
 /// The agent last chosen for a project's run, if any.
 pub fn last_agent(tx: &Transaction, project: &str) -> Result<Option<String>, String> {
-    tx.query_row("SELECT r.agent_id FROM runs r JOIN tasks t ON t.id = r.task WHERE t.project = ?1 ORDER BY r.rowid DESC LIMIT 1", [project], |r| r.get(0)).optional().map_err(sql)
+    tx.query_row("SELECT agent_id FROM runs WHERE project = ?1 ORDER BY rowid DESC LIMIT 1", [project], |r| r.get(0)).optional().map_err(sql)
 }
 
 /// That of every project: a task made now starts on it.
 pub fn last_agents(tx: &Transaction) -> Result<HashMap<String, String>, String> {
-    Ok(rows(tx, "SELECT t.project, r.agent_id FROM runs r JOIN tasks t ON t.id = r.task ORDER BY r.rowid", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+    Ok(rows(tx, "SELECT project, agent_id FROM runs ORDER BY rowid", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
 /// `keys` as one SQL argument: a page's tasks, however many.
-fn listed_keys(keys: &[&str]) -> String {
+pub(super) fn listed_keys(keys: &[&str]) -> String {
     serde_json::to_string(keys).unwrap_or_else(|_| "[]".to_string())
 }
 
@@ -234,6 +251,15 @@ pub fn card_agents(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, se
 /// The human gives up on `task`'s run (AC-138): its open tasks fail, Dispatcher lets go of the window, which stays.
 pub fn give_up(tx: &Transaction, task: &str) -> Result<Run, String> {
     let run = last_of(tx, task)?.filter(|r| !r.is_over()).ok_or("It has no run to give up.")?;
+    let_go(tx, &run.id)
+}
+
+/// The same by the run: a + Session's too, its host out of reach (AC-142).
+pub fn let_go(tx: &Transaction, id: &str) -> Result<Run, String> {
+    let run = by_id(tx, id).map_err(|_| "That session is gone.".to_string())?;
+    if run.is_over() {
+        return Err("Dispatcher holds that session no more.".into());
+    }
     super::move_task(tx, &run, "FAILED", "The human gave up on it.")?;
     change(tx, &run.id, |r| r.state = "left".into())
 }

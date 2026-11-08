@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { mcpOpening, rpc } from "./boardkit.mjs";
 import { check, shownPane, until } from "./check.mjs";
+import { foldFoot, pressFoot } from "./fake.mjs";
 import { ownTmp } from "./testrun.mjs";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -95,14 +96,14 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     check("AC-98 agents make tasks: no note tool is offered", !list.some((n) => n.endsWith("_notes_for_user")) && list.includes("create_task"), list.join());
 
     // an agent's tools and rights
-    const madeA = await a.tool("create_task", { title: "Gap in the parser", text: "API_TOKEN=abc123 here", severity: "P1" });
+    const madeA = await a.tool("create_task", { title: "Bug: Gap in the parser", text: "API_TOKEN=abc123 here", severity: "P1" });
     const t1 = madeId(madeA.text);
     check("AC-115 live: an agent's new task stands in TODO", !madeA.error && !!t1, madeA.text);
     const asked = await task(t1);
     check("AC-115 live: marked by agent, with no session, in its project, redacted", asked.by_agent === true && asked.session === null && asked.status === "TODO" && asked.owner_kind === "agent" && asked.text.includes("[redacted]") && !asked.text.includes("abc123"), JSON.stringify(asked).slice(0, 300));
-    const again = await b.tool("create_task", { title: "gap in the  PARSER." });
+    const again = await b.tool("create_task", { title: "Bug: gap in the  PARSER.", severity: "P1" });
     check("AC-115 live: the project's repeat is not kept", again.error && again.text.includes(t1), again.text);
-    const elsewhere = await lone.tool("create_task", { title: "Gap in the parser" });
+    const elsewhere = await lone.tool("create_task", { title: "Bug: Gap in the parser", severity: "P1" });
     check("AC-115 live: nor is it a repeat outside the project", !elsewhere.error, elsewhere.text);
     check("AC-115 live: a session outside the project does not read it", (await lone.tool("get_task", { id: t1 })).error);
     const read = await b.tool("get_task", { id: t1 });
@@ -153,6 +154,39 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     fs.rmSync(b.dir, { recursive: true, force: true });
     check("AC-33 live: a closed session's records are orphaned", await until(() => !!rec("B later")?.orphaned, 10000));
     check("AC-33 live: the other session's are not", !rec("A asks")?.orphaned, JSON.stringify(rec("A asks")));
+
+    // a record becomes a task (terminum-kanban.md AC-116)
+    const back = page.url();
+    const makeOf = async (note) => {
+      if (page.url() !== back) {
+        await page.goto(back);
+        await page.waitForSelector(row(a.pane), { timeout: 8000 });
+      }
+      await pressFoot(page, "#marksbtn");             // the foot folded on a computer: its toggle first
+      await page.waitForSelector("#marksdlg[open]");
+      await page.click('#marklist .mkkind button:has-text("Reminders")');
+      await page.click(`#marklist li:has-text("${note}") .mkmake`);
+      await page.waitForSelector("#newbox[open]", { timeout: 8000 });
+    };
+    await makeOf("A asks");
+    const said = await page.inputValue("#newtext");
+    check("AC-116 Make a task fills the new-task window", await page.inputValue("#newtitle") === "A asks" && /^> .*electable word/m.test(said) && /\]\(\/sessions\/#\//.test(said)
+      && (await page.inputValue("#newsession")).endsWith(`:${a.pane}`), said);
+    await page.click("#newdiscard");
+    await page.click("#confirmok");                  // what it brought counts as typed: Discard asks
+    await page.waitForSelector("#newbox", { state: "hidden" });
+    check("AC-116 Discard keeps the record", !!rec("A asks"));
+    await makeOf("A asks");
+    await page.fill("#newtitle", " ");
+    await page.click("#newcreate");
+    check("AC-116 a task refused says why, and the record stays", await until(async () => (await page.textContent("#newerror").catch(() => "")).length > 0) && await page.isVisible("#newbox") && !!rec("A asks"));
+    await page.fill("#newtitle", "A asks");
+    await page.click("#newcreate");
+    check("AC-116 Create keeps the task, then the record goes", await until(() => !rec("A asks"), 8000)
+      && (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200")).json()).tasks)).some((t) => t.title === "A asks"));
+    await page.goto(back);
+    await page.waitForSelector(row(a.pane), { timeout: 8000 });
+    await foldFoot(page);
   } finally {
     await page.evaluate((k) => document.querySelector(`#sessions .item[data-id$=":${k}"]`)?.click(), shown).catch(() => {});
     for (const { pane, dir } of made) { try { tmux("kill-pane", "-t", pane); } catch { /* its pane ended */ } fs.rmSync(dir, { recursive: true, force: true }); }

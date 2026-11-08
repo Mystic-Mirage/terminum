@@ -283,6 +283,11 @@ Scenario: AC-111 edge — nothing left
   Then each column says "No tasks match" and Clear filters takes off severity, owner and text; the project stays chosen (AC-135)
   When the URL names a project that is gone
   Then that name is ignored and said once in a toast
+
+Scenario: AC-111 edge — a narrow board
+  Given a filter is on and one project is shown, so Clear filters and + Session show
+  When the window narrows from 1400 to 1100 px with the session list open
+  Then the filter keys that no longer fit go to a line under the others; no key of the head stands over another
 ```
 
 ### AC-112 — Subtasks [SHOULD / P1]

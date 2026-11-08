@@ -11,8 +11,9 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #barsessions { flex: none; }
 #app:not(.nav-hidden) #barsessions { display: none; }
 #tosessions { flex: none; }
-#filters { display: flex; align-items: center; gap: var(--sp-2); flex: 1 1 auto; min-width: 0; }
-#filters .search { flex: 0 1 220px; min-width: 110px; height: var(--key-h); }   /* the field gives way first */
+/* keys that do not fit go to a line of their own, never under the board's keys on the right */
+#filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); flex: 1 1 auto; min-width: 0; }
+#filters .search { flex: 1 1 110px; min-width: 110px; max-width: 220px; height: var(--key-h); }   /* the field gives way first: a line breaks only past its least */
 #filters > :not(.search), #boardacts { flex: none; }
 #picks { display: flex; align-items: center; gap: var(--sp-2); }
 /* its room is what the session list leaves: with too little, the filters stand behind one key */
@@ -20,7 +21,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #bar #filtersbtn { display: none; }
 @container board (max-width: 800px) {
   #bar #filtersbtn { display: inline-flex; }
-  #filters { flex-wrap: wrap; }
   #picks { flex-basis: 100%; }
   #picks:not(.open) { display: none; }
 }
@@ -208,8 +208,8 @@ dialog .markdown img { max-width: 100%; }
 @media (max-width: 860px) {
   #app:not(.nav-hidden) #barsessions { display: grid; }
   #newproject span { display: none; }
-  #filters { order: 3; flex: 1 1 100%; flex-wrap: wrap; }
-  #filters .search { flex: 1 1 0; min-width: 80px; }
+  #filters { order: 3; flex: 1 1 100%; }
+  #filters .search { flex: 1 1 0; min-width: 80px; max-width: none; }
   #picks { flex-wrap: wrap; }
   .pick > .box { position: fixed; top: auto; left: var(--gutter); right: var(--gutter); max-height: 60dvh; }
   #colswitch { display: flex; flex: none; overflow-x: auto; scrollbar-width: none; margin: var(--sp-2) var(--gutter) 0; }

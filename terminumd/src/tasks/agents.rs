@@ -111,6 +111,10 @@ impl Given {
             if self.command.contains([';', '|', '&', '#']) {
                 return Err("An effort goes on one program's command: this one has ; | & or #. Write it in the command.".into());
             }
+            // twice on one line, which one the program takes is its own affair
+            if ["--effort", "model_reasoning_effort"].iter().any(|f| self.command.contains(f)) {
+                return Err("The command names an effort already: choose Its own setting, or take it out of the command.".into());
+            }
         }
         Ok(())
     }

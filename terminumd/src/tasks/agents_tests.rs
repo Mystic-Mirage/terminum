@@ -95,6 +95,10 @@ fn ac138_an_effort_goes_on_its_kind_s_command_line() {
     assert_eq!(with("claude", "claude", "$(rm -rf)").unwrap_err(), "claude has no effort $(rm -rf).", "a word of a fixed list, never free text");
     assert!(with("claude", "claude; notify", "high").unwrap_err().contains("; | & or #"), "the flag would go to the other program");
     assert!(with("claude", "claude; notify", "").is_ok(), "a command is the human's own words");
+    let twice = "The command names an effort already: choose Its own setting, or take it out of the command.";
+    assert_eq!(with("claude", "claude --effort high", "max").unwrap_err(), twice);
+    assert_eq!(with("codex", "codex -c model_reasoning_effort=high", "low").unwrap_err(), twice);
+    assert!(with("claude", "claude --effort high", "").is_ok(), "its own setting: the command's");
 }
 
 #[test]

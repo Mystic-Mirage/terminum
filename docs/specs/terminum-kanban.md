@@ -133,6 +133,7 @@ Scenario: AC-106 happy path — Run
   Then T-12 is kept and starts on that agent at once, no other window opening (terminum-dispatcher.md AC-138)
   Given no agent, none free, or a folder it lacks
   Then T-12 is kept and RUN's window opens saying what stands in the way
+  And the agent the user picked in the window, or none, stays picked while it is open, as sessions, windows and agents change
 
 Scenario: AC-106 happy path — the rest folded
   Then Owner and Session stand under "Owner and session", folded: most tasks are the user's and start with no session
@@ -823,7 +824,7 @@ Depends on: nothing more.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-105 — `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`
-- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `cargo test tasks::ops`
+- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-109 — `cargo test tasks::files`, `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`

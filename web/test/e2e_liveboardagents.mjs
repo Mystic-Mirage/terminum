@@ -231,6 +231,9 @@ async function agentPool(page, opts) {
   await page.waitForSelector("#newbox[open]");
   await page.fill("#newtitle", "made, its agent not chosen");
   await page.selectOption("#newagent", "");
+  // a window opened and closed while it is open: the page reads the sessions again, the choice stays
+  tmux("kill-window", "-t", tmux("new-window", "-d", "-P", "-F", "#{window_id}").trim());
+  check("AC-106 none picked stays none as the windows change", !(await until(async () => await page.inputValue("#newagent") !== "", 2000)), await page.inputValue("#newagent"));
   await page.click("#newrun");
   check("AC-138 with none chosen it opens the run window", await until(() => page.$("#runbox[open]")));
   await page.click('#runbox button[value="cancel"]');

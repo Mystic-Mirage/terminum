@@ -11,7 +11,7 @@ const DRAFT = "tm.taskdraft";
  *  `agentsBusy()`: what each busy agent does. */
 export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
   const box = $("newbox");
-  let files = [], uploads = 0, offered = "";
+  let files = [], uploads = 0, offered = "", chose = null;   // chose: the agent the user picked in this window, "" for none
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
   const canCreate = (busy = false) => { $("newcreate").disabled = $("newrun").disabled = busy || uploads > 0; };
 
@@ -65,17 +65,20 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
     if (preview) renderInto($("newshown"), $("newtext").value);
   }
 
-  /** The project's agents: the one its last run had, else the first free. */
+  /** The project's agents: the one the user picked while it is free, else its last run's, else the first free;
+   *  none picked stays none, whatever changes meanwhile (AC-106). */
   function showAgents() {
     const meta = getMeta(), project = $("newproj").value, all = meta.agents.filter((a) => a.project === project), now = agentsBusy();
     const busy = (a) => now[a.id]?.tasks;
-    fillAgents($("newagent"), all, busy, [meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
+    fillAgents($("newagent"), all, busy, [chose, meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
+    if (chose === "") $("newagent").value = "";
   }
 
   function open(given = {}) {
     const meta = getMeta(), saved = read(DRAFT) ?? {};
     const filter = getFilter().project;   // a draft with nothing typed says nothing of where it goes
     fillSelect($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? (saved.title || saved.text ? saved.project : null) ?? (filter.length === 1 ? filter[0] : DEFAULT));
+    chose = null;
     showAgents();
     fillSelect($("newsession"), sessionOptions(meta), given.session ?? saved.session ?? "");
     $("newsev").value = saved.severity ?? "P2";
@@ -120,6 +123,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
   box.addEventListener("cancel", keep);
   box.querySelector("form").addEventListener("input", keep);
   $("newproj").addEventListener("change", showAgents);
+  $("newagent").addEventListener("change", () => { chose = $("newagent").value; });
   $("newwrite").addEventListener("click", () => view(false));
   $("newpreview").addEventListener("click", () => view(true));
   $("newadd").addEventListener("click", () => $("newpick").click());

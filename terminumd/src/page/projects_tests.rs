@@ -2,6 +2,7 @@
 //! Projects (AC-92): names, colors, members, order and closed panes, in memory.
 
 use super::*;
+use serde_json::json;
 
 const A: &str = "tmux:local:terminum:%1";
 const B: &str = "tmux:local:terminum:%2";
@@ -19,6 +20,32 @@ fn stored(name: &str) -> (Arc<Store>, std::path::PathBuf) {
 
 fn reloaded(store: &Arc<Store>, json: &std::path::Path) -> Projects {
     Projects::load(store.clone(), json)
+}
+
+/// A store holding the projects "Keep me" (session A, server m1) and "Other" (C), read by a terminumd that started
+/// while it could not be read, and readable again: its Projects, empty.
+fn unread(name: &str) -> (Arc<Store>, std::path::PathBuf, Projects) {
+    use std::os::unix::fs::PermissionsExt;
+    let (store, json) = stored(name);
+    let mut ps = reloaded(&store, &json);
+    ps.add_new(A, Some("Keep me"), None, "/a".into()).unwrap();
+    ps.add_new(C, Some("Other"), None, "/c".into()).unwrap();
+    ps.seen("tmux:local:terminum:", Some("m1"), &[A].into_iter().collect());
+    ps.save().unwrap();
+    let path = json.with_file_name("kanban.sqlite");
+    drop(ps);
+    drop(store);
+    let mode = |m| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o000);
+    let store = Arc::new(Store::open(path.clone()));
+    let failed = reloaded(&store, &json);
+    mode(0o600);
+    assert!(failed.list().is_empty() && store.problem().is_some(), "it could not be read");
+    (store, json, failed)
+}
+
+fn names(ps: &Projects) -> Vec<String> {
+    ps.list().iter().map(|p| p.name.clone()).collect()
 }
 
 #[test]
@@ -115,23 +142,13 @@ fn ac110_a_project_is_not_lost_when_the_store_refuses_its_deletion() {
 
 #[test]
 fn ac119_projects_are_never_written_over_a_store_that_could_not_be_read() {
-    use std::os::unix::fs::PermissionsExt;
-    let (store, json) = stored("projects-failed");
-    let mut ps = reloaded(&store, &json);
-    ps.add_new(A, Some("Keep me"), None, "/a".into()).unwrap();
-    ps.seen("tmux:local:terminum:", Some("m1"), &[A].into_iter().collect());
-    ps.save().unwrap();
-    let path = json.with_file_name("kanban.sqlite");
-    drop(ps);
-    drop(store);
-    let mode = |m| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(m)).unwrap();
-    mode(0o000);
-    let store = Arc::new(Store::open(path.clone()));
-    let mut failed = reloaded(&store, &json);
-    assert!(failed.list().is_empty() && store.problem().is_some(), "it could not be read");
-    mode(0o600);
-    failed.seen("tmux:local:terminum:", Some("m1"), &HashSet::new());
-    assert!(failed.save().is_err(), "the first save after it comes back writes nothing, and reads them");
+    let (store, json, mut failed) = unread("projects-failed");
+    assert_eq!(failed.seen("tmux:local:terminum:", Some("m1"), &HashSet::new()), (false, Closed::None), "nothing judged against the empty memory");
+    assert!(failed.save().is_err() && !failed.restarted("tmux:local:terminum:", &[]), "nor written, nor mapped");
+    failed.ready().unwrap();                            // what the server's list read does first, off the workers
+    let (changed, closed) = failed.seen("tmux:local:terminum:", Some("m1"), &HashSet::new());
+    assert!(changed && closed == Closed::NotLive, "then judged against the store's: m1 is known");
+    failed.save().unwrap();
     assert_eq!(failed.list()[0].name, "Keep me", "memory holds the store's now");
     assert_eq!(reloaded(&store, &json).list()[0].name, "Keep me", "and the store still does");
     failed.rename(&failed.list()[0].id.clone(), "Kept").unwrap();
@@ -140,24 +157,22 @@ fn ac119_projects_are_never_written_over_a_store_that_could_not_be_read() {
 
 #[test]
 fn ac119_the_first_change_after_an_unread_store_comes_back_keeps_its_projects() {
-    use std::os::unix::fs::PermissionsExt;
-    let (store, json) = stored("projects-unread-change");
-    let mut ps = reloaded(&store, &json);
-    ps.add_new(A, Some("Keep me"), None, "/a".into()).unwrap();
-    let path = json.with_file_name("kanban.sqlite");
-    drop(ps);
-    drop(store);
-    let mode = |m| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(m)).unwrap();
-    mode(0o000);
-    let store = Arc::new(Store::open(path.clone()));
-    let mut failed = reloaded(&store, &json);
-    mode(0o600);
-    assert!(failed.list().is_empty() && store.problem().is_some(), "it could not be read");
+    let (store, json, mut failed) = unread("projects-unread-change");
     failed.add_new(B, Some("New"), None, "/b".into()).unwrap();
     failed.add_new(C, Some("Newer"), None, "/c".into()).unwrap();
-    let names = |ps: &Projects| ps.list().iter().map(|p| p.name.clone()).collect::<Vec<_>>();
-    assert_eq!(names(&failed), ["Keep me", "New", "Newer"], "the store's read first, the changes on top");
-    assert_eq!(names(&reloaded(&store, &json)), ["Keep me", "New", "Newer"], "and the store holds all three");
+    assert_eq!(names(&failed), ["Keep me", "Other", "New", "Newer"], "the store's read first, the changes on top");
+    assert_eq!(names(&reloaded(&store, &json)), ["Keep me", "Other", "New", "Newer"], "and the store holds them all");
+}
+
+#[test]
+fn ac119_after_an_unread_store_comes_back_a_rename_or_delete_sees_its_projects() {
+    let (store, json, mut ps) = unread("projects-unread-rename");
+    let id = |name: &str| reloaded(&store, &json).list().iter().find(|p| p.name == name).unwrap().id.clone();
+    assert!(ps.rename(&id("Other"), "Keep me").is_err(), "a name the store holds is taken (AC-110)");
+    let (store, json, mut ps) = unread("projects-unread-delete");
+    let other = reloaded(&store, &json).list()[1].id.clone();
+    ps.delete(&other).unwrap();
+    assert_eq!(names(&reloaded(&store, &json)), ["Keep me"], "deleted, not \"That project is gone.\", and the other kept");
 }
 
 #[test]

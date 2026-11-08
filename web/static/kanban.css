@@ -172,3 +172,5 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
   .ctitle { font-size: var(--fs-title); }
   .cfoot { font-size: var(--fs-label); }
 }
+/* a phone: a subtask's box takes a finger (AC-105, AC-112) */
+@media (max-width: 860px) { .cboxes .stbox { min-height: 34px; min-width: 34px; justify-content: center; } }

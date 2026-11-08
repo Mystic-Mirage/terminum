@@ -389,11 +389,12 @@ body.ctxtrace #fabs { display: flex; }
 .key[aria-pressed="true"] { background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); }
 
 /* ---------- settings menu ---------- */
-#menu { position: fixed; top: 52px; right: 8px; z-index: 30; width: min(320px, calc(100vw - 16px)); overflow-y: auto;   /* placed under its button (menu.js) */
+#menu { position: fixed; top: 52px; right: 8px; z-index: 30; width: min(420px, calc(100vw - 16px)); overflow-y: auto;   /* placed under its button (menu.js) */
   --fill: var(--chrome); border-radius: var(--r-lg); padding: 6px; box-shadow: var(--shadow-far); }   /* a .box */
 #menu .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
   padding: 10px; border-radius: var(--r-sm); text-align: left; }
 #menu .row small { display: block; color: var(--muted); font-size: 12px; }
+#menu a.row { color: inherit; text-decoration: none; }   /* Kanban: a row like the others, never the browser's blue or visited purple */
 @media (hover: hover) { #menu label.row:hover, #menu button.row:hover { background: var(--surface-3); } }
 #menu input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); flex: 0 0 auto; }
 .stepper { display: flex; align-items: center; gap: 4px; }

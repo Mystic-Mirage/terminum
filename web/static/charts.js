@@ -66,38 +66,31 @@ export function columns(box, bands, opts = {}) {
   });
   svg("line", { x1: left, x2: width, y1: y(0), y2: y(0), class: "base" }, s);
   box.replaceChildren(s);
-  return interact(box, s, marks, { select, open, width, left, band });
+  pointer(box, s, marks, { select, open, at: (e) => {
+    const r = s.getBoundingClientRect();
+    return Math.min(marks.length - 1, Math.floor((((e.clientX - r.left) / r.width) * width - left) / band));
+  } });
 }
 
-/** The keys, pointer and finger of a plot whose bands are `marks`. */
-function interact(box, s, marks, { select, open, width, left, band }) {
-  let at = -1;
-  const pick = (i) => {
-    if (i === at) return;
-    marks[at]?.classList.remove("on");
-    at = i;
-    marks[at]?.classList.add("on");
-    select(at);
-  };
-  const bandAt = (e) => {
-    const r = s.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * width;
-    return Math.min(marks.length - 1, Math.max(0, Math.floor((x - left) / band)));
-  };
-  s.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" || e.buttons) pick(bandAt(e)); });
-  s.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") pick(bandAt(e)); });
+/** The keys, pointer and finger over a plot's `marks` (a grid of `cols` when given, else a row): `at(e)` is the
+ *  mark under a pointer event or -1; select(i | -1) on hover, focus, a tap or a key, open(i) on a mouse's
+ *  press or Enter (a finger's tap only chooses: a 3px column is no target). */
+export function pointer(box, s, marks, { at, select = () => {}, open = () => {}, cols = 0 }) {
+  let i = -1;
+  const pick = (to) => { if (to === i) return; marks[i]?.classList.remove("on"); i = to; marks[i]?.classList.add("on"); select(i); };
+  const under = (e) => { const to = at(e); return to >= 0 && to < marks.length ? to : -1; };
+  s.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" || e.buttons) pick(under(e)); });
+  s.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") pick(under(e)); });
   s.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse" && document.activeElement !== box) pick(-1); });
-  // a mouse's press opens; a finger's tap chooses, its Open key opens (a 3px column is no target)
-  s.addEventListener("click", (e) => { if (e.pointerType === "mouse" || e.detail === 0) open(bandAt(e)); });
+  s.addEventListener("click", (e) => { const to = under(e); if (to >= 0 && (e.pointerType === "mouse" || e.detail === 0)) open(to); });
   box.onkeydown = (e) => {
     const n = marks.length;
-    const to = { ArrowLeft: Math.max(0, at - 1), ArrowRight: Math.min(n - 1, at + 1), Home: 0, End: n - 1 }[e.key];
-    if (to !== undefined) { e.preventDefault(); pick(at < 0 && e.key.startsWith("Arrow") ? n - 1 : to); }
-    else if (e.key === "Enter" && at >= 0) { e.preventDefault(); open(at); }
-    else if (e.key === "Escape" && at >= 0) { e.stopPropagation(); pick(-1); }
+    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, ArrowUp: cols ? i - cols : undefined, ArrowDown: cols ? i + cols : undefined, Home: 0, End: n - 1 }[e.key];
+    if (to !== undefined) { e.preventDefault(); pick(i < 0 ? (e.key === "Home" ? 0 : n - 1) : Math.min(n - 1, Math.max(0, to))); }
+    else if (e.key === "Enter" && i >= 0) { e.preventDefault(); open(i); }
+    else if (e.key === "Escape" && i >= 0) { e.stopPropagation(); pick(-1); }
   };
   box.onblur = () => pick(-1);
-  return { pick, at: () => at };
 }
 
 /** A sparkline of `values` into `box`: one line in the accent, its last point a dot. */

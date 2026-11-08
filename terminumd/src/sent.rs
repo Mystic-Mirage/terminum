@@ -59,9 +59,6 @@ impl Sent {
         self.root.join(id(host, path))
     }
 
-    fn quotes_file(&self, host: &str, path: &str) -> PathBuf {
-        self.dir(host, path).join("quotes.json")
-    }
 
     /// Where the project's agents' answers ended (page/answers.rs), beside its sent history.
     fn ends_file(&self, host: &str, path: &str) -> PathBuf {
@@ -147,7 +144,7 @@ impl Sent {
     /// so it counts on across terminumd's restarts. Blocking.
     pub fn next_question(&self, host: &str, path: &str, key: &str, sent: u64) -> Result<u64, String> {
         let _w = self.write.lock();
-        let file = self.quotes_file(host, path);
+        let file = self.dir(host, path).join("quotes.json");
         let mut given = read_object(&file);
         let n = sent.max(given[key].as_u64().unwrap_or(0)) + 1;
         given[key] = json!(n);

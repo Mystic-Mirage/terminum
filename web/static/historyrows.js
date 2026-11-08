@@ -5,27 +5,15 @@
 // its highlight's marks (\u0002 … \u0003) become <mark> here, nothing of it is markup.
 import { el } from "./listparts.js";
 import { icon } from "./icons.js";
+import { agentMark } from "./nav.js";
 import { sessionUrl } from "./tasklink.js";
 import { copyText } from "./touchcopy.js";
 import { toast } from "./toast.js";
-import { api, inkOf, timeLabel } from "./msgpage.js";
+import { api, dotOf, inkOf, projectLabel, timeLabel } from "./msgpage.js";
 
 const HIT = "\u0002", HIT_END = "\u0003";
-const MARKS = { claude: ["agents/claude.svg", "Claude Code"], codex: ["agents/codex.svg", "Codex"] };
 /** Lines a closed row shows. */
 const LINES = 3;
-
-/** The agent's mark (the session list's), a shell's terminal tile. */
-function mark(agent) {
-  const [src, name] = MARKS[agent] ?? [];
-  const wrap = el("span", "agmark");
-  wrap.title = name ?? (agent ? agent : "Shell");
-  if (!src) { wrap.classList.add("term"); wrap.append(icon("terminal", 10)); return wrap; }
-  const img = Object.assign(document.createElement("img"), { src, alt: "", width: 14, height: 14, draggable: false });
-  img.addEventListener("error", () => { wrap.classList.add("term"); img.replaceWith(icon("terminal", 10)); });
-  wrap.append(img);
-  return wrap;
-}
 
 /** `text` with terminumd's hit marks as <mark>s, into `box`; what goes before the first hit's line is left
  *  out when `short` and that line is past the first LINES (an ellipsis says so). */
@@ -67,11 +55,9 @@ export function messageRow(it, { projects, onPick }) {
   const p = projects.get(it.project ?? "") ?? null;
   row.style.setProperty("--dot", inkOf(p));
   const head = el("div", "mhead");
-  head.append(mark(it.agent), el("span", "mtitle2", it.title || (it.agent ? "Agent" : "Shell")));
+  head.append(agentMark({ agent: it.agent }), el("span", "mtitle2", it.title || (it.agent ? "Agent" : "Shell")));
   const proj = el("span", "mproj");
-  const dot = el("span", "pdot");
-  dot.style.setProperty("--proj", inkOf(p));
-  proj.append(dot, el("span", "pname", it.project_name || p?.name || (it.project ? "Gone project" : "No project")));
+  proj.append(dotOf(inkOf(p)), el("span", "pname", it.project_name || projectLabel(p ?? { id: it.project })));
   head.append(proj);
   if (it.sender === "dispatcher") {
     const tag = el("span", "mbot");

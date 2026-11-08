@@ -179,23 +179,6 @@ fn typed_at(t: &mut Vec<(String, String, Instant)>, key: &str, prompt: &str) -> 
     t.iter().position(|(k, text, _)| k == key && first(text) == wanted)
 }
 
-#[cfg(test)]
-mod typed_tests {
-    /// A prompt Dispatcher typed is its message (AC-147) and still its own for the gate (§9), once.
-    #[tokio::test]
-    async fn ac147_a_prompt_dispatcher_typed_is_told_apart_and_left_for_its_gate() {
-        let (root, app) = crate::testutil::app("dispatcher-typed");
-        let d = &app.dispatcher;
-        d.remember_typed("k1", "T-0412: do it");
-        assert!(d.typed_it("k1", "T-0412:  do it") && !d.typed_it("k2", "T-0412: do it") && !d.typed_it("k1", "my own words"));
-        assert!(d.typed_it("k1", "T-0412: do it"), "asking takes nothing");
-        assert!(d.was_typed("k1", "T-0412: do it"));
-        assert!(!d.was_typed("k1", "T-0412: do it") && !d.typed_it("k1", "T-0412: do it"), "the gate's once");
-        drop(app);
-        std::fs::remove_dir_all(root).unwrap();
-    }
-}
-
 /// The test clock (§9 Times): only with a test's own app folder.
 pub fn scale() -> i64 {
     std::env::var("TM_APP_DIR").ok().and_then(|_| std::env::var("TM_TEST_CLOCK_SCALE").ok()).and_then(|s| s.parse().ok()).filter(|s: &i64| *s > 0).unwrap_or(1)
@@ -231,5 +214,22 @@ fn say(tx: &rusqlite::Transaction, run: &runs::Run, words: &str) -> Result<(), S
 fn told_all(app: &crate::app::Shared, run: &runs::Run) {
     for id in &run.ids {
         crate::tasks::api::told(app, id);
+    }
+}
+
+#[cfg(test)]
+mod typed_tests {
+    /// A prompt Dispatcher typed is its message (AC-147) and still its own for the gate (§9), once.
+    #[tokio::test]
+    async fn ac147_a_prompt_dispatcher_typed_is_told_apart_and_left_for_its_gate() {
+        let (root, app) = crate::testutil::app("dispatcher-typed");
+        let d = &app.dispatcher;
+        d.remember_typed("k1", "T-0412: do it");
+        assert!(d.typed_it("k1", "T-0412:  do it") && !d.typed_it("k2", "T-0412: do it") && !d.typed_it("k1", "my own words"));
+        assert!(d.typed_it("k1", "T-0412: do it"), "asking takes nothing");
+        assert!(d.was_typed("k1", "T-0412: do it"));
+        assert!(!d.was_typed("k1", "T-0412: do it") && !d.typed_it("k1", "T-0412: do it"), "the gate's once");
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

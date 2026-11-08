@@ -6,7 +6,7 @@ import * as signin from "./signin.js";
 import { pageColors } from "./contrast.js";
 import { withScheme } from "./schemes.js";
 import { api } from "./kanbanutil.js";
-import { colored, projectInk } from "./listparts.js";
+import { el, projectInk } from "./listparts.js";
 
 export { api };
 export const $ = (id) => document.getElementById(id);
@@ -23,7 +23,31 @@ signin.loadCss();
 
 /** A project's ink from the session list's color (Default and gone ones: the muted). */
 export const inkOf = (p) => projectInk(p && p.color !== null && p.color !== undefined ? { color: p.color } : null);
-export const hasColor = (p) => colored(p) && p.color !== null && p.color !== undefined;
+/** The project of messages sent in no project, in both pages' addresses (terminumd's search.rs NONE). */
+export const NONE = "-";
+/** A project's name; one the session list no longer has, or none. */
+export const projectLabel = (p) => p?.name || (p?.id ? "Gone project" : "No project");
+/** A dot in `color`. */
+export function dotOf(color) {
+  const d = el("span", "pdot");
+  d.style.setProperty("--proj", color);
+  return d;
+}
+
+/** The single choice menu of a `.pick`: rows {label, on, pick, color?}; a choice closes it. */
+export function menu(details, rows) {
+  const box = details.querySelector(".box > .rows") ?? details.querySelector(".box");
+  box.replaceChildren(...rows.map(({ label, on, pick, color }) => {
+    const b = el("button");
+    b.type = "button";
+    b.setAttribute("role", "menuitemradio");
+    b.setAttribute("aria-checked", String(on));
+    if (color) b.append(dotOf(color));
+    b.append(el("span", "pname", label));
+    b.addEventListener("click", () => { details.open = false; pick(); });
+    return b;
+  }));
+}
 
 /** The address's query as an object, and back: only what is set, in a fixed order, so links compare equal. */
 export function readQuery(keys) {
@@ -60,7 +84,7 @@ export function dayLabel(d) {
 export const shortDay = (d) => { const t = dayDate(d); return `${t.getDate()} ${MONTHS[t.getMonth()]}`; };
 export const monthOf = (d) => MONTHS[dayDate(d).getMonth()];
 
-const hm = (t) => `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+const hm = (t) => clock(t.getHours() * 60 + t.getMinutes());
 /** A message's time: "14:32" today, "Tue 14:32" this week, "3 Nov 14:32", "3 Nov 2025". */
 export function timeLabel(ms) {
   const t = new Date(ms), d = dayOf(t), age = (Date.now() - ms) / 86_400_000;
@@ -70,7 +94,9 @@ export function timeLabel(ms) {
   return `${shortDay(d)} ${t.getFullYear()}`;
 }
 
-/** Minutes as "4.2 h" (active time is a lower bound: a tenth of an hour, never minutes). */
+/** Minutes of a day as "09:40". */
+export const clock = (min) => `${String(Math.floor(min / 60) % 24).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+/** Milliseconds as "4.2 h" (active time is a lower bound: a tenth of an hour, never minutes). */
 export const hours = (ms) => (ms >= 3_600_000 ? `${(ms / 3_600_000).toFixed(1)} h` : `${Math.round(ms / 60_000)} min`);
 /** A count, with thousands kept short past 9,999. */
 export const count = (n) => (n > 9999 ? `${(n / 1000).toFixed(1)}k` : n.toLocaleString("en-US"));

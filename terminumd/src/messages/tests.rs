@@ -94,7 +94,7 @@ fn ac151_ranked_by_relevance_newest_by_a_cursor_and_filtered() {
     assert_eq!(texts(&s.with(|tx| page(tx, &agents, false, None)).unwrap()), ["fix the board test"]);
     let project = Filter { projects: vec!["p1".into()], ..Default::default() };
     assert_eq!(s.with(|tx| page(tx, &project, false, None)).unwrap()["total"], 1);
-    let none = Filter { projects: vec!["".into()], ..Default::default() };
+    let none = Filter { projects: vec![search::NONE.into()], ..Default::default() };
     assert_eq!(s.with(|tx| page(tx, &none, false, None)).unwrap()["total"], 3, "no project");
     // newest first, a page at a time by its cursor, steady while more come
     let many: Vec<Message> = (0..(search::PAGE as i64 + 5)).map(|i| msg(10_000 + i, "k3", &format!("step {i}"))).collect();
@@ -104,7 +104,7 @@ fn ac151_ranked_by_relevance_newest_by_a_cursor_and_filtered() {
     put(&s, &[msg(99_000, "k3", "a newer one")]);
     let two = s.with(|tx| page(tx, &Filter::default(), false, one["next"].as_str())).unwrap();
     assert_eq!(texts(&two)[0], "step 4", "the cursor goes on where the page ended");
-    assert_eq!(two["items"].as_array().unwrap().len(), 9);
+    assert_eq!((two["items"].as_array().unwrap().len(), two["total"].is_null()), (9, true), "counted with the first page only");
     assert!(two["next"].is_null());
     let ranked = s.with(|tx| page(tx, &f("step"), true, None)).unwrap();
     let rest = s.with(|tx| page(tx, &f("step"), true, ranked["next"].as_str())).unwrap();
@@ -121,7 +121,8 @@ fn ac151_days_in_local_time_and_a_message_s_neighbours() {
     let days = s.with(|tx| search::days(tx, &Filter { from: Some("2026-11-03".into()), ..Default::default() })).unwrap();
     assert_eq!(serde_json::json!(days), serde_json::json!([{"day": "2026-11-02", "n": 3}, {"day": "2026-11-03", "n": 1}]), "the strip leaves the dates out");
     let tuesday = Filter { from: Some("2026-11-03".into()), to: Some("2026-11-03".into()), ..Default::default() };
-    assert_eq!(texts(&s.with(|tx| page(tx, &tuesday, false, None)).unwrap()), ["tuesday"]);
+    let got = s.with(|tx| page(tx, &tuesday, false, None)).unwrap();
+    assert_eq!((texts(&got), got["items"][0]["day"].as_str()), (vec!["tuesday".to_string()], Some("2026-11-03")), "its local day, as the strip counts");
     let bad = Filter { from: Some("2026-11-03'; DROP".into()), ..Default::default() };
     assert_eq!(s.with(|tx| page(tx, &bad, false, None)).unwrap()["total"], 4, "a day that is not one is no filter");
     let c = s.with(|tx| search::context(tx, ids[2], 3, 3)).unwrap().unwrap();

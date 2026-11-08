@@ -42,8 +42,7 @@ pub fn dashboard(tx: &Transaction, now_ms: i64, days: i64, project: Option<&str>
     let a = summarize(&msgs, &inputs, &cur, colors);
     let b = summarize(&msgs, &inputs, &prev, colors);
     let had_before = msgs.iter().any(|m| m.local.div_euclid(DAY) <= prev.hi);
-    Ok(json!({"days": days, "today": civil(today), "offset_min": (now - now_ms) / 60_000,
-              "now": a, "before": if had_before { b["tiles"].clone() } else { Value::Null }}))
+    Ok(json!({"now": a, "before": if had_before { b["tiles"].clone() } else { Value::Null }}))
 }
 
 struct Window { lo: i64, hi: i64, until: i64 }
@@ -56,17 +55,14 @@ impl Window {
 }
 
 fn read(tx: &Transaction, since: i64, project: Option<&str>) -> Result<(Vec<Msg>, Vec<Input>), String> {
-    let only = if project.is_some() { "AND coalesce(project, '') = ?2" } else { "" };
-    let p = project.unwrap_or("").to_string();
+    let only = "AND (?2 IS NULL OR coalesce(project, '') = ?2)";
     let mut st = tx.prepare(&format!("SELECT {}, coalesce(project, ''), coalesce(project_name, ''), coalesce(agent, ''), pane FROM messages
                                       WHERE sender = 'human' AND at >= ?1 {only} ORDER BY at", local("at"))).map_err(sql)?;
-    let row = |r: &rusqlite::Row| Ok(Msg { local: r.get(0)?, project: r.get(1)?, name: r.get(2)?, agent: r.get(3)?, pane: r.get(4)? });
-    let msgs = if project.is_some() { st.query_map(rusqlite::params![since, p], row) } else { st.query_map(rusqlite::params![since], row) }
+    let msgs = st.query_map(rusqlite::params![since, project], |r| Ok(Msg { local: r.get(0)?, project: r.get(1)?, name: r.get(2)?, agent: r.get(3)?, pane: r.get(4)? }))
         .map_err(sql)?.collect::<Result<Vec<_>, _>>().map_err(sql)?;
     let mut st = tx.prepare(&format!("SELECT {}, {}, coalesce(device, ''), component = 'page' AND (kind = 'paste' OR (kind = 'typed' AND text LIKE '%<Enter>'))
                                       FROM inputs WHERE sender = 'human' AND at >= ?1 {only} ORDER BY at", local("at"), local("ended"))).map_err(sql)?;
-    let row = |r: &rusqlite::Row| Ok(Input { local: r.get(0)?, ended: r.get(1)?, device: r.get(2)?, sent: r.get(3)? });
-    let inputs = if project.is_some() { st.query_map(rusqlite::params![since, p], row) } else { st.query_map(rusqlite::params![since], row) }
+    let inputs = st.query_map(rusqlite::params![since, project], |r| Ok(Input { local: r.get(0)?, ended: r.get(1)?, device: r.get(2)?, sent: r.get(3)? }))
         .map_err(sql)?.collect::<Result<Vec<_>, _>>().map_err(sql)?;
     Ok((msgs, inputs))
 }
@@ -168,15 +164,18 @@ fn summarize(msgs: &[Msg], inputs: &[Input], w: &Window, colors: &HashMap<String
     let active_days: Vec<usize> = (0..n_days).filter(|&i| count[i] > 0 || active[i] > 0).collect();
     let total_active: i64 = active.iter().sum();
     let sent_by_device: i64 = devices.values().sum();
+    let worked: Vec<&Vec<[i64; 2]>> = spans.iter().filter(|s| !s.is_empty()).collect();
     let tiles = json!({
         "messages": ms.len(), "active_ms": total_active, "active_days": active_days.len(), "days": n_days,
         "per_hour": if total_active > 0 { ms.len() as f64 / (total_active as f64 / HOUR as f64) } else { 0.0 },
         "sessions": median(active_days.iter().map(|&i| panes[i].len() as i64).collect()),
         "peak": median(active_days.iter().map(|&i| peak[i]).collect()),
+        // a usual working day: the medians of the first and the last minute of the days with any
+        "starts": median(worked.iter().map(|s| s[0][0]).collect()), "ends": median(worked.iter().map(|s| s[s.len() - 1][1]).collect()),
         "phone": if sent_by_device > 0 { Some(*devices.get("web").unwrap_or(&0) as f64 / sent_by_device as f64) } else { None },
     });
     json!({"tiles": tiles, "series": series, "stacked": stacked, "projects": projects, "heat": heat,
-           "kinds": kinds, "devices": devices})
+           "kinds": kinds})
 }
 
 /// `YYYY-MM-DD` of day `z` since 1970-01-01 (Howard Hinnant's civil_from_days).

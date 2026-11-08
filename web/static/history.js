@@ -5,14 +5,14 @@
 // Every choice is in the address: Back undoes one, a link shows the same.
 import { el } from "./listparts.js";
 import { columns } from "./charts.js";
+import { showError } from "./kanbanutil.js";
 import { messageRow } from "./historyrows.js";
-import { $, addDays, api, dayLabel, inkOf, loadMeta, monthOf, readQuery, shortDay, today, writeQuery } from "./msgpage.js";
+import { $, NONE, addDays, api, dayLabel, inkOf, loadMeta, menu, monthOf, projectLabel, readQuery, shortDay, today, writeQuery } from "./msgpage.js";
 
 const KEYS = ["q", "sort", "from", "to", "project", "sender", "kind"];
-const NONE = "-";                       // the project of messages sent in no project (terminumd's "")
 const WAIT = 200;                       // typing: a search this long after the last key
 let state = readQuery(KEYS), meta = { projects: [] }, projects = new Map();
-let next = null, loading = 0, typing = 0, items = [], strip = [];
+let next = null, loading = 0, typing = 0, strip = [];
 
 const hasWords = () => /[\p{L}\p{N}]{2}/u.test(state.q.replace(/(^|\s)-\S*/g, ""));
 const best = () => hasWords() && state.sort !== "new";
@@ -34,7 +34,7 @@ function drawKeys() {
     : "All kept";
   setKey("fwhen", when, !!(state.from || state.to));
   const p = projects.get(state.project);
-  setKey("fproject", !state.project ? "All projects" : state.project === NONE ? "No project" : p?.name || "Gone project", !!state.project);
+  setKey("fproject", state.project ? projectLabel(p ?? { id: state.project === NONE ? "" : state.project }) : "All projects", !!state.project);
   setKey("fsender", { human: "You", dispatcher: "Dispatcher" }[state.sender] ?? "You and Dispatcher", !!state.sender);
   setKey("fkind", { agent: "Agents", shell: "Shells" }[state.kind] ?? "Agents and shells", !!state.kind);
   for (const b of $("hsort").querySelectorAll("button")) {
@@ -60,31 +60,17 @@ function change(next, push = true) {
   load();
 }
 
-/** A single choice's menu: rows [label, the change it makes, whether it is the state's, extra?]. */
-function menu(id, rows) {
-  const box = $(id).querySelector(".box > .rows") ?? $(id).querySelector(".box");
-  box.replaceChildren(...rows.map(([label, next, on, extra]) => {
-    const b = el("button");
-    b.type = "button";
-    b.setAttribute("role", "menuitemradio");
-    b.setAttribute("aria-checked", String(on));
-    if (extra) b.append(extra);
-    b.append(el("span", "pname", label));
-    b.addEventListener("click", () => { $(id).open = false; change(next); });
-    return b;
-  }));
-}
-const one = (key, rows) => rows.map(([value, label, extra]) => [label, { [key]: value }, (state[key] ?? "") === value, extra]);
+/** A filter's menu of `key`'s values: [value, label, color?]. */
+const one = (key, rows) => rows.map(([value, label, color]) => ({ label, color, on: (state[key] ?? "") === value, pick: () => change({ [key]: value }) }));
 
 function drawMenus() {
-  const dot = (p) => { const d = el("span", "pdot"); d.style.setProperty("--proj", inkOf(p)); return d; };
-  menu("fproject", one("project", [["", "All projects"], ...meta.projects.map((p) => [p.id || NONE, `${p.name || (p.id ? "Gone project" : "No project")} · ${p.n.toLocaleString("en-US")}`, dot(p)])]));
-  const t = today(), last = (n) => [`Last ${n} days`, { from: addDays(t, 1 - n), to: t }, state.from === addDays(t, 1 - n) && state.to === t];
-  menu("fwhen", [["All kept", { from: "", to: "" }, !state.from && !state.to], ["Today", { from: t, to: t }, state.from === t && state.to === t], last(7), last(30)]);
+  menu($("fproject"), one("project", [["", "All projects"], ...meta.projects.map((p) => [p.id || NONE, `${projectLabel(p)} · ${p.n.toLocaleString("en-US")}`, inkOf(p)])]));
+  const t = today(), days = (label, from, to) => ({ label, on: state.from === from && state.to === to, pick: () => change({ from, to }) });
+  menu($("fwhen"), [days("All kept", "", ""), days("Today", t, t), days("Last 7 days", addDays(t, -6), t), days("Last 30 days", addDays(t, -29), t)]);
   $("hfrom").value = state.from;
   $("hto").value = state.to;
-  menu("fsender", one("sender", [["", "You and Dispatcher"], ["human", "You"], ["dispatcher", "Dispatcher"]]));
-  menu("fkind", one("kind", [["", "Agents and shells"], ["agent", "Agents' prompts"], ["shell", "Shells' commands"]]));
+  menu($("fsender"), one("sender", [["", "You and Dispatcher"], ["human", "You"], ["dispatcher", "Dispatcher"]]));
+  menu($("fkind"), one("kind", [["", "Agents and shells"], ["agent", "Agents' prompts"], ["shell", "Shells' commands"]]));
 }
 
 /** The first page for the state (a newer ask wins), or the next one. */
@@ -95,20 +81,20 @@ async function load(more = false) {
   try {
     const page = await api(`/api/messages?${query(more ? next : null)}`);
     if (mine !== loading) return;
-    $("herr").hidden = true;
+    showError($("herr"), "");
     $("results").classList.remove("stale");
-    if (!more) { items = []; $("results").replaceChildren(); strip = page.days ?? []; drawStrip(); }
+    if (!more) { $("results").replaceChildren(); strip = page.days ?? []; drawStrip(); }
     next = page.next;
-    items.push(...page.items);
     drawRows(page.items, more);
-    const total = page.total ?? 0;
-    $("hsum").textContent = total ? `${total.toLocaleString("en-US")} ${total === 1 ? "message" : "messages"}${page.capped ? " · showing the best 1,000" : ""}` : "";
+    if (!more) {                                          // terminumd counts with the first page
+      const total = page.total ?? 0;
+      $("hsum").textContent = total ? `${total.toLocaleString("en-US")} ${total === 1 ? "message" : "messages"}${page.capped ? " · showing the best 1,000" : ""}` : "";
+      if (!total) empty();
+    }
     $("more").hidden = !next;
-    if (!total) empty();
   } catch (e) {
     if (mine !== loading) return;
-    $("herr").textContent = `The messages could not be read: ${e.message}`;
-    $("herr").hidden = false;
+    showError($("herr"), `The messages could not be read: ${e.message}`);
     $("results").classList.add("stale");
     $("hsum").textContent = "";
   } finally {
@@ -135,8 +121,7 @@ function drawRows(list, more) {
   const box = $("results");
   let day = more ? box.lastElementChild?.dataset.day : null;
   for (const it of list) {
-    const d = new Date(it.ms);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const key = it.day;                               // terminumd's local day, as the strip counts
     if (!best() && key !== day) {
       day = key;
       const n = strip.find((s) => s.day === key)?.n;
@@ -221,8 +206,7 @@ new ResizeObserver(() => { clearTimeout(stripWait); stripWait = setTimeout(drawS
 try {
   meta = await loadMeta();
 } catch (e) {
-  $("herr").textContent = `The filters could not be read: ${e.message}`;
-  $("herr").hidden = false;
+  showError($("herr"), `The filters could not be read: ${e.message}`);
 }
 projects = new Map(meta.projects.map((p) => [p.id || NONE, p]));
 drawMenus();

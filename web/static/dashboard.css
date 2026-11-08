@@ -1,12 +1,9 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* The Dashboard (terminum.md AC-152): figures in tiles, then cards of charts, the output widget's look (a surface a
    step over the page, its light edge, no grain: it scrolls). Marks take the theme's colors (msgpage.css). */
-#dtools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--gutter) 0; }
 #dperiod, #dproject { flex: none; }
 #dproject summary { max-width: 220px; }
 #dproject .box { min-width: min(280px, calc(100vw - var(--sp-6) * 2)); }
-.menurows button[aria-checked="true"] { color: var(--accent); }
-.menurows .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #dnote { min-height: 0; }
 #derr { padding: var(--sp-2) var(--gutter) 0; }
 #tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--sp-3); padding: var(--sp-3) var(--gutter) 0; }

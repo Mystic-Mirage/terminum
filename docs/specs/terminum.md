@@ -974,9 +974,9 @@ A forwarded request may do everything but what AC-10 refuses it, so: the page, `
 | `GET /api/hello?n=&id=` | the proof (no sign-in): `{"proof", "boot"}`, both made and used as AC-09 says | AC-09 |
 | `GET /custom.css`, `/api/settings` | the user's stylesheet and the page settings | AC-19 |
 | `GET /history/`, `/dashboard/` | the Message history and the Dashboard | AC-151, AC-152 |
-| `GET /api/messages?q=&sort=best\|new&from=&to=&project=&sender=&kind=&cursor=` | a page of 50 messages: `{items, next, total, words, capped}`, the first with `days` | AC-151 |
+| `GET /api/messages?q=&sort=best\|new&from=&to=&project=&sender=&kind=&cursor=` | a page of 50 messages: `{items, next, capped}`, the first with `total` and `days`; `project` ids comma-separated, `-` for none | AC-151 |
 | `GET /api/messages/meta`, `/api/messages/{id}/context` | the filters' projects, first day, hosts, the theme; a message's neighbours in its pane | AC-151 |
-| `GET /api/dashboard?days=&project=` | the period's figures and series, and the period before's figures | AC-152 |
+| `GET /api/dashboard?days=&project=` | the period's figures and series, and the period before's figures; `project` as above | AC-152 |
 | `GET /auth/check`, `POST /auth/login`, `POST /auth/logout` | 204 when signed in, else 401 with `login` `password` or `none`; the sign-in; this browser's sign-out | AC-09 |
 | `GET /health`, `POST /password`, `POST /signout` on `terminumd.sock` | the CLI | terminum-lifecycle.md AC-08, AC-09 |
 | `POST /folders?wait=<s>` on `terminumd.sock`: opens each protected folder (one run at a time, joined by a second request), answers within `wait` s `{service, done, folders: [{name, path, state: allowed\|refused\|absent\|error\|asking\|pending, error}], tmux_started_by}` | `terminum install`, `terminum folders` | terminum-lifecycle.md AC-08 |

@@ -3,8 +3,8 @@
 // column, midnight on top as a calendar's, a thin line from the first to the last event and the
 // active stretches solid on it), the hour × weekday heat map, the projects ranked.
 import { el } from "./listparts.js";
-import { svg } from "./charts.js";
-import { WEEK } from "./msgpage.js";
+import { pointer, svg } from "./charts.js";
+import { WEEK, dotOf, projectLabel } from "./msgpage.js";
 
 /** Working days: `series` [{spans: [[from, to] minutes]}], `label(i)` under a column; select(i) as charts.js's. */
 export function workingDays(box, series, { label = () => "", select = () => {} } = {}) {
@@ -30,7 +30,7 @@ export function workingDays(box, series, { label = () => "", select = () => {} }
     marks.push(svg("rect", { x: left + i * band, y: 0, width: band, height: top + plotH, class: "hit" }, s));
   });
   box.replaceChildren(s);
-  return pointer(box, s, marks, select, (e, r) => Math.floor(((e.clientX - r.left) / r.width * width - left) / band));
+  pointer(box, s, marks, { select, at: (e) => { const r = s.getBoundingClientRect(); return Math.floor(((e.clientX - r.left) / r.width * width - left) / band); } });
 }
 
 /** The heat map: `heat[weekday 0 = Sunday][hour]` minutes, Monday first; select({wd, hour} | null). */
@@ -57,10 +57,7 @@ export function heatMap(box, heat, { select = () => {} } = {}) {
   });
   box.replaceChildren(s);
   const info = (i) => (i < 0 ? null : { wd: Math.floor(i / cols), hour: (i % cols) * per, hours: per, minutes: rows[Math.floor(i / cols)][i % cols] });
-  return pointer(box, s, marks, (i) => select(info(i)), (e) => {
-    const m = document.elementFromPoint(e.clientX, e.clientY)?.closest?.("rect.cell");
-    return m ? marks.indexOf(m) : -1;
-  }, cols);
+  pointer(box, s, marks, { cols, select: (i) => select(info(i)), at: (e) => marks.indexOf(document.elementFromPoint(e.clientX, e.clientY)?.closest?.("rect.cell")) });
 }
 
 /** Projects ranked: [{id, name, n, color}], the first `most` and the rest as Other; a row presses `open(p)`. */
@@ -70,32 +67,14 @@ export function ranked(box, projects, { most = 8, ink, open, other = () => {} })
   const row = (name, n, color, onPress) => {
     const b = el("button", "rrow");
     b.type = "button";
-    const dot = el("span", "pdot");
-    dot.style.setProperty("--proj", color);
     const bar = el("span", "rbar");
     bar.style.setProperty("--w", `${(n / max) * 100}%`);
     bar.style.setProperty("--proj", color);
-    b.append(dot, el("span", "rname", name), bar, el("span", "rnum", `${Math.round((n / total) * 100)}%`), el("span", "rnum", n.toLocaleString("en-US")));
+    b.append(dotOf(color), el("span", "rname", name), bar, el("span", "rnum", `${Math.round((n / total) * 100)}%`), el("span", "rnum", n.toLocaleString("en-US")));
     b.addEventListener("click", onPress);
     return b;
   };
-  const rows = shown.map((p) => row(p.name || (p.id ? "Gone project" : "No project"), p.n, ink(p), () => open(p)));
+  const rows = shown.map((p) => row(projectLabel(p), p.n, ink(p), () => open(p)));
   if (rest.length) rows.push(row(`Other (${rest.length})`, rest.reduce((s, p) => s + p.n, 0), "var(--faint)", other));
   box.replaceChildren(...(rows.length ? rows : [el("p", "msay", "Nothing sent in this period.")]));
-}
-
-/** Pointer and keys over `marks` (a grid of `cols` when given): select(i | -1). */
-function pointer(box, s, marks, select, at, cols = 0) {
-  let i = -1;
-  const pick = (to) => { if (to === i) return; marks[i]?.classList.remove("on"); i = to; marks[i]?.classList.add("on"); select(i); };
-  s.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" || e.buttons) { const r = s.getBoundingClientRect(); const to = at(e, r); pick(to >= 0 && to < marks.length ? to : -1); } });
-  s.addEventListener("pointerdown", (e) => { const r = s.getBoundingClientRect(); const to = at(e, r); pick(to >= 0 && to < marks.length ? to : -1); });
-  s.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse" && document.activeElement !== box) pick(-1); });
-  box.onkeydown = (e) => {
-    const n = marks.length;
-    const to = { ArrowLeft: i - 1, ArrowRight: i + 1, ArrowUp: cols ? i - cols : undefined, ArrowDown: cols ? i + cols : undefined, Home: 0, End: n - 1 }[e.key];
-    if (to !== undefined) { e.preventDefault(); pick(i < 0 ? (e.key === "ArrowLeft" ? n - 1 : 0) : Math.min(n - 1, Math.max(0, to))); }
-    else if (e.key === "Escape" && i >= 0) { e.stopPropagation(); pick(-1); }
-  };
-  box.onblur = () => pick(-1);
 }

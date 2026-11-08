@@ -8,8 +8,10 @@ use rusqlite::types::Value as Sql;
 use rusqlite::Transaction;
 use serde_json::{json, Value};
 
-use super::{item, sql, COLUMNS};
+use super::{columns, item, sql};
 
+/// The project id of messages sent in no project, in addresses (the store keeps NULL).
+pub const NONE: &str = "-";
 /// Rows a page; the most best matches paged through.
 pub const PAGE: usize = 50;
 pub const MOST: usize = 1000;
@@ -25,7 +27,7 @@ pub struct Filter {
     /// local days, `YYYY-MM-DD`, both inclusive
     pub from: Option<String>,
     pub to: Option<String>,
-    /// session list projects' ids; "" for none
+    /// session list projects' ids; NONE for none
     pub projects: Vec<String>,
     /// `human` or `dispatcher`
     pub sender: Option<String>,
@@ -107,7 +109,7 @@ impl Filter {
         if !self.projects.is_empty() {
             let mut any = Vec::new();
             for p in &self.projects {
-                args.push(Sql::Text(p.clone()));
+                args.push(Sql::Text(if p == NONE { String::new() } else { p.clone() }));
                 any.push(format!("coalesce(m.project, '') = ?{}", args.len()));
             }
             parts.push(format!("({})", any.join(" OR ")));
@@ -130,11 +132,15 @@ impl Filter {
 
 /// A page of the list: `best` ranks by BM25 (when there are words), else newest first; `cursor`
 /// the last page's `next`. Each item has its text, with HIT marks around the words' hits
-/// (`hl`) when there are words. {items, next, total, words}
+/// (`hl`) when there are words. {items, next, total (the first page's), capped}
 pub fn page(tx: &Transaction, f: &Filter, best: bool, cursor: Option<&str>) -> Result<Value, String> {
     let (from, mut args, words) = f.from(true);
-    let total: i64 = tx.query_row(&format!("SELECT count(*) {from}"), rusqlite::params_from_iter(args.iter()), |r| r.get(0)).map_err(sql)?;
-    let cols = COLUMNS.split(", ").map(|c| format!("m.{c}")).collect::<Vec<_>>().join(", ");
+    // counted once, with the first page
+    let total: Option<i64> = match cursor {
+        None => Some(tx.query_row(&format!("SELECT count(*) {from}"), rusqlite::params_from_iter(args.iter()), |r| r.get(0)).map_err(sql)?),
+        Some(_) => None,
+    };
+    let cols = columns("m.");
     let hl = if words { format!(", highlight(messages_fts, 0, char({}), char({}))", HIT as u32, HIT_END as u32) } else { String::new() };
     let ranked = best && words;
     let (order, offset) = if ranked {
@@ -155,7 +161,7 @@ pub fn page(tx: &Transaction, f: &Filter, best: bool, cursor: Option<&str>) -> R
     let mut items: Vec<Value> = st.query_map(rusqlite::params_from_iter(args.iter()), |r| {
         let mut v = item(r)?;
         if words {
-            v["hl"] = json!(r.get::<_, String>(13)?);
+            v["hl"] = json!(r.get::<_, String>(super::N_COLUMNS)?);
         }
         Ok(v)
     }).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
@@ -166,7 +172,7 @@ pub fn page(tx: &Transaction, f: &Filter, best: bool, cursor: Option<&str>) -> R
         (true, Some(_)) if ranked => json!((offset + limit).to_string()),
         (true, Some(last)) => json!(format!("{}:{}", last["ms"], last["id"])),
     };
-    Ok(json!({"items": items, "next": next, "total": total, "words": words, "capped": ranked && total as usize > MOST}))
+    Ok(json!({"items": items, "next": next, "total": total, "capped": ranked && total.is_some_and(|t| t as usize > MOST)}))
 }
 
 /// Messages a local day of the filtered list, dates left out (the day strip): [{day, n}], oldest first.
@@ -182,7 +188,7 @@ pub fn context(tx: &Transaction, id: i64, before: usize, after: usize) -> Result
     let Some(it) = super::by_id(tx, id)? else { return Ok(None) };
     let (pane, at) = (it["key"].as_str().unwrap_or("").to_string(), it["ms"].as_i64().unwrap_or(0));
     let side = |cmp: &str, order: &str, most: usize| -> Result<Vec<Value>, String> {
-        let mut st = tx.prepare(&format!("SELECT {COLUMNS} FROM messages WHERE pane = ?1 AND (at, id) {cmp} (?2, ?3) ORDER BY at {order}, id {order} LIMIT ?4")).map_err(sql)?;
+        let mut st = tx.prepare(&format!("SELECT {} FROM messages WHERE pane = ?1 AND (at, id) {cmp} (?2, ?3) ORDER BY at {order}, id {order} LIMIT ?4", columns(""))).map_err(sql)?;
         let rows = st.query_map(rusqlite::params![pane, at, id, most as i64], item).map_err(sql)?;
         rows.collect::<Result<_, _>>().map_err(sql)
     };
@@ -191,13 +197,11 @@ pub fn context(tx: &Transaction, id: i64, before: usize, after: usize) -> Result
     Ok(Some(json!({"item": it, "before": earlier, "after": side(">", "ASC", after)?})))
 }
 
-/// What the filters offer: the projects with their counts, most first; the first day kept; the hosts.
+/// What the filters offer: the projects with their counts, most first; the first day kept.
 pub fn meta(tx: &Transaction) -> Result<Value, String> {
     let mut st = tx.prepare("SELECT coalesce(project, ''), max(project_name), count(*) AS n FROM messages GROUP BY coalesce(project, '') ORDER BY n DESC").map_err(sql)?;
     let projects: Vec<Value> = st.query_map([], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, Option<String>>(1)?, "n": r.get::<_, i64>(2)?})))
         .map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
     let first: Option<String> = tx.query_row("SELECT date(min(at) / 1000, 'unixepoch', 'localtime') FROM messages", [], |r| r.get(0)).map_err(sql)?;
-    let mut st = tx.prepare("SELECT DISTINCT host FROM messages ORDER BY host").map_err(sql)?;
-    let hosts: Vec<String> = st.query_map([], |r| r.get(0)).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)?;
-    Ok(json!({"projects": projects, "first": first, "hosts": hosts}))
+    Ok(json!({"projects": projects, "first": first}))
 }

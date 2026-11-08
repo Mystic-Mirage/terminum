@@ -16,7 +16,7 @@ export async function liveHistory(page, opts) {
   const { newPane, keyOf, hook, endPanes } = boardKit(page, opts);
   const agent = newPane("histagent"), key = await keyOf(agent);
   hook(agent, "SessionStart", { source: "startup" });
-  hook(agent, "UserPromptSubmit", { prompt: "make the board wait for its selector", prompt_id: "h1" });
+  hook(agent, "UserPromptSubmit", { prompt: "make the board wait for the board selector", prompt_id: "h1" });
   hook(agent, "UserPromptSubmit", { prompt: "Исправь поиск по сообщениям", prompt_id: "h2" });
   // what Dispatcher typed, as its gate keeps it (a real run needs an agent: e2e_livedispatcher.mjs)
   execFileSync("sqlite3", [path.join(app, "kanban.sqlite"), `PRAGMA trusted_schema = ON; INSERT INTO messages (at, sender, via, agent, pane, host, cwd, text) VALUES (CAST(strftime('%s','now') AS INTEGER) * 1000, 'dispatcher', 'hook', 'claude', '${key}', 'local', '${work}', 'T-0007: the board task for Dispatcher')`]);

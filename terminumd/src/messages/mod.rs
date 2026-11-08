@@ -42,14 +42,21 @@ pub(crate) fn sql(e: rusqlite::Error) -> String {
     format!("The message history: {e}")
 }
 
-/// The columns `item` reads, in its order.
-pub const COLUMNS: &str = "id, at, sender, via, agent, pane, line, host, cwd, title, project, project_name, text";
+/// The columns `item` reads, in its order, of the messages as `m` (`m.` or ""); the last, the local day it
+/// was sent (as the day strip counts).
+pub fn columns(m: &str) -> String {
+    let cols = ["id", "at", "sender", "via", "agent", "pane", "line", "host", "cwd", "title", "project", "project_name", "text"];
+    format!("{}, date({m}at / 1000, 'unixepoch', 'localtime')", cols.map(|c| format!("{m}{c}")).join(", "))
+}
+/// How many `columns` are.
+pub const N_COLUMNS: usize = 14;
 
-/// A row of COLUMNS as the page reads a message: `at` in unix seconds (AC-90's shape), `key` its pane.
+/// A row of `columns` as the page reads a message: `at` in unix seconds (AC-90's shape), `key` its pane.
 pub fn item(r: &rusqlite::Row) -> rusqlite::Result<Value> {
     let at: i64 = r.get(1)?;
     let mut v = json!({"id": r.get::<_, i64>(0)?, "at": at / 1000, "ms": at, "sender": r.get::<_, String>(2)?, "via": r.get::<_, String>(3)?,
-                       "key": r.get::<_, String>(5)?, "host": r.get::<_, String>(7)?, "path": r.get::<_, String>(8)?, "text": r.get::<_, String>(12)?});
+                       "key": r.get::<_, String>(5)?, "host": r.get::<_, String>(7)?, "path": r.get::<_, String>(8)?, "text": r.get::<_, String>(12)?,
+                       "day": r.get::<_, String>(13)?});
     for (i, k) in [(4, "agent"), (9, "title"), (10, "project"), (11, "project_name")] {
         if let Some(s) = r.get::<_, Option<String>>(i)?.filter(|s| !s.is_empty()) {
             v[k] = json!(s);
@@ -73,14 +80,14 @@ pub fn insert(tx: &Transaction, m: &Message) -> Result<i64, String> {
 pub fn nth_of_folder(tx: &Transaction, host: &str, cwd: &str, n: usize) -> Result<(usize, Option<Value>), String> {
     let total: i64 = tx.query_row("SELECT count(*) FROM messages WHERE host = ?1 AND cwd = ?2", (host, cwd), |r| r.get(0)).map_err(sql)?;
     let n = i64::try_from(n).unwrap_or(i64::MAX);
-    let item = tx.query_row(&format!("SELECT {COLUMNS} FROM messages WHERE host = ?1 AND cwd = ?2 ORDER BY at DESC, id DESC LIMIT 1 OFFSET ?3"), (host, cwd, n), item)
+    let item = tx.query_row(&format!("SELECT {} FROM messages WHERE host = ?1 AND cwd = ?2 ORDER BY at DESC, id DESC LIMIT 1 OFFSET ?3", columns("")), (host, cwd, n), item)
         .optional().map_err(sql)?;
     Ok((total as usize, item))
 }
 
 /// The message `id`, if kept.
 pub fn by_id(tx: &Transaction, id: i64) -> Result<Option<Value>, String> {
-    tx.query_row(&format!("SELECT {COLUMNS} FROM messages WHERE id = ?1"), [id], item).optional().map_err(sql)
+    tx.query_row(&format!("SELECT {} FROM messages WHERE id = ?1", columns("")), [id], item).optional().map_err(sql)
 }
 
 /// The `most` newest messages sent in pane `pane` with a line: (text, line, an agent's prompt), newest first.

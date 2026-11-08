@@ -2,7 +2,6 @@
 /* The Message history (terminum.md AC-151): its tools, the day strip, the rows. A row is the session list's kind:
    its project's bar, the agent's mark, the session's title; what was sent under it in the terminal's font. */
 #mpage { --strip-ink: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg)); }
-#htools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--gutter) 0; }
 #htools .search { flex: 1 1 260px; max-width: 560px; height: var(--key-h); }
 #htools .search input { font-size: var(--fs-body); }
 #hpicks { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
@@ -11,8 +10,6 @@
 #hsort button:disabled { opacity: .45; }
 #fproject summary { max-width: 220px; }
 #fproject .box { min-width: min(300px, calc(100vw - var(--sp-6) * 2)); }
-.pick summary .pname, .menurows .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.menurows button[aria-checked="true"] { color: var(--accent); }
 .hrange { display: flex; flex-wrap: wrap; align-items: end; gap: var(--sp-2); padding: var(--sp-2) 10px var(--sp-1); }
 .hrange label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-label); color: var(--muted-text); height: auto; padding: 0; }
 .hrange input { height: 30px; padding: 0 var(--sp-1); font: inherit; font-size: var(--fs-small); }

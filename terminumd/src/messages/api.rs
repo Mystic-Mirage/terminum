@@ -2,10 +2,11 @@
 //! The Message history's and the Dashboard's routes (terminum.md AC-151, AC-152), behind the
 //! page's sign-in; reads only, off the async workers.
 //!
-//! `GET /api/messages?q=&sort=best|new&from=&to=&project=a,b&sender=&kind=&pane=&cursor=`: a page
+//! `GET /api/messages?q=&sort=best|new&from=&to=&project=a,b&sender=&kind=&pane=&cursor=` (project `-`:
+//! none): a page
 //! (search::page), each item with `live` (its pane is in the session list), the first page with
-//! the day strip's `days`; `GET /api/messages/meta`: the filters' projects, first day, hosts, the
-//! page's theme;
+//! the day strip's `days`; `GET /api/messages/meta`: the filters' projects, first day, the page's
+//! theme;
 //! `GET /api/messages/{id}/context?before=&after=`; `GET /api/dashboard?days=&project=`.
 
 use std::collections::HashMap;
@@ -37,8 +38,7 @@ pub fn filter(q: &HashMap<String, String>) -> Filter {
         q: q.get("q").cloned().unwrap_or_default().chars().take(500).collect(),
         from: some("from"),
         to: some("to"),
-        // "-": no project (the page's word for the store's "")
-        projects: q.get("project").filter(|p| !p.is_empty()).map(|p| p.split(',').map(|p| if p == "-" { String::new() } else { p.to_string() }).collect()).unwrap_or_default(),
+        projects: q.get("project").filter(|p| !p.is_empty()).map(|p| p.split(',').map(str::to_string).collect()).unwrap_or_default(),
         sender: some("sender").filter(|s| s == crate::tasks::store::HUMAN || s == crate::tasks::store::DISPATCHER),
         kind: some("kind").filter(|k| k == "agent" || k == "shell"),
         pane: some("pane"),
@@ -98,10 +98,7 @@ async fn context(State(app): State<Shared>, Path(id): Path<i64>, Query(q): Param
                 mark_live(&app, items);
             }
         }
-        let mut one = [c["item"].take()];
-        mark_live(&app, &mut one);
-        let [it] = one;
-        c["item"] = it;
+        mark_live(&app, std::slice::from_mut(&mut c["item"]));
         c
     }))
 }
@@ -113,7 +110,8 @@ fn colors(app: &Shared) -> HashMap<String, usize> {
 
 async fn dashboard(State(app): State<Shared>, Query(q): Params) -> Response {
     let days = q.get("days").and_then(|d| d.parse::<i64>().ok()).unwrap_or(30);
-    let project = q.get("project").cloned();
+    // as the list's filter: absent or empty, every project; NONE, no project
+    let project = q.get("project").filter(|p| !p.is_empty()).map(|p| if p == search::NONE { String::new() } else { p.clone() });
     let colors = colors(&app);
     answer(store(&app, move |tx| super::stats::dashboard(tx, crate::inputs::now_ms(), days, project.as_deref(), &colors)).await)
 }

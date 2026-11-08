@@ -6,7 +6,8 @@
 import { PROJECT_HUES, el, hueColor } from "./listparts.js";
 import { columns, spark } from "./charts.js";
 import { heatMap, ranked, workingDays } from "./dashcharts.js";
-import { $, WEEK, api, count, dayDate, dayLabel, hours, inkOf, loadMeta, readQuery, shortDay, writeQuery } from "./msgpage.js";
+import { showError } from "./kanbanutil.js";
+import { $, NONE, WEEK, api, clock, count, dayDate, dayLabel, dotOf, hours, inkOf, loadMeta, menu, projectLabel, readQuery, shortDay, writeQuery } from "./msgpage.js";
 
 const KEYS = ["days", "project"];
 const PERIODS = ["7", "30", "90"];
@@ -78,7 +79,7 @@ function drawPerDay() {
   const sum = mode === "n" ? `${count(data.now.tiles.messages)} messages · ${days()} days` : `${hours(data.now.tiles.active_ms)} active · ${days()} days`;
   const say = (i) => {
     if (i < 0) { $("perdaysay").textContent = sum; $("perdaygo").hidden = true; return; }
-    const d = s[i], parts = mode === "n" ? Object.entries(d.by).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([id, n]) => `${id === "other" ? "Other" : data.now.projects.find((p) => p.id === id)?.name || "No project"} ${n}`) : [];
+    const d = s[i], parts = mode === "n" ? Object.entries(d.by).sort((x, y) => y[1] - x[1]).slice(0, 3).map(([id, n]) => `${id === "other" ? "Other" : projectLabel(data.now.projects.find((p) => p.id === id) ?? { id })} ${n}`) : [];
     $("perdaysay").textContent = [`${dayLabel(d.day)}${i === today ? " so far" : ""}`, mode === "n" ? `${d.n} messages` : hours(d.active_ms), ...parts].join(" · ");
     $("perdaygo").href = historyUrl(d.day, d.day);
     $("perdaygo").hidden = !d.n;
@@ -89,31 +90,22 @@ function drawPerDay() {
   const legend = mode === "n" ? [...stack.map((id) => data.now.projects.find((p) => p.id === id)), ...(s.some((d) => d.by.other) ? [{ id: "other", name: "Other" }] : [])] : [];
   $("perdaylegend").replaceChildren(...legend.filter(Boolean).map((p) => {
     const chip = el(p.id === "other" ? "span" : "a", "chip");
-    const dot = el("span", "pdot");
-    dot.style.setProperty("--proj", stackColor(p.id));
-    chip.append(dot, el("span", "pname", p.name || (p.id ? "Gone project" : "No project")), el("span", "rnum", count(p.n ?? s.reduce((n, d) => n + (d.by.other ?? 0), 0))));
-    if (p.id !== "other") { chip.href = `?${new URLSearchParams({ ...(state.days ? { days: state.days } : {}), project: p.id || "-" })}`; chip.title = "Only this project"; }
+    chip.append(dotOf(stackColor(p.id)), el("span", "pname", projectLabel(p)), el("span", "rnum", count(p.n ?? s.reduce((n, d) => n + (d.by.other ?? 0), 0))));
+    if (p.id !== "other") { chip.href = `?${new URLSearchParams({ ...(state.days ? { days: state.days } : {}), project: p.id || NONE })}`; chip.title = "Only this project"; }
     return chip;
   }));
 }
 
 function drawDays() {
-  const s = data.now.series;
+  const s = data.now.series, t = data.now.tiles;
   const say = (i) => {
-    if (i < 0) {
-      const spans = s.filter((d) => d.spans.length).map((d) => [d.spans[0][0], d.spans.at(-1)[1]]);
-      const med = (v) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)];
-      const hm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-      $("dayssay").textContent = spans.length ? `Usually ${hm(med(spans.map((x) => x[0])))} to ${hm(med(spans.map((x) => x[1])))}` : "No active day in this period";
-      return;
-    }
     const d = s[i];
-    $("dayssay").textContent = d.spans.length ? `${dayLabel(d.day)} · ${hmOf(d.spans[0][0])}–${hmOf(d.spans.at(-1)[1])} · ${hours(d.active_ms)} active` : `${dayLabel(d.day)} · nothing`;
+    $("dayssay").textContent = i < 0 ? (t.starts === null ? "No active day in this period" : `Usually ${clock(t.starts)} to ${clock(t.ends)}`)
+      : d.spans.length ? `${dayLabel(d.day)} · ${clock(d.spans[0][0])}–${clock(d.spans.at(-1)[1])} · ${hours(d.active_ms)} active` : `${dayLabel(d.day)} · nothing`;
   };
   workingDays($("days"), s, { label: xlabel(s), select: say });
   say(-1);
 }
-const hmOf = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 function drawHeat() {
   $("heathint").textContent = days() <= 7 ? "active minutes, this one week" : "active minutes, an average week";
@@ -126,7 +118,7 @@ function drawHeat() {
 
 function drawProjects() {
   const s = data.now.series;
-  ranked($("projects"), data.now.projects, { ink: (p) => stackColor(p.id), open: (p) => { location.href = historyUrl(s[0].day, s.at(-1).day, p.id || "-"); } });
+  ranked($("projects"), data.now.projects, { ink: (p) => stackColor(p.id), open: (p) => { location.href = historyUrl(s[0].day, s.at(-1).day, p.id || NONE); } });
 }
 
 function drawSessions() {
@@ -149,22 +141,11 @@ function draw() {
 
 function drawKeys() {
   for (const b of $("dperiod").querySelectorAll("button")) b.setAttribute("aria-pressed", String(Number(b.dataset.days) === days()));
-  const p = meta.projects.find((x) => (x.id || "-") === state.project);
-  const s = $("dproject").querySelector("summary");
-  s.textContent = !state.project ? "All projects" : state.project === "-" ? "No project" : p?.name || "Gone project";
+  const p = meta.projects.find((x) => (x.id || NONE) === state.project);
+  $("dproject").querySelector("summary").textContent = state.project ? projectLabel(p ?? { id: state.project === NONE ? "" : state.project }) : "All projects";
   $("dproject").classList.toggle("on", !!state.project);
-  const box = $("dproject").querySelector(".box");
-  box.replaceChildren(...[{ id: "", name: "All projects", all: true }, ...meta.projects].map((x) => {
-    const b = el("button");
-    b.type = "button";
-    const v = x.all ? "" : x.id || "-";
-    b.setAttribute("role", "menuitemradio");
-    b.setAttribute("aria-checked", String(v === (state.project ?? "")));
-    if (!x.all) { const d = el("span", "pdot"); d.style.setProperty("--proj", inkOf(x)); b.append(d); }
-    b.append(el("span", "pname", x.all ? x.name : x.name || (x.id ? "Gone project" : "No project")));
-    b.onclick = () => { $("dproject").open = false; change({ project: v }); };
-    return b;
-  }));
+  const row = (label, value, color) => ({ label, color, on: value === (state.project ?? ""), pick: () => change({ project: value }) });
+  menu($("dproject"), [row("All projects", ""), ...meta.projects.map((x) => row(projectLabel(x), x.id || NONE, inkOf(x)))]);
 }
 
 function change(next) {
@@ -179,16 +160,15 @@ async function load() {
   $("cards").classList.add("busy");
   try {
     const q = new URLSearchParams({ days: String(days()) });
-    if (state.project) q.set("project", state.project === "-" ? "" : state.project);
+    if (state.project) q.set("project", state.project);
     const got = await api(`/api/dashboard?${q}`);
     if (mine !== loading) return;
     data = got;
-    $("derr").hidden = true;
+    showError($("derr"), "");
     draw();
   } catch (e) {
     if (mine !== loading) return;
-    $("derr").textContent = `The numbers could not be read: ${e.message}`;
-    $("derr").hidden = false;
+    showError($("derr"), `The numbers could not be read: ${e.message}`);
   } finally {
     if (mine === loading) $("cards").classList.remove("busy");
   }
@@ -204,9 +184,15 @@ $("perdaymode").addEventListener("click", (e) => {
 });
 addEventListener("popstate", () => { state = readQuery(KEYS); drawKeys(); load(); });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") load(); });
-let wait = 0;
-new ResizeObserver(() => { clearTimeout(wait); wait = setTimeout(draw, 120); }).observe($("cards"));
+// the charts fit their width: drawn again when it changes, not when a card's height does
+let wait = 0, width = 0;
+new ResizeObserver(([e]) => {
+  if (Math.round(e.contentRect.width) === width) return;
+  width = Math.round(e.contentRect.width);
+  clearTimeout(wait);
+  wait = setTimeout(() => { if (data) for (const f of [drawPerDay, drawDays, drawHeat, drawSessions]) f(); }, 120);
+}).observe($("cards"));
 
-try { meta = await loadMeta(); } catch (e) { $("derr").textContent = `The projects could not be read: ${e.message}`; $("derr").hidden = false; }
+try { meta = await loadMeta(); } catch (e) { showError($("derr"), `The projects could not be read: ${e.message}`); }
 drawKeys();
 load();

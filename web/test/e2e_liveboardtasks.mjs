@@ -48,7 +48,7 @@ export async function liveBoardTasks(page, opts) {
   check("AC-112 Show subtasks stands in the address", new URL(page.url()).searchParams.get("subtasks") === "1");
   await page.click(card(kid));
   await page.waitForSelector("#taskbox[open]");
-  check("AC-112 a subtask's window says its parent and offers no New subtask", await until(() => page.isVisible("#taskbody .subof")) && !(await page.$("#taskbody .subtasks")));
+  check("AC-112 a subtask's window says its parent and offers no New subtask", await until(() => page.isVisible("#taskbody .subtasks h3 .linklike")) && !(await page.$('#taskbody .subtasks button:has-text("New subtask")')));
   // the subtask's window reading itself again, its answer held until its parent has opened: it draws nothing over the parent
   let release;
   const held = new Promise((r) => { release = r; }), mine = (r) => r.method() === "GET" && r.url().endsWith(`/api/tasks/${kid}`);
@@ -56,7 +56,7 @@ export async function liveBoardTasks(page, opts) {
   const asked = page.waitForRequest(mine);
   await j(`/api/tasks/${kid}`, "PATCH", { text: "read again" });
   await asked;
-  await page.click("#taskbody .subof button");
+  await page.click("#taskbody .subtasks h3 .linklike");
   const opened = await until(async () => (await page.textContent("#tasktitle")).startsWith(parent)), answered = page.waitForResponse((r) => mine(r.request()));
   release();
   await answered;

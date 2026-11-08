@@ -22,7 +22,7 @@ const SAY_FOR = 5000;
  *  panes(), projects(): the list's sessions and projects, for Convert to task. */
 export function sessionTasks({ sid, name, toast, placed, panes, projects }) {
   const fab = $("tasksfab");
-  let list = [], of = null, asked = 0, timer = 0, windowed = null, meta = null;
+  let list = [], of = null, asked = 0, timer = 0, windowed = null, meta = null, failed = "";
   const records = recordTasks({ sid, panes, projects, made: (t) => { seenNow([t]); toast(`${t.id} is in TODO: ${t.title.slice(0, TITLE_MOST)}`, SAY_FOR); load(); } });
   const pane = fabPane({ fab, pane: $("taskspane"), close: $("tpclose"), onToggle: (on) => { if (on) draw(); } });
 
@@ -34,7 +34,14 @@ export function sessionTasks({ sid, name, toast, placed, panes, projects }) {
       if (mine !== asked) return;                  // another session shown meanwhile
       list = page.tasks ?? [];
       of = key;
-    } catch (e) { if (mine === asked) { list = []; of = key; } if (e.status !== 401) say(e.message); }
+    } catch (e) {
+      if (mine === asked) { list = []; of = key; }
+      // said once, not at each session shown while the store stays out of reach
+      if (e.status !== 401 && e.message !== failed) say(`Tasks of this session: ${e.message}`);
+      failed = e.message;
+      return shown();
+    }
+    failed = "";
     shown();
   }
 

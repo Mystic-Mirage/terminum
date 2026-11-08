@@ -162,7 +162,7 @@ async function wide(browser, name) {
   }
   if (TASKS_ALONE) {
     await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-    await liveBoardIds(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await liveBoardIds(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
     return ctx;
   }
   if (BOARD_ALONE) {
@@ -172,7 +172,7 @@ async function wide(browser, name) {
     await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
     await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
     await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-    await liveBoardIds(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await liveBoardIds(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
     await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS });
     return ctx;
   }

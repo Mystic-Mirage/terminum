@@ -94,7 +94,7 @@ export async function webMarkNav(browser, name) {
   const next = await view();
   check(`AC-33 ${at} the pane, as tall as the terminal less 28 px, shows the first one's content at once beside the list (a bookmark: the terminal's text exactly, its long lines wrapped, in the title's and the list's size); a press or ↓ shows another, an agent's record as Markdown; nothing jumps; three actions`,
     shown.open && shown.chosen === "B" && shown.title === "first by line" && shown.pre === "out 100 lorem ipsum" && next.chosen === "R" && next.title.includes("Final report: retry loop fixed")
-    && next.strong === "Fixed" && next.items === 2 && !sent.slice(from).some((m) => m.t === "locate") && shown.acts.join() === "Show in terminal,Resolve,Quote in chat"
+    && next.strong === "Fixed" && next.items === 2 && !sent.slice(from).some((m) => m.t === "locate") && shown.acts.join() === "Show in terminal,Resolve,Convert to task,Quote in chat"
     && shown.place.left && shown.place.right
     && shown.wrap === "pre-wrap" && shown.tall === 28 && shown.sizes.every((z) => z === shown.sizes[0]), JSON.stringify({ shown, next }));
 
@@ -246,7 +246,7 @@ export async function webMarkNav(browser, name) {
   await page.keyboard.press("Escape");
   check(`AC-91 AC-98 ${at} the reminders' pane is the bookmarks' navigator of the reminders only: an agent's with its mark, its text as Markdown (no quote), the same actions; a link in the theme's link color, in the widget and on the page, never the browser's blue or purple`,
     pane.title === "Reminders of this session" && pane.ids.join() === "Q" && pane.mark && !pane.quote && pane.text.includes("fetch_all or list_all?") && pane.grip
-    && pane.acts.join() === "Show in terminal,Resolve,Quote in chat" && pane.link === pane.want && pane.pageLink === pane.want && !blue.includes(pane.link), JSON.stringify(pane));
+    && pane.acts.join() === "Show in terminal,Resolve,Convert to task,Quote in chat" && pane.link === pane.want && pane.pageLink === pane.want && !blue.includes(pane.link), JSON.stringify(pane));
 
   // the list emptied while the line is held (the last one resolved elsewhere): the pane closes; opened again, nothing is held
   await page.keyboard.press("Escape");                      // the reminders' pane closed

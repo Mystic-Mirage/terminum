@@ -39,7 +39,6 @@ section.droparea { border-radius: var(--r-sm); }
 dialog .markdown { font-family: var(--ui); font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; min-width: 0; }
 dialog .markdown img { max-width: 100%; }
 .subtasks { display: flex; flex-direction: column; gap: var(--sp-1); }
-.subof { margin: 0; font-size: var(--fs-small); color: var(--muted); }
 :is(.filelist, .sublist) { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-label); }
 :is(.filelist, .sublist):empty { display: none; }
 :is(.filelist, .sublist) li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; overflow-wrap: anywhere; }
@@ -108,3 +107,5 @@ button.stbox { cursor: pointer; border: 0; }
 .tptitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #convertbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
 #convertbox form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.sublist .subname { color: var(--t-fg); text-decoration: none; font-size: var(--fs-body); }
+@media (hover: hover) { .sublist .subname:hover { text-decoration: underline; } }

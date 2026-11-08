@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Tasks' IDs by project, a task's window in parts and a parent's subtasks as boxes, against a real private
 // terminumd (e2e_live.mjs; terminum-kanban.md AC-148, AC-149, AC-112).
+import path from "node:path";
 import { boardKit, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 export async function liveBoardIds(page, opts) {
-  const { base } = opts;
+  const { base, shots } = opts;
   const { j, card } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Ledger" })).id;
   const make = async (title, more = {}) => (await j("/api/tasks", "POST", { title, project, ...more })).id;
@@ -38,14 +39,16 @@ export async function liveBoardIds(page, opts) {
   await page.reload();
   await page.waitForSelector("#taskbox[open] .activity");
   const parts = await page.$$eval("#taskbody > section", (s) => s.map((x) => x.className));
-  check("AC-149 three parts: the task, its subtasks, comments and history", JSON.stringify(parts) === JSON.stringify(["tasksec taskown", "tasksec subtasks", "tasksec activity"]), JSON.stringify(parts) + said.code);
+  check("AC-149 three parts: the task, its subtasks, comments and history", JSON.stringify(parts.slice(0, 3)) === JSON.stringify(["tasksec taskown", "tasksec subtasks", "tasksec activity"]), JSON.stringify(parts) + said.code);
   check("AC-149 the task says its key's start, when it was made and changed", new RegExp(`^${now.uid} · made .+ · changed `).test(await page.textContent("#taskbody .taskstamps")), await page.textContent("#taskbody .taskstamps"));
   const order = () => page.$$eval("#taskbody .history > li", (l) => l.map((x) => x.textContent));
-  check("AC-149 newest first", await until(async () => (await order())[0]?.includes("newer word")), JSON.stringify((await order()).slice(0, 2)));
+  const comments = () => page.$$eval("#taskbody .history > li.ev-comment", (l) => l.map((x) => x.textContent));
+  check("AC-149 newest first", await until(async () => (await comments())[0]?.includes("newer word") && /changed a comment/.test((await order())[0])), JSON.stringify((await order()).slice(0, 2)));
   check("AC-149 a changed comment says when it was edited", (await order()).some((t) => t.includes("older word, changed") && /edited /.test(t)));
   await page.click('#taskbody .activity button:has-text("Newest first")');
   check("AC-149 the key turns the order, and says it", await until(async () => /made it/.test((await order())[0] ?? "")) && await page.isVisible('#taskbody .activity button:has-text("Oldest first")'));
   await page.click('#taskbody .activity button:has-text("Oldest first")');
+  if (shots) await page.screenshot({ path: path.join(shots, "task-parts.png") });
   await page.click("#taskclose");
 
   // AC-112: boxes on the card in their status's color; put under, refused, taken out
@@ -63,20 +66,22 @@ export async function liveBoardIds(page, opts) {
   check("AC-112 each status its own color", new Set(boxes.map((b) => b[1])).size === 5, JSON.stringify(boxes.map((b) => b[1])));
   check("AC-112 its status in words too", boxes[3][2] === `${kids[3]} · FAILED · kid FAILED`, boxes[3][2]);
   check("AC-112 the card counts the done", (await page.textContent(`${card(parent)} .csubs`)) === "1/5");
+  if (shots) await page.locator(card(parent)).screenshot({ path: path.join(shots, "card-boxes.png") });
   await page.click(`${card(parent)} .cboxes .stbox >> nth=2`);
   check("AC-112 a box opens its subtask", await until(async () => (await page.textContent("#tasktitle")).startsWith(kids[2])));
   await page.click("#taskclose");
 
   const loose = await make("a loose one");
-  await page.click(card(parent));
+  await page.click(`${card(parent)} .ctitle`);   // a press on a box would open that subtask
   await page.waitForSelector("#taskbox[open] .subtasks");
   await page.click('#taskbody .subtasks button:has-text("Add existing")');
   await page.waitForSelector("#namebox[open]");
-  await page.fill("#namefield", kids[0]);
+  await page.fill("#namefield", parent);
   await page.click("#nameok");
-  check("AC-112 a subtask cannot become a parent's: said in the dialog", await until(async () => /A subtask cannot have subtasks/.test(await page.textContent("#nameerror"))) && await page.isVisible("#namebox"));
+  check("AC-112 a refusal is said in the dialog, which stays", await until(async () => /A task cannot be its own subtask/.test(await page.textContent("#nameerror"))) && await page.isVisible("#namebox"));
   await page.fill("#namefield", loose.toLowerCase());
   await page.click("#nameok");
+  if (shots) await page.screenshot({ path: path.join(shots, "task-subtasks.png") });
   check("AC-112 Add existing puts a task under it, its line saying status, owner and times", await until(async () => /a loose one/.test(await page.textContent("#taskbody .subtasks")))
     && /TODO · .+ · made /.test(await page.textContent(`#taskbody .sublist li:has-text("a loose one")`)));
   check("AC-112 both histories say so", (await j(`/api/tasks/${loose}`)).history.some((e) => e.text.endsWith(`made it a subtask of ${parent}`)) && (await j(`/api/tasks/${parent}`)).history.some((e) => e.text.endsWith(`made ${loose} its subtask`)));

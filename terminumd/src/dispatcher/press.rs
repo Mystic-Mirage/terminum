@@ -76,7 +76,7 @@ pub(super) enum Way {
 
 pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool) -> Result<Way, String> {
     if let Some(r) = &last {
-        if t.status == "IN PROGRESS" && !r.is_over() && r.state != "gone" {
+        if t.status == "IN PROGRESS" && r.holds_slot() {
             return Err(format!("{} is in progress by Dispatcher.", t.id));
         }
         if r.is_starting() {
@@ -130,10 +130,6 @@ pub(super) fn budget_told(id: &str, own: Option<i64>, run: &Run) -> String {
         (true, Some(total)) => format!("{said} The session's limit is now {} minutes.", total / 60),
         (true, None) => format!("{said} The session has no limit now."),
     }
-}
-
-pub(super) fn refused_busy(agent: &str, run: &Run) -> String {
-    format!("{agent} is busy with {}: it takes more when its session closes or they end.", run.names())
 }
 
 /// How a press on `id` and `also` goes on: each task as it stands now may go, the first says how.

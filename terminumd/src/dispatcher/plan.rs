@@ -99,7 +99,7 @@ fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
 /// The walk's step for `run`: its clocks change here, what is to be done comes back.
 pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     let mut acts = Vec::new();
-    let movable = !finished(&run.status);
+    let movable = !finished(&run.status) && !run.ad_hoc();     // + Session's has no task to move
     if !f.pane || !f.marked {
         run.state = "closed".into();
         if f.pane {
@@ -130,6 +130,10 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         } else {
             acts.push(Act::Say(format!("Session ended: {} ended, {how}.", run.kind)));
         }
+    }
+    // + Session's: the human's alone; only its end and its window are Dispatcher's (AC-142)
+    if run.ad_hoc() {
+        return acts;
     }
     let alive = run.state != "gone";
     if alive && movable && let Some(why) = &f.failed {
@@ -227,6 +231,15 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         }
     }
     acts
+}
+
+/// Quiet this long, two walks' worth, before an idle session can be closed for a slot (AC-141).
+const IDLE_QUIET: i64 = 60;
+
+/// Whether a session can be closed for a slot, by what the store knows: its tasks ended, its turn over, no tool open and
+/// two walks quiet; what the pane shows is read just before (AC-141).
+pub fn idle_holder(run: &Run) -> bool {
+    run.state == "working" && finished(&run.status) && run.open.is_empty() && run.turn_ended && run.open_tools == 0 && run.closing_for >= IDLE_QUIET
 }
 
 /// Whether a Close a walk decided still holds, read just before the pane goes: a press or a prompt may have come since.

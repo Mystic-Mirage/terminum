@@ -154,7 +154,7 @@ RPC = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolV
        {"jsonrpc": "2.0", "method": "notifications/initialized"},
        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "update_session_plan", "arguments": {
            "items": [{"text": "one", "status": "completed"}], "doing": "Checking the host", "eta_minutes": 30}}},
-       {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "create_task", "arguments": {"title": "host task", "text": "A host task."}}},
+       {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "create_task", "arguments": {"title": "Feat: host task", "severity": "P2", "text": "A host task."}}},
        {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "get_session_plan", "arguments": {}}}]
 
 
@@ -229,7 +229,7 @@ def main():
             tasks = db.execute("SELECT title, by_agent FROM tasks").fetchall()
         finally:
             db.close()
-        check(f"[{v}] AC-99 the host row has the ETA, and the agent's task stands in the Mac's store, by an agent (terminum-kanban.md AC-120)", row is not None and ("host task", 1) in tasks, [row, tasks])
+        check(f"[{v}] AC-99 the host row has the ETA, and the agent's task stands in the Mac's store, by an agent (terminum-kanban.md AC-120)", row is not None and ("Feat: host task", 1) in tasks, [row, tasks])
 
         # agents with files off, past the helper's 90 s rule (the longest wait here)
         log = lambda: on_host("cat $HOME/.terminum/logs/agent.log")   # noqa: E731

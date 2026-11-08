@@ -15,6 +15,11 @@ use crate::app::Shared;
 use crate::plans::rules;
 use crate::tasks::ops;
 
+/// A model's name as a hook may say it: kept only in this shape.
+fn good_model(m: &str) -> bool {
+    !m.is_empty() && m.len() <= super::usage::MOST_MODEL && m.chars().all(|c| c.is_ascii_alphanumeric() || "-._[]".contains(c))
+}
+
 /// The shape a session ID must have to reach a command line (§9 Resume): no flag.
 pub fn good_id(id: &str) -> bool {
     id.len() <= 100 && id.starts_with(|c: char| c.is_ascii_alphanumeric()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
@@ -38,8 +43,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.new_work();
             r.turn_ended = false;
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
-            let project = ops::project_row(tx, &r.project)?.0;
-            let agent = ops::agent_user(tx, &r.kind, &project)?;
+            let agent = ops::pool_user(tx, &r.agent_id, &r.agent_name)?;
             for id in &r.ids {
                 ops::set_owner(tx, &ops::key_of(tx, id)?, &agent, ops::now())?;
             }
@@ -84,7 +88,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
 
 /// Hooks' events waiting for their turn: what comes first is applied first.
 pub(super) struct Events {
-    sender: UnboundedSender<(String, Value)>,
+    pub(super) sender: UnboundedSender<(String, Value)>,
     waiting: Mutex<Option<UnboundedReceiver<(String, Value)>>>,
 }
 
@@ -106,6 +110,18 @@ pub fn heard(app: &Shared, key: &str, ev: &Value) {
 
 /// What one event does to its run.
 async fn one_event(app: Shared, key: String, ev: Value) {
+    if ev["event"] == "Tokens" {
+        let Some(totals) = super::usage::Totals::of(&ev["tokens"]) else { return };
+        let model: Option<String> = ev["tokens"]["model"].as_str().filter(|m| good_model(m)).map(str::to_string);
+        let done = store(&app, move |tx| {
+            let Some(r) = runs::in_pane(tx, &key)? else { return Ok(()) };
+            super::usage::heard(tx, &r.id, &r.agent_id, totals, model.as_deref(), ops::now())
+        }).await;
+        if let Err(e) = done {
+            tracing::warn!(event = "dispatcher.usage", error = %e);
+        }
+        return;
+    }
     let typed = ev["event"] == "UserPromptSubmit" && ev["prompt"].as_str().is_some_and(|p| app.dispatcher.was_typed(&key, p));
     let ended = ev["event"] == "SessionEnd" && ev["reason"] != "clear";
     let k = key.clone();
@@ -207,7 +223,7 @@ mod tests {
         let d = crate::dispatcher::Dispatcher::default();
         let run = store.with(|tx| {
             let t = crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
-            let like = runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), ..Default::default() };
+            let like = runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() };
             runs::add(tx, &like, std::slice::from_ref(&t.key), 1)
         }).unwrap();
         store.with(|tx| d.read_runs(tx)).unwrap();

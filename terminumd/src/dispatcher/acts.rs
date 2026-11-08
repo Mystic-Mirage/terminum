@@ -18,9 +18,10 @@ pub(super) struct Later {
     pub(super) act: Act,
 }
 
-/// Closes the pane: its mark checked just before; with no result the screen's last 200 rows stay on
-/// the task. tmux refusing: one more try at the next beat, then it stays and says so (AC-125).
-async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words: &str, keep: bool) -> Result<(), String> {
+/// Closes the pane: its mark checked just before; `keep`: the screen's last 200 rows stay on the task.
+/// `still`, of the run as it stands, read last of all: no: it stays. tmux refusing: one more try at the next beat,
+/// then it stays and says so (AC-125).
+pub(super) async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words: &str, keep: bool, still: fn(&rusqlite::Transaction, &Run) -> Result<bool, String>) -> Result<(), String> {
     start::is_marked(server, pane, &run.id).await?;
     if keep {
         let rows = server.run(format!("capture-pane -p -S -200 -t {pane}")).await.unwrap_or_default();
@@ -38,7 +39,7 @@ async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, words:
     }
     // RUN or a human's prompt may have come since the walk decided: read again, last of all (AC-131)
     let wanted = run.id.clone();
-    if !store(app, move |tx| runs::by_id(tx, &wanted).map(|now| plan::still_closes(&now))).await? {
+    if !store(app, move |tx| still(tx, &runs::by_id(tx, &wanted)?)).await? {
         return Ok(());
     }
     let (id, words) = (run.id.clone(), words.to_string());
@@ -140,7 +141,7 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
                 }
             }
         }
-        Act::Close { words, keep } => close(app, &l.run, &server, &pane, &words, keep).await,
+        Act::Close { words, keep } => close(app, &l.run, &server, &pane, &words, keep, |_, r| Ok(plan::still_closes(r))).await,
         _ => Ok(()),
     };
     if let Err(e) = done {

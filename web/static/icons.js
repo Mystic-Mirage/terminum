@@ -47,6 +47,8 @@ const ICONS = {
   // a host's other tmux sessions, to attach (AC-89)
   import: ["M12 3v12", "m8 11 4 4 4-4", "M8 5H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4"],
   // the session list's menus (rowmenu.js)
+  folder: [FOLDER],
+  "corner-left-up": ["M14 9 9 4 4 9", "M20 20h-7a4 4 0 0 1-4-4V4"],
   "folder-plus": ["M12 10v6", "M9 13h6", FOLDER],
   "folder-minus": ["M9 13h6", FOLDER],
   "list-checks": ["m3 17 2 2 4-4", "m3 7 2 2 4-4", "M13 6h8", "M13 12h8", "M13 18h8"],

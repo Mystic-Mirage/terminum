@@ -8,9 +8,11 @@ import "./pop.js";
 import { pageColors } from "./contrast.js";
 import { withScheme } from "./schemes.js";
 import { askConfirm } from "./dialogs.js";
-import { sessionUrl, takeSelection } from "./tasklink.js";
+import { sessionUrl, takeRecord, takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
 import { taskForm } from "./kanbanform.js";
+import { archivedWindow } from "./kanbanarchive.js";
+import { spentLine, usageWords } from "./kanbanspend.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
 import { boardSessions, sessionStrip } from "./kanbanside.js";
 import { agentsSection } from "./kanbanagents.js";
@@ -18,6 +20,7 @@ import { projectWindow } from "./kanbanproject.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
+import { choose } from "./dialogs.js";
 import { el, iconButton, plural, projectInk } from "./listparts.js";
 import { $, COLUMNS, agentChip, api, button, hasFiles, say } from "./kanbanutil.js";
 
@@ -29,7 +32,7 @@ let shownColumn = "TODO";
 const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-reduced-motion: reduce)");
 let dragging = null;                               // the tasks of a drag
 const picked = new Set();                          // the tasks ⌘ or Ctrl+click chose (terminum-dispatcher.md AC-138)
-let busy = {};                                     // what each busy agent does
+let slots = { agents: {}, full: [], full_projects: [] };   // what each agent's slots hold, and who is at a limit (AC-141)
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
 let loading = 0, changing = 0, chain = Promise.resolve();
@@ -60,12 +63,12 @@ async function load() {
     const parts = await Promise.all(COLUMNS.map(async (c, i) => {
       const pages = Math.max(1, Math.ceil(cards.get(c).length / PAGE));
       const got = await Promise.all(Array.from({ length: pages }, (_, n) => api(`/api/tasks?${query({ status: c, limit: PAGE, after: n ? n * PAGE : undefined, counts: i === 0 && !n ? 1 : undefined })}`)));
-      return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts, busy: got[0].busy };
+      return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts, slots: got[0].slots };
     }));
     if (mine !== loading || changing) return;
     cards = new Map(COLUMNS.map((c, i) => [c, parts[i].tasks]));
     counts = parts[0].counts;
-    busy = parts[0].busy ?? {};
+    slots = parts[0].slots ?? slots;
     agents.draw();
     banner(meta.problem ?? "");
     draw();
@@ -100,20 +103,8 @@ function sessionLine(t) {
   return line("stopped", s.agent ? "stopped, task open" : "no agent");
 }
 
-/** What its session uses and what stands idle in it (terminum-dispatcher.md AC-127 to AC-129): as of the last walk. */
-function usageWords(id, budget) {
-  const u = usage[id];
-  if (!u) return "";
-  const words = u.not_measured ? [u.not_measured] : [`CPU ${u.cpu}%`, `${u.gib} GiB`, `${u.minutes} min`];
-  if (u.budget_total) words.unshift(`${Math.floor(u.budget_used / 60)} of ${u.budget_total / 60} min`);
-  if (u.tokens) words.push(`${(u.tokens.input + u.tokens.output + u.tokens.cached).toLocaleString("en")} tokens`);
-  else if (u.tokens === null) words.push("Tokens not known");
-  for (const s of u.idle_subs ?? []) words.push(`idle: ${s.kind || "subagent"} ${s.id}`);
-  return words.join(" · ");
-}
-
 function showUsage(c, id) {
-  const words = usageWords(id, Number(c.dataset.budget)), line = c.querySelector(".cusage");
+  const words = usageWords(usage[id]), line = c.querySelector(".cusage");
   if (line?.textContent === words) return;
   line?.remove();
   if (words) c.querySelector(".cfoot").append(el("span", "cusage", words));
@@ -144,6 +135,7 @@ function card(t) {
   c.rowDrawn = "";
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
+  if (t.parent) head.append(el("span", "cparent", `in ${t.parent}`));
   if (t.agent) head.append(agentChip(t.agent));
   // on an open session its run has it; with none it can always start: nothing else takes it out of IN PROGRESS
   if (t.status !== "IN PROGRESS" || !t.session || t.session.closed) head.append(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])));
@@ -157,6 +149,7 @@ function card(t) {
   if (!t.agent) foot.append(el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));   // on an agent, the agent says who
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
   if (t.files) foot.append(el("span", "cfiles", plural(t.files, "file")));
+  if (t.spent) foot.append(spentLine(t.spent));
   showState(foot, t);
   c.append(head, el("div", "ctitle", t.title), foot);
   showUsage(c, t.id);
@@ -253,8 +246,8 @@ function send(m) {
 }
 const openSession = (key) => { location.href = sessionUrl(key); };
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
-const runs = runWindow({ addAgent: (project) => agents.addTo(project), done: () => readSoon() });
-const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, busy: () => busy, liveRow: (key) => liveRows.get(key),
+const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: () => readSoon() });
+const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
 $("agentbar").append(agents.box);
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
@@ -341,17 +334,17 @@ async function loadMeta() {
 
 /** A task a filter hides is said when made: it does not just vanish. terminumd says what its filters show. */
 async function madeHidden(t) {
-  if (!hasFilter()) return;
+  if (!hasFilter() || t.parent) return;            // a subtask shows in its parent's window
   const { tasks } = await api(`/api/tasks?${query({ id: t.id })}`);
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
-const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, editProject: (p) => project.open(p) });
-const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
+const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, editProject: (p) => project.open(p), newSession });
+const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
 $("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
-const windowed = taskWindow({ getMeta: () => meta, runs });
-const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, agentsBusy: () => busy });
+const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }) });
+const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, slots: () => slots });
 
 /** Run in the new-task window: at once on its agent; what stands in the way opens RUN's window, saying it. */
 async function runMade(t, agent) {
@@ -364,6 +357,30 @@ async function runMade(t, agent) {
   } catch (e) {
     runs.open([t], { why: e.message }).catch((no) => say(no.message));
   }
+}
+
+/** + Session (terminum-dispatcher.md AC-142): a project's agent with no task, its session shown once it opens; the
+ *  agent last used there first, the only one at once. */
+async function newSession(p) {
+  if (!p.dir) return askFolder(p.id, `${p.name} has no folder: set it in its window.`);
+  const last = meta.last_agents?.[p.id], all = meta.agents.filter((a) => !slots.full.includes(a.id));
+  if (!meta.agents.length) return agents.add();
+  if (slots.full_projects.includes(p.id) || !all.length) return say(slots.full_projects.includes(p.id) ? `${p.name} is at its limit of agents at once.` : "Every agent is at its limit.");
+  const ordered = [...all.filter((a) => a.id === last), ...all.filter((a) => a.id !== last)];
+  const agent = ordered.length === 1 ? ordered[0].id : await choose(`A session in ${p.name}`, "Which agent? Nothing is typed in it: it is yours.", ordered.map((a) => [a.id, a.name]));
+  if (!agent) return;
+  try {
+    const { key } = await api(`/api/task-projects/${p.id}/session`, { method: "POST", body: { agent } });
+    (meta.last_agents ??= {})[p.id] = agent;
+    location.href = sessionUrl(key);
+  } catch (e) { say(e.message); }
+}
+$("adhocsession").addEventListener("click", () => newSession(projectOf(filters().project[0])));
+
+/** A project with no folder starts nothing: said, and its window opens at the folder (terminum-dispatcher.md AC-140). */
+function askFolder(id, words) {
+  say(words);
+  project.open(projectOf(id));
 }
 
 const addressed = () => /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
@@ -439,7 +456,7 @@ function listen() {
       else if (m.t === "taskmarks") needs.came(m);
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
-        busy = m.busy ?? busy;
+        slots = m.slots ?? slots;
         agents.draw();
         for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
       }
@@ -460,7 +477,8 @@ listen();
 route();
 const asked = new URLSearchParams(location.search);
 if (asked.get("new") === "1") {
-  form.open({ session: asked.get("session"), project: asked.get("for"), text: takeSelection() });
+  const record = takeRecord();             // a bookmark or reminder made into a task (AC-116)
+  form.open({ session: asked.get("session"), project: asked.get("for"), text: record?.text ?? takeSelection(), title: record?.title, record: record?.id });
   for (const k of ["new", "session", "for"]) asked.delete(k);
   history.replaceState(null, "", `/kanban/${asked.size ? `?${asked}` : ""}`);
 }

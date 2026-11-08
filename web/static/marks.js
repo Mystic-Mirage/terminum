@@ -3,11 +3,11 @@
 // signed-in browser (the bridge's bookmarks.py). Here: the dialog that makes or edits one, the
 // marks on the terminal's right edge, the bar that shows the one brought into view, and the list
 // below the sessions of those no session shows (orphaned). Text from the terminal is shown as text only.
-import { markedSessions, openReminder, when } from "./listparts.js";
+import { iconButton, markedSessions, openReminder, when } from "./listparts.js";
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
-import { leaveSelection, newTaskUrl } from "./tasklink.js";
+import { leaveRecord, leaveSelection, newTaskUrl, sessionUrl } from "./tasklink.js";
 import { placeModal, placePane } from "./fabpane.js";
 import { sendOnModEnter } from "./modenter.js";
 import { Find } from "./find.js";
@@ -180,6 +180,15 @@ export class Marks {
   toTask() {
     leaveSelection((this.editing?.text ?? "").split("\n").map((l) => `> ${l}`).join("\n"));
     location.href = newTaskUrl(this.sid(), this.projectOf()?.id);
+  }
+
+  /** A record to the new-task window, its text quoted with a link to its session; it goes once the task is
+   *  kept there (terminum-kanban.md AC-116). */
+  recordToTask(item) {
+    const quoted = item.text.split("\n").map((l) => `> ${l}`).join("\n");
+    const where = item.sid ? `\n\n[${item.title || "Its session"}, line ${item.n}](${sessionUrl(item.sid)})` : "";
+    leaveRecord({ id: item.id, title: titleOf(item, 120), text: quoted + where });
+    location.href = newTaskUrl(item.sid ?? "", item.project);
   }
 
   /** The dialog's kind: a bookmark, or a reminder (AC-91). */
@@ -360,7 +369,8 @@ export class Marks {
       const label = () => [icon("x", 14)];
       del.append(...label());
       armed(del, label, () => this.send({ t: "unmark", id: item.id }));
-      li.append(b, del);
+      const make = iconButton("mkmake", "plus", "Make a task", "Make a task of it: it goes once the task is kept", () => this.recordToTask(item));
+      li.append(b, make, del);
       ul.append(li);
     }
     return ul;

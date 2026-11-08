@@ -109,7 +109,7 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 :is(#marklist, #markpane, #remindpane) .snip { font: 11.5px TermFont, TermFontShipped, Menlo, monospace; color: var(--muted); }
 :is(#marklist, #markpane, #remindpane) :is(.meta, .mkpos) { font-size: 11px; color: var(--muted); }
 :is(#marklist, #markpane, #remindpane) .closed { margin-left: 6px; padding: 0 5px; border-radius: var(--r-xs); background: var(--surface-4); }
-:is(#marklist, #markpane, #remindpane) .mkdel { margin: var(--sp-1); font-size: 12px; }   /* an icon key (controls.css) */
+:is(#marklist, #markpane, #remindpane) :is(.mkdel, .mkmake) { margin: var(--sp-1); font-size: 12px; }   /* an icon key (controls.css) */
 :is(#marklist, #markpane, #remindpane) .empty { margin: 0; padding: 8px; color: var(--muted); font-size: 12.5px; }
 
 /* the session list: a session's bookmarks (orange) and reminders (pink, reminders.css) as wavy lines at

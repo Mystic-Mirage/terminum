@@ -27,22 +27,23 @@ function address(next) {
 export const filters = () => {
   const q = new URLSearchParams(location.search);
   const list = (k) => (q.get(k) ?? "").split(",").filter(Boolean);
-  return { project: list("project"), severity: list("severity"), owner: q.get("owner") ?? "", q: q.get("q") ?? "", archived: q.get("archived") ?? "" };
+  return { project: list("project"), severity: list("severity"), owner: q.get("owner") ?? "", q: q.get("q") ?? "", archived: q.get("archived") ?? "", subtasks: q.get("subtasks") ?? "" };
 };
 
 /** What Clear filters takes off: the project is a choice, not a filter (AC-135). */
-export const narrowed = () => { const f = filters(); return f.severity.length || f.owner || f.q || f.archived; };
+export const narrowed = () => { const f = filters(); return f.severity.length || f.owner || f.q || f.archived || f.subtasks; };
 /** A task made now may not show. */
 export const hasFilter = () => narrowed() || filters().project.length;
 
 export function query(extra = {}) {
   const f = filters(), p = new URLSearchParams();
-  for (const [k, v] of Object.entries({ project: f.project.join(","), severity: f.severity.join(","), owner: f.owner, q: f.q, archived: f.archived, ...extra })) if (v !== "" && v !== undefined) p.set(k, v);
+  for (const [k, v] of Object.entries({ project: f.project.join(","), severity: f.severity.join(","), owner: f.owner, q: f.q, archived: f.archived, subtasks: f.subtasks, ...extra })) if (v !== "" && v !== undefined) p.set(k, v);
   return p.toString();
 }
 
-/** The filters' keys over `getMeta()`'s projects; `changed` after any change, `editProject(p)` from a project's pencil. */
-export function filterBar({ getMeta, changed, editProject }) {
+/** The filters' keys over `getMeta()`'s projects; `changed` after any change, `editProject(p)` from a project's pencil,
+ *  `newSession(p)` from its + Session (terminum-dispatcher.md AC-142). */
+export function filterBar({ getMeta, changed, editProject, newSession }) {
   function setFilters(next) {
     address(next);
     if ("project" in next) write(CHOSEN, next.project.join(",") || null);
@@ -82,8 +83,10 @@ export function filterBar({ getMeta, changed, editProject }) {
       also.append(c);
       const name = button("projname", "", () => only([p.id]));
       name.append(dot(p), el("span", "pname", p.name));
-      const edit = iconButton("projedit", "pencil", `Edit ${p.name}`, `Edit ${p.name}: its folder and its agents`, () => { box.open = false; editProject(p); });
-      line.append(also, name, edit);
+      if (!p.dir) name.append(el("small", "projnofolder", "no folder"));   // no agent can start there (terminum-dispatcher.md AC-140)
+      const edit = iconButton("projedit", "pencil", `Edit ${p.name}`, `Edit ${p.name}: its folder and limits`, () => { box.open = false; editProject(p); });
+      const session = iconButton("projsession", "terminal", `Session in ${p.name}`, `A session of an agent in ${p.name}, no task`, () => { box.open = false; newSession(p); });
+      line.append(also, name, edit, session);
       return line;
     });
     box.querySelector("div").replaceChildren(button(null, "All projects", () => only([])), ...rows);
@@ -98,9 +101,11 @@ export function filterBar({ getMeta, changed, editProject }) {
     picks($("fseverity"), SEVERITIES.map((s) => ({ id: s, name: s })), f.severity, (id, on) => setFilters({ severity: toggled(filters().severity, id, on) }));
     picks($("fowner"), [{ id: "humans", name: "People" }, { id: "agents", name: "Agents" }], f.owner ? [f.owner] : [], (id, on) => setFilters({ owner: on ? id : "" }));
     if ($("find").value !== f.q) $("find").value = f.q;
-    const on = f.severity.length + (f.owner ? 1 : 0) + (f.archived ? 1 : 0);
+    const on = f.severity.length + (f.owner ? 1 : 0) + (f.archived ? 1 : 0) + (f.subtasks ? 1 : 0);
     $("farchived").setAttribute("aria-pressed", String(!!f.archived));
+    $("fsubtasks").setAttribute("aria-pressed", String(!!f.subtasks));
     $("clearfilters").hidden = !narrowed();
+    $("adhocsession").hidden = f.project.length !== 1;
     $("filtersbtn").textContent = on ? `Filters ${on}` : "Filters";
     if (on) $("picks").classList.add("open");
   }
@@ -115,7 +120,8 @@ export function filterBar({ getMeta, changed, editProject }) {
   });
   $("find").addEventListener("input", () => { clearTimeout($("find").wait); $("find").wait = setTimeout(() => setFilters({ q: $("find").value }), 200); });
   $("farchived").addEventListener("click", () => setFilters({ archived: filters().archived ? "" : "1" }));
-  $("clearfilters").addEventListener("click", () => setFilters({ severity: [], owner: "", q: "", archived: "" }));
+  $("fsubtasks").addEventListener("click", () => setFilters({ subtasks: filters().subtasks ? "" : "1" }));
+  $("clearfilters").addEventListener("click", () => setFilters({ severity: [], owner: "", q: "", archived: "", subtasks: "" }));
 
   // an address that names none: the project this browser last chose
   const kept = read(CHOSEN);

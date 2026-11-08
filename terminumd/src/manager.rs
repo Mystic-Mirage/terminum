@@ -130,7 +130,7 @@ async fn read_server(app: &Shared, server: Arc<Server>) -> Got {
         return linkless(app, &server);
     }
     let host = (!local).then(|| server.name.clone());
-    let home = if local { crate::config::home().display().to_string() } else { server.home().await.unwrap_or_default() };
+    let home = server.home_folder().await.unwrap_or_default();
     let looks = &app.looks;
     let out = match layout::read(&server, &app.agent_states, &app.hooks, &app.turns.hooked(Instant::now()), &home, |s| looks.theme_name(host.as_deref(), s)).await {
         Ok(read) => {

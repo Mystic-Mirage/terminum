@@ -29,6 +29,9 @@ pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: imp
     tx.prepare_cached(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)
 }
 
+pub use super::users::{agent_user, pool_user, pool_user_id};
+pub(crate) use super::users::user_name;
+
 pub fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
@@ -111,18 +114,6 @@ pub fn get(tx: &Transaction, id: &str) -> Result<Task, String> {
 
 pub fn text_of(tx: &Transaction, id: &str) -> Result<String, String> {
     of_task(tx, id, "SELECT body FROM tasks WHERE number = ?1", |r| r.get(0))
-}
-
-pub(crate) fn user_name(tx: &Transaction, user: &str) -> Result<String, String> {
-    tx.query_row("SELECT name FROM users WHERE id = ?1", [user], |r| r.get(0)).optional().map_err(sql)?.ok_or_else(|| format!("No user {user}"))
-}
-
-/// The user an agent writes as ("claude · api"), made the first time.
-pub fn agent_user(tx: &Transaction, agent: &str, session: &str) -> Result<String, String> {
-    let name = format!("{agent} · {session}");
-    let id = format!("agent:{name}");
-    tx.execute("INSERT OR IGNORE INTO users (id, kind, name, role) VALUES (?1, 'agent', ?2, 'agent')", (&id, &name)).map_err(sql)?;
-    Ok(id)
 }
 
 /// One line of a task's history; a comment is one too. Its id.
@@ -290,9 +281,9 @@ pub fn set_budget(tx: &Transaction, author: &str, id: &str, minutes: Option<i64>
     log(tx, &key, author, "edit", &said, None, at).map(|_| ())
 }
 
-/// A project's name and folder.
-pub(crate) fn project_row(tx: &Transaction, project: &str) -> Result<(String, String), String> {
-    tx.query_row("SELECT name, dir FROM projects WHERE id = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?))).map_err(sql)
+/// Where a project's agents start: its name, server and folder (terminum-dispatcher.md AC-140).
+pub(crate) fn project_place(tx: &Transaction, project: &str) -> Result<(String, Option<String>, String), String> {
+    tx.query_row("SELECT name, host, dir FROM projects WHERE id = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)
 }
 
 /// Its owner, with no line in its history: Dispatcher's run says who took it.
@@ -377,7 +368,7 @@ pub fn archive(tx: &Transaction, author: &str, id: &str, on: bool, at: i64) -> R
     let key = key_of(tx, id)?;
     tx.execute("UPDATE tasks SET archived_at = CASE WHEN ?1 THEN ?2 END, updated_at = ?2 WHERE id = ?3", (on, at, &key)).map_err(sql)?;
     let who = user_name(tx, author)?;
-    log(tx, &key, author, "archive", &format!("{who} {}", if on { "archived it" } else { "brought it back" }), None, at).map(|_| ())
+    log(tx, &key, author, "archive", &if on { format!("Archived by {who}") } else { format!("{who} brought it back") }, None, at).map(|_| ())
 }
 
 /// A human moves a task to `project` (AC-113): a session goes with it (`choice` "move") unless it
@@ -415,7 +406,7 @@ fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, at: i64)
     check_project(tx, project)?;
     let key = key_of(tx, id)?;
     let who = user_name(tx, author)?;
-    let (name, _) = project_row(tx, project)?;
+    let (name, _, _) = project_place(tx, project)?;
     let kids: Vec<String> = rows(tx, "SELECT id FROM tasks WHERE parent = ?1", [&key], |r| r.get(0))?;
     let held: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE parent = ?1 AND session_key IS NOT NULL", [&key], |r| r.get(0)).optional().map_err(sql)?;
     if let Some(kid) = held {

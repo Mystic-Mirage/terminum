@@ -17,7 +17,7 @@ function editor(text, label) {
   return area;
 }
 
-export function taskWindow({ getMeta, runs }) {
+export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
   const box = $("taskbox"), body = $("taskbody");
   let shown = null, drawn = "", opening = 0;
 
@@ -151,6 +151,26 @@ export function taskWindow({ getMeta, runs }) {
     return wrap;
   }
 
+  /** Its parent, or its subtasks and the key that makes one: one level (AC-112). */
+  function family(t) {
+    if (t.parent) {
+      const up = el("p", "subof", "Subtask of ");
+      up.append(button("linklike", t.parent, () => openTask(t.parent)));
+      return up;
+    }
+    const wrap = el("section", "subtasks");
+    const head = el("div", "edithead");
+    head.append(el("span", null, t.subtasks ? `Subtasks ${t.subtasks_done}/${t.subtasks}` : "Subtasks"), button("textkey", "New subtask", () => newSubtask(t)));
+    const list = el("ul", "sublist");
+    list.append(...t.children.map((k) => {
+      const li = el("li");
+      li.append(button("linklike", `${k.id} ${k.title}`, () => openTask(k.id)), el("small", null, k.archived_at ? `${k.status} · archived` : k.status));
+      return li;
+    }));
+    wrap.append(head, list);
+    return wrap;
+  }
+
   function filesOf(t) {
     if (!t.files.length) return null;
     const list = el("ul", "filelist");
@@ -251,7 +271,7 @@ export function taskWindow({ getMeta, runs }) {
     history.append(...t.history.map((e) => eventRow(t, e)));
     const closed = t.session?.closed ? el("p", "cstate closed", "session closed") : null;
     const scroll = body.scrollTop;
-    body.replaceChildren(...[fields(t), closed, text(t), filesOf(t), history, commentForm(t)].filter(Boolean));
+    body.replaceChildren(...[fields(t), closed, text(t), family(t), filesOf(t), history, commentForm(t)].filter(Boolean));
     body.scrollTop = scroll;
   }
 

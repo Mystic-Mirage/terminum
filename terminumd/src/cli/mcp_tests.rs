@@ -111,7 +111,7 @@ fn a_line_too_long_is_dropped_to_its_newline() {
     assert_eq!(read_line(&mut r), None);
 }
 
-/// terminum-dispatcher.md AC-137: a project's agents are not an agent's to read or change.
+/// terminum-dispatcher.md AC-137: the pool is not an agent's to read or change.
 #[test]
 fn ac137_no_tool_reaches_a_projects_agents() {
     assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "take_task", "move_task", "add_comment", "attach_file", "get_file", "finish_task"]);
@@ -176,7 +176,7 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
             let args = match t {
                 "update_session_plan" => json!({"items": [{"text": "a", "status": "pending"}]}),
                 "list_tasks" | "get_session_plan" => json!({}),
-                "create_task" => json!({"title": "t"}),
+                "create_task" => json!({"title": "Bug: t", "severity": "P2"}),
                 "move_task" => json!({"id": "T-1", "to": "DONE"}),
                 "add_comment" => json!({"id": "T-1", "text": "a"}),
                 "finish_task" => json!({"id": "T-1", "result": "a"}),

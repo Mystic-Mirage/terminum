@@ -56,7 +56,27 @@ def mcp_lines(n0=1):
     return [{"jsonrpc": "2.0", "id": n0, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             call(n0 + 1, "update_session_plan", {"items": [{"text": "one", "status": "completed"}], "doing": "Checking the host", "eta_minutes": 30}),
-            call(n0 + 2, "create_task", {"title": "host parser drops a BOM", "text": "The host's parser drops a BOM."})]
+            call(n0 + 2, "create_task", {"title": "Bug: host parser drops a BOM", "severity": "P2", "text": "The host's parser drops a BOM."})]
+
+
+def mcp_file(task):
+    """A file handed in as text on `task`, then asked back (terminum-kanban.md AC-120)."""
+    call = lambda i, name, args: {"jsonrpc": "2.0", "id": i, "method": "tools/call", "params": {"name": name, "arguments": args}}  # noqa: E731
+    return mcp_lines()[:2] + [call(2, "attach_file", {"task": task, "name": "log.txt", "text": "hello from the Mac"}),
+                              call(3, "get_file", {"task": task, "name": "log.txt"})]
+
+
+def file_said(evdir, hb, sock, pane, task):
+    """get_file's answer through `terminum-host mcp` in the host pane: (is an error, its text)."""
+    open(os.path.join(evdir, "file.in"), "w").write("".join(json.dumps(m) + "\n" for m in mcp_file(task)))
+    # a marker of its own, printed, never typed: an earlier call's stays on the screen, and a line the
+    # terminal wraps would show a typed one before its end
+    n = time.time_ns()
+    in_pane(sock, pane, f"cd {evdir}; {hb} mcp < file.in > file.out 2>&1; printf 'file-%s\\n' {n}", f"file-{n}", 40)
+    raw = open(os.path.join(evdir, "file.out")).read() if os.path.exists(os.path.join(evdir, "file.out")) else "no answer"
+    answers = [json.loads(x) for x in raw.splitlines() if x.startswith("{")]
+    said = next((a for a in answers if a.get("id") == 3), {}).get("result", {})
+    return said.get("isError"), (said.get("content") or [{}])[0].get("text", "") or raw[-400:]
 
 
 def in_pane(sock, target, cmd, done, timeout=20):
@@ -108,6 +128,8 @@ def agents_only(t, home, hb, pane):
     evdir = os.path.join(home, "proj")
     in_pane(REMOTE_SOCKET, pane, f'cd {evdir}; ({hb} hook claude < ev0.json; echo "hook-rc=$?") &', "hook-rc=0")
     check("AC-99 agents only: the pane's hook state is known", hooks_known(REMOTE_SOCKET, pane, evdir, hb), open(os.path.join(evdir, "get.out")).read()[-400:])
+    error, text = file_said(evdir, hb, REMOTE_SOCKET, pane, "T-1")
+    check("AC-120 files off: get_file says so, the other tools work", error is True and "Files are off for this host" in text, text)
     alog = os.path.join(home, ".terminum", "logs", "agent.log")
     lines = lambda: open(alog).read()   # noqa: E731
     starts = lines().count('event="start"')
@@ -221,11 +243,19 @@ def main():
             tasks = db.execute("SELECT title, by_agent FROM tasks").fetchall()
         finally:
             db.close()
-        check("AC-99 terminum-kanban.md AC-120 the host agent's task stands in the Mac's store, by an agent", ("host parser drops a BOM", 1) in tasks, tasks)
+        check("AC-99 terminum-kanban.md AC-120 the host agent's task stands in the Mac's store, by an agent", ("Bug: host parser drops a BOM", 1) in tasks, tasks)
         metas = [json.load(open(m)) | {"_dir": os.path.dirname(m)} for m in glob.glob(os.path.join(t.home, "sessions", "*", "meta.json"))]
         kept = [m for m in metas if "plan the host check" in open(os.path.join(m["_dir"], "sent.jsonl")).read()] if metas else []
         check("AC-99 the sent history keeps the prompt under the host, not local", kept and all(m.get("host") == "devbox" for m in kept), metas)
         tmux_on(REMOTE_SOCKET, "send-keys", "-t", pane, "Enter")   # the agent ends
+
+        # terminum-kanban.md AC-120: a task's file reaches the host's agent as a paste's file does
+        made = (next((a for a in answers if a.get("id") == 3), {}).get("result", {}).get("content") or [{}])[0].get("text", "")
+        task = (re.search(r"T-\d+", made) or re.search("$", "")).group(0)
+        error, text = file_said(evdir, hb, REMOTE_SOCKET, pane, task)
+        there = text.strip().splitlines()[-1] if text.strip() else ""
+        check("AC-120 get_file on a host: the file is put in its ~/.terminum/tmp, its path said",
+              error is False and there.startswith(os.path.join(home, ".terminum", "tmp")) and os.path.isfile(there) and open(there).read() == "hello from the Mac", (task, text))
 
         # 4. a pane of another tmux whose socket has the same name: not filed
         other = os.path.join(t.root, "o", REMOTE_SOCKET)

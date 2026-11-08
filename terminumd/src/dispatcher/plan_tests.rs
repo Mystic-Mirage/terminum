@@ -2,7 +2,7 @@
 use super::*;
 
 fn run(status: &str) -> Run {
-    Run { status: status.into(), state: "working".into(), kind: "claude".into(), ids: vec!["T-12".into()], open: if crate::dispatcher::plan::finished(status) { vec![] } else { vec!["T-12".into()] }, ..Default::default() }
+    Run { task: "k12".into(), status: status.into(), state: "working".into(), kind: "claude".into(), ids: vec!["T-12".into()], open: if crate::dispatcher::plan::finished(status) { vec![] } else { vec!["T-12".into()] }, ..Default::default() }
 }
 
 fn up(dt: i64) -> Facts {
@@ -264,4 +264,28 @@ fn ac125_a_close_decided_is_read_again_before_the_pane_goes() {
     assert!(!still_closes(&Run { turn_ended: false, ..due() }), "RUN took it to type in it");
     assert!(!still_closes(&Run { status: "IN PROGRESS".into(), ..due() }), "open again");
     assert!(!still_closes(&Run { state: "left".into(), ..due() }), "given up since");
+}
+
+#[test]
+fn ac141_only_a_session_with_all_over_is_idle_for_a_slot() {
+    let idle = || { let mut r = run("DONE"); r.turn_ended = true; r.closing_for = 60; r };
+    assert!(idle_holder(&idle()));
+    assert!(!idle_holder(&Run { closing_for: 59, ..idle() }), "two walks quiet first");
+    assert!(!idle_holder(&Run { turn_ended: false, ..idle() }), "in a turn");
+    assert!(!idle_holder(&Run { open_tools: 1, ..idle() }), "a tool open");
+    assert!(!idle_holder(&Run { status: "IN PROGRESS".into(), ..idle() }));
+    assert!(!idle_holder(&Run { open: vec!["T-13".into()], ..idle() }), "a task of it open");
+    assert!(!idle_holder(&Run { state: "gone".into(), ..idle() }), "holds no slot");
+}
+
+#[test]
+fn ac142_a_session_with_no_task_is_watched_for_its_end_alone() {
+    let mut r = Run { task: String::new(), status: String::new(), ..run("IN PROGRESS") };
+    let mut quiet = up(7200);
+    quiet.memory = Some(Memory { gib: 20.0, end_gib: 8.0, warn_due: true, end_due: true });
+    assert!(step(&mut r, &quiet).is_empty(), "no nudge, budget, memory end or closing: the human's");
+    assert_eq!(r.state, "working");
+    let ended = step(&mut r, &Facts { alive: false, exit: Some(0), ..up(30) });
+    assert_eq!(r.state, "gone", "its agent's end frees its slot");
+    assert!(ended.iter().all(|a| matches!(a, Act::Say(_))), "no task to move: {ended:?}");
 }

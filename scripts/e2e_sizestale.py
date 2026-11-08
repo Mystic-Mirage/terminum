@@ -44,24 +44,25 @@ def main():
         ws.until(lambda m: m["t"] == "screen", 5)
         ws.send({"t": "size", "cols": 80, "rows": 24, "typing": False})
         ws.until(lambda m: m["t"] == "sized" and not m.get("error"), 5)
+        time.sleep(1.5)                                    # past sizing.rs EVERY (1 s): a resize inside it would wait, then size the pane shown by then
         os.kill(pid, signal.SIGSTOP)                       # it stalls with the next resize unanswered
         ws.send({"t": "size", "cols": 100, "rows": 32, "typing": True})
-        time.sleep(1)                                      # past the resize's settling: it waits on the stalled server
+        time.sleep(1)                                      # the resize reaches the stalled server
         ws.send({"t": "sub", "id": here})                  # the user moves on meanwhile
         ws.until(lambda m: m["t"] == "screen", 5)
         os.kill(pid, signal.SIGKILL)                       # and it goes
         said = ["screen"]
         def watch(m):
-            if m["t"] == "sized" and m.get("error"):
-                said.append(m)
+            if m["t"] == "sized" and (m.get("error") or m.get("sid") == here):
+                said.append(m)                             # `here` sized instead: the resize went too late
             elif m["t"] == "screen":
                 said.append("screen")
             return said.count("screen") and any(x != "screen" for x in said)
         ws.until(watch, 20)
         refused = next((x for x in said if x != "screen"), None)
-        check("the refusal came", refused is not None, refused)
+        check("the refusal came", bool(refused and refused.get("error")), refused)
         check("AC-13 a failed resize names the pane it was for, not the one shown now",
-              refused is not None and refused.get("sid") == there and refused.get("sid") != here, (refused, here, there))
+              bool(refused) and refused.get("sid") == there, (refused, here, there))
     finally:
         try:
             os.kill(pid, signal.SIGKILL)

@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 
 /// The schema's versions, oldest first: `PRAGMA user_version` says how many have run.
-const MIGRATIONS: [&str; 10] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql")];
+const MIGRATIONS: [&str; 11] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql"), include_str!("schema11.sql")];
 
 /// The default project's and Dispatcher's fixed IDs, seeded by schema1.sql.
 pub const DEFAULT_PROJECT: &str = "default";
@@ -77,6 +77,12 @@ fn prepare(mut conn: Connection, path: &Path) -> rusqlite::Result<Result<Connect
     // a purge means it (AC-109): freed pages are overwritten, not left in the file
     conn.pragma_update(None, "secure_delete", "ON")?;
     upgrade(&mut conn, path, &MIGRATIONS)?;
+    // prefixes and IDs need code to stay unique (AC-148): every start fills what a migration or a project left
+    let tx = conn.transaction()?;
+    if let Err(why) = super::slugs::fill(&tx) {
+        return Ok(Err(why));
+    }
+    tx.commit()?;
     let name = std::env::var("USER").unwrap_or_else(|_| "you".into());
     conn.execute("UPDATE users SET name = ?1 WHERE id = ?2 AND name = ''", (name, HUMAN))?;
     Ok(Ok(conn))

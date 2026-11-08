@@ -162,7 +162,7 @@ pub fn delete(store: &Store, dir: &Path, id: &str, author: &str, at: i64) -> Res
         if let Some(key) = &task {
             let who = ops::user_name(tx, author)?;
             ops::log(tx, key, author, "edit", &format!("{who} deleted the file {name}"), None, at)?;
-            shown = Some(tx.query_row("SELECT 'T-' || number FROM tasks WHERE id = ?1", [key], |r| r.get::<_, String>(0)).map_err(sql)?);
+            shown = Some(tx.query_row("SELECT slug FROM tasks WHERE id = ?1", [key], |r| r.get::<_, String>(0)).map_err(sql)?);
         }
         std::fs::remove_file(&path).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(format!("{name}: {e}")) })?;
         Ok(shown)

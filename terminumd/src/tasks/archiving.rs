@@ -13,7 +13,7 @@ const MOST: i64 = 200;
 
 /// What is due at `now`, archived: their IDs. A move or a return starts the 2 days again.
 pub fn due(tx: &Transaction, now: i64) -> Result<Vec<String>, String> {
-    let found: Vec<(String, String)> = rows(tx, "SELECT t.id, 'T-' || t.number FROM tasks t WHERE t.archived_at IS NULL AND t.status = 'DONE'
+    let found: Vec<(String, String)> = rows(tx, "SELECT t.id, t.slug FROM tasks t WHERE t.archived_at IS NULL AND t.status = 'DONE'
         AND COALESCE((SELECT max(e.at) FROM events e WHERE e.task = t.id AND e.kind IN ('move', 'archive')), t.updated_at) <= ?1
         AND NOT EXISTS (SELECT 1 FROM tasks s WHERE s.parent = t.id AND s.status <> 'DONE' AND s.archived_at IS NULL)
         ORDER BY t.number LIMIT ?2", (now - AFTER, MOST), |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -22,7 +22,7 @@ pub fn due(tx: &Transaction, now: i64) -> Result<Vec<String>, String> {
         if ops::get(tx, &id)?.archived_at.is_some() || crate::dispatcher::runs::holding(tx, &key)?.is_some() {
             continue;
         }
-        let kids: Vec<String> = rows(tx, "SELECT 'T-' || number FROM tasks WHERE parent = ?1 AND status = 'DONE' AND archived_at IS NULL", [&key], |r| r.get(0))?;
+        let kids: Vec<String> = rows(tx, "SELECT slug FROM tasks WHERE parent = ?1 AND status = 'DONE' AND archived_at IS NULL", [&key], |r| r.get(0))?;
         for task in kids.into_iter().chain(std::iter::once(id)) {
             ops::archive(tx, DISPATCHER, &task, true, now)?;
             archived.push(task);

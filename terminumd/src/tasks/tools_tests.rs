@@ -14,7 +14,7 @@ fn who(project: Option<&str>) -> Who {
 fn fresh(name: &str) -> (Store, std::path::PathBuf) {
     let dir = crate::testutil::fresh_dir(name);
     let s = Store::open(dir.join("kanban.sqlite"));
-    s.with(|tx| tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 1, '', 0), ('web', 'web', 2, '', 1)", []).map_err(ops::sql)).unwrap();
+    s.with(|tx| { tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 1, '', 0), ('web', 'web', 2, '', 1)", []).map_err(ops::sql)?; crate::tasks::slugs::fill(tx) }).unwrap();
     (s, dir)
 }
 
@@ -22,7 +22,14 @@ fn task(s: &Store, project: &str, session: Option<&str>) -> String {
     s.with(|tx| ops::create(tx, HUMAN, NewTask { title: format!("t in {project} {session:?}"), text: "body".into(), project: Some(project.into()), session: session.map(str::to_string), ..Default::default() }, 1)).unwrap().id
 }
 
-fn call(s: &Store, dir: &Path, w: &Who, tool: &str, args: Value) -> Result<String, String> {
+/// A text in the default template's sections (AC-145).
+const SECTIONS: &str = "## Problem or goal\nx\n## Context\ny\n## Expected result\nz\n## Prerequisites\nNone";
+
+/// A create_task with no text gets one in the template's sections: what these tests check is elsewhere.
+fn call(s: &Store, dir: &Path, w: &Who, tool: &str, mut args: Value) -> Result<String, String> {
+    if tool == "create_task" && args.get("text").is_none() && args.get("title").is_some() {
+        args["text"] = json!(SECTIONS);
+    }
     run(s, dir, w, tool, &args).map(|(t, _)| t)
 }
 
@@ -136,7 +143,7 @@ fn ac115_a_free_task_can_be_taken_one_with_a_session_cannot() {
 fn ac115_a_new_task_is_marked_cleaned_and_not_kept_twice() {
     let (s, dir) = fresh("tt-new");
     let w = who(Some("api"));
-    let said = call(&s, &dir, &w, "create_task", json!({"title": "Bug: Gap\u{202e} in\u{7} retry", "text": "API_TOKEN=abc123 here", "severity": "P1"})).unwrap();
+    let said = call(&s, &dir, &w, "create_task", json!({"title": "Bug: Gap\u{202e} in\u{7} retry", "text": format!("{SECTIONS}\nAPI_TOKEN=abc123 here"), "severity": "P1"})).unwrap();
     let id = said.trim_start_matches("Kept as ").trim_end_matches(", in TODO.").to_string();
     let (t, text) = s.with(|tx| Ok((ops::get(tx, &id)?, ops::text_of(tx, &id)?))).unwrap();
     assert_eq!((t.title.as_str(), t.by_agent, t.session.clone(), t.status.as_str(), t.project.as_str(), t.severity.as_str()), ("Bug: Gap in retry", true, None, "TODO", "api", "P1"));
@@ -229,4 +236,16 @@ fn ac120_a_host_s_get_file_goes_through_its_link() {
     assert_eq!((name.as_str(), std::fs::read_to_string(path).unwrap().as_str()), ("log.txt", "hello"));
     assert!(s.with(|tx| task_file(tx, &dir, &w, &json!({"task": id, "name": "none.txt"}))).unwrap_err().contains("has no file none.txt"));
     assert!(s.with(|tx| task_file(tx, &dir, &who(Some("web")), &json!({"task": id, "name": "log.txt"}))).unwrap_err().contains("outside"), "judged as get_task");
+}
+
+#[test]
+fn ac145_an_agent_s_text_follows_its_project_s_template() {
+    let (s, dir) = fresh("tt-template");
+    let w = who(Some("api"));
+    let bare = run(&s, &dir, &w, "create_task", &json!({"title": "Bug: no sections", "severity": "P2", "text": "it breaks"})).unwrap_err();
+    assert!(bare.starts_with("Not kept: the text lacks the sections") && bare.contains("## Expected result"), "the default is quoted: {bare}");
+    s.with(|tx| crate::tasks::template::set(tx, "api", "## Why\n## Done when")).unwrap();
+    let own = run(&s, &dir, &w, "create_task", &json!({"title": "Bug: own", "severity": "P2", "text": SECTIONS})).unwrap_err();
+    assert!(own.ends_with("## Why\n## Done when"), "the project's own is quoted: {own}");
+    assert!(run(&s, &dir, &w, "create_task", &json!({"title": "Bug: own", "severity": "P2", "text": "## Why\na\n## Done when\nb"})).is_ok());
 }

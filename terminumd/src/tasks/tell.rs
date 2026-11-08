@@ -63,7 +63,7 @@ fn ended_words(state: State, why: &str) -> Option<String> {
 /// by it (terminum-dispatcher.md AC-123 moves only what Dispatcher started); `Ok(None)`: nothing to say.
 fn say_stopped(tx: &rusqlite::Transaction, key: &str, words: &str, at: i64) -> Result<Vec<String>, String> {
     let mut said = Vec::new();
-    for (row, id) in ops::rows(tx, "SELECT id, 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND archived_at IS NULL", [key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+    for (row, id) in ops::rows(tx, "SELECT id, slug FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND archived_at IS NULL", [key], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
         let last: Option<String> = tx.query_row("SELECT text FROM events WHERE task = ?1 ORDER BY at DESC, rowid DESC LIMIT 1", [&row], |r| r.get(0)).optional().map_err(ops::sql)?;
         if last.as_deref() != Some(words) {
             ops::log(tx, &row, DISPATCHER, "told", words, None, at)?;

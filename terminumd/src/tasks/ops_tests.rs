@@ -28,10 +28,10 @@ fn moved(s: &Store, id: &str, to: &str) -> Result<Task, String> {
 fn ac106_a_new_task_stands_in_todo_with_its_defaults() {
     let s = store("t-new");
     let t = s.with(|tx| create(tx, HUMAN, NewTask { title: "  Fix the retry loop ".into(), text: "**why**".into(), ..Default::default() }, 100)).unwrap();
-    assert_eq!((t.id.as_str(), t.title.as_str(), t.status.as_str(), t.severity.as_str(), t.project.as_str()), ("T-1", "Fix the retry loop", "TODO", "P2", "default"));
+    assert_eq!((t.id.as_str(), t.title.as_str(), t.status.as_str(), t.severity.as_str(), t.project.as_str()), ("TASK-1", "Fix the retry loop", "TODO", "P2", "default"));
     assert_eq!(t.owner, HUMAN);
-    assert_eq!(s.with(|tx| text_of(tx, "T-1")).unwrap(), "**why**");
-    assert_eq!(new(&s, "next", "P1").id, "T-2", "numbers run on");
+    assert_eq!(s.with(|tx| text_of(tx, "TASK-1")).unwrap(), "**why**");
+    assert_eq!(new(&s, "next", "P1").id, "TASK-2", "numbers run on");
 }
 
 #[test]

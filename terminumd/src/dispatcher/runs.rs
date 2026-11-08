@@ -113,8 +113,8 @@ impl Run {
 }
 
 const SELECT: &str = "SELECT r.id, COALESCE(r.task, ''),
-    (SELECT group_concat('T-' || x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
-    (SELECT group_concat('T-' || x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND x.status NOT IN ('DONE', 'FAILED')),
+    (SELECT group_concat(x.slug, ',' ORDER BY x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
+    (SELECT group_concat(x.slug, ',' ORDER BY x.number) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id AND x.status NOT IN ('DONE', 'FAILED')),
     COALESCE((SELECT x.status FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id ORDER BY CASE x.status WHEN 'IN PROGRESS' THEN 0 WHEN 'WAIT FOR HUMAN' THEN 1 WHEN 'TODO' THEN 2 WHEN 'FAILED' THEN 3 ELSE 4 END LIMIT 1), ''),
     r.project,
     (SELECT sum(x.budget_seconds) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
@@ -126,11 +126,9 @@ const SELECT: &str = "SELECT r.id, COALESCE(r.task, ''),
 pub(crate) const STILL: &str = "r.state NOT IN ('closed', 'left')";
 const STARTING: &str = "r.state IN ('starting', 'asking', 'typed')";
 
-/// `group_concat`'s list, its order by number.
+/// `group_concat`'s list, in the order the tasks were made.
 fn listed(text: Option<String>) -> Vec<String> {
-    let mut ids: Vec<String> = text.unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(str::to_string).collect();
-    ids.sort_by_key(|id| crate::tasks::ops::number_of(id).unwrap_or(0));
-    ids
+    text.unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(str::to_string).collect()
 }
 
 fn of_row(r: &Row) -> rusqlite::Result<Run> {

@@ -79,7 +79,7 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
     }
     if let Some(found) = q.text.as_deref().filter(|t| !t.is_empty()) {
         let n = bind(&mut args, format!("%{}%", like_escaped(found)));
-        text.push_str(&format!(" AND (t.title LIKE {n} ESCAPE '\\' OR t.body LIKE {n} ESCAPE '\\' OR 'T-' || t.number LIKE {n} ESCAPE '\\')"));
+        text.push_str(&format!(" AND (t.title LIKE {n} ESCAPE '\\' OR t.body LIKE {n} ESCAPE '\\' OR t.slug LIKE {n} ESCAPE '\\')"));
     }
     if !q.with_subtasks {
         text.push_str(" AND t.parent IS NULL");
@@ -116,7 +116,7 @@ pub fn counts(tx: &Transaction, q: &Query) -> Result<Value, String> {
 /// (AC-115): that task.
 pub fn repeat_of(tx: &Transaction, project: &str, title: &str) -> Result<Option<String>, String> {
     let wanted = plain(title);
-    let open: Vec<(String, String)> = rows(tx, "SELECT 'T-' || number, title FROM tasks WHERE project = ?1 AND status <> 'DONE' AND archived_at IS NULL", [project], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let open: Vec<(String, String)> = rows(tx, "SELECT slug, title FROM tasks WHERE project = ?1 AND status <> 'DONE' AND archived_at IS NULL", [project], |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(open.into_iter().find(|(_, title)| plain(title) == wanted).map(|(number, _)| number))
 }
 

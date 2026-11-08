@@ -35,7 +35,13 @@ export function boardKit(page, { base, tmux, work, bin, home, app }) {
   };
   const endPanes = () => { for (const pane of panes.splice(0)) tmux("kill-pane", "-t", pane); };
   const card = (id) => `.card[data-id="${id}"]`;
-  const open = async () => { await page.goto(`${base}/kanban/`); await page.waitForSelector('.col[data-status="TODO"]'); await nap(250); };
+  /** The board with its columns' first read drawn (a card or "No tasks" in each): on CI's runner
+   *  WebKit's read outlasts any fixed wait, and a check then found no card. */
+  const open = async () => {
+    await page.goto(`${base}/kanban/`);
+    await page.waitForFunction(() => { const lists = [...document.querySelectorAll(".col .cards")]; return lists.length > 0 && lists.every((l) => l.childElementCount > 0); });
+    await nap(250);
+  };
   /** Where the live test goes on: a session shown on the session page. */
   const backToSessions = async () => {
     await page.goto(`${base}/sessions/`);

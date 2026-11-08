@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardKit, nap } from "./boardkit.mjs";
-import { check as report, slack, until } from "./check.mjs";
+import { check as report, ranToItsEnd, slack, until } from "./check.mjs";
 
 const AGENT = new Set(["agent_stops_with_task_open", "agent_out_of_limits", "agent_process_dies", "pane_closes"]);
 
@@ -365,7 +365,7 @@ ${"z".repeat(400)}
   for (const [name, f] of Object.entries(probes)) {
     tag = AGENT.has(name) ? "AC-136" : "AC-133";
     await nap(200);                                // a window closed just now goes Back in its own time
-    try { await f(); } catch (e) { check(`${name} ran to its end`, false, e.message.split("\n").slice(0, 6).join(" | ")); await page.unroute("**/*").catch(() => {}); }
+    try { await f(); } catch (e) { ranToItsEnd(e, `${tag} ${name} ran to its end`); await page.unroute("**/*").catch(() => {}); }
     await page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close(); }).catch(() => {});
   }
   // this test's panes go, their agents' states with them: what follows measures a quiet page

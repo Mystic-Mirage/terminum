@@ -7,7 +7,7 @@
 // Firefox only when named (`node ui/node_modules/playwright-core/cli.js install firefox`), and
 // only for the checks that run without a touch screen (FIREFOX_TOO).
 
-import { check, playwright, results, runningIn } from "./check.mjs";
+import { check, playwright, ranToItsEnd, results, runningIn } from "./check.mjs";
 import { webApp } from "./e2e_app.mjs";
 import { webBoxNav } from "./e2e_boxnav.mjs";
 import { webClip } from "./e2e_clip.mjs";
@@ -88,7 +88,7 @@ for (const name of browsers.length ? browsers : BROWSERS) {
       if (name === "firefox" && !FIREFOX_TOO.includes(which)) continue;
       if (name !== "chromium" && CHROMIUM_ONLY[which]) { console.log(`SKIP [${name}] ${which}: needs ${CHROMIUM_ONLY[which]}`); continue; }
       runningIn(name);
-      try { await run(browser, name); } catch (e) { check(`${which} ran to its end`, false, String(e.stack ?? e).split("\n").slice(0, 3).join(" | ")); }
+      try { await run(browser, name); } catch (e) { ranToItsEnd(e, `${which} ran to its end`); }
       for (const ctx of browser.contexts()) await ctx.close();   // a page a failed check left open
     }
   } finally { await browser.close(); }

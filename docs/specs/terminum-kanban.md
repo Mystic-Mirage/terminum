@@ -115,6 +115,11 @@ Scenario: AC-105 edge — many cards
 Scenario: AC-105 failure — not reached
   When terminumd cannot be reached or the store answers an error
   Then the board keeps what it shows, a banner says "The board is out of date: <terminumd's message>", and a move is refused where it was made
+
+Scenario: AC-105 failure — its projects and filters not read
+  Given the read of the board's projects and filters fails while its columns' read answers
+  Then the banner says "The board is out of date: <the message>" after the columns come too
+  And they are read again every 2 s; once they come, the banner goes and the filters show
 ```
 
 ### AC-106 — Making a task [MUST / P0]
@@ -295,6 +300,8 @@ Scenario: AC-112 edge — the parent
   Then T-13 stays open and T-12's card still shows "0/1"; the parent's status never changes by itself, nor a subtask's by its parent's
   When T-12 moves to another project
   Then its subtasks move with it in one transaction
+  When "Subtask of T-12" is pressed while T-13's window still reads T-13 again
+  Then T-12's window stays: T-13's late answer draws nothing over it
 
 Scenario: AC-112 failure — a second level
   When New subtask is asked of a subtask
@@ -859,7 +866,7 @@ Depends on: nothing more.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-105 — `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`
+- [x] AC-105 — `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`

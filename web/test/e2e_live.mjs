@@ -14,7 +14,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { check, playwright, results, runningIn, until, within } from "./check.mjs";
+import { check, playwright, ranToItsEnd, results, runningIn, until, within } from "./check.mjs";
 import { freePort, own, shortTmp } from "./testrun.mjs";
 import { endOnSignal, NO_SIGNALS, stopChild } from "../../ui/test/process-stop.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
@@ -382,7 +382,7 @@ try {
       if (!SMOKE) await phone(browser, name);
       await ctx.close();
     } catch (e) {
-      check("ran to its end", false, String(e.stack ?? e).split("\n").slice(0, 3).join(" | "));
+      ranToItsEnd(e);
     } finally { await browser.close(); }
     await stop();
     purge();

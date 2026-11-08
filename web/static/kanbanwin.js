@@ -302,6 +302,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
     if (editing()) return;
     try {
       const t = await api(`/api/tasks/${shown.id}`);
+      if (t.id !== shown.id) return;             // another task opened while it was read: that one stays
       if (!editing() && (!news || JSON.stringify(t) !== drawn)) draw(t);   // an editor opened while it was read stays
     } catch (e) { say(e.message); }
   }

@@ -4,7 +4,7 @@
 // by itself; a project's own Archived, with Find and Return.
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { boardKit } from "./boardkit.mjs";
+import { boardKit, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const card = (id) => `.card[data-id="${id}"]`;
@@ -49,8 +49,20 @@ export async function liveBoardTasks(page, opts) {
   await page.click(card(kid));
   await page.waitForSelector("#taskbox[open]");
   check("AC-112 a subtask's window says its parent and offers no New subtask", await until(() => page.isVisible("#taskbody .subof")) && !(await page.$("#taskbody .subtasks")));
+  // the subtask's window reading itself again, its answer held until its parent has opened: it draws nothing over the parent
+  let release;
+  const held = new Promise((r) => { release = r; }), mine = (r) => r.method() === "GET" && r.url().endsWith(`/api/tasks/${kid}`);
+  await page.route(`**/api/tasks/${kid}`, async (r) => { if (mine(r.request())) await held; await r.continue(); });
+  const asked = page.waitForRequest(mine);
+  await j(`/api/tasks/${kid}`, "PATCH", { text: "read again" });
+  await asked;
   await page.click("#taskbody .subof button");
-  check("AC-112 its parent opens from there", await until(async () => (await page.textContent("#tasktitle")).startsWith(parent)));
+  const opened = await until(async () => (await page.textContent("#tasktitle")).startsWith(parent)), answered = page.waitForResponse((r) => mine(r.request()));
+  release();
+  await answered;
+  await nap(100);
+  await page.unroute(`**/api/tasks/${kid}`);
+  check("AC-112 its parent opens from there", opened && (await page.textContent("#tasktitle")).startsWith(parent), await page.textContent("#tasktitle"));
   await page.click("#taskclose");
   await page.click("#fsubtasks");
   const refused = await page.evaluate(async (up) => (await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "second level", parent: up }) })).status, kid);

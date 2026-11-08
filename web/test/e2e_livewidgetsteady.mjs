@@ -27,6 +27,7 @@ export async function liveWidgetSteady(page, { tmux, work }) {
   await page.waitForTimeout(500);
   const table = path.join(work, "steady-table.txt"), script = path.join(work, "steady.sh");
   fs.writeFileSync(table, TABLE.join("\n") + "\n");
+  // the second clear by hand: Linux's `clear` also sends \E[3J, which drops the first table from the history `tables === 2` counts
   fs.writeFileSync(script, `clear
 i=0; while [ $i -lt 4 ]; do echo "before $i"; i=$((i+1)); done
 sleep 0.4
@@ -36,7 +37,7 @@ i=0; while [ $i -lt 60 ]; do echo "line $i"; i=$((i+1)); sleep 0.02; done
 seq 1 200 | sed 's/^/batch /'
 echo done-scroll
 sleep 0.5
-clear
+printf '\\033[H\\033[2J'
 echo above
 cat ${table}
 echo status

@@ -19,6 +19,11 @@ export const check = (name, ok, extra = "") => {
   results.push({ ok: !!ok, where });
   console.log(`${ok ? "PASS" : "FAIL"} ${where}${name}${extra ? " — " + extra : ""}`);
 };
+/** A run that threw, said whole: Playwright's call log says why an action waited, the first frame where. */
+export const ranToItsEnd = (e, name = "ran to its end") => {
+  const lines = String(e.stack ?? e).split("\n"), at = lines.findIndex((l) => /^\s+at /.test(l));
+  check(name, false, lines.slice(0, at < 0 ? undefined : at + 1).join(" | "));
+};
 export const within = async (name, fn, ms = 5000) => {
   const t0 = Date.now();
   try { await fn(ms); check(name, true, `${Date.now() - t0} ms`); } catch (e) { check(name, false, e.message.split("\n")[0]); }

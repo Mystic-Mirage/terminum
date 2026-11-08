@@ -128,6 +128,13 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   wide window small bars on the terminal's right edge mark where your messages (white), the
   agent's answers ended (pale blue), bookmarks (orange) and reminders (pink) stand in the
   history: press one to go there. Settings' Side marks turns them off.
+- **Input log**: everything terminum writes into a pane, a row each in the table `inputs` of
+  `~/.terminum/state/kanban.sqlite`: what you type (a row per Enter), paste or the Files panel
+  types, from which browser and address, and what Dispatcher pastes and launches, with its run,
+  tasks and agent; kept 180 days. What is typed at a password prompt, or a line you begin with a
+  space, keeps only why it is not kept. Read it with `sqlite3`; the columns and an example query
+  are in `docs/specs/terminum.md` §9 Data formats (AC-147). What an agent was actually given is
+  its own record, in the sent history above.
 - **The agent's folder**: when Claude Code works in another folder than where it started (a
   worktree), its row in the list, the header's folder and the Files tree follow it, and paths
   it prints open from there. Settings' Follow the agent's folder turns that off for this browser (`page.followAgent`

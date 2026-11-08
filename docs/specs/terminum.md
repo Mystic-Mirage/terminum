@@ -97,6 +97,7 @@ Open questions:
 | AC-100 | [NICE TO HAVE / later] | A row's menu shows the pane's diagnostics to copy into a bug report: terminum's build, the browser and its window, the row as listed and tmux's own fields of the pane (size, cursor, alternate screen, mouse modes, history, command, folder); no screen lines, history or sign-in. |
 | AC-101 | [NICE TO HAVE / later] | On a computer the session list shows a tip of the day, quiet, with Next, × until tomorrow and Turn off, and Settings turns tips on and off (on for a new browser). |
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
+| AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept.
 
 ## 5. BDD scenarios
 
@@ -768,6 +769,34 @@ Scenario: AC-101 edge — a phone, a touch screen, an embedded page
   Then no tip shows
 ```
 
+### AC-147 — The input log [SHOULD / P1]
+
+```gherkin
+Scenario: AC-147 happy path — what the user types
+  Given a page showing a pane
+  When the user types "echo hi" and presses Enter
+  Then one row of the table `inputs` in the tasks' store (`kanban.sqlite`) holds "echo hi<Enter>": the keys sent, text as it is and every other key by its tmux name in angle brackets (`<BSpace>`, `<C-c>`, `<Up>`), not the line the program kept
+  And the row says who: sender `human`, component `page`, the page's number, `mac` for the Mac's own browser or `web` through the tailnet, the address (X-Forwarded-For's last entry behind `tailscale serve`, else 127.0.0.1), the browser in a few words ("Safari 18 · iPhone") and the tailnet's user (Tailscale-User-Login) when forwarded
+  And into what: the pane's key, its machine (this Mac's name or the host's), tmux session, window, foreground program and folder, the session list's project of the pane, terminumd's version, when its first key went and when it ended
+  And a page's keys gather in one row until Enter, a paste, another pane or 2 s without a key; a paste is a row of its own (kind `paste`); what the Files panel types (terminum-files.md AC-60) is a row of component `panel`
+Scenario: AC-147 happy path — what Dispatcher writes
+  When Dispatcher opens a run's window or starts its agent anew
+  Then a row of kind `launch` holds the agent's command, sender `dispatcher`, component `dispatcher.start`, the run, its tasks and the agent's ID, and the run's project
+  When Dispatcher's gate (terminum-dispatcher.md §9) pastes a prompt and sends Enter
+  Then a row of kind `prompt`, component `dispatcher.gate`, holds the prompt and "<Enter>", with the run, tasks, agent and project; no page, browser or address
+Scenario: AC-147 edge — a secret is not kept
+  When the pane's foreground program reads secrets (sudo, su, passwd, doas, gpg, pinentry, security, op, pass, ssh-add) or its cursor's line asks for one ("Password:", "[sudo] password for alex:", "Enter passphrase for key …:", "PIN:") when a row begins, or when it ends without Enter
+  Then the row's text is only why: "[not kept: sudo]", "[not kept: hidden input]"; the command that opened the prompt ("sudo make install<Enter>") is kept
+  When a typed row's first text is a space (a shell's "keep out of history", as AC-90's sent history)
+  Then its text is "[not kept: leading space]"
+  And text kept goes through the sent history's redaction (secret-shaped words and known token shapes become "[redacted]")
+Scenario: AC-147 failure — tmux refuses, the store cannot be used
+  When tmux refuses what was sent (a pane gone, a server that does not answer)
+  Then the row is written with tmux's message in `error`; a Dispatcher prompt whose paste did not show holds the prompt, no "<Enter>", and why
+  When the tasks' store cannot be used (terminum-kanban.md AC-119) or the writer falls behind
+  Then the rows are dropped, counted in the log ("inputs.unsaved"), and typing goes on: the log never holds up or refuses input
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Architecture (AC-01, AC-02, AC-03, AC-09, AC-10)
@@ -948,6 +977,8 @@ Settings `~/.terminum/settings.json` (every key optional):
 
 Layout checkpoint and last lines: `terminum-lifecycle.md` §9 Data formats.
 
+The input log (AC-147): table `inputs` of `kanban.sqlite`, a row per write into a pane: `at` and `ended` (unix ms), `sender` (`users.id`: `human`, `dispatcher`), `component` (`page`, `panel`, `dispatcher.gate`, `dispatcher.start`), `kind` (`typed`, `paste`, `path`, `prompt`, `launch`), `text`, `bytes` (all that was sent), `pane` (its key), `machine`, `session`, `window`, `program`, `cwd`, `project`, `project_name`, `run`, `tasks` (IDs, comma-separated), `agent` (its ID), `page`, `device` (`mac`, `web`), `ip`, `browser`, `tailnet_user`, `version`, `error` (tmux's refusal, else NULL). Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, kind, text FROM inputs ORDER BY id DESC LIMIT 20"`.
+
 Sign-ins `state/signins.json` (AC-09): `{"items": [{"sha256": "…", "id": "…", "proof_key": "…", "expires": 1794592000, "by": "password"}]}`. Workspaces, bookmarks and the password live in `workspaces.json`, `web-bookmarks.json` and `web.json`.
 
 ### Configuration
@@ -994,6 +1025,8 @@ The other budgets are in AC-20's scenarios; a large folder's in `terminum-files.
 | Control command answer | 10 s | the client is ended and started again (terminum-lifecycle.md AC-14) |
 | Theme, settings and hot keys files | 64 KB each | refused with a toast |
 | Window and session names | 100 characters, no control characters | refused inline: "A name is at most 100 characters." |
+| Input log (AC-147) | 180 days, 500,000 rows; a row's text 20,000 characters, a paste's 4,000 (`bytes` the whole); 10,000 rows waiting for the writer | older rows go hourly; a longer text is cut; more waiting rows are dropped, counted in the log |
+| Input log's open rows | a page's typed row until Enter or 2 s | rows still open when terminumd stops are lost; a password typed ahead of its prompt (before the program shows it or starts) is kept: the check reads the screen when the row begins |
 
 Limits told in their cases: a set-buffer command (AC-03), a pane's grid and resizes (AC-13), new sessions, windows and splits (AC-07), sign-ins (AC-09), project names (AC-92), attached sessions (AC-89).
 
@@ -1003,6 +1036,7 @@ Limits told in their cases: a set-buffer command (AC-03), a pane's grid and resi
 - tmux commands: arguments and typing as "The control client" says (AS-11, probed: a folder named `#(cmd)` would run `cmd`); `send-keys -l` is never given a newline the user did not type.
 - The page: CSP as AC-09; terminal output is text; Markdown raw HTML off; links open new tabs with `noopener`.
 - Files: `terminum-files.md` §9 Security.
+- The input log (AC-147) holds what was typed into panes, in the 0600 tasks' store, never sent anywhere; what it does not keep and its limits: AC-147, Constraints and limits.
 - Nothing leaves the Mac by itself except the release check (`terminum-lifecycle.md` AC-17) and the ssh connections the user configured.
 
 Denied request:
@@ -1053,4 +1087,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-92 — web/test/e2e_projects.mjs, web/test/listorder.test.mjs, web/test/e2e_listorder.mjs, web/test/e2e_listdrag.mjs, web/test/e2e_livelistplace.mjs, terminumd/src/page/projects_tests.rs
 - [x] AC-100 — web/test/diag.test.mjs, web/test/e2e_liveprogs.mjs
 - [x] AC-101 — web/test/e2e_tips.mjs
+- [x] AC-147 — `cargo test inputs::`, `scripts/e2e_inputs.py`
 - [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs

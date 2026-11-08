@@ -13,7 +13,7 @@ use std::sync::Arc;
 use super::client::error;
 use super::Page;
 use crate::app::Shared;
-use crate::tmux::keys::{PASTE_END, PASTE_START};
+pub use crate::tmux::keys::{PASTE_END, PASTE_START};
 use crate::tmux::server::OnCopy;
 use crate::tmux::{args, keys, Server};
 
@@ -219,7 +219,12 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
         }
         for run in runs(&batch) {
             result = match run {
-                Run::Keys(data) => send(&app, &client, &server, &pane, &data).await,
+                Run::Keys(data) => {
+                    let sent = send(&app, &client, &server, &pane, &data).await;
+                    let who = crate::inputs::Who::user("page", Some(page.id), &page.client.lock());
+                    crate::inputs::typed(&app, who, &server, &pane, &key, &data, sent.as_ref().err().map(String::as_str));
+                    sent
+                }
                 Run::Mouse(bytes) => client.run(mouse_line(&pane, &bytes)).await.map(drop).map_err(|e| format!("Mouse event not sent: {e}")),
             };
             if result.is_err() {

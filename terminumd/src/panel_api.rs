@@ -7,7 +7,7 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use axum::extract::{Path as UrlPath, Query, State};
+use axum::extract::{ConnectInfo, Path as UrlPath, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -108,7 +108,7 @@ fn pane_key(key: &str) -> String {
 
 /// `POST /fb/api/terminal/{insert,cd}` (the Mac's page only): quoted for the pane's shell,
 /// never Enter, `cd` only into an idle shell (AC-60).
-pub async fn terminal(State(app): State<Shared>, UrlPath(action): UrlPath<String>, Json(b): Json<TermBody>) -> ApiResult {
+pub async fn terminal(State(app): State<Shared>, UrlPath(action): UrlPath<String>, ConnectInfo(peer): ConnectInfo<std::net::SocketAddr>, headers: HeaderMap, Json(b): Json<TermBody>) -> ApiResult {
     let key = pane_key(&b.key);
     let Some((server, pane)) = app.tmux.resolve(&key) else {
         return Err(err(StatusCode::CONFLICT, "pane_gone", "The pane has closed — command not sent"));
@@ -122,8 +122,11 @@ pub async fn terminal(State(app): State<Shared>, UrlPath(action): UrlPath<String
     }
     let text = termtext::line(&job, &action, &b.paths, b.path.as_deref()).map_err(|m| err(StatusCode::BAD_REQUEST, "not_typed", m))?;
     let line = format!("send-keys -t {pane} -l -- {}", crate::tmux::args::quote(&text));   // a "-name" is text
-    for a in server.run_all_on(&pane, vec![line]).await {
-        a.map_err(|e| err(StatusCode::BAD_GATEWAY, "tmux", format!("tmux did not take the text: {e}")))?;
+    let took = server.run_all_on(&pane, vec![line]).await.into_iter().find_map(Result::err);
+    let who = crate::inputs::Who::user("panel", None, &crate::webaccess::client(&headers, peer, false));
+    crate::inputs::wrote(&app, who, "path", &server, &pane, &text, took.clone(), None);
+    if let Some(e) = took {
+        return Err(err(StatusCode::BAD_GATEWAY, "tmux", format!("tmux did not take the text: {e}")));
     }
     Ok(StatusCode::NO_CONTENT.into_response())
 }

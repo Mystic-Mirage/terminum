@@ -136,6 +136,18 @@ fn address(headers: &HeaderMap, peer: SocketAddr) -> String {
     websignin::client_address(peer.ip(), headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()), proxied)
 }
 
+/// What a request says of its browser, for the input log (AC-147): its address, its browser in a
+/// few words, and the tailnet's user when `tailscale serve` forwarded it (`web`).
+pub fn client(headers: &HeaderMap, peer: SocketAddr, web: bool) -> crate::inputs::Client {
+    let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
+    crate::inputs::Client {
+        web,
+        ip: address(headers, peer),
+        browser: crate::inputs::text::browser(&header("user-agent").unwrap_or_default()),
+        tailnet_user: header("tailscale-user-login").filter(|_| web),
+    }
+}
+
 /// How to set the password, said where it is missing.
 pub const NO_PASSWORD: &str = "No password is set yet. On the Mac, run: terminum password";
 

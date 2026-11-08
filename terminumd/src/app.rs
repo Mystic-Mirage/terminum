@@ -66,6 +66,8 @@ pub struct App {
     pub hooks: crate::tmux::hookstate::Hooks,
     /// the messages and commands sent, per project (AC-90)
     pub sent: crate::sent::Sent,
+    /// everything written into a pane, by whom (AC-147)
+    pub inputs: crate::inputs::Inputs,
     /// who sized which window (AC-13)
     pub sizes: crate::page::sizing::Sizes,
     /// settings, themes, hot keys, custom.css (AC-12, AC-18, AC-19)

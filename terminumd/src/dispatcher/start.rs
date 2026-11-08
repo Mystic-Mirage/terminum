@@ -99,11 +99,14 @@ pub struct Opening<'a> {
     pub run: &'a str,
     pub tasks: &'a [String],
     pub program: &'a str,
+    /// the agent's ID
+    pub agent: &'a str,
 }
 
 /// Opens the window, links it and says so: its key.
 pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
     let (pane, place) = open_window(app, o.server, o.project, o.folder, o.command).await?;
+    crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", o.run, o.tasks, o.agent), "launch", o.server, &pane, o.command, None, o.project);
     mark(o.server, &pane, o.run).await?;
     if let Some((session, _)) = place.rsplit_once(':') {
         o.server.note_pane(&pane, session);            // its agent's first hook may come before the next list
@@ -284,7 +287,9 @@ pub async fn respawn(app: &Shared, server: &Arc<Server>, pane: &str, old: &str, 
     if let Some(w) = app.dispatcher.watch.lock().get_mut(&server.key(pane)) {
         w.subs.clear();                                // a new agent: none of the last one's
     }
-    server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
+    let done = server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"));
+    crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", new, &[], ""), "launch", server, pane, command, done.as_ref().err().cloned(), None);
+    done
 }
 
 #[cfg(test)]

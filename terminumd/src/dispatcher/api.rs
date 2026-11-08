@@ -174,7 +174,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             let server = server_of(app, r.host.as_deref())?;
             let new = next_run(app, &r, &t, again).await?;
             let project = project_named(app, &t.project);
-            start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind }).await?;
+            start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind, agent: &r.agent_id }).await?;
             start::watch(app, &new);
             Ok(json!({"run": new}))
         }
@@ -363,7 +363,7 @@ async fn session(app: &Shared, project: &str, agent: String) -> Result<Value, St
 /// The window of a run just added: opened at its place and watched; one that does not open closes its run. Its key.
 async fn launch(app: &Shared, run: &str, server: &Arc<Server>, project: &str, dir: &str, a: &Agent, tasks: &[String]) -> Result<String, String> {
     let named = project_named(app, project);
-    let opening = start::Opening { server, project: named.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: dir, command: &a.line, run, tasks, program: &a.kind };
+    let opening = start::Opening { server, project: named.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: dir, command: &a.line, run, tasks, program: &a.kind, agent: &a.id };
     match start::open(app, opening).await {
         Ok(key) => {
             start::watch(app, run);

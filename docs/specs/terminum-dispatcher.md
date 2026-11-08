@@ -928,7 +928,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 5. Read the screen again: the text or Claude's fold marker stands in the box, with no dialog.
 6. Enter.
 
-Only the following pass: a T-number with fixed words, never a title or a comment; the prompt of a human's RUN: for one task its title and text, for several their numbers and the human's message alone (AC-138). terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123).
+Only the following pass: a T-number with fixed words, never a title or a comment; the prompt of a human's RUN: for one task its title and text, for several their numbers and the human's message alone (AC-138). terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123). Each paste and the window's command are rows of the input log, as Dispatcher's (terminum.md AC-147).
 
 **Times.** Constants, not settings: no need for another value is known. Tests drive them with an injected clock (`TM_TEST_CLOCK_SCALE`, read only with a test's `TM_APP_DIR`).
 

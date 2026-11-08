@@ -98,13 +98,14 @@ def wait_host(ws, test, timeout=5, name="devbox"):
 class WS:
     """A page's WebSocket: JSON messages in and out."""
 
-    def __init__(self, port, path="/ws", origin=None, protocols=None):
+    def __init__(self, port, path="/ws", origin=None, protocols=None, headers=()):
         self.s = socket.create_connection(("127.0.0.1", port), timeout=10)
         key = base64.b64encode(os.urandom(16)).decode()
         head = [f"GET {path} HTTP/1.1", f"Host: 127.0.0.1:{port}", "Upgrade: websocket", "Connection: Upgrade",
                 f"Sec-WebSocket-Key: {key}", "Sec-WebSocket-Version: 13", f"Origin: {origin or f'http://127.0.0.1:{port}'}"]
         if protocols:
             head.append("Sec-WebSocket-Protocol: " + ", ".join(protocols))
+        head += list(headers)
         self.s.sendall(("\r\n".join(head) + "\r\n\r\n").encode())
         resp = b""
         while b"\r\n\r\n" not in resp:
@@ -256,9 +257,9 @@ class Terminumd:
                                      headers={"Content-Type": "application/json"})
         return json.load(urllib.request.urlopen(req))["secret"]
 
-    def page(self, secret=None):
-        """A signed-in page's WebSocket (its first messages are not read yet)."""
-        ws = WS(self.port, protocols=["tm", secret or self.signin()])
+    def page(self, secret=None, headers=()):
+        """A signed-in page's WebSocket (its first messages are not read yet); `headers`: more of its request's."""
+        ws = WS(self.port, protocols=["tm", secret or self.signin()], headers=headers)
         assert ws.status == 101, f"WebSocket refused: {ws.status}"
         return ws
 

@@ -90,7 +90,18 @@ pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text:
         }
     }.await;
     let _ = client.run(format!("delete-buffer -b {buffer}")).await;
-    shown?;
-    app.dispatcher.remember_typed(&key, text);
-    client.run(guarded(&run.id, pane, &format!("send-keys -t {pane} Enter"))).await.map(drop).map_err(|e| other(format!("tmux did not take Enter: {e}")))
+    let entered = match shown {
+        Ok(()) => {
+            app.dispatcher.remember_typed(&key, text);
+            client.run(guarded(&run.id, pane, &format!("send-keys -t {pane} Enter"))).await.map(drop).map_err(|e| other(format!("tmux did not take Enter: {e}")))
+        }
+        Err(m) => Err(m),
+    };
+    // what went in, and what tmux refused of it (AC-147)
+    if let Some((server, _)) = app.tmux.resolve(&key) {
+        let words = if entered.is_ok() { format!("{text}<Enter>") } else { text.to_string() };
+        let who = crate::inputs::Who::dispatcher("dispatcher.gate", &run.id, &run.ids, &run.agent_id);
+        crate::inputs::wrote(app, who, "prompt", &server, pane, &words, entered.as_ref().err().map(Miss::to_string), None);
+    }
+    entered
 }

@@ -26,6 +26,7 @@ mod folders;
 mod hosts;
 mod hotkeys;
 mod http;
+mod inputs;
 mod listing;
 mod lists;
 mod listing_sort;
@@ -116,6 +117,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         agent_states: Mutex::new(tmux::agentstate::States::new()),
         hooks: Default::default(),
         sent: sent::Sent::new(cfg.home.join("sessions")),
+        inputs: inputs::Inputs::new((!cfg.agent).then(|| tasks.clone())),
         sizes: Default::default(),
         looks,
         signins: auth::signin::Signins::load(&dir),
@@ -262,6 +264,7 @@ async fn serve() {
     webaccess::apply(&app);
     tokio::spawn(manager::run(app.clone()));
     tokio::spawn(dispatcher::walking(app.clone()));
+    tokio::spawn(inputs::ticking(app.clone()));
     tokio::spawn(dispatcher::hearing(app.clone()));
     tokio::spawn(looks::follow(app.clone()));
     tokio::spawn(restore::follow(app.clone()));

@@ -25,7 +25,7 @@ def limit():
     try:
         return float(os.environ["TM_GATE_LOAD"])
     except (KeyError, ValueError):
-        return float(os.cpu_count() or 2)
+        return os.cpu_count() or 2
 
 
 def fmt(number):

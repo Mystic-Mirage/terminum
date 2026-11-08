@@ -46,7 +46,7 @@ class Plan(unittest.TestCase):
             (src / "plain.rs").write_text("//! A helper.\n" + "\n" * 6 + "// AC-07 too far down to count\n")
             (src / "named.rs").write_text("//! Sizing (AC-13).\n")
             (src / "plain_tests.rs").write_text("")
-            files = ["terminumd/src/plain.rs", "terminumd/src/named.rs", "terminumd/src/plain_tests.rs", "terminumd/src/gone.rs", "web/static/a.js"]
+            files = ["terminumd/src/plain.rs", "terminumd/src/named.rs", "terminumd/src/plain_tests.rs", "terminumd/src/cli/tests/mod.rs", "terminumd/src/gone.rs", "web/static/a.js"]
             self.assertEqual(check_changed.caseless(files, Path(root)), ["terminumd/src/plain.rs"])
 
     def test_the_module_of_a_file(self):

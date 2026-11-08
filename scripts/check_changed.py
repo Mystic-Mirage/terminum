@@ -83,7 +83,7 @@ def head_cases(path):
 def caseless(files, cwd=REPO):
     """Changed Rust sources that name no case at their top: no test is known to cite their area's cases,
     so the e2e scripts of that area do not run (their module's cargo tests do)."""
-    return [f for f in files if f.startswith("terminumd/src/") and f.endswith(".rs") and "_tests" not in f
+    return [f for f in files if f.startswith("terminumd/src/") and f.endswith(".rs") and not is_rust_test(f)
             and (cwd / f).is_file() and not head_cases(cwd / f)]
 
 
@@ -106,11 +106,15 @@ def page_checks(root):
     return found
 
 
+def is_rust_test(path):
+    return "_tests" in Path(path).name or "/tests/" in path
+
+
 def test_files(root):
     """Files that hold tests: a Rust file only if it is a test module."""
     found = []
     for pattern in ("web/test/*.mjs", "ui/test/*.mjs", "scripts/e2e_*.py", "scripts/tests/*.py", "terminumd/src/**/*.rs"):
-        found += [p for p in root.glob(pattern) if p.is_file() and (p.suffix != ".rs" or "_tests" in p.name or "/tests/" in str(p))]
+        found += [p for p in root.glob(pattern) if p.is_file() and (p.suffix != ".rs" or is_rust_test(str(p)))]
     return found
 
 

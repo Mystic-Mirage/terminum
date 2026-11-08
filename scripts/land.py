@@ -189,17 +189,20 @@ def main(argv):
     tree = primary / ".worktrees" / argv[0]
     if not tree.is_dir():
         sys.exit(f"no worktree {tree}")
+    git("fetch", "--quiet", "origin", cwd=tree, check=False)   # main's head as GitHub has it, for ci_status
     ci = ci_status(tree)
     print(ci)   # said again last when not green: minutes of checks scroll the first out of sight
-    again = lambda: None if ci.startswith("CI on main: success") else print(ci)
+    green = ci.startswith("CI on main: success")
     try:
         commit = land(tree, after=after_push(primary))
     except Stop as stop:
         print(f"land: {stop}", file=sys.stderr)
-        again()
+        if not green:
+            print(ci)
         return stop.code
     print(f"landed {commit[:9]} on {BASE}")
-    again()
+    if not green:
+        print(ci)
     os.chdir(primary)
     if not tree.is_dir():
         return 0

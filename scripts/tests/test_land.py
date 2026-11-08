@@ -2,6 +2,7 @@
 """Landing a worktree (spec AC-104), on real repositories in a temporary folder; no remote is contacted."""
 import importlib.util
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -296,7 +297,7 @@ class Landing(unittest.TestCase):
 
 
 class Said(unittest.TestCase):
-    def test_timed_checks_a_busy_machine_skipped_are_said_after_landed(self):  # AC-146
+    def test_timed_checks_a_busy_machine_skipped_are_said_after_landed_though_the_install_took_the_tree(self):  # AC-146
         with tempfile.TemporaryDirectory() as tmp:
             primary = Path(tmp)
             tree = primary / ".worktrees" / "x"
@@ -305,8 +306,8 @@ class Said(unittest.TestCase):
             out = []
             with mock.patch.object(land, "primary_of", return_value=primary), mock.patch.object(land, "git"), \
                     mock.patch.object(land, "ci_status", return_value="CI on main: success on 0123456789: u"), \
-                    mock.patch.object(land, "land", return_value="abcdef0123456789"), \
-                    mock.patch.object(land, "after_push"), mock.patch.object(land.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)), \
+                    mock.patch.object(land, "land", lambda tree, after: after(["x.rs"]) or "abcdef0123456789"), \
+                    mock.patch.object(land, "after_push", lambda _: lambda files: shutil.rmtree(tree)), mock.patch.object(land.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)), \
                     mock.patch.object(land.os, "chdir"), mock.patch("builtins.print", lambda *a, **_: out.append(" ".join(map(str, a)))):
                 self.assertEqual(land.main(["x"]), 0)
         self.assertEqual(out[-2:], ["landed abcdef012 on origin/main",

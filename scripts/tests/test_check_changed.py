@@ -195,6 +195,16 @@ class Passed(unittest.TestCase):
             self.assertIn("targeted: passed already on 3f9a21c40b7d5e11", said)
             self.assertEqual(self.main_with(tmp, run, same, ["--passed"])[0], 0)
 
+    def test_a_pass_that_skipped_its_timed_checks_says_so_again(self):  # AC-146
+        with tempfile.TemporaryDirectory() as tmp:
+            run = lambda steps, **_: []   # noqa: E731
+            same = ["3f9a21c40b7d5e11"] * 9
+            self.main_with(tmp, run, same)
+            (Path(tmp) / ".checks" / "skipped").write_text("targeted: SKIPPED timed checks, the machine busy for 15 minutes: page\n")
+            code, said = self.main_with(tmp, run, same)
+            self.assertEqual(code, 0)
+            self.assertRegex(said, r"targeted: SKIPPED timed checks, the machine busy for 15 minutes: page(\x1b\[0m)?\nnote: --force runs them")
+
     def test_a_red_run_records_no_pass(self):  # AC-104
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(self.main_with(tmp, lambda steps, **_: ["page"], ["aaaa", "aaaa"])[0], 1)

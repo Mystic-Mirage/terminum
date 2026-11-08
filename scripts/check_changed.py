@@ -291,6 +291,9 @@ def main(argv):
     passed = REPO / ".checks" / f"changed-{ident}.ok"
     if passed.exists() and not args.force:
         print(f"targeted: passed already on {ident}")
+        if skipped_note(REPO):
+            say_skipped(REPO)
+            print("note: --force runs them")
         return 0
     failed = run(steps)
     print(f"targeted: FAIL {' '.join(failed)}" if failed else "targeted: PASS")

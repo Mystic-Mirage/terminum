@@ -53,7 +53,7 @@ def main():
         project = call("/api/task-projects", "POST", {"name": "Far", "host": "devbox", "dir": folder})[1]["id"]
         hb = os.path.join(home, ".terminum", "bin", "terminum-host")
         command = f"python3 -I {os.path.join(HERE, 'fake_agent.py')} {hb} --kind claude"
-        st, added = call("/api/task-agents", "POST", {"name": "Far agent", "kind": "claude", "command": command})
+        st, added = call("/api/task-agents", "POST", {"name": "Far agent", "kind": "claude", "command": command, "at_once": 3})   # its runs here overlap: one per case
         check("setup: an agent on the host", st == 200, added)
         agent = added["id"]
         status = lambda i: call(f"/api/tasks/{i}")[1]["status"]  # noqa: E731
@@ -98,7 +98,8 @@ def main():
 
         # the walk reads the agent's end by the host's ps and exit
         dies = task("dies there DIES")
-        run(dies)
+        st, said = run(dies)
+        check("setup: a second run on the same agent starts", st == 200, said)
         check("AC-130 an agent dead on the host: FAILED with its exit", until(lambda: status(dies) == "FAILED" and "exit 3" in history(dies)), history(dies))
         check("AC-123 its window holds a shell at its prompt, with the terminal", window_holds_shell(dies))
 

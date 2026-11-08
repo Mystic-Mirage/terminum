@@ -97,7 +97,9 @@ Open questions:
 | AC-100 | [NICE TO HAVE / later] | A row's menu shows the pane's diagnostics to copy into a bug report: terminum's build, the browser and its window, the row as listed and tmux's own fields of the pane (size, cursor, alternate screen, mouse modes, history, command, folder); no screen lines, history or sign-in. |
 | AC-101 | [NICE TO HAVE / later] | On a computer the session list shows a tip of the day, quiet, with Next, × until tomorrow and Turn off, and Settings turns tips on and off (on for a new browser). |
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
-| AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept.
+| AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept. Beside it, each message sent (a shell's command at Enter, a coding agent's prompt) is kept with its sender, pane, folder and project, its words indexed.
+| AC-151 | [SHOULD / P1] | The Message history at `/history/`, a key left of Settings: every message kept, the user's and Dispatcher's (marked), found by its words, the best matches first (BM25) or newest first by day, narrowed by days (a strip of a column a day), project, sender and agent or shell, all in the address; a message opens its session there, shows what was sent around it, copies. |
+| AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` shows how much the user drives sessions over 7, 30 or 90 days, never counting Dispatcher: messages, active time, active days, messages an active hour, sessions a day, the phone's share, each against the period before; messages and active time a day by project, the working day, the week's hours, the projects, the sessions a day; a day leads to its messages in the Message history.
 
 ## 5. BDD scenarios
 
@@ -795,11 +797,79 @@ Scenario: AC-147 edge — a secret is not kept
   When a typed row's first text is a space (a shell's "keep out of history", as AC-90's sent history)
   Then its text is "[not kept: leading space]"
   And text kept goes through the sent history's redaction (secret-shaped words and known token shapes become "[redacted]")
+Scenario: AC-147 happy path — a message sent
+  When the user sends a shell's command (Enter at its prompt) or a coding agent's prompt (its hooks' UserPromptSubmit, else what stood in its input box), or Dispatcher's gate sends a prompt
+  Then one row of the table `messages` holds the text as terminum-terminal.md AC-90 keeps it (redacted, left out as it says), its time, sender (`dispatcher` for a prompt its gate typed into that pane in the last 5 minutes, else `human`), how it came (`hook`, `page`), the agent, the pane, the line it was sent on, the pane's host and folder, the session list's title and project
+  And its words go into a full-text index (SQLite FTS5, Unicode words, case and accents folded), kept by the table's triggers; rows go as the input log's do (180 days, 500,000 rows), the oldest by time
 Scenario: AC-147 failure — tmux refuses, the store cannot be used
   When tmux refuses what was sent (a pane gone, a server that does not answer)
   Then the row is written with tmux's message in `error`; a Dispatcher prompt whose paste did not show holds the prompt, no "<Enter>", and why
   When the tasks' store cannot be used (terminum-kanban.md AC-119) or the writer falls behind
   Then the rows are dropped, counted in the log ("inputs.unsaved"), and typing goes on: the log never holds up or refuses input
+```
+
+### AC-151 — The Message history [SHOULD / P1]
+
+```gherkin
+Scenario: AC-151 happy path — newest first
+  Given messages kept (AC-147)
+  When the user opens the Message history (`/history/`; a key left of Settings in the session page's head, in the session list's sheet on a phone)
+  Then it shows the newest first under a head a day ("Today · 41", "Mon 2 Nov · 352"), 50 at a time (the next 50 as its foot comes into view, and its Show more key), each row the session list's look: the project's bar and color, the agent's mark or a shell's, the session's title, the project, Dispatcher's tag on Dispatcher's, the time; three lines of what was sent in the terminal's font (a shell's after "$ "); the folder, the host when not this Mac, "session ended" when its pane is gone
+  And over them a strip of a column a day, from the first day kept (at most 180), its height the root of the day's count; hover, a tap or ← → say a day's count; a press shows that day (pressed again: every day), Clear dates every day
+
+Scenario: AC-151 happy path — words
+  When the user types words in the search field (`/` focuses it; 200 ms after the last key, Enter at once)
+  Then terminumd looks for every word as a whole word or a word's start, a "quoted phrase" as it is, leaves out a -word, and treats nothing typed as syntax; a word of one letter is not looked for
+  And the best matches come first (BM25, Best match), or the newest (Newest, the order without words); each hit is marked in the text, three lines shown from the first hit's; the strip counts the matches a day; past 1,000 best matches the count says "showing the best 1,000"
+  And the field's ? says how words are matched: whole or by their start, never their other forms
+
+Scenario: AC-151 happy path — filters and the address
+  When the user chooses days (All kept, Today, 7 or 30 days, or from and to), a project (with its count; "No project"), the sender (You and Dispatcher, You, Dispatcher) or agents' prompts or shells' commands
+  Then the list, its count and the strip narrow at once, and the address holds every choice (`?q=&sort=&from=&to=&project=&sender=&kind=`): Back undoes one, a link shows the same list
+  And on a phone or a narrow window the search field takes the width and the filters stand behind one Filters key
+
+Scenario: AC-151 happy path — a message opened
+  When the user presses a row (or Space; ↑ ↓ choose one, from the field too)
+  Then it shows all its text and its keys: Open in session, Context, Copy (`c`)
+  When the user presses Open in session (Enter)
+  Then the session page opens at that session (`/sessions/?then=msg:<id>#/<key>/`, the hand-off dropped from the address once read) and brings the message into view as terminum-terminal.md AC-90's Jump to message does, else says why where the page is ("These lines are no longer in this session's history.")
+  When the user presses Context
+  Then the 3 messages sent before it in that pane and the 3 after it show under it, it marked
+
+Scenario: AC-151 edge — nothing found, a session gone
+  When no message matches
+  Then the list says "No message matches “<words>”" (with these filters: and a Clear filters key)
+  When a row's pane is no longer in the session list
+  Then its Open in session is off, titled "This session has ended"; Context and Copy work
+
+Scenario: AC-151 failure — the store cannot be read
+  When terminumd cannot read the messages
+  Then the list keeps what it showed, dimmed, under terminumd's message in place
+```
+
+### AC-152 — The Dashboard [SHOULD / P1]
+
+```gherkin
+Scenario: AC-152 happy path — the figures
+  Given messages kept and the input log (AC-147)
+  When the user opens the Dashboard (`/dashboard/`; the History | Dashboard keys in both pages' head)
+  Then it counts the human's rows only, never Dispatcher's, in this Mac's local days, over the last 30 days (7, 90 by a key; `?days=`), today up to now
+  And it shows: Messages (and the agents' share), Active time (and per active day), Active days ("26 of 30"), Messages an active hour, Sessions a day (the median over active days, and the most sent to in one hour), From the phone (of what the pages sent: an Enter or a paste, `device` web); each against the same days before up to the same time ("▲ 12% vs the 30 days before"; a small earlier number as a difference; none: "no earlier data"), no color for better or worse; a sparkline of the days under the counts
+
+Scenario: AC-152 happy path — the charts
+  Then "A day" draws a column a day of messages stacked by project (its six with the most, their session list colors, a project no longer there a hue by its rank, the rest as Other), or of active time by its key, weekends shaded, today faint; "Working day" a column a day from the first to the last event, the active stretches solid on it, midnight on top; "When you work" the active minutes of each hour of an average week (Monday first; two hours a cell on a phone); "Projects" ranked bars with share and count; "Sessions a day" columns with the most in one hour as a dot
+  And hover, a tap or the keys (← → Home End) say a column's values in a line over its chart; Enter or a click on a day of "A day" or "Sessions a day" opens the Message history of that day, the human's (`?from=&to=&sender=human`), whose count is the same; a project's row or chip narrows to it (`?project=`)
+
+Scenario: AC-152 happy path — active time
+  Then active time is the human's sends and input rows' first and last keys in time order, a pause over 15 minutes ending a stretch, each stretch from its first event to its last and 2 minutes more (reading the answer), split at hours and midnights
+
+Scenario: AC-152 edge — nothing in the period
+  When nothing was sent in the period
+  Then the figures say 0 and "—", the charts stand empty at their size
+
+Scenario: AC-152 failure — the numbers cannot be read
+  When terminumd cannot read the store
+  Then the page says "The numbers could not be read: <terminumd's message>" over the charts last drawn
 ```
 
 ## 6. Flow and sequence diagrams
@@ -903,6 +973,10 @@ A forwarded request may do everything but what AC-10 refuses it, so: the page, `
 | `GET /fb/`, `/fb/api/*` | the Files panel and its API; `X-TM-Host` for a remote host | `terminum-files.md` |
 | `GET /api/hello?n=&id=` | the proof (no sign-in): `{"proof", "boot"}`, both made and used as AC-09 says | AC-09 |
 | `GET /custom.css`, `/api/settings` | the user's stylesheet and the page settings | AC-19 |
+| `GET /history/`, `/dashboard/` | the Message history and the Dashboard | AC-151, AC-152 |
+| `GET /api/messages?q=&sort=best\|new&from=&to=&project=&sender=&kind=&cursor=` | a page of 50 messages: `{items, next, total, words, capped}`, the first with `days` | AC-151 |
+| `GET /api/messages/meta`, `/api/messages/{id}/context` | the filters' projects, first day, hosts, the theme; a message's neighbours in its pane | AC-151 |
+| `GET /api/dashboard?days=&project=` | the period's figures and series, and the period before's figures | AC-152 |
 | `GET /auth/check`, `POST /auth/login`, `POST /auth/logout` | 204 when signed in, else 401 with `login` `password` or `none`; the sign-in; this browser's sign-out | AC-09 |
 | `GET /health`, `POST /password`, `POST /signout` on `terminumd.sock` | the CLI | terminum-lifecycle.md AC-08, AC-09 |
 | `POST /folders?wait=<s>` on `terminumd.sock`: opens each protected folder (one run at a time, joined by a second request), answers within `wait` s `{service, done, folders: [{name, path, state: allowed\|refused\|absent\|error\|asking\|pending, error}], tmux_started_by}` | `terminum install`, `terminum folders` | terminum-lifecycle.md AC-08 |
@@ -984,6 +1058,8 @@ Layout checkpoint and last lines: `terminum-lifecycle.md` §9 Data formats.
 
 The input log (AC-147): table `inputs` of `kanban.sqlite`, a row per write into a pane: `at` and `ended` (unix ms), `sender` (`users.id`: `human`, `dispatcher`), `component` (`page`, `panel`, `dispatcher.gate`, `dispatcher.start`), `kind` (`typed`, `paste`, `path`, `prompt`, `launch`), `text`, `bytes` (all that was sent), `pane` (its key), `machine`, `session`, `window`, `program`, `cwd`, `project`, `project_name`, `run`, `tasks` (IDs, comma-separated), `agent` (its ID), `page`, `device` (`mac`, `web`), `ip`, `browser`, `tailnet_user`, `version`, `error` (tmux's refusal, else NULL). Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, kind, text FROM inputs ORDER BY id DESC LIMIT 20"`.
 
+The message history (AC-147, AC-151, AC-152): table `messages` of `kanban.sqlite`: `id`, `at` (unix ms), `sender`, `via` (`hook`, `page`), `agent` (`claude`, `codex`; NULL a shell), `pane`, `line`, `host` (the pane's server, `local` for this Mac), `cwd`, `title`, `project`, `project_name`, `text`; `messages_fts` (FTS5, external content, `unicode61 remove_diacritics 2`) kept by triggers. Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, text FROM messages ORDER BY at DESC LIMIT 20"`.
+
 Sign-ins `state/signins.json` (AC-09): `{"items": [{"sha256": "…", "id": "…", "proof_key": "…", "expires": 1794592000, "by": "password"}]}`. Workspaces, bookmarks and the password live in `workspaces.json`, `web-bookmarks.json` and `web.json`.
 
 ### Configuration
@@ -1031,6 +1107,8 @@ The other budgets are in AC-20's scenarios; a large folder's in `terminum-files.
 | Theme, settings and hot keys files | 64 KB each | refused with a toast |
 | Window and session names | 100 characters, no control characters | refused inline: "A name is at most 100 characters." |
 | Input log (AC-147) | 180 days, 500,000 rows; a row's text 20,000 characters, a paste's 4,000 (`bytes` the whole); 1,000 rows waiting for the writer | older rows go hourly; a longer text is cut; more waiting rows are dropped, counted in the log |
+| Message history (AC-147) | as the input log: 180 days, 500,000 rows; a text 20,000 characters | the oldest go hourly |
+| Message history's pages (AC-151) | 50 rows a page; the best matches up to 1,000; words up to 500 characters | "showing the best 1,000" |
 | Input log's open rows | a page's typed row until Enter or 2 s | rows still open when terminumd stops are lost; a password typed ahead of its prompt (before the program shows it or starts) is kept: the check reads the screen when the row begins |
 
 Limits told in their cases: a set-buffer command (AC-03), a pane's grid and resizes (AC-13), new sessions, windows and splits (AC-07), sign-ins (AC-09), project names (AC-92), attached sessions (AC-89).
@@ -1041,7 +1119,7 @@ Limits told in their cases: a set-buffer command (AC-03), a pane's grid and resi
 - tmux commands: arguments and typing as "The control client" says (AS-11, probed: a folder named `#(cmd)` would run `cmd`); `send-keys -l` is never given a newline the user did not type.
 - The page: CSP as AC-09; terminal output is text; Markdown raw HTML off; links open new tabs with `noopener`.
 - Files: `terminum-files.md` §9 Security.
-- The input log (AC-147) holds what was typed into panes, in the 0600 tasks' store, never sent anywhere; what it does not keep and its limits: AC-147, Constraints and limits.
+- The input log (AC-147) and the message history hold what was typed and sent into panes, in the 0600 tasks' store, never sent anywhere; what it does not keep and its limits: AC-147, Constraints and limits.
 - Nothing leaves the Mac by itself except the release check (`terminum-lifecycle.md` AC-17) and the ssh connections the user configured.
 
 Denied request:
@@ -1092,5 +1170,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-92 — web/test/e2e_projects.mjs, web/test/listorder.test.mjs, web/test/e2e_listorder.mjs, web/test/e2e_listdrag.mjs, web/test/e2e_livelistplace.mjs, terminumd/src/page/projects_tests.rs
 - [x] AC-100 — web/test/diag.test.mjs, web/test/e2e_liveprogs.mjs
 - [x] AC-101 — web/test/e2e_tips.mjs
-- [x] AC-147 — `cargo test inputs::`, `scripts/e2e_inputs.py`
+- [x] AC-147 — `cargo test inputs::`, `cargo test messages::`, `cargo test dispatcher::typed_tests`, `scripts/e2e_inputs.py`, `scripts/e2e_hooks.py`
+- [x] AC-151 — `cargo test messages::`, `web/test/e2e_livehistory.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs history`)
+- [x] AC-152 — `cargo test messages::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs

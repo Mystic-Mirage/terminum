@@ -13,12 +13,13 @@ export function svg(tag, attrs = {}, parent) {
   return e;
 }
 
-/** A "nice" top for values up to `max` and its ticks (1, 2, 5 × 10ⁿ), at most `most` + 1 lines. */
+/** A "nice" top for values up to `max` and its ticks (1, 2, 5 × 10ⁿ apart): the finest step that needs
+ *  at most `most` + 1 of them over zero. */
 export function niceTicks(max, most = 3) {
   if (!(max > 0)) return { top: 1, ticks: [0] };
-  const raw = max / most, pow = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 5, 10].map((m) => m * pow).find((s) => s >= raw);
-  const top = Math.ceil(max / step) * step;
+  const pow = 10 ** Math.floor(Math.log10(max / (most + 1)));
+  const step = [1, 2, 5, 10, 20].map((m) => m * pow).find((s) => Math.ceil(max / s - 1e-9) <= most + 1);
+  const top = Math.ceil(max / step - 1e-9) * step;
   const ticks = [];
   for (let v = 0; v <= top + step / 2; v += step) ticks.push(Math.round(v * 1e6) / 1e6);
   return { top, ticks };

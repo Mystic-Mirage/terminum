@@ -123,7 +123,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   session on the Mac, but outside a terminum pane it offers no tools and no instructions, so it
   costs those sessions nothing.
 - **Sent history**: the speech bubble under the split shows what you sent in the pane's folder
-  (its prompts and commands, kept in `~/.terminum/sessions`), newest first: ↑ older, ↓ newer;
+  (its prompts and commands, kept in the message history below), newest first: ↑ older, ↓ newer;
   Jump to message shows where it was sent, Insert into chat types it again (without Enter). On a
   wide window small bars on the terminal's right edge mark where your messages (white), the
   agent's answers ended (pale blue), bookmarks (orange) and reminders (pink) stand in the
@@ -135,6 +135,18 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   space, keeps only why it is not kept. Read it with `sqlite3`; the columns and an example query
   are in `docs/specs/terminum.md` §9 Data formats (AC-147). What an agent was actually given is
   its own record, in the sent history above.
+- **Message history** (`/history/`, the two-bubble key left of Settings; in the session list's
+  sheet on a phone): every prompt and command sent, yours and Dispatcher's (tagged), kept in the
+  table `messages` beside the input log. Type words to find them, the best matches first (each word
+  also as the start of a longer one, `"a phrase"`, `-word` to leave out), or browse newest first by
+  day; narrow by days (the strip of a column a day), project, sender and agents or shells. A row
+  opens its session at that message, shows what was sent around it, or copies it. Every choice is in
+  the address, so Back and links work.
+- **Dashboard** (`/dashboard/`): how much you drive sessions over 7, 30 or 90 days, never counting
+  Dispatcher: messages, active time (your sends and typing; a pause over 15 minutes ends a stretch),
+  active days, messages an active hour, sessions a day, the phone's share, each against the period
+  before; messages a day by project, your working day, the week's busy hours, projects and sessions
+  a day. A day opens its messages in the Message history.
 - **The agent's folder**: when Claude Code works in another folder than where it started (a
   worktree), its row in the list, the header's folder and the Files tree follow it, and paths
   it prints open from there. Settings' Follow the agent's folder turns that off for this browser (`page.followAgent`

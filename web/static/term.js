@@ -66,13 +66,20 @@ export class TermView {
     this.mouse = false;      // its program asked for the mouse
     this.queued = []; this.pending = null;
     this.box = this.idle = this.caret = null;    // another pane's (or a cleared screen's) input box and status lines
+    // a selection goes with its pane's lines: one from the history into the screen would stay open
+    // between the emptied rows, with no text, and keep the next pane paused (AC-37)
+    if (this.selected()) getSelection().removeAllRanges();
     this.histEl.replaceChildren(); this.screenEl.replaceChildren();
     this.note.hidden = true;
     this.onReset?.();
   }
 
   frozen() {
-    if (this.touching || this.held) return true;
+    return this.touching || !!this.held || this.selected();
+  }
+
+  /** Whether text in the terminal is selected. */
+  selected() {
     const sel = getSelection();
     // a selection in an output widget is in its row's shadow root (AC-56); browsers report it
     // collapsed by the row, with its text (markpick.js)

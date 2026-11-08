@@ -364,6 +364,7 @@ Scenario: AC-37 happy path — a computer
   And bidi controls, zero-width characters, the soft hyphen, word joiners, line separators and tag characters are left out, ZWNJ and ZWJ kept (words, emoji): a pasted line never reads otherwise than it runs; ⌘C, [+] and Ask (a widget's selection too) leave them out alike, and a toast says "(2 hidden characters left out)"
   And the selection's Copy has the tooltip "Copy 3 lines: <its first line with text>" (blanks one space, cut at 48 characters), and its toast says "Copied 3 lines: …" once copied, as every Copy's does (a phone has the toast only)
   And while the selection lasts the screen pauses with "Paused while you select" over the terminal's first line (taps pass through) and catches up when it is cleared
+  And a selection goes with its pane's lines: another pane opened while it lasts (a tap in the list on a phone keeps it) is drawn at once, not paused, nothing selected
 
 Scenario: AC-37 happy path — a phone
   When the user taps the input (the cursor's row, a coding agent's input box) or the keyboard button
@@ -722,7 +723,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-34 — `cargo test page::search`, `web/test/review-regressions.test.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_review_regressions.mjs`
 - [x] AC-35 — `web/test/links.test.mjs`, `web/test/panefiles.test.mjs`, `web/test/e2e_term.mjs`, `web/test/e2e_pathfold.mjs`, `web/test/e2e_livelinks.mjs`, `web/test/e2e_app.mjs`
 - [x] AC-36 — `cargo test page::upload`, `cargo test dragged`, `web/test/upload.test.mjs`, `web/test/e2e_livepaste.mjs`, `web/test/e2e_app.mjs`, `scripts/e2e_remote.py`
-- [x] AC-37 — `cargo test sent::`, `web/test/seltext.test.mjs`, `web/test/ask.test.mjs`, `web/test/e2e_clip.mjs`, `web/test/e2e_touch.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_liveclip.mjs`, `web/test/e2e_phonerow.mjs`
+- [x] AC-37 — `cargo test sent::`, `web/test/seltext.test.mjs`, `web/test/ask.test.mjs`, `web/test/e2e_clip.mjs`, `web/test/e2e_touch.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_liveclip.mjs`, `web/test/e2e_phonerow.mjs`, `web/test/e2e_switch.mjs`
 - [x] AC-38 — `cargo test page::trace`, `web/test/trace.test.mjs`, `web/test/tracereplay.test.mjs`, `web/test/e2e_trace.mjs`, `web/test/e2e_ctxtrace.mjs`, `scripts/e2e_core.py`
 - [x] AC-90 — `cargo test sent::`, `web/test/sent.test.mjs`, `web/test/e2e_sent.mjs`, `web/test/e2e_panewin.mjs`, `scripts/e2e_hooks.py`
 - [x] AC-91 — `cargo test page::bookmarks`, `web/test/e2e_sent.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_marks.mjs`, `scripts/e2e_hooks.py`

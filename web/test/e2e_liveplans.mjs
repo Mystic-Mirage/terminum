@@ -98,7 +98,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     const t3 = textOf(a[3]), eta = /ETA ~(\d\d:\d\d)\.$/.exec(t3)?.[1];
     check("AC-97 update_session_plan with a built-in plan keeps doing and the ETA (now + 30 min), not its items",
       a[3]?.result?.isError === false && /^Doing and ETA stored; items follow your own plan tool \(1 of 3 completed\), so the items sent were not taken, ETA ~\d\d:\d\d\.$/.test(t3) && etas.includes(eta), `${t3} ${etas}`);
-    check("AC-115 (terminum-kanban.md) create_task answers the task's id, in TODO", a[4]?.result?.isError === false && /^Kept as T-\d+, in TODO\.$/.test(textOf(a[4])), textOf(a[4]));
+    check("AC-115 (terminum-kanban.md) create_task answers the task's id, in TODO", a[4]?.result?.isError === false && /^Kept as [A-Z][A-Z0-9]*-\d+, in TODO\.$/.test(textOf(a[4])), textOf(a[4]));
     check("AC-97 get_session_plan answers the stored plan as [x] [>] [ ] lines, doing and ETA",
       textOf(a[5]).startsWith(`[x] alpha\n[>] beta\n[ ] gamma\nDoing: Checking the live page\nETA: ~${eta}\n`), textOf(a[5]));
     await within("AC-97 the Plan button's hover shows the agent's ETA: 1 of 3 · ETA ~hh:mm", () => until(() => page.evaluate(() => document.getElementById("curplan").title), (t) => (t ?? "").startsWith(`Plan: 1 of 3 · ETA ~${eta} · updated just now`)));

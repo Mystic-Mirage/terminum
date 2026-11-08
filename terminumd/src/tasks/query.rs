@@ -18,6 +18,8 @@ pub struct Query {
     /// an agent's reach: tasks of this pane (linked or made), or of this project
     pub reach: Option<(String, Option<String>)>,
     pub text: Option<String>,
+    /// the tasks made in this pane: by its agent, or of its records (AC-150)
+    pub made_in: Option<String>,
     pub with_subtasks: bool,
     /// the archived ones instead of the board's (AC-118)
     pub archived: bool,
@@ -80,6 +82,9 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
     if let Some(found) = q.text.as_deref().filter(|t| !t.is_empty()) {
         let n = bind(&mut args, format!("%{}%", like_escaped(found)));
         text.push_str(&format!(" AND (t.title LIKE {n} ESCAPE '\\' OR t.body LIKE {n} ESCAPE '\\' OR t.slug LIKE {n} ESCAPE '\\')"));
+    }
+    if let Some(pane) = &q.made_in {
+        text.push_str(&format!(" AND t.made_in = {}", bind(&mut args, pane.as_str())));
     }
     if !q.with_subtasks {
         text.push_str(" AND t.parent IS NULL");

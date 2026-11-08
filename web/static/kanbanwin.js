@@ -1,21 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A task's window (AC-107, AC-108, AC-109, AC-113): its fields, text, files, and one list of comments
-// and history. A comment by a human closes with CLOSE; RUN comes with Dispatcher.
+// A task's window (AC-107, AC-108, AC-109, AC-113, AC-149): the task itself (its fields, when it was made and
+// changed, text, files), its subtasks, then its comments and history apart. A comment by a human closes with
+// CLOSE; RUN comes with Dispatcher. The board and the session page open the same one (AC-150).
 import { askConfirm, choose } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
 import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, renderInto, say, sessionOptions, upload } from "./kanbanutil.js";
+import { activity, editor } from "./kanbanactivity.js";
+import { family, madeChanged } from "./kanbansubs.js";
 
-const time = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 const EDITS = ".tasktext textarea, .markdown textarea";   // a text or a comment being edited
 const row = (...kids) => { const r = el("div", "actions"); r.append(...kids.filter(Boolean)); return r; };
-
-/** A field for Markdown. */
-function editor(text, label) {
-  const area = el("textarea", "field");
-  area.value = area.defaultValue = text;
-  if (label) area.setAttribute("aria-label", label);
-  return area;
-}
 
 export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
   const box = $("taskbox"), body = $("taskbody");
@@ -151,26 +145,6 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
     return wrap;
   }
 
-  /** Its parent, or its subtasks and the key that makes one: one level (AC-112). */
-  function family(t) {
-    if (t.parent) {
-      const up = el("p", "subof", "Subtask of ");
-      up.append(button("linklike", t.parent, () => openTask(t.parent)));
-      return up;
-    }
-    const wrap = el("section", "subtasks");
-    const head = el("div", "edithead");
-    head.append(el("span", null, t.subtasks ? `Subtasks ${t.subtasks_done}/${t.subtasks}` : "Subtasks"), button("textkey", "New subtask", () => newSubtask(t)));
-    const list = el("ul", "sublist");
-    list.append(...t.children.map((k) => {
-      const li = el("li");
-      li.append(button("linklike", `${k.id} ${k.title}`, () => openTask(k.id)), el("small", null, k.archived_at ? `${k.status} · archived` : k.status));
-      return li;
-    }));
-    wrap.append(head, list);
-    return wrap;
-  }
-
   function filesOf(t) {
     if (!t.files.length) return null;
     const list = el("ul", "filelist");
@@ -182,44 +156,6 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
       return li;
     }));
     return list;
-  }
-
-  /** A human's own comment changes or goes (AC-108): small keys on its head's line. */
-  function commentActions(t, e, said) {
-    const route = `/api/tasks/${t.id}/comments/${e.id}`;
-    const edit = iconButton("icon", "pencil", "Edit", "Edit this comment", () => {
-      const area = editor(e.text ?? "");
-      const save = button("primary", "Save", async () => {
-        try {
-          await api(route, { method: "PATCH", body: { text: area.value } });
-          refresh(true);
-        } catch (err) { say(err.message); }
-      });
-      said.replaceChildren(area, row(save));
-      area.focus();
-    });
-    const del = iconButton("icon", "x", "Delete", "Delete this comment", () => confirmed("Delete this comment?", "Delete", () => api(route, { method: "DELETE" })));
-    const keys = el("span", "evacts");
-    keys.append(edit, del);
-    return keys;
-  }
-
-  function eventRow(t, e) {
-    const li = el("li", `ev ev-${e.kind} by-${e.author_kind}`);
-    const head = el("div", "evhead");
-    head.append(el("strong", null, e.author_name), el("time", null, time(e.at)));
-    li.append(head);
-    if (e.kind === "comment") {
-      const said = el("div", "markdown");
-      renderInto(said, e.text ?? "");
-      li.append(said);
-      if (e.author_kind === "human") head.append(commentActions(t, e, said));
-    } else if (e.kind === "deleted") {
-      li.append(el("em", null, "Comment deleted"));
-    } else {
-      li.append(el("span", "evtext", e.text ?? ""));
-    }
-    return li;
   }
 
   function commentForm(t) {
@@ -263,15 +199,29 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
     return wrap;
   }
 
+  /** A change terminumd must take, or it throws its refusal (a dialog says it); the window shows what stands. */
+  const send = async (id, change) => {
+    await api(`/api/tasks/${id}`, { method: "PATCH", body: change });
+    refresh();
+  };
+
+  /** The task itself, set apart from what was said of it: its fields, who has it, when it was made and changed (AC-149). */
+  function own(t) {
+    const wrap = el("section", "tasksec taskown");
+    const stamps = el("p", "taskstamps", `${t.uid} · ${madeChanged(t)}`);
+    stamps.title = `${t.id} is also found by ${t.uid}, whatever its ID becomes`;
+    const closed = t.session?.closed ? el("p", "cstate closed", "session closed") : null;
+    wrap.append(...[stamps, fields(t), closed, text(t), filesOf(t)].filter(Boolean));
+    return wrap;
+  }
+
   function draw(t) {
     shown = t;
     drawn = JSON.stringify(t);
     $("tasktitle").textContent = `${t.id} ${t.title}`;
-    const history = el("ol", "history");
-    history.append(...t.history.map((e) => eventRow(t, e)));
-    const closed = t.session?.closed ? el("p", "cstate closed", "session closed") : null;
     const scroll = body.scrollTop;
-    body.replaceChildren(...[fields(t), closed, text(t), family(t), filesOf(t), history, commentForm(t)].filter(Boolean));
+    const kin = family(t, { openTask, newSubtask, patch, send });
+    body.replaceChildren(own(t), kin, activity(t, { refresh, confirmed }), commentForm(t));
     body.scrollTop = scroll;
   }
 

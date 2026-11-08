@@ -4,10 +4,10 @@
    (find.css), its size a finger's (controls.css). */
 @media (hover: none), (max-width: 860px) {
   /* folded: the column out of sight until ⟨…⟩ unfolds it */
-  body.folding:not(.unfolded) :is(#planfab, #findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab) { visibility: hidden; }
+  body.folding:not(.unfolded) :is(#planfab, #findfab, #sentfab, #tasksfab, #splitfab, #attachfab, #marksfab, #remindfab) { visibility: hidden; }
 }
 /* a selection's three stand in the column (markpick.js): ⟨…⟩ and the column's other buttons make way */
-body:has(#markcopy:not([hidden])) :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab) { visibility: hidden; }
+body:has(#markcopy:not([hidden])) :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #tasksfab, #attachfab, #marksfab, #remindfab) { visibility: hidden; }
 #foldfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
 /* folded, it says what the column holds: the bookmarks' count, the reminders' pink (its ring filled when due, no blink) */
 #foldfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);
@@ -17,7 +17,7 @@ body:has(#markcopy:not([hidden])) :is(#foldfab, #planfab, #findfab, #splitfab, #
 #foldfab.due { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--remind); }
 /* a finger scrolling the terminal: every floating button out of sight, taking no tap, until it lifts and the scroll stops */
 #fabs { transition: opacity var(--dur-hover); }   /* the blobs fade by motion.css */
-body.scrolling :is(#foldfab, #planfab, #findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab, #fabs, #bottom) { opacity: 0; pointer-events: none; }
+body.scrolling :is(#foldfab, #planfab, #findfab, #sentfab, #tasksfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab, #fabs, #bottom) { opacity: 0; pointer-events: none; }
 /* a wheel's, a key's or the scroll bar's scroll: the column alone fades until it stops (fold.js), calm, no motion when reduced */
-body.scrolled :is(#foldfab, #planfab, #findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { opacity: 0; pointer-events: none; transition-duration: var(--dur-settle); }
-@media (prefers-reduced-motion: reduce) { body:is(.scrolled, .scrolling) :is(#foldfab, #planfab, #findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { transition: none; } }
+body.scrolled :is(#foldfab, #planfab, #findfab, #sentfab, #tasksfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { opacity: 0; pointer-events: none; transition-duration: var(--dur-settle); }
+@media (prefers-reduced-motion: reduce) { body:is(.scrolled, .scrolling) :is(#foldfab, #planfab, #findfab, #sentfab, #tasksfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { transition: none; } }

@@ -74,7 +74,7 @@
 dialog.dlg, #marksdlg { box-shadow: var(--dialog-shadow); }
 dialog::backdrop, #panescrim { background: var(--scrim); }
 #panescrim { position: fixed; inset: 0; z-index: 7; }   /* under an open pane (8), over the floating buttons (6) */
-:is(#sentfab, #remindfab, #planfab)[aria-expanded="true"] { z-index: 8; }   /* over the shade: pressed again, it closes its pane */
+:is(#sentfab, #tasksfab, #remindfab, #planfab)[aria-expanded="true"] { z-index: 8; }   /* over the shade: pressed again, it closes its pane */
 
 /* a dialog (dialog.dlg) and a list foot's form (.footform) are one kind: a head (its title, × in the
    corner), a label over its field, fields alike, then Cancel and the primary verb */
@@ -109,7 +109,7 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
   :is(#quick .qbar .icon, #rename, .mkdel, .mkmake) { --ik: 40px; }
   :is(#hostmenu, #updmenu, .menurows) :is(button, label) { height: var(--key-h-touch); }
   .dhead { margin: -10px -12px -4px 0; }   /* the larger × keeps the title where it was */
-  :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { width: 44px; height: 44px; }   /* a selection's three stand where the column does, as large */
+  :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #tasksfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { width: 44px; height: 44px; }   /* a selection's three stand where the column does, as large */
   #menu .row { min-height: 44px; }
   .seg :is(button, a) { height: 34px; }   /* a segment in a full-width row */
   #planpane button { min-height: 44px; min-width: 44px; }   /* the Plan pane (planpane.css) */

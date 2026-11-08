@@ -1,0 +1,102 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* A task's window and RUN's, on the board and on the session page (terminum-kanban.md AC-149, AC-150), and a
+   task's status as a box: gray TODO, yellow IN PROGRESS, amber WAIT FOR HUMAN, red FAILED, green DONE (AC-112). */
+
+/* RUN's window: what will start, where, with what words */
+.runfacts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); margin: 0; font-size: var(--fs-label); }
+.runfacts dt { color: var(--muted); }
+.runfacts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--term-font); }
+.runprompt { margin: 0; max-height: 240px; overflow: auto; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-label); white-space: pre-wrap; overflow-wrap: anywhere; }
+.runmarked { margin: 0; font-size: var(--fs-label); color: var(--waiting); }
+#runadd, #runfresh { margin-right: auto; }
+#runmessage { width: 100%; box-sizing: border-box; }
+#runform { gap: var(--sp-3); }
+#runhow .runfacts { margin-top: var(--sp-2); }
+#runbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
+
+/* its windows: the page's own type; what is typed for a machine stays in the terminal's */
+#taskbox, #runbox, .board-page dialog.dlg { font-family: var(--ui); font-size: var(--fs-body); }
+:is(#taskbox, #runbox, .board-page dialog.dlg) :is(button, select, input, textarea, h2, h3) { font-family: var(--ui); }
+:is(#taskbox, #runbox, .board-page dialog.dlg) :is(#agentcommand, #projectdir, .runprompt, textarea.droparea, #newtext) { font-family: var(--term-font); }
+.more summary { cursor: pointer; font-size: var(--fs-label); color: var(--muted); user-select: none; }
+.more[open] summary { margin-bottom: var(--sp-2); }
+.fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* its windows */
+#taskbox, #newbox { width: min(760px, calc(100vw - var(--sp-6) * 2)); max-height: calc(100dvh - var(--sp-6) * 2); }
+#taskbody { display: flex; flex-direction: column; gap: var(--sp-3); max-height: calc(100dvh - 130px); overflow-y: auto; }
+#taskbody > * { min-width: 0; }
+dialog .markdown pre { max-width: 100%; overflow-x: auto; }
+.fieldrow { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; font-size: var(--fs-label); color: var(--muted); }
+.fieldgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--sp-2); }
+.edithead { display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-label); color: var(--muted); }
+#newadd, .evenleft { margin-right: auto; }
+/* a text that takes files: its edge says so at rest and lights under a drag (AC-106) */
+textarea.droparea { outline: 1px dashed var(--line); outline-offset: -1px; }
+section.droparea { border-radius: var(--r-sm); }
+.droparea.dropping { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 8%, var(--field-fill)); }
+#taskbody textarea.field, #newtext { width: 100%; box-sizing: border-box; }
+dialog .markdown { font-family: var(--ui); font-size: var(--fs-body); line-height: var(--lh-prose); overflow-wrap: anywhere; min-width: 0; }
+dialog .markdown img { max-width: 100%; }
+.subtasks { display: flex; flex-direction: column; gap: var(--sp-1); }
+.subof { margin: 0; font-size: var(--fs-small); color: var(--muted); }
+:is(.filelist, .sublist) { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-label); }
+:is(.filelist, .sublist):empty { display: none; }
+:is(.filelist, .sublist) li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; overflow-wrap: anywhere; }
+:is(.filelist, .sublist) small { color: var(--muted); }
+.filelist .icon { --ik: var(--icon-key-list); margin-left: auto; }
+.linklike { font: inherit; padding: 0; color: var(--link, var(--accent)); text-decoration: underline; text-underline-offset: 2px; text-align: left; overflow-wrap: anywhere; }
+.history { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.ev { font-family: var(--ui); font-size: var(--fs-label); min-width: 0; }
+.ev-comment { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--surface-2); }
+.evhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
+.evhead strong { color: var(--t-fg); font-weight: var(--fw-head); }
+.evtext { color: var(--muted); }
+.by-system .evhead strong { color: var(--accent); }
+.evacts { display: flex; gap: var(--icon-gap); margin-left: auto; }
+.evacts .icon { --ik: var(--icon-key-list); }
+.newcomment { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* the task itself, its subtasks, what was said of it: three parts set apart (AC-149) */
+#taskbody { gap: var(--sp-4); }
+.tasksec { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.taskown { padding: var(--sp-3); border-radius: var(--r-sm); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--line); }
+.taskstamps { margin: 0; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sechead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding-bottom: var(--sp-1); border-bottom: 1px solid var(--line); }
+.sechead h3 { margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.sechead h3 .linklike { text-transform: none; letter-spacing: 0; }
+.seckeys { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.sublist li { align-items: flex-start; }
+.subtext { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.sublist .icon { --ik: var(--icon-key-list); flex: none; }
+.evedited { font-style: italic; }
+.ev-comment { box-shadow: inset 3px 0 0 var(--accent); }
+
+.stbox { display: inline-flex; align-items: center; min-height: 20px; padding: 0 var(--sp-1); border-radius: var(--r-xs); font: 600 var(--fs-micro)/1 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none;
+  color: var(--t-fg); background: color-mix(in srgb, var(--t-fg) 18%, var(--t-bg)); }
+.stbox.st-in-progress { color: #1d1a05; background: #e6cf3c; }
+.stbox.st-wait-for-human { color: #1f1300; background: var(--waiting); }
+.stbox.st-failed { color: var(--danger-ink); background: var(--danger-fill); }
+.stbox.st-done { color: #ffffff; background: var(--ok-fill); }
+button.stbox { cursor: pointer; border: 0; }
+@media (hover: hover) { button.stbox:hover { filter: brightness(1.12); } }
+
+@media (max-width: 860px) {
+  .fieldgrid, .fieldgrid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fieldgrid > :first-child:nth-last-child(odd) { grid-column: 1 / -1; }
+  #taskbody { max-height: none; overflow: visible; }   /* the sheet scrolls, once */
+  .ev { font-size: var(--fs-small); }
+  .stbox { min-height: 24px; }
+}
+
+/* the tasks made in the session shown (AC-150): their count in cornflower blue, in the column's round button under
+   the sent history's; its pane lists them by title */
+#tasksfabn { font: 700 13px/1 var(--ui); font-variant-numeric: tabular-nums; color: var(--host-label); }
+#tasksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--host-label); }
+#taskspane { width: min(520px, calc(100vw - 32px)); max-height: min(70dvh, 560px); }
+#tplist { margin: 0; padding: 6px 8px 12px; list-style: none; display: flex; flex-direction: column; gap: 2px; font: inherit; font-size: var(--fs-row); }
+.tpitem { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--icon-key-list); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); text-align: left; color: var(--t-fg); }
+@media (hover: hover) { .tpitem:hover { background: var(--surface-2); } }
+.tptitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#convertbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
+#convertbox form { display: flex; flex-direction: column; gap: var(--sp-3); }

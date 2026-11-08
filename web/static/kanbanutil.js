@@ -15,8 +15,10 @@ export const hostOptions = (hosts) => [["", THIS_MAC], ...hosts.map((h) => [h, h
 export const agentColor = (a) => hueColor(PROJECT_HUES[(a.color ?? 0) % PROJECT_HUES.length]);
 export const $ = (id) => document.getElementById(id);
 
-/** A page with no sign-in goes to /sessions/, whose form signs in. */
-const toSignIn = () => { location.href = "/sessions/"; };
+/** A page with no sign-in goes to /sessions/, whose form signs in; that page signs in by itself (a task's
+ *  window opens there too: terminum-kanban.md AC-150). */
+const onBoard = !location.pathname.startsWith("/sessions");
+const toSignIn = () => { if (onBoard) location.href = "/sessions/"; };
 signin.onRefused(toSignIn);
 
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
@@ -32,6 +34,22 @@ export async function api(path, { method = "GET", body } = {}) {
     throw e;
   }
   return m;
+}
+
+/** A date and time as the windows say them. */
+export const stamp = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+/** A task as a small box: its ID on its status's color, the status in words too (AC-112). */
+export function statusBox(t, open) {
+  const b = el(open ? "button" : "span", `stbox st-${t.status.toLowerCase().replaceAll(" ", "-")}`, t.id);
+  const said = [t.id, t.status, t.title].filter(Boolean).join(" · ");
+  b.title = said;
+  b.setAttribute("aria-label", said);
+  if (open) {
+    b.type = "button";
+    b.addEventListener("click", (e) => { e.stopPropagation(); open(t.id); });
+  }
+  return b;
 }
 
 /** One short message, where the action was taken cannot hold it. */

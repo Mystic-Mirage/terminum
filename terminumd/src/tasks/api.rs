@@ -101,7 +101,7 @@ pub fn told(app: &Shared, task: &str) {
 /// A link only to a session that is there: a page's picker can be older than the list (AC-133).
 fn session_gone(app: &Shared, body: &Value) -> bool {
     let layout = app.layout.read();
-    body["session"].as_str().is_some_and(|key| crate::page::marks::find_item(&layout, key).is_none())
+    ["session", "made_in"].iter().any(|k| body[k].as_str().is_some_and(|key| crate::page::marks::find_item(&layout, key).is_none()))
 }
 
 /// A task with its session: `row` its row in the list, its live state, agent and why it failed or
@@ -141,7 +141,8 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         number: None,
         reach: None,
         text: q.get("q").cloned(),
-        with_subtasks: q.get("subtasks").is_some_and(|c| c == "1"),
+        made_in: q.get("made_in").filter(|m| !m.is_empty()).cloned(),
+        with_subtasks: q.get("subtasks").is_some_and(|c| c == "1") || q.contains_key("made_in"),
         archived: q.get("archived").is_some_and(|c| c == "1"),
         after: q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0),
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
@@ -224,7 +225,7 @@ async fn meta(State(app): State<Shared>) -> Response {
             p["agent_limit"] = json!(limit);
         }
     }
-    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "global_limits": global_limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "global_limits": global_limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "task_template": super::template::DEFAULT_TEMPLATE, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {
@@ -258,7 +259,7 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
         owner: text(&body, "owner"),
         session: text(&body, "session"),
         by_agent: false,
-        made_in: None,
+        made_in: text(&body, "made_in"),           // a record's session it was made of (AC-116, AC-150)
     };
     let attached = crate::config::strings(&body["files"]);
     let done = store(&app, move |tx| {

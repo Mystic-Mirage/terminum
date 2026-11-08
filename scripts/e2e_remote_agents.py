@@ -251,7 +251,7 @@ def main():
 
         # terminum-kanban.md AC-120: a task's file reaches the host's agent as a paste's file does
         made = (next((a for a in answers if a.get("id") == 3), {}).get("result", {}).get("content") or [{}])[0].get("text", "")
-        task = (re.search(r"T-\d+", made) or re.search("$", "")).group(0)
+        task = (re.search(r"[A-Z][A-Z0-9]*-\d+", made) or re.search("$", "")).group(0)
         error, text = file_said(evdir, hb, REMOTE_SOCKET, pane, task)
         there = text.strip().splitlines()[-1] if text.strip() else ""
         check("AC-120 get_file on a host: the file is put in its ~/.terminum/tmp, its path said",

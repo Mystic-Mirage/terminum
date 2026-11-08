@@ -87,8 +87,8 @@ def main():
             if kind == "codex":
                 hook("SessionStart", source="startup")
             hook("UserPromptSubmit", prompt=prompt)
-            several = re.search(r"tasks: ((?:T-\d+(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
-            tasks = re.findall(r"T-\d+", several[1]) if several else re.findall(r"T-\d+", prompt)[:1] or [""]
+            several = re.search(r"tasks: ((?:[A-Z][A-Z0-9]*-\d+(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
+            tasks = re.findall(r"[A-Z][A-Z0-9]*-\d+", several[1]) if several else re.findall(r"[A-Z][A-Z0-9]*-\d+", prompt)[:1] or [""]
             if "LIMIT" in prompt:
                 hook("StopFailure", error="rate_limit")
             elif "DIES" in prompt:

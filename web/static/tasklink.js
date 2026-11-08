@@ -3,7 +3,6 @@
 import { read, write } from "./listparts.js";
 
 const SELECTION = "tm.taskselection";
-const RECORD = "tm.taskrecord";
 
 export const taskUrl = (id) => `/kanban/${id}`;
 
@@ -29,13 +28,4 @@ export function takeSelection() {
   const text = read(SELECTION) ?? "";
   write(SELECTION, null);
   return text;
-}
-
-/** A bookmark or reminder to make a task of (terminum-kanban.md AC-116): its id, title and text. */
-export const leaveRecord = (record) => write(RECORD, record);
-
-export function takeRecord() {
-  const record = read(RECORD);
-  write(RECORD, null);
-  return record;
 }

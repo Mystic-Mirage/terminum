@@ -59,7 +59,7 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
   };
   const count = () => page.evaluate(() => (document.getElementById("marksfab").hidden ? null : document.getElementById("marksfabn").textContent));
   const task = (id) => page.evaluate(async (t) => (await fetch(`/api/tasks/${t}`)).json(), id);
-  const madeId = (said) => /Kept as (T-\d+)/.exec(said)?.[1];
+  const madeId = (said) => /Kept as ([A-Z][A-Z0-9]*-\d+)/.exec(said)?.[1];
   /** The user's own record on the selected words of the shown pane. */
   const keep = async (note, reminder) => {
     const line = await page.evaluate(() => {

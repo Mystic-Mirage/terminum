@@ -132,13 +132,36 @@ class Run(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.root, self.events = Path(tmp.name), []
 
-    def run_steps(self, steps, **kw):
+    def run_steps(self, steps, busy=None, **kw):
         def fake(cmd, **_):
             self.events.append(cmd)
             return subprocess.CompletedProcess(cmd, 0)
+
+        def gate(_):
+            self.events.append("gate")
+            return busy
         with mock.patch.object(check_changed.subprocess, "run", fake), \
-                mock.patch.object(check_changed, "for_task", lambda _: self.events.append("gate")):
+                mock.patch.object(check_changed, "for_task", gate), mock.patch("sys.stdout"):
             return check_changed.run(steps, root=self.root, **kw)
+
+    def test_a_machine_still_busy_skips_the_timed_steps_and_says_so_last(self):  # AC-146
+        self.assertEqual(self.run_steps([("cargo", "true"), ("page", "true"), ("e2e_hooks", "true")], busy="load 31 over 16"), [])
+        self.assertEqual([e if e == "gate" else e[-1] for e in self.events], ["true", "gate"])
+        self.assertEqual(check_changed.skipped_note(self.root),
+                         "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page e2e_hooks")
+
+    def test_timed_steps_that_ran_clear_an_earlier_skip(self):  # AC-146
+        self.run_steps([("page", "true")], busy="load 31 over 16")
+        self.run_steps([("cargo", "true")])
+        self.assertIsNotNone(check_changed.skipped_note(self.root))   # nothing timed ran: the skip stands
+        self.run_steps([("e2e_core", "true")], gate=False)   # a landing's smoke set asks no gate
+        self.assertIsNotNone(check_changed.skipped_note(self.root))
+        self.run_steps([("page", "true")])
+        self.assertIsNone(check_changed.skipped_note(self.root))
+
+    def test_what_needs_no_quiet_machine_runs_before_the_wait(self):  # AC-146
+        self.run_steps([("panel", "a"), ("page-unit", "b"), ("e2e_hooks", "c")])
+        self.assertEqual([e if e == "gate" else e[-1] for e in self.events], ["b", "gate", "a", "c"])
 
     def test_the_first_timed_step_waits_once_for_a_quiet_machine(self):  # AC-146
         self.run_steps([("cargo", "true"), ("page", "true"), ("e2e_hooks", "true")])
@@ -171,6 +194,16 @@ class Passed(unittest.TestCase):
             self.assertEqual((code, len(ran)), (0, 1))
             self.assertIn("targeted: passed already on 3f9a21c40b7d5e11", said)
             self.assertEqual(self.main_with(tmp, run, same, ["--passed"])[0], 0)
+
+    def test_a_pass_that_skipped_its_timed_checks_says_so_again(self):  # AC-146
+        with tempfile.TemporaryDirectory() as tmp:
+            run = lambda steps, **_: []   # noqa: E731
+            same = ["3f9a21c40b7d5e11"] * 9
+            self.main_with(tmp, run, same)
+            (Path(tmp) / ".checks" / "skipped").write_text("targeted: SKIPPED timed checks, the machine busy for 15 minutes: page\n")
+            code, said = self.main_with(tmp, run, same)
+            self.assertEqual(code, 0)
+            self.assertRegex(said, r"targeted: SKIPPED timed checks, the machine busy for 15 minutes: page(\x1b\[0m)?\nnote: --force runs them")
 
     def test_a_red_run_records_no_pass(self):  # AC-104
         with tempfile.TemporaryDirectory() as tmp:

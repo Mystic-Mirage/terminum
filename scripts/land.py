@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_changed import is_doc  # noqa: E402
+from check_changed import is_doc, red, skipped_note  # noqa: E402
 from worktree import primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
 
 BASE = "origin/main"
@@ -193,8 +193,13 @@ def main(argv):
     ci = ci_status(tree)
     print(ci)   # said again last when not green: minutes of checks scroll the first out of sight
     green = ci.startswith("CI on main: success")
+    install, skipped = after_push(primary), []
+
+    def after(files):   # read before the install's minutes, in which a sweep may take the tree
+        skipped.append(skipped_note(tree))
+        install(files)
     try:
-        commit = land(tree, after=after_push(primary))
+        commit = land(tree, after=after)
     except Stop as stop:
         print(f"land: {stop}", file=sys.stderr)
         if not green:
@@ -203,6 +208,8 @@ def main(argv):
     print(f"landed {commit[:9]} on {BASE}")
     if not green:
         print(ci)
+    if skipped and skipped[0]:
+        print(red(skipped[0]))   # its timed checks never ran: the report says so
     os.chdir(primary)
     if not tree.is_dir():
         return 0

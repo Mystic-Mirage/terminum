@@ -5,7 +5,8 @@
 //! AC-16), then the list, its bookmarks and settings. Messages are handled in order; nothing here
 //! waits on tmux or ssh: reads and actions run beside the loop, in a lane per server (`reads`,
 //! AC-132). A closed page ends the reader, the writer, the stream and its reads at once
-//! (`Page::closed`); its actions finish.
+//! (`Page::closed`); its actions finish. The page lives only as long as the sign-in it presented
+//! (AC-09): one revoked ends it at once, one expired at the next ping.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,20 +34,26 @@ pub struct FromWeb(pub bool);
 
 pub async fn socket(State(app): State<Shared>, ConnectInfo(peer): ConnectInfo<std::net::SocketAddr>, headers: HeaderMap, from: Option<axum::Extension<FromWeb>>, ws: WebSocketUpgrade) -> Response {
     let web = from.is_some_and(|f| f.0.0);
-    let Some((page, rx)) = app.pages.add(crate::webaccess::client(&headers, peer, web), app.recorder.clone()) else {
+    let credential = crate::auth::checks::credential_of(&headers).unwrap_or_default();
+    let Some((page, rx)) = app.pages.add(crate::webaccess::client(&headers, peer, web), credential, app.recorder.clone()) else {
         return err(StatusCode::SERVICE_UNAVAILABLE, "too_many_pages", "Too many pages");
     };
     let offered = headers.get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("");
     let ws = if offered.split(',').any(|p| p.trim() == "tm") { ws.protocols(["tm"]) } else { ws };
-    ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(app, page, rx, s)).into_response()
+    let revoked = app.signins.revocations(); // before the check in `serve`: no revocation falls between
+    ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(app, page, rx, revoked, s)).into_response()
 }
 
-async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver<String>, ws: WebSocket) {
+async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver<String>, mut revoked: tokio::sync::watch::Receiver<u64>, ws: WebSocket) {
+    if !page.signed_in(&app.signins) {
+        app.pages.remove(page.id);               // signed out between the guard and here
+        return;
+    }
     tracing::info!(event = "page.open", page = page.id, web = page.web, pages = app.pages.count());
     app.dirty.notify_one();                      // the list every 2 s from now on, not at the end of a wait for no page
     let (mut tx, mut incoming) = ws.split();
     let writer = {
-        let page = page.clone();
+        let (app, page) = (app.clone(), page.clone());
         tokio::spawn(async move {
             let mut ping = tokio::time::interval(PING);
             ping.tick().await;
@@ -55,7 +62,22 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
             loop {
                 let msg = tokio::select! {
                     m = rx.recv() => match m { Some(text) => Message::Text(text.into()), None => break },
-                    _ = ping.tick() => Message::Ping(Default::default()),
+                    // a revocation (Sign out anywhere, `terminum signout`, a new password) at once
+                    r = revoked.changed() => {
+                        if r.is_ok() && page.signed_in(&app.signins) {
+                            continue;
+                        }
+                        tracing::info!(event = "page.signed_out", page = page.id);
+                        break;
+                    }
+                    // an expiry at the next ping
+                    _ = ping.tick() => {
+                        if !page.signed_in(&app.signins) {
+                            tracing::info!(event = "page.signed_out", page = page.id);
+                            break;
+                        }
+                        Message::Ping(Default::default())
+                    }
                     _ = &mut closed => break,
                 };
                 if page.is_closed() {
@@ -91,6 +113,9 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
             m = incoming.next() => match m { Some(Ok(m)) => m, _ => break },
             _ = &mut closed => break,
         };
+        if page.is_closed() {
+            break;                                // signed out while this message was on its way: not handled
+        }
         let text = match m {
             Message::Text(t) => t.to_string(),
             Message::Close(_) => break,

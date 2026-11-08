@@ -103,8 +103,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (hover: hover) { .card:not(:hover, :focus-within) .crun { opacity: 0; } }
 .card.picked { box-shadow: var(--m-edge), inset 0 0 0 2px var(--accent); }
 /* the agent a task is on: its color's dot, then its name (terminum-dispatcher.md AC-138) */
-.cagent { display: inline-flex; align-items: center; gap: var(--sp-1); color: color-mix(in srgb, var(--ag) 75%, var(--t-fg)); }
-.cagent::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--ag); }
 .ctitle { font-size: var(--fs-row); font-weight: var(--fw-ctl); line-height: var(--lh-ui); overflow-wrap: anywhere; }
 .cfoot { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); font-size: var(--fs-meta); color: var(--muted); min-width: 0; }
 .cfoot > span { overflow-wrap: anywhere; }
@@ -112,10 +110,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .cboxes { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .cproj { color: color-mix(in srgb, var(--proj, var(--muted)) 75%, var(--t-fg)); }
 /* a session's state: as a group's in the list (tmux.css): a dot in its severity, then words */
-.cstate { --sev: var(--faint); }
-.cstate.working { --sev: var(--accent); }
-.cstate:is(.waiting, .stopped) { --sev: var(--waiting); }
-.cstate:is(.failed, .closed) { --sev: var(--danger); color: var(--danger-text); }
 
 /* its session: the list's own row on the card (AC-134), a small key: its title, plan and state; no number or marks there */
 .csession { margin: 0; padding: 0; list-style: none; min-width: 0; }

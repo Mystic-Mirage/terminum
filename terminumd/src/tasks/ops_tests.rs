@@ -244,3 +244,18 @@ fn ac113_a_link_follows_a_restore_and_drops_when_the_server_starts_anew() {
     assert_eq!(session(&a), None);
     assert_eq!(session(&c).as_deref(), Some("tmux:devbox:default:%1"));
 }
+
+#[test]
+fn ac150_where_a_task_was_made_follows_a_restore_and_is_forgotten_when_the_server_starts_anew() {
+    use crate::tasks::projects::{links_dropped, links_restored};
+    use crate::tasks::query::{list, Query};
+    let s = store("t-made-in");
+    let made = |pane: &str| s.with(|tx| create(tx, HUMAN, NewTask { title: format!("made in {pane}"), made_in: Some(format!("tmux:local:terminum:{pane}")), ..Default::default() }, 1)).unwrap().id;
+    let (a, _) = (made("%1"), made("%2"));
+    let of = |pane: &str| s.with(|tx| list(tx, &Query { made_in: Some(format!("tmux:local:terminum:{pane}")), with_subtasks: true, ..Default::default() })).unwrap().into_iter().map(|t| t.id).collect::<Vec<_>>();
+    assert_eq!(of("%1"), [a.clone()]);
+    s.with(|tx| links_restored(tx, "tmux:local:terminum:", &[("%1".into(), "%7".into())], 2)).unwrap();
+    assert_eq!((of("%7"), of("%1"), of("%2")), (vec![a.clone()], vec![], vec![]), "the restored pane's; one not made again forgets");
+    s.with(|tx| links_dropped(tx, "tmux:local:terminum:", 3)).unwrap();
+    assert!(of("%7").is_empty(), "a new pane of an old number counts none of them");
+}

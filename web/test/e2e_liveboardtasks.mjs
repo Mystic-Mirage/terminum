@@ -13,9 +13,9 @@ const card = (id) => `.card[data-id="${id}"]`;
 function ageMoves(app, id, seconds) {
   const script = `import sqlite3, sys
 store = sqlite3.connect(sys.argv[1], timeout=8)
-store.execute("UPDATE events SET at = at - ? WHERE task = (SELECT id FROM tasks WHERE number = ?)", (int(sys.argv[2]), int(sys.argv[3])))
+store.execute("UPDATE events SET at = at - ? WHERE task = (SELECT id FROM tasks WHERE slug = ?)", (int(sys.argv[2]), sys.argv[3]))
 store.commit()`;
-  execFileSync("python3", ["-I", "-c", script, path.join(app, "kanban.sqlite"), String(seconds), id.slice(2)]);
+  execFileSync("python3", ["-I", "-c", script, path.join(app, "kanban.sqlite"), String(seconds), id]);
 }
 
 export async function liveBoardTasks(page, opts) {
@@ -44,7 +44,7 @@ export async function liveBoardTasks(page, opts) {
   check("AC-112 its parent's card shows 0/1", await until(async () => (await page.textContent(`${card(parent)} .csubs`)) === "0/1"));
   check("AC-112 off, a subtask is no card of its own", !(await page.$(card(kid))));
   await page.click("#fsubtasks");
-  check("AC-112 Show subtasks makes it a card, saying whose", await until(async () => /in T-/.test(await page.textContent(`${card(kid)} .cparent`).catch(() => ""))));
+  check("AC-112 Show subtasks makes it a card, saying whose", await until(async () => /in [A-Z][A-Z0-9]*-\d+/.test(await page.textContent(`${card(kid)} .cparent`).catch(() => ""))));
   check("AC-112 Show subtasks stands in the address", new URL(page.url()).searchParams.get("subtasks") === "1");
   await page.click(card(kid));
   await page.waitForSelector("#taskbox[open]");

@@ -155,35 +155,45 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     check("AC-33 live: a closed session's records are orphaned", await until(() => !!rec("B later")?.orphaned, 10000));
     check("AC-33 live: the other session's are not", !rec("A asks")?.orphaned, JSON.stringify(rec("A asks")));
 
-    // a record becomes a task (terminum-kanban.md AC-116)
+    // a record becomes a task in one small window (terminum-kanban.md AC-116), counted where it was made (AC-150)
     const back = page.url();
-    const makeOf = async (note) => {
-      if (page.url() !== back) {
-        await page.goto(back);
-        await page.waitForSelector(row(a.pane), { timeout: 8000 });
-      }
+    const convert = async (note) => {
       await pressFoot(page, "#marksbtn");             // the foot folded on a computer: its toggle first
       await page.waitForSelector("#marksdlg[open]");
       await page.click('#marklist .mkkind button:has-text("Reminders")');
       await page.click(`#marklist li:has-text("${note}") .mkmake`);
-      await page.waitForSelector("#newbox[open]", { timeout: 8000 });
+      await page.waitForSelector("#convertbox[open]", { timeout: 8000 });
     };
-    await makeOf("A asks");
-    const said = await page.inputValue("#newtext");
-    check("AC-116 Make a task fills the new-task window", await page.inputValue("#newtitle") === "A asks" && /^> .*electable word/m.test(said) && /\]\(\/sessions\/#\//.test(said)
-      && (await page.inputValue("#newsession")).endsWith(`:${a.pane}`), said);
-    await page.click("#newdiscard");
-    await page.click("#confirmok");                  // what it brought counts as typed: Discard asks
-    await page.waitForSelector("#newbox", { state: "hidden" });
-    check("AC-116 Discard keeps the record", !!rec("A asks"));
-    await makeOf("A asks");
-    await page.fill("#newtitle", " ");
-    await page.click("#newcreate");
-    check("AC-116 a task refused says why, and the record stays", await until(async () => (await page.textContent("#newerror").catch(() => "")).length > 0) && await page.isVisible("#newbox") && !!rec("A asks"));
-    await page.fill("#newtitle", "A asks");
-    await page.click("#newcreate");
-    check("AC-116 Create keeps the task, then the record goes", await until(() => !rec("A asks"), 8000)
-      && (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200")).json()).tasks)).some((t) => t.title === "A asks"));
+    await show(a.pane);
+    const fabCount = () => page.evaluate(() => (document.getElementById("tasksfab").hidden ? null : document.getElementById("tasksfabn").textContent));
+    const before = Number(await fabCount() ?? 0);
+    await convert("A asks");
+    check("AC-116 Convert to task offers its title, P2, the shown session and its project", await page.inputValue("#converttitle") === "A asks" && await page.inputValue("#convertsev") === "P2"
+      && (await page.inputValue("#convertsession")).endsWith(`:${a.pane}`), await page.inputValue("#convertsession"));
+    await page.click('#convertbox button[value="cancel"]');
+    await page.waitForSelector("#convertbox", { state: "hidden" });
+    check("AC-116 Cancel keeps the record and makes nothing", !!rec("A asks"));
+    await convert("A asks");
+    await page.fill("#converttitle", " ");
+    await page.click("#convertok");
+    check("AC-116 a task refused says why, and the record stays", await until(async () => (await page.textContent("#converterror")).length > 0) && await page.isVisible("#convertbox") && !!rec("A asks"));
+    await page.fill("#converttitle", "A asks");
+    await page.click("#convertok");
+    await page.waitForSelector("#convertbox", { state: "hidden" });
+    const kept = async () => (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200&subtasks=1")).json()).tasks)).find((t) => t.title === "A asks");
+    check("AC-116 Create keeps the task, then the record goes; the board does not open", await until(() => !rec("A asks"), 8000) && !!(await kept()) && new URL(page.url()).pathname === "/sessions/");
+    const conv = await task((await kept()).id);
+    check("AC-116 its text quotes the record and links its session", /^> .*electable word/m.test(conv.text) && /From \[.*, line \d+\]\(\/sessions\/#\//.test(conv.text) && conv.session?.key?.endsWith(`:${a.pane}`), conv.text);
+    check("AC-150 the session's tasks' button counts it, in cornflower blue", await until(async () => Number(await fabCount()) === before + 1)
+      && await page.evaluate(() => getComputedStyle(document.getElementById("tasksfabn")).color) === "rgb(100, 149, 237)", String(await fabCount()));
+    await page.click("#tasksfab");
+    await page.waitForSelector("#taskspane:not([hidden])");
+    check("AC-150 its pane lists the tasks by ID and title", await until(async () => (await page.textContent("#tplist")).includes(`${conv.id}A asks`)), await page.textContent("#tplist"));
+    await page.click(`#tplist .tpitem:has-text("A asks")`);
+    await page.waitForSelector("#taskbox[open]", { timeout: 8000 });
+    check("AC-150 a press opens the board's own task window here", (await page.textContent("#tasktitle")).startsWith(conv.id) && !!(await page.$("#taskbody .taskown")) && !!(await page.$("#taskbody .activity")));
+    await page.click("#taskclose");
+    await page.waitForSelector("#taskbox", { state: "hidden" });
     await page.goto(back);
     await page.waitForSelector(row(a.pane), { timeout: 8000 });
     await foldFoot(page);

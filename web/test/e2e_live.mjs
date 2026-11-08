@@ -39,6 +39,7 @@ import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
 import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
+import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -161,6 +162,7 @@ async function wide(browser, name) {
   }
   if (TASKS_ALONE) {
     await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await liveBoardIds(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
     return ctx;
   }
   if (BOARD_ALONE) {
@@ -170,6 +172,7 @@ async function wide(browser, name) {
     await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
     await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
     await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await liveBoardIds(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
     await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS });
     return ctx;
   }

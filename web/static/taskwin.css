@@ -57,6 +57,14 @@ dialog .markdown img { max-width: 100%; }
 .evacts .icon { --ik: var(--icon-key-list); }
 .newcomment { display: flex; flex-direction: column; gap: var(--sp-2); }
 
+/* an agent on a task and its session's state: said on a card and in the window */
+.cagent { display: inline-flex; align-items: center; gap: var(--sp-1); color: color-mix(in srgb, var(--ag) 75%, var(--t-fg)); }
+.cagent::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--ag); }
+.cstate { --sev: var(--faint); }
+.cstate.working { --sev: var(--accent); }
+.cstate:is(.waiting, .stopped) { --sev: var(--waiting); }
+.cstate:is(.failed, .closed) { --sev: var(--danger); color: var(--danger-text); }
+
 /* the task itself, its subtasks, what was said of it: three parts set apart (AC-149) */
 #taskbody { gap: var(--sp-4); }
 .tasksec { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }

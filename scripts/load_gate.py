@@ -3,7 +3,7 @@
 """A full run on a quiet machine (spec AC-146). Before a release's full run, and before a task's first
 timed check, the load average is looked at: over the limit it waits, a look each minute, and once the
 load is low it starts 3 minutes later, those minutes looked at too. After 15 minutes a release gives up;
-a task's checks run anyway, saying so. TM_GATE_LOAD sets the limit (the cores' count: above a working day's load, below a build's).
+a task skips its timed checks, saying so at the end in red. TM_GATE_LOAD sets the limit (the cores' count: above a working day's load, below a build's).
 
   load_gate.py    make check by hand: exit 0 to go, 75 when still busy after 15 minutes"""
 import os
@@ -75,10 +75,11 @@ class Turn(TreeTurn):
 
 
 def for_task(cwd=".", say=print, **kw):
-    """A task's timed checks: wait as a release would, also while one runs, then go whatever happened."""
+    """A task's timed checks: wait as a release would, also while one runs. None to run them, else why they are skipped."""
     why = wait(busy=lambda: "a release is running" if releasing(cwd) else None, say=say, **kw)
     if why:
-        say(f"gate: running under {why}: a timing failure may be the load's")
+        say(f"gate: {why} {MINUTES}: the timed checks are skipped")
+    return why
 
 
 def main(argv):

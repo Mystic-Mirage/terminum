@@ -18,6 +18,18 @@ const leaks = (r) => r.headers["x-tm-session"] === SECRET || r.query.includes(SE
 const carries = (r) => !!r.headers["x-tm-session"];
 const said = (page) => page.evaluate(() => document.getElementById("loginerr").textContent);
 
+/** A signed-in page's Sign out, answered by `answer` (a route handler): what the form says, what storage keeps. */
+async function signOutWith(browser, answer) {
+  const f = await openPage(browser, { stored: SECRET, secret: SECRET, auth: 204 });
+  await drawn(f.page);
+  await f.page.route("**/auth/logout", answer);
+  await f.page.evaluate(() => document.getElementById("signout").click());
+  await f.page.waitForSelector("#login:not([hidden])", { timeout: 3000 }).catch(() => {});
+  const out = { said: await said(f.page), stored: await f.page.evaluate(() => localStorage.getItem("tm.session")) };
+  await f.close();
+  return out;
+}
+
 export async function webSignin(browser) {
   // a browser that never signed in: the form; the right password gets the sign-in
   let auth = { login: "password" }, tried = [];
@@ -106,6 +118,18 @@ export async function webSignin(browser) {
   check("AC-09 sign-in: a signed-out page says \"Signed out: sign in again.\" in the form, drops its sign-in and stays (no reload)",
     await said(gone.page) === "Signed out: sign in again." && after.kept && after.stored === null, JSON.stringify(after));
   await gone.close();
+
+  // a Sign out terminumd could not save, or never heard: the sign-in ends here all the same, and the form says so
+  const why503 = "Signed out, but signins.json could not be written (disk full): until terminum signout succeeds on the Mac, a restart of terminumd would let this sign-in back.";
+  const unsaved = await signOutWith(browser, (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "signout_unsaved", message: why503 }) }));
+  check("AC-09 sign-in: a Sign out terminumd could not save forgets the sign-in and says terminumd's message in the form",
+    unsaved.said === why503 && unsaved.stored === null, JSON.stringify(unsaved));
+  const unheard = await signOutWith(browser, (route) => route.abort());
+  check("AC-09 sign-in: a Sign out terminumd never heard forgets the sign-in and says it may still be live, and how to end it",
+    unheard.said.includes("run: terminum signout") && unheard.stored === null, JSON.stringify(unheard));
+  const refused = await signOutWith(browser, (route) => route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "bad_origin", message: "Origin http://x is not allowed" }) }));
+  check("AC-09 sign-in: a Sign out terminumd refused before it ran says terminumd's message, that the sign-in may still be live, and how to end it",
+    refused.said.startsWith("Origin http://x is not allowed") && refused.said.includes("run: terminum signout") && refused.stored === null, JSON.stringify(refused));
 
   // no password set yet: the form says how to set one and waits
   const none = await openPage(browser, { secret: SECRET, auth: { login: "none", message: "No password is set yet. On the Mac, run: terminum password" } });

@@ -80,13 +80,22 @@ pub async fn set_password(app: &Shared, password: &str) -> Result<Value, String>
     // the new check first, then the sign-ins go: a login the old password passed meanwhile
     // either made its sign-in before (revoked here) or finds its check replaced (`login`)
     apply(app);
-    let a = app.clone();
-    crate::http::blocking(move || a.signins.revoke_all())
-        .await
-        .map_err(|_| "the old sign-ins could not be removed".to_string())?
-        .map_err(|e| format!("the old sign-ins could not be removed: {e}"))?;
-    app.pages.close_all();
+    end_all(app).await.map_err(|e| format!("The new password is set. {e}"))?;
     Ok(status(app))
+}
+
+/// Every sign-in ends, and with it every page and panel (`Signins::revocations`), even when
+/// signins.json cannot be written: then the error says what a restart would do.
+async fn end_all(app: &Shared) -> Result<(), String> {
+    let a = app.clone();
+    crate::http::off(move || a.signins.revoke_all().map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("Every browser is signed out, but {}", unsaved(&e, "the old sign-ins")))
+}
+
+/// What a revocation signins.json could not keep leaves: `who` back after a restart.
+fn unsaved(e: &str, who: &str) -> String {
+    format!("signins.json could not be written ({e}): until terminum signout succeeds on the Mac, a restart of terminumd would let {who} back.")
 }
 
 /// One writer of web.json at a time: a password set while a sign-in strengthens the old one's
@@ -113,13 +122,7 @@ fn strengthen(app: &Shared, old: PasswordHash, password: String) {
 /// `terminum signout`: every browser signs in again, and the brakes start over.
 pub async fn sign_out_all(app: &Shared) -> Result<(), String> {
     apply(app); // first, as in `set_password`: a login in flight then signs no one in
-    let a = app.clone();
-    crate::http::blocking(move || a.signins.revoke_all())
-        .await
-        .map_err(|_| "the sign-ins could not be removed".to_string())?
-        .map_err(|e| e.to_string())?;
-    app.pages.close_all();
-    Ok(())
+    end_all(app).await
 }
 
 #[derive(Deserialize)]
@@ -188,17 +191,25 @@ fn current(app: &Shared, auth: &Arc<WebAuth>) -> bool {
     app.web.auth.lock().as_ref().is_some_and(|now| Arc::ptr_eq(now, auth))
 }
 
-/// `POST /auth/logout`: this browser's sign-in ends (the one it presents, if any). A credential
+/// `POST /auth/logout`: this browser's sign-in ends (the one it presents, if any), and every
+/// page and panel still open with it closes (`Signins::revocations`): another tab or device of
+/// the same sign-in. A credential
 /// of another boot (an upgrade under the page) is 401 bad_session, which the page proves again
-/// and sends once more, so the sign-in it meant ends instead of living on unseen.
+/// and sends once more, so the sign-in it meant ends instead of living on unseen. One that
+/// cannot be removed from the file is 503 signout_unsaved: ended, but a restart would bring it back.
 pub async fn logout(State(app): State<Shared>, headers: HeaderMap) -> Response {
-    let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    if let Some(credential) = crate::auth::checks::signin_credential(header) {
+    if let Some(credential) = crate::auth::checks::credential_of(&headers) {
         let a = app.clone();
         match crate::http::blocking(move || a.signins.revoke(&credential)).await {
+            Ok(Ok(true)) => {}
             Ok(Ok(false)) => return crate::auth::checks::Denial::new(401, "bad_session", "Missing or expired sign-in").into_response(),
-            Ok(Err(e)) => tracing::warn!(event = "signout.unsaved", error = %e),
-            _ => {}
+            Ok(Err(e)) => {
+                // gone from memory all the same (`Signins::revoke`); the page says the rest
+                tracing::warn!(event = "signout.unsaved", error = %e);
+                let message = format!("Signed out, but {}", unsaved(&e.to_string(), "this sign-in"));
+                return crate::http::err(StatusCode::SERVICE_UNAVAILABLE, "signout_unsaved", message);
+            }
+            Err(r) => return r,
         }
     }
     StatusCode::NO_CONTENT.into_response()

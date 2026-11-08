@@ -2,7 +2,8 @@
 //! The Files panel's event socket (`/fb/api/ws`, AC-61): file changes (`fs-change`), workspace
 //! writes, rescans after a host's stream reconnected. The guard checked the sign-in and the
 //! Origin before the upgrade; the first frame is the state (the build: AC-16). A sign-in revoked
-//! later (Sign out, `terminum signout`, a new password) ends the socket at the next ping.
+//! later (Sign out, `terminum signout`, a new password) ends the socket at once, one expired at
+//! the next ping.
 
 use std::time::Duration;
 
@@ -14,6 +15,7 @@ use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::broadcast::{error::RecvError, Receiver};
+use tokio::sync::watch;
 
 use crate::app::Shared;
 use crate::events::Event;
@@ -29,13 +31,19 @@ pub async fn socket(State(app): State<Shared>, headers: HeaderMap, ws: WebSocket
     let rx = app.bus.subscribe(); // before the first state, so nothing falls between them
     let offered = headers.get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("");
     let ws = if offered.split(',').any(|p| p.trim() == "tm") { ws.protocols(["tm"]) } else { ws };
-    let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    let credential = crate::auth::checks::signin_credential(header).unwrap_or_default();
-    ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(app, credential, rx, s))
+    let credential = crate::auth::checks::credential_of(&headers).unwrap_or_default();
+    let revoked = app.signins.revocations(); // before the check in `serve`: no revocation falls between
+    ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(app, credential, rx, revoked, s))
 }
 
-async fn serve(app: Shared, credential: String, mut rx: Receiver<Event>, ws: WebSocket) {
+async fn serve(app: Shared, credential: String, mut rx: Receiver<Event>, mut revoked: watch::Receiver<u64>, ws: WebSocket) {
+    // an agent's socket comes with its token (agent_guard), not a sign-in
+    let signed_in = |app: &Shared| app.cfg.agent || app.signins.check(&credential, false);
     let (mut tx, mut incoming) = ws.split();
+    if !signed_in(&app) {
+        send(&mut tx, Message::Close(None)).await;
+        return;
+    }
     let state = Event::State(json!({"version": 1, "bridge": true, "build": crate::config::build_id()}));
     if !send(&mut tx, frame(&state)).await {
         return;
@@ -52,9 +60,13 @@ async fn serve(app: Shared, credential: String, mut rx: Receiver<Event>, ws: Web
                 };
                 if !send(&mut tx, frame(&e)).await { return }
             }
+            // a revocation at once; an expiry at the next ping
+            r = revoked.changed() => if r.is_err() || !signed_in(&app) {
+                send(&mut tx, Message::Close(None)).await;
+                return;
+            },
             _ = ping.tick() => {
-                // an agent's socket comes with its token (agent_guard), not a sign-in
-                if !app.cfg.agent && !app.signins.check(&credential, false) {
+                if !signed_in(&app) {
                     send(&mut tx, Message::Close(None)).await;
                     return;
                 }

@@ -77,9 +77,11 @@ export async function webMarkNav(browser, name) {
       strong: body?.querySelector("strong")?.textContent ?? null, items: body ? body.querySelectorAll("li").length : 0,
       acts: [...document.querySelectorAll("#markpane .mkvacts button")].map((b) => b.textContent.trim()),
       // Show in terminal at the actions' left edge; Resolve and Quote in chat together at their right edge
-      place: (() => { const box = document.querySelector("#markpane .mkvacts"), [go, done, chat] = box ? [...box.querySelectorAll("button")].map((b) => b.getBoundingClientRect()) : [];
-        if (!chat) return {}; const pad = parseFloat(getComputedStyle(box).paddingLeft), r = box.getBoundingClientRect();
-        return { left: Math.abs(go.left - r.left - pad) < 1.5, right: Math.abs(r.right - parseFloat(getComputedStyle(box).paddingRight) - chat.right) < 1.5 && chat.left - done.right < 16 && done.left - go.right > 16 }; })(),
+      // the first at the left, the others together at the right (Convert to task between Resolve and Quote in chat)
+      place: (() => { const box = document.querySelector("#markpane .mkvacts"), keys = box ? [...box.querySelectorAll("button")].map((b) => b.getBoundingClientRect()) : [];
+        const [go, done] = keys, chat = keys.at(-1);
+        if (keys.length < 3) return {}; const pad = parseFloat(getComputedStyle(box).paddingLeft), r = box.getBoundingClientRect();
+        return { left: Math.abs(go.left - r.left - pad) < 1.5, right: Math.abs(r.right - parseFloat(getComputedStyle(box).paddingRight) - chat.right) < 1.5 && keys.slice(2).every((k, i) => k.left - keys[i + 1].right < 16) && done.left - go.right > 16 }; })(),
       wrap: body?.querySelector("pre") ? getComputedStyle(body.querySelector("pre")).whiteSpace : null,
       // the title, the list's titles and the record's text (its code too) in one size: the window's
       sizes: [document.querySelector("#markpane .mkvtitle"), document.querySelector("#markpane .mknav .note"), body?.querySelector("pre code")].map((e) => (e ? getComputedStyle(e).fontSize : null)),

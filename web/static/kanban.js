@@ -10,7 +10,6 @@ import { withScheme } from "./schemes.js";
 import { askConfirm } from "./dialogs.js";
 import { sessionUrl, takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
-import { taskBoxes } from "./taskboxes.js";
 import { taskAddress } from "./kanbanroute.js";
 import { taskForm } from "./kanbanform.js";
 import { archivedWindow } from "./kanbanarchive.js";
@@ -24,7 +23,9 @@ import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
 import { choose } from "./dialogs.js";
 import { el, iconButton, plural, projectInk } from "./listparts.js";
-import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, statusBox } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox } from "./kanbanutil.js";
+
+signInElsewhere();                                 // with no sign-in the board goes to /sessions/, whose form signs in
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -255,7 +256,6 @@ function send(m) {
 }
 const openSession = (key) => { location.href = sessionUrl(key); };
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
-taskBoxes();
 const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: () => readSoon() });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });

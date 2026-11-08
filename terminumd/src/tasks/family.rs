@@ -31,7 +31,7 @@ pub fn set_parent(tx: &Transaction, author: &str, id: &str, parent: Option<&str>
     if up.parent.is_some() {
         return Err("A subtask cannot have subtasks".into());
     }
-    if task.subtasks > 0 || has_any(tx, &task.key)? {
+    if has_any(tx, &task.key)? {
         return Err(format!("{} has subtasks of its own: it cannot become a subtask.", task.id));
     }
     if up.project != task.project {

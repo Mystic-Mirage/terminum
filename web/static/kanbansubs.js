@@ -3,10 +3,7 @@
 // another task put under it, one taken out (it stays a task), and a task with none put under another.
 import { askName } from "./dialogs.js";
 import { el, iconButton } from "./listparts.js";
-import { button, stamp, statusBox } from "./kanbanutil.js";
-
-/** "made …, changed …": when a task was made and last changed (AC-149). */
-export const madeChanged = (t) => `made ${stamp(t.created_at)}${t.updated_at > t.created_at ? ` · changed ${stamp(t.updated_at)}` : ""}`;
+import { button, madeChanged, statusBox } from "./kanbanutil.js";
 
 /** Asks for a task's ID; `put(id)` throws terminumd's refusal, said in the dialog. */
 const askId = (text, yes, put) => askName(text, "", yes, 40, put);

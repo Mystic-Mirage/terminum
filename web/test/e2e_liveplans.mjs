@@ -88,7 +88,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     const a = await mcp([
       ...mcpOpening, rpc(2, "tools/list"),
       call(3, "update_session_plan", { items: [{ text: "one", status: "completed" }, { text: "two", status: "pending" }], doing: "Checking the live page", eta_minutes: 30 }),
-      call(4, "create_task", { title: "Bug: Parser drops a BOM", severity: "P2", text: "<b>parser</b> drops a BOM in `src/parse.rs`" }),
+      call(4, "create_task", { title: "Bug: Parser drops a BOM", severity: "P2", text: "## Problem or goal\n<b>parser</b> drops a BOM in `src/parse.rs`\n## Context\nx\n## Expected result\ny\n## Prerequisites\nNone" }),
       call(5, "get_session_plan", {})]);
     const etas = [hhmm(before + 1800), hhmm(Math.floor(Date.now() / 1000) + 1800)];
     check("AC-97 initialize answers terminum's server, the version asked, and its instructions",

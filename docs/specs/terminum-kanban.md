@@ -878,6 +878,10 @@ Scenario: AC-150 edge — told once
   When api is shown again
   Then nothing is said of API-30; a task this browser has not said is said once, by its key, whatever its ID becomes
 
+Scenario: AC-150 failure — not read
+  When the store cannot answer
+  Then the button says "!" in place of the count, its pane and its label terminumd's message; nothing else is said, so the reminders' line stays theirs
+
 Scenario: AC-150 edge — archived, or the pane gone
   Then an archived task leaves the count; a tmux server started anew forgets which of its panes made what (AC-113), so a new pane of an old number counts none of them
 ```

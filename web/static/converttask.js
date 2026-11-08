@@ -3,27 +3,24 @@
 // one small window: its title, severity (P2), project and session (the one shown and its project), nothing else to
 // type. Its text is the record's, quoted, with a link to the session it came from; the task counts as made in that
 // session (AC-150); the board does not open, and the record goes once the task is kept.
-import { api, fillSelect, showError } from "./kanbanutil.js";
-import { quote } from "./marks.js";
+import { $, DEFAULT, SEVERITIES, api, fillSelect, showError } from "./kanbanutil.js";
+import { chatText } from "./marks.js";
 import { titleOf } from "./marktext.js";
 import { sessionUrl } from "./tasklink.js";
 
-const $ = (id) => document.getElementById(id);
-const DEFAULT = "default";
-
-/** sid(): the session shown; panes(): every session listed; projects(): the list's projects; made(task): after it was kept. */
-export function recordTasks({ sid, panes, projects, made }) {
+/** sid(): the session shown; name(key): a listed session's title, else null; panes(): every session listed;
+ *  projects(): the list's projects; made(task): after it was kept. */
+export function recordTasks({ sid, name, panes, projects, made }) {
   const box = $("convertbox");
   let record = null;
 
   const projectOf = (key) => projects().find((p) => p.members?.includes(key))?.id ?? DEFAULT;
-  const titleOfPane = (key) => panes().find((p) => p.id === key)?.title;
 
   function open(item) {
     record = item;
     const here = sid() ?? item.sid ?? "";
     $("converttitle").value = titleOf(item, 200);
-    fillSelect($("convertsev"), ["P0", "P1", "P2", "P3"].map((s) => [s, s]), "P2");
+    fillSelect($("convertsev"), SEVERITIES.map((s) => [s, s]), "P2");
     fillSelect($("convertproj"), [[DEFAULT, "Default"], ...projects().map((p) => [p.id, p.name])], projectOf(here));
     fillSelect($("convertsession"), [["", "None"], ...panes().map((p) => [p.id, p.title || p.id])], here);
     showError($("converterror"), "");
@@ -32,10 +29,10 @@ export function recordTasks({ sid, panes, projects, made }) {
   }
 
   async function keep() {
-    const from = record.sid && titleOfPane(record.sid) ? record.sid : null;   // a closed session links nowhere
-    const where = from ? `\n\nFrom [${titleOfPane(from)}, line ${record.n}](${sessionUrl(from)})` : "";
+    const from = record.sid && name(record.sid) ? record.sid : null;   // a closed session links nowhere
+    const where = from ? `\n\nFrom [${name(from)}, line ${record.n}](${sessionUrl(from)})` : "";
     const body = {
-      title: $("converttitle").value, text: (record.note ? `${record.note}\n\n` : "") + quote(record.text) + where,
+      title: $("converttitle").value, text: chatText(record) + where,
       severity: $("convertsev").value, project: $("convertproj").value, session: $("convertsession").value || null,
       made_in: from ?? (sid() || null), record: record.id,
     };

@@ -3,10 +3,9 @@
 // own under the task, newest first unless the user turned it; a comment a card with when it was written
 // and changed, a line of history muted.
 import { el, iconButton, read, write } from "./listparts.js";
-import { api, button, renderInto, say, stamp } from "./kanbanutil.js";
+import { api, button, renderInto, row, say, stamp } from "./kanbanutil.js";
 
 const ORDER = "tm.activity.oldest";                 // this browser's choice: oldest first
-const row = (...kids) => { const r = el("div", "actions"); r.append(...kids.filter(Boolean)); return r; };
 
 /** A field for Markdown. */
 export function editor(text, label) {

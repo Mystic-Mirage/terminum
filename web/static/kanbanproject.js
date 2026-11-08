@@ -12,6 +12,8 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   let shown = null;
 
   const say = (text) => { $("projecterror").textContent = text; $("projecterror").hidden = !text; };
+  /** The template its agents write tasks by: its own, else the default (AC-145). */
+  const templateOf = (p) => p?.template ?? getMeta().task_template ?? "";
   /** A number field: empty is none. */
   const numberOrNull = (id) => ($(id).value === "" ? null : Number($(id).value));
 
@@ -55,7 +57,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("projectdir").value = p?.dir ?? "";
     $("projectatonce").value = p?.agent_limit ?? "";
     $("projectprefix").value = p?.prefix ?? "";
-    $("projecttemplate").value = p?.template ?? getMeta().task_template ?? "";
+    $("projecttemplate").value = templateOf(p);
     $("projecthead").textContent = p ? p.name : "New project";
     $("projectok").textContent = p ? "Done" : "Create";
     $("projectfields").hidden = !real;
@@ -75,7 +77,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     const prefix = $("projectprefix").value.trim().toUpperCase(), template = $("projecttemplate").value;
     const body = {};
     if (prefix && prefix !== (p?.prefix ?? "")) body.prefix = prefix;
-    if (template !== (p?.template ?? getMeta().task_template ?? "")) body.template = template;
+    if (template !== templateOf(p)) body.template = template;
     return body;
   }
 
@@ -109,7 +111,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   });
   $("projectpick").addEventListener("click", () => picker.open($("projecthost").value, $("projectdir").value, (path) => { $("projectdir").value = path; fit(); }));
   $("projectaddagent").addEventListener("click", () => agents.add());
-  $("projecttemplatereset").addEventListener("click", () => { $("projecttemplate").value = getMeta().task_template ?? ""; });
+  $("projecttemplatereset").addEventListener("click", () => { $("projecttemplate").value = templateOf(null); });
   $("projectlimits").addEventListener("click", () => openLimits(shown.id));
   $("projectarchived").addEventListener("click", () => archived.open(shown));
   $("projectdelete").addEventListener("click", () => { box.close(); deleteProject(shown.id); });

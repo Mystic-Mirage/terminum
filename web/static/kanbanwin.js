@@ -4,14 +4,15 @@
 // CLOSE; RUN comes with Dispatcher. The board and the session page open the same one (AC-150).
 import { askConfirm, choose } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, renderInto, say, sessionOptions, upload } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, upload } from "./kanbanutil.js";
+import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
-import { family, madeChanged } from "./kanbansubs.js";
+import { family } from "./kanbansubs.js";
 
 const EDITS = ".tasktext textarea, .markdown textarea";   // a text or a comment being edited
-const row = (...kids) => { const r = el("div", "actions"); r.append(...kids.filter(Boolean)); return r; };
 
 export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
+  taskBoxes();
   const box = $("taskbox"), body = $("taskbody");
   let shown = null, drawn = "", opening = 0;
 

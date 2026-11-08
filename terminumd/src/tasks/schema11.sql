@@ -12,5 +12,6 @@ CREATE UNIQUE INDEX tasks_slug ON tasks (slug);
 ALTER TABLE tasks ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
 UPDATE tasks SET created_at = coalesce((SELECT min(e.at) FROM events e WHERE e.task = tasks.id), updated_at);
 ALTER TABLE events ADD COLUMN edited_at INTEGER;
+CREATE INDEX tasks_made_in ON tasks (made_in);   -- the tasks a session made (AC-150)
 CREATE TABLE task_slugs (slug TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks) WITHOUT ROWID;
 INSERT INTO task_slugs (slug, task) SELECT 'T-' || number, id FROM tasks;

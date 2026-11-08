@@ -56,7 +56,7 @@ def mcp_lines(n0=1):
     return [{"jsonrpc": "2.0", "id": n0, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             call(n0 + 1, "update_session_plan", {"items": [{"text": "one", "status": "completed"}], "doing": "Checking the host", "eta_minutes": 30}),
-            call(n0 + 2, "create_task", {"title": "Bug: host parser drops a BOM", "severity": "P2", "text": "The host's parser drops a BOM."})]
+            call(n0 + 2, "create_task", {"title": "Bug: host parser drops a BOM", "severity": "P2", "text": "## Problem or goal\nThe host's parser drops a BOM.\n## Context\nx\n## Expected result\ny\n## Prerequisites\nNone"})]
 
 
 def mcp_file(task):

@@ -48,9 +48,9 @@ fn free_prefix(tx: &Transaction, base: &str, project: &str) -> Result<String, St
 /// The count a project's next task takes: above every ID found with its prefix, so an ID a task left
 /// behind never names another.
 fn bump_above_found(tx: &Transaction, project: &str, prefix: &str) -> Result<(), String> {
-    let like = format!("{}-%", super::query::like_escaped(prefix));
-    let top: Option<i64> = tx.query_row("SELECT max(CAST(substr(slug, ?2) AS INTEGER)) FROM task_slugs WHERE slug LIKE ?1 ESCAPE '\\'",
-                                        (&like, prefix.len() as i64 + 2), |r| r.get(0)).map_err(sql)?;
+    // "TERM-" up to "TERM." ('.' follows '-'): a range the key's index walks, where a LIKE would scan
+    let top: Option<i64> = tx.query_row("SELECT max(CAST(substr(slug, ?3) AS INTEGER)) FROM task_slugs WHERE slug >= ?1 AND slug < ?2",
+                                        (format!("{prefix}-"), format!("{prefix}."), prefix.len() as i64 + 2), |r| r.get(0)).map_err(sql)?;
     if let Some(top) = top {
         tx.execute("UPDATE projects SET next_seq = max(next_seq, ?1) WHERE id = ?2", (top + 1, project)).map_err(sql)?;
     }
@@ -65,12 +65,16 @@ pub fn fill(tx: &Transaction) -> Result<(), String> {
         fill_project(tx, &id, &dir, &name)?;
     }
     for (key, number, prefix) in rows(tx, "SELECT t.id, t.number, p.prefix FROM tasks t JOIN projects p ON p.id = t.project WHERE t.slug IS NULL", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))? {
-        let slug = format!("{prefix}-{number}");
-        tx.execute("UPDATE tasks SET slug = ?1 WHERE id = ?2", (&slug, &key)).map_err(sql)?;
-        tx.execute("INSERT OR IGNORE INTO task_slugs (slug, task) VALUES (?1, ?2)", (&slug, &key)).map_err(sql)?;
+        put_slug(tx, &key, &format!("{prefix}-{number}"))?;
         tx.execute("UPDATE projects SET next_seq = max(next_seq, ?1) WHERE prefix = ?2", (number + 1, &prefix)).map_err(sql)?;
     }
     Ok(())
+}
+
+/// Task `key`'s ID now, found from then on; one it had before keeps finding it too.
+fn put_slug(tx: &Transaction, key: &str, slug: &str) -> Result<(), String> {
+    tx.execute("UPDATE tasks SET slug = ?1 WHERE id = ?2", (slug, key)).map_err(sql)?;
+    tx.execute("INSERT OR IGNORE INTO task_slugs (slug, task) VALUES (?1, ?2)", (slug, key)).map(|_| ()).map_err(sql)
 }
 
 fn fill_project(tx: &Transaction, project: &str, dir: &str, name: &str) -> Result<(), String> {
@@ -89,8 +93,7 @@ pub fn assign(tx: &Transaction, key: &str, project: &str) -> Result<String, Stri
     };
     let slug = format!("{prefix}-{seq}");
     tx.execute("UPDATE projects SET next_seq = ?1 WHERE id = ?2", (seq + 1, project)).map_err(sql)?;
-    tx.execute("UPDATE tasks SET slug = ?1 WHERE id = ?2", (&slug, key)).map_err(sql)?;
-    tx.execute("INSERT INTO task_slugs (slug, task) VALUES (?1, ?2)", (&slug, key)).map_err(sql)?;
+    put_slug(tx, key, &slug)?;
     Ok(slug)
 }
 
@@ -121,8 +124,7 @@ pub fn set_prefix(tx: &Transaction, project: &str, prefix: &str) -> Result<(), S
     }
     tx.execute("UPDATE projects SET prefix = ?1 WHERE id = ?2", (&prefix, project)).map_err(sql)?;
     for (key, new) in &renamed {
-        tx.execute("UPDATE tasks SET slug = ?1 WHERE id = ?2", (new, key)).map_err(sql)?;
-        tx.execute("INSERT OR IGNORE INTO task_slugs (slug, task) VALUES (?1, ?2)", (new, key)).map_err(sql)?;
+        put_slug(tx, key, new)?;
     }
     bump_above_found(tx, project, &prefix)
 }
@@ -143,7 +145,8 @@ pub fn resolve(tx: &Transaction, id: &str) -> Result<Option<i64>, String> {
     let lower = said.to_ascii_lowercase();
     // the shown start of its key, or the whole key
     if (lower.len() == UID_LEN || lower.len() == 32) && lower.chars().all(|c| c.is_ascii_hexdigit()) {
-        let found = rows(tx, "SELECT number FROM tasks WHERE id LIKE ?1 LIMIT 2", [format!("{lower}%")], |r| r.get::<_, i64>(0))?;
+        // a range the key's index walks: the keys are lower-case hex, and 'g' follows them all
+        let found = rows(tx, "SELECT number FROM tasks WHERE id >= ?1 AND id < ?2 LIMIT 2", (&lower, format!("{lower}g")), |r| r.get::<_, i64>(0))?;
         return Ok(if found.len() == 1 { Some(found[0]) } else { None });
     }
     Ok(None)

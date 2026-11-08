@@ -13,7 +13,7 @@ import { sendOnModEnter } from "./modenter.js";
 import { Find } from "./find.js";
 import { loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";
 
-import { floats, FOLDED } from "./fold.js";
+import { COLORED, floats, PLAIN, PLAN } from "./fold.js";
 import { kindMark, MarkNav } from "./marknav.js";
 
 const $ = (id) => document.getElementById(id);
@@ -23,7 +23,6 @@ const MOUSE = globalThis.matchMedia?.("(hover: hover) and (pointer: fine)");   /
 // the floating buttons at the terminal's top right, top down: the plan's progress (while there is a plan,
 // planpane.js), the plain ones, then the colored ones together; where the keyboard's buttons float (a
 // phone, a narrow window) they fold under ⟨…⟩ (fold.js)
-const PLAN = FOLDED.slice(0, 1), PLAIN = FOLDED.slice(1, 6), COLORED = FOLDED.slice(6);
 
 export const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -376,7 +375,7 @@ export class Marks {
     const t = this.term, here = this.sid() ? this.here() : [];
     return [this.sid(), t.hidden, t.offsetLeft, t.offsetTop, t.clientLeft, t.clientWidth, t.clientHeight, !!this.view.theme, floats(),
       here.length, here.filter((b) => !b.remind || openReminder(b)).length, here.some(openReminder),
-      $("planfab").dataset.pct ?? "-", $("tasksfab").dataset.n ?? "", document.body.classList.contains("unfolded")].join();
+      $("planfab").dataset.pct ?? "-", PLAIN.map((id) => "off" in $(id).dataset).join(""), document.body.classList.contains("unfolded")].join();
   }
   /** The floating buttons stand in one column at the terminal's top right, left of the marks:
    *  find, the split and the sent history; then, set apart, the colored ones: this session's
@@ -388,7 +387,7 @@ export class Marks {
     // the bookmarks' pane lists its bookmarks and open reminders (marknav.js): the button counts them
     const term = this.term, here = this.sid() ? this.here() : [], n = here.filter((b) => !b.remind || openReminder(b)).length;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;
-    for (const id of PLAIN) $(id).hidden = !shown || (id === "tasksfab" && !$(id).dataset.n);   // the session's tasks while it has one (AC-150)
+    for (const id of PLAIN) $(id).hidden = !shown || "off" in $(id).dataset;   // its owner says it has nothing to show (the session's tasks: AC-150)
     $("marksfab").hidden = !(shown && (n > 0 || (!$("markpane").hidden && this.nav.scopeNow() !== "session")));   // an open pane's wider list outlasts the session's own
     $("remindfab").hidden = !shown || !here.some(openReminder);
     $("planfab").hidden = !shown || !("pct" in $("planfab").dataset);

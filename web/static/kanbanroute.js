@@ -3,8 +3,8 @@
 // it, a task that is not there is said, a name it had (T-12, its key's start) stands as the one it has now.
 import { $, say } from "./kanbanutil.js";
 
-/** The task the address names: by its ID, one it had or its key's start. */
-const addressed = () => /^\/kanban\/([A-Za-z][A-Za-z0-9]{0,7}-\d+|[0-9a-f]{8}|[0-9a-f]{32})$/.exec(location.pathname)?.[1];
+/** The task the address names: terminumd finds it by its ID, one it had or its key's start, or says there is none. */
+const addressed = () => /^\/kanban\/([A-Za-z0-9-]+)$/.exec(location.pathname)?.[1];
 
 /** windowed: kanbanwin.js's window; needs: tasklines.js's lines of tasks that wait. */
 export function taskAddress({ windowed, needs }) {

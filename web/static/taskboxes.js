@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A task's window and RUN's, one markup for the board and the session page (terminum-kanban.md AC-150): each page
-// puts them in once, before kanbanwin.js and kanbanrun.js look for them.
+// A task's window and RUN's, one markup for the board and the session page (terminum-kanban.md AC-150): kanbanwin.js
+// and kanbanrun.js put them in once, before they look for them.
 const MARKUP = `
 <dialog id="taskbox" class="box dlg" aria-labelledby="tasktitle">
   <form method="dialog">

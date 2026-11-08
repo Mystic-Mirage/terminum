@@ -5,14 +5,12 @@
 // browser was not told of yet are said at the terminal's top when the session is shown, as reminders are.
 import { fabPane } from "./fabpane.js";
 import { plural, read, write } from "./listparts.js";
-import { api, say, statusBox } from "./kanbanutil.js";
-import { taskBoxes } from "./taskboxes.js";
+import { $, api, say, statusBox } from "./kanbanutil.js";
 import { taskWindow } from "./kanbanwin.js";
 import { runWindow } from "./kanbanrun.js";
-import { taskUrl } from "./tasklink.js";
+import { newTaskUrl, taskUrl } from "./tasklink.js";
 import { recordTasks } from "./converttask.js";
 
-const $ = (id) => document.getElementById(id);
 const SEEN = "tm.sessiontasks.seen";     // the keys of tasks this browser was told of: a new ID never tells again
 const SEEN_MOST = 2000;
 const TITLE_MOST = 80;
@@ -23,35 +21,33 @@ const SAY_FOR = 5000;
 export function sessionTasks({ sid, name, toast, placed, panes, projects }) {
   const fab = $("tasksfab");
   let list = [], of = null, asked = 0, timer = 0, windowed = null, meta = null, failed = "";
-  const records = recordTasks({ sid, panes, projects, made: (t) => { seenNow([t]); toast(`${t.id} is in TODO: ${t.title.slice(0, TITLE_MOST)}`, SAY_FOR); load(); } });
+  const records = recordTasks({ sid, name, panes, projects, made: (t) => { seenNow([t]); toast(`${t.id} is in TODO: ${t.title.slice(0, TITLE_MOST)}`, SAY_FOR); load(); } });
   const pane = fabPane({ fab, pane: $("taskspane"), close: $("tpclose"), onToggle: (on) => { if (on) draw(); } });
 
   async function load() {
     const key = sid(), mine = ++asked;
     if (!key) { list = []; of = null; return shown(); }
     try {
-      const page = await api(`/api/tasks?made_in=${encodeURIComponent(key)}&limit=200`);
+      const page = await api(`/api/tasks?made_in=${encodeURIComponent(key)}&subtasks=1&limit=200`);
       if (mine !== asked) return;                  // another session shown meanwhile
       list = page.tasks ?? [];
       of = key;
+      failed = "";
     } catch (e) {
-      if (mine === asked) { list = []; of = key; }
-      // said once, not at each session shown while the store stays out of reach
-      if (e.status !== 401 && e.message !== failed) say(`Tasks of this session: ${e.message}`);
-      failed = e.message;
-      return shown();
+      if (mine !== asked) return;
+      list = []; of = key;
+      failed = e.status === 401 ? "" : e.message;   // said on the button, where the count would be
     }
-    failed = "";
     shown();
   }
 
   function shown() {
     const n = list.length;
-    fab.dataset.n = n ? String(n) : "";
-    $("tasksfabn").textContent = n ? String(n) : "";
-    fab.title = `Tasks made in this session: ${n}`;
+    fab.toggleAttribute("data-off", !n && !failed);
+    $("tasksfabn").textContent = failed ? "!" : n ? String(n) : "";
+    fab.title = failed ? `Tasks of this session: ${failed}` : `Tasks made in this session: ${n}`;
     fab.setAttribute("aria-label", fab.title);
-    if (!n && pane.open()) pane.toggle(false);
+    if (!n && !failed && pane.open()) pane.toggle(false);
     if (pane.open()) draw();
     tell();
     placed();
@@ -76,6 +72,13 @@ export function sessionTasks({ sid, name, toast, placed, panes, projects }) {
 
   function draw() {
     const ul = $("tplist");
+    if (failed) {
+      const why = document.createElement("li");
+      why.className = "tpwhy";
+      why.textContent = `Not read: ${failed}`;
+      ul.replaceChildren(why);
+      return pane.place();
+    }
     ul.replaceChildren(...list.map((t) => {
       const li = document.createElement("li"), b = document.createElement("button");
       b.type = "button";
@@ -97,10 +100,9 @@ export function sessionTasks({ sid, name, toast, placed, panes, projects }) {
     try {
       meta = await api("/api/tasks/meta");
       if (!windowed) {
-        taskBoxes();
         const runs = runWindow({ addAgent: () => { location.href = "/kanban/"; }, noFolder: (_, words) => say(words), done: () => windowed.refresh() });
         windowed = taskWindow({ getMeta: () => meta, runs, openTask: open,
-          newSubtask: (t) => { location.href = `/kanban/?new=1&parent=${encodeURIComponent(t.id)}&for=${encodeURIComponent(t.project)}`; } });
+          newSubtask: (t) => { location.href = newTaskUrl("", t.project, t.id); } });
       }
       await windowed.open(id);
     } catch (e) { say(`${e.message} (${taskUrl(id)})`); }

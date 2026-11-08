@@ -209,7 +209,7 @@
     <!-- Sent history (AC-90): what was sent in this folder, under the split. -->
     <button id="sentfab" type="button" hidden title="Sent in this folder" aria-label="Sent in this folder" aria-expanded="false" aria-controls="sentpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg></button>
     <!-- The tasks made in this session (terminum-kanban.md AC-150): their count, under the sent history's; its pane lists them. -->
-    <button id="tasksfab" type="button" hidden title="Tasks made in this session" aria-label="Tasks made in this session" aria-expanded="false" aria-controls="taskspane"><span id="tasksfabn"></span></button>
+    <button id="tasksfab" type="button" hidden data-off title="Tasks made in this session" aria-label="Tasks made in this session" aria-expanded="false" aria-controls="taskspane"><span id="tasksfabn"></span></button>
     <div id="taskspane" class="box" role="region" aria-label="Tasks made in this session" tabindex="-1" hidden>
       <div class="pwhead"><span class="pwtitle">Tasks made in this session</span><button id="tpclose" class="icon" type="button" title="Close" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
       <ul id="tplist" class="pwbody"></ul>

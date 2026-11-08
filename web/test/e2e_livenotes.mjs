@@ -13,6 +13,8 @@ import { foldFoot, pressFoot } from "./fake.mjs";
 import { ownTmp } from "./testrun.mjs";
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A text in the default template's sections (terminum-kanban.md AC-145). */
+const SECTIONS = "## Problem or goal\nx\n## Context\ny\n## Expected result\nz\n## Prerequisites\nNone\n";
 
 export async function liveNotes(page, { tmux, work, bin, home, app }) {
   const shown = await shownPane(page, { tmux, work });
@@ -96,14 +98,14 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     check("AC-98 agents make tasks: no note tool is offered", !list.some((n) => n.endsWith("_notes_for_user")) && list.includes("create_task"), list.join());
 
     // an agent's tools and rights
-    const madeA = await a.tool("create_task", { title: "Bug: Gap in the parser", text: "API_TOKEN=abc123 here", severity: "P1" });
+    const madeA = await a.tool("create_task", { title: "Bug: Gap in the parser", text: `${SECTIONS}API_TOKEN=abc123 here`, severity: "P1" });
     const t1 = madeId(madeA.text);
     check("AC-115 live: an agent's new task stands in TODO", !madeA.error && !!t1, madeA.text);
     const asked = await task(t1);
     check("AC-115 live: marked by agent, with no session, in its project, redacted", asked.by_agent === true && asked.session === null && asked.status === "TODO" && asked.owner_kind === "agent" && asked.text.includes("[redacted]") && !asked.text.includes("abc123"), JSON.stringify(asked).slice(0, 300));
     const again = await b.tool("create_task", { title: "Bug: gap in the  PARSER.", severity: "P1" });
     check("AC-115 live: the project's repeat is not kept", again.error && again.text.includes(t1), again.text);
-    const elsewhere = await lone.tool("create_task", { title: "Bug: Gap in the parser", severity: "P1" });
+    const elsewhere = await lone.tool("create_task", { title: "Bug: Gap in the parser", text: SECTIONS, severity: "P1" });
     check("AC-115 live: nor is it a repeat outside the project", !elsewhere.error, elsewhere.text);
     check("AC-115 live: a session outside the project does not read it", (await lone.tool("get_task", { id: t1 })).error);
     const read = await b.tool("get_task", { id: t1 });

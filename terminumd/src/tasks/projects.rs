@@ -93,12 +93,12 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
 /// made again drops, said on its task (AC-113).
 pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)], now: i64) -> Result<usize, String> {
     // where a task was made follows its pane too, so a new pane of an old number counts none of them (AC-150)
-    for (task, key) in made_on(tx, prefix)? {
+    for (task, key) in on_server(tx, "made_in", prefix)? {
         let old = key.strip_prefix(prefix).unwrap_or(&key);
         let new = panes.iter().find(|(o, _)| o == old).map(|(_, n)| format!("{prefix}{n}"));
         tx.execute("UPDATE tasks SET made_in = ?1 WHERE id = ?2", (new, &task)).map_err(sql)?;
     }
-    let linked = linked_on(tx, prefix)?;
+    let linked = on_server(tx, "session_key", prefix)?;
     let mut changed = 0;
     for (task, key) in linked {
         let old = key.strip_prefix(prefix).unwrap_or(&key);
@@ -120,24 +120,20 @@ pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)]
 /// A server started anew without a restore: its pane IDs name other panes now, so its tasks' links
 /// drop, said on each task (AC-113). How many.
 pub fn links_dropped(tx: &Transaction, prefix: &str, now: i64) -> Result<usize, String> {
-    for (task, _) in made_on(tx, prefix)? {
+    for (task, _) in on_server(tx, "made_in", prefix)? {
         tx.execute("UPDATE tasks SET made_in = NULL WHERE id = ?1", [&task]).map_err(sql)?;
     }
-    let linked = linked_on(tx, prefix)?;
+    let linked = on_server(tx, "session_key", prefix)?;
     for (task, _) in &linked {
         drop_link(tx, task, now)?;
     }
     Ok(linked.len())
 }
 
-fn linked_on(tx: &Transaction, prefix: &str) -> Result<Vec<(String, String)>, String> {
+/// Tasks whose `column` (`session_key` or `made_in`) names a pane of the server whose keys start with `prefix`.
+fn on_server(tx: &Transaction, column: &str, prefix: &str) -> Result<Vec<(String, String)>, String> {
     let like = format!("{}%", super::query::like_escaped(prefix));
-    rows(tx, "SELECT id, session_key FROM tasks WHERE session_key LIKE ?1 ESCAPE '\\'", [like], |r| Ok((r.get(0)?, r.get(1)?)))
-}
-
-fn made_on(tx: &Transaction, prefix: &str) -> Result<Vec<(String, String)>, String> {
-    let like = format!("{}%", super::query::like_escaped(prefix));
-    rows(tx, "SELECT id, made_in FROM tasks WHERE made_in LIKE ?1 ESCAPE '\\'", [like], |r| Ok((r.get(0)?, r.get(1)?)))
+    rows(tx, &format!("SELECT id, {column} FROM tasks WHERE {column} LIKE ?1 ESCAPE '\\'"), [like], |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
 fn drop_link(tx: &Transaction, task: &str, now: i64) -> Result<(), String> {

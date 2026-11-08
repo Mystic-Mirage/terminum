@@ -15,11 +15,15 @@ export const hostOptions = (hosts) => [["", THIS_MAC], ...hosts.map((h) => [h, h
 export const agentColor = (a) => hueColor(PROJECT_HUES[(a.color ?? 0) % PROJECT_HUES.length]);
 export const $ = (id) => document.getElementById(id);
 
-/** A page with no sign-in goes to /sessions/, whose form signs in; that page signs in by itself (a task's
- *  window opens there too: terminum-kanban.md AC-150). */
-const onBoard = !location.pathname.startsWith("/sessions");
-const toSignIn = () => { if (onBoard) location.href = "/sessions/"; };
-signin.onRefused(toSignIn);
+/** What a refused sign-in does: nothing on the session page, which signs in by itself (a task's window opens
+ *  there too: terminum-kanban.md AC-150); the board goes to /sessions/, whose form signs in (signInElsewhere). */
+let refused = () => {};
+
+/** The board's: with no sign-in it goes to /sessions/. */
+export function signInElsewhere() {
+  refused = () => { location.href = "/sessions/"; };
+  signin.onRefused(refused);
+}
 
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
  *  message, with its status. */
@@ -27,7 +31,7 @@ export async function api(path, { method = "GET", body } = {}) {
   const sent = method === "GET" ? undefined : JSON.stringify(body ?? {});
   const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent });
   const m = await r.json().catch(() => ({}));
-  if (r.status === 401) toSignIn();
+  if (r.status === 401) refused();
   if (!r.ok) {
     const e = new Error(m.error ?? `terminumd answered ${r.status}`);
     e.status = r.status;
@@ -38,6 +42,9 @@ export async function api(path, { method = "GET", body } = {}) {
 
 /** A date and time as the windows say them. */
 export const stamp = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+/** "made …, changed …": when a task was made and last changed (AC-149). */
+export const madeChanged = (t) => `made ${stamp(t.created_at)}${t.updated_at > t.created_at ? ` · changed ${stamp(t.updated_at)}` : ""}`;
 
 /** A task as a small box: its ID on its status's color, the status in words too (AC-112). */
 export function statusBox(t, open) {
@@ -51,6 +58,9 @@ export function statusBox(t, open) {
   }
   return b;
 }
+
+/** A line of keys at a window's foot. */
+export const row = (...kids) => { const r = el("div", "actions"); r.append(...kids.filter(Boolean)); return r; };
 
 /** One short message, where the action was taken cannot hold it. */
 export const say = (text) => toast(text, 4000);

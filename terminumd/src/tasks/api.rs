@@ -142,7 +142,7 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         reach: None,
         text: q.get("q").cloned(),
         made_in: q.get("made_in").filter(|m| !m.is_empty()).cloned(),
-        with_subtasks: q.get("subtasks").is_some_and(|c| c == "1") || q.contains_key("made_in"),
+        with_subtasks: q.get("subtasks").is_some_and(|c| c == "1"),
         archived: q.get("archived").is_some_and(|c| c == "1"),
         after: q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0),
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
@@ -157,7 +157,8 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         let tasks = query::list(tx, &filter)?;
         let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
         let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
-        let boxes = super::family::boxes(tx, &keys)?;
+        let parents: Vec<&str> = tasks.iter().filter(|t| t.subtasks > 0).map(|t| t.key.as_str()).collect();
+        let boxes = super::family::boxes(tx, &parents)?;
         // only a finished task says what it spent (AC-129)
         let finished: Vec<&str> = tasks.iter().filter(|t| crate::dispatcher::plan::finished(&t.status)).map(|t| t.key.as_str()).collect();
         let spent = crate::dispatcher::usage::of_tasks(tx, &finished)?;
@@ -385,10 +386,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     if budget.is_some() {
         crate::dispatcher::api::budget_changed(&app, &task);
     }
-    told(&app, &task.id);
-    if reparented {
-        told(&app, "");                                // its parents' cards, old and new, count it
-    }
+    told(&app, if reparented { "" } else { &task.id });   // reparented: its parents' cards, old and new, count it
     let mut answered = card(&app, &task);
     if let Some(n) = note {
         answered["note"] = json!(format!("The task moved, its session did not: {n}"));

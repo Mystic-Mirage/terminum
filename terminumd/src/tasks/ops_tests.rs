@@ -253,7 +253,7 @@ fn ac150_where_a_task_was_made_follows_a_restore_and_is_forgotten_when_the_serve
     let made = |pane: &str| s.with(|tx| create(tx, HUMAN, NewTask { title: format!("made in {pane}"), made_in: Some(format!("tmux:local:terminum:{pane}")), ..Default::default() }, 1)).unwrap().id;
     let (a, _) = (made("%1"), made("%2"));
     let of = |pane: &str| s.with(|tx| list(tx, &Query { made_in: Some(format!("tmux:local:terminum:{pane}")), with_subtasks: true, ..Default::default() })).unwrap().into_iter().map(|t| t.id).collect::<Vec<_>>();
-    assert_eq!(of("%1"), [a.clone()]);
+    assert_eq!(of("%1"), std::slice::from_ref(&a));
     s.with(|tx| links_restored(tx, "tmux:local:terminum:", &[("%1".into(), "%7".into())], 2)).unwrap();
     assert_eq!((of("%7"), of("%1"), of("%2")), (vec![a.clone()], vec![], vec![]), "the restored pane's; one not made again forgets");
     s.with(|tx| links_dropped(tx, "tmux:local:terminum:", 3)).unwrap();

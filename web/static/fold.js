@@ -16,7 +16,9 @@ let floatsQuery = null;
 /** Whether the buttons float now (one MediaQueryList, made when first asked: the per-frame paths ask). */
 export const floats = () => (floatsQuery ??= matchMedia(FLOATING)).matches;
 // the folded buttons in their column's order: the plan's progress, the plain ones, then set apart the colored ones (marks.js placeFab)
-export const FOLDED = ["planfab", "findfab", "splitfab", "sentfab", "tasksfab", "attachfab", "marksfab", "remindfab"];
+// the plan's progress; the plain ones, each hidden by its owner with `data-off` while it has nothing to show; the colored ones
+export const PLAN = ["planfab"], PLAIN = ["findfab", "splitfab", "sentfab", "tasksfab", "attachfab"], COLORED = ["marksfab", "remindfab"];
+export const FOLDED = [...PLAN, ...PLAIN, ...COLORED];
 const FOR = 3000;              // ms the column stays unfolded
 const SCROLL = 10;             // px a finger moves before it scrolls
 const SETTLE = 1000;           // ms without a scroll after the lift before they come back

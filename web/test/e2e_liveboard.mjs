@@ -206,7 +206,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-111 a reload keeps it", await until(async () => (await inColumn("DONE")).join() === urgent));
   // every key of the head shown, a filter on, one project's + Session too: none stands over another as the board narrows
   const over = [];
-  for (const width of [1400, 1300, 1200, 1100]) {
+  for (const width of [1100, 1200, 1300, 1400]) {   // the last the run's own size
     await page.setViewportSize({ width, height: 900 });
     if (shots) await page.screenshot({ path: path.join(shots, `board-head-${width}.png`), clip: { x: 0, y: 0, width, height: 140 } });
     over.push(...(await page.evaluate(() => {
@@ -215,8 +215,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
       return keys.flatMap((a, i) => keys.slice(i + 1).filter((b) => !a.contains(b) && !b.contains(a) && meet(a.getBoundingClientRect(), b.getBoundingClientRect())).map((b) => `${a.id || a.textContent} over ${b.id || b.textContent}`));
     })).map((m) => `${width}: ${m}`));
   }
-  await page.setViewportSize({ width: 1400, height: 900 });
-  check("AC-111 the head's keys never stand over one another, the window 1400 to 1100 wide", over.length === 0, over.join("; "));
+  check("AC-111 the head's keys never stand over one another, the window 1100 to 1400 wide", over.length === 0, over.join("; "));
   await page.click("#clearfilters");
   check("AC-111 Clear filters takes off severity, the project stays", await until(() => !/severity/.test(page.url()) && /project=default/.test(page.url())), page.url());
   check("AC-111 and shows the project's", await until(async () => (await inColumn("IN PROGRESS")).length === 1));

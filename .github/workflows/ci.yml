@@ -18,9 +18,10 @@ jobs:
   linux:
     name: Tests on Linux (Ubuntu), the page in Chromium and WebKit
     runs-on: [self-hosted, linux, x64, terminum]
-    # a passing run takes about 8 min; a build stuck at the memory cap does not fail, it
-    # thrashes the disk until cancelled (~60-80 GiB written an hour, 2026-10-31)
-    timeout-minutes: 20
+    # a passing run takes 20-25 min, both browsers' page tests included (2026-11-08); a build
+    # stuck at the memory cap does not fail, it thrashes the disk until cancelled (~60-80 GiB
+    # written an hour, 2026-10-31), so 30 min bounds that at ~30-40 GiB
+    timeout-minutes: 30
     env:
       # the runner's 2G cap sits in a VM shared with coding agents: one rustc at a time, no
       # debug info (two rustc with it took the whole VM out of memory, 2026-10-25)

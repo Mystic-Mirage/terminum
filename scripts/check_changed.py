@@ -198,8 +198,8 @@ def timed(name):
     return name in ("panel", "page", "critical") or name.startswith("e2e_")
 
 
-def red(text, stream=sys.stdout):
-    return f"\033[31m{text}\033[0m" if stream.isatty() else text
+def red(text):
+    return f"\033[31m{text}\033[0m" if sys.stdout.isatty() else text
 
 
 def skipped_note(root):
@@ -210,16 +210,24 @@ def skipped_note(root):
         return None
 
 
+def say_skipped(root):
+    """Said last, red: the report names these checks under Not verified (AC-146)."""
+    note = skipped_note(root)
+    if note:
+        print(red(note), flush=True)
+
+
 def run(steps, root=REPO, gate=True, nice=False):
     """Returns the steps failed. gate: a quiet machine is waited for before the first timed step, and the timed
     steps are skipped when it stays busy (AC-146); nice: every step yields (a release runs)."""
     logs = root / ".checks"
     logs.mkdir(exist_ok=True)
-    failed, skipped, busy = [], [], None
+    failed, skipped, busy, asked = [], [], None, False
+    if gate:   # what needs no quiet machine runs before the wait
+        steps = sorted(steps, key=lambda step: timed(step[0]))
     for name, command in steps:
         if gate and timed(name):
-            busy = for_task(root)
-            gate = False
+            busy, asked, gate = for_task(root), True, False
         if busy and timed(name):
             print(red(f"SKIP {name}: {busy} {MINUTES}"), flush=True)
             skipped.append(name)
@@ -241,8 +249,8 @@ def run(steps, root=REPO, gate=True, nice=False):
     note = logs / "skipped"
     if skipped:
         note.write_text(f"targeted: SKIPPED timed checks, the machine busy {MINUTES}: {' '.join(skipped)}\n")
-    elif busy is None and any(timed(n) for n, _ in steps):
-        note.unlink(missing_ok=True)   # this run's timed checks ran
+    elif asked:
+        note.unlink(missing_ok=True)   # this run's timed checks ran on a quiet machine
     return failed
 
 
@@ -286,9 +294,7 @@ def main(argv):
         return 0
     failed = run(steps)
     print(f"targeted: FAIL {' '.join(failed)}" if failed else "targeted: PASS")
-    skipped = skipped_note(REPO)
-    if skipped:
-        print(red(skipped), flush=True)
+    say_skipped(REPO)
     if not failed and tree_id() == ident:   # changed during the run: no pass recorded
         passed.write_text(time.strftime("%Y-%m-%d %H:%M\n"))
     return 1 if failed else 0

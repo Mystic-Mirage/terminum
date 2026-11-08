@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SPEC = importlib.util.spec_from_file_location("land", Path(__file__).resolve().parents[1] / "land.py")
 land = importlib.util.module_from_spec(SPEC)
@@ -294,13 +295,8 @@ class Landing(unittest.TestCase):
         self.assertEqual((self.primary / "a.txt").read_text(), "the maintainer's work\n")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class Said(unittest.TestCase):
     def test_timed_checks_a_busy_machine_skipped_are_said_after_landed(self):  # AC-146
-        from unittest import mock
         with tempfile.TemporaryDirectory() as tmp:
             primary = Path(tmp)
             tree = primary / ".worktrees" / "x"
@@ -315,3 +311,7 @@ class Said(unittest.TestCase):
                 self.assertEqual(land.main(["x"]), 0)
         self.assertEqual(out[-2:], ["landed abcdef012 on origin/main",
                                     "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page"])
+
+
+if __name__ == "__main__":
+    unittest.main()

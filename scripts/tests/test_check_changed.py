@@ -154,8 +154,14 @@ class Run(unittest.TestCase):
         self.run_steps([("page", "true")], busy="load 31 over 16")
         self.run_steps([("cargo", "true")])
         self.assertIsNotNone(check_changed.skipped_note(self.root))   # nothing timed ran: the skip stands
+        self.run_steps([("e2e_core", "true")], gate=False)   # a landing's smoke set asks no gate
+        self.assertIsNotNone(check_changed.skipped_note(self.root))
         self.run_steps([("page", "true")])
         self.assertIsNone(check_changed.skipped_note(self.root))
+
+    def test_what_needs_no_quiet_machine_runs_before_the_wait(self):  # AC-146
+        self.run_steps([("panel", "a"), ("page-unit", "b"), ("e2e_hooks", "c")])
+        self.assertEqual([e if e == "gate" else e[-1] for e in self.events], ["b", "gate", "a", "c"])
 
     def test_the_first_timed_step_waits_once_for_a_quiet_machine(self):  # AC-146
         self.run_steps([("cargo", "true"), ("page", "true"), ("e2e_hooks", "true")])

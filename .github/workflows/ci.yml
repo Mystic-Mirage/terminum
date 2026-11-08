@@ -86,20 +86,23 @@ jobs:
         run: bash scripts/security_check.sh
 
       # a kill here with no cap hit of this job's own came from the group above it, shared with the
-      # VM's other runners: its counters say whether that group hit its cap, the others' use how much
-      # (unnamed: this log is public)
+      # VM's other runners: its counters say whether that group hit its cap, the others in it how much
+      # they use (unnamed: this log is public)
       - name: The runner's memory use (cap hits and OOM kills in this job and the group above it)
         if: always()
         run: |
           cg="/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)"
-          echo "cap $(cat "$cg/memory.max"), peak since the runner started $(cat "$cg/memory.peak")"
-          paste "$RUNNER_TEMP/memory.events.before" "$cg/memory.events" \
-            | awk '{print $1, $4 - $2}' | sed 's/^/this job: /'
+          delta() { paste "$1" "$2" | awk '{print $1, $4 - $2}' | sed "s/^/$3: /"; }
+          peak() { cat "$1/memory.peak" 2>/dev/null || echo -; }
+          echo "cap $(cat "$cg/memory.max"), peak since the runner started $(peak "$cg")"
+          delta "$RUNNER_TEMP/memory.events.before" "$cg/memory.events" "this job"
           grep -E '^(anon|shmem|file) ' "$cg/memory.stat" | sed 's/^/this job now: /'
           up="$cg/.."
           [ -r "$RUNNER_TEMP/memory.events.parent.before" ] || { echo "the group above: not readable"; exit 0; }
-          echo "the group above: cap $(cat "$up/memory.max"), now $(cat "$up/memory.current"), peak $(cat "$up/memory.peak" 2>/dev/null || echo -)"
-          paste "$RUNNER_TEMP/memory.events.parent.before" "$up/memory.events" \
-            | awk '{print $1, $4 - $2}' | sed 's/^/the group above, in this job: /'
-          n=0; for d in "$up"/*/; do [ "$(realpath "$d")" = "$(realpath "$cg")" ] || [ ! -f "$d/memory.current" ] && continue
-            n=$((n + 1)); echo "another runner $n: now $(cat "$d/memory.current"), peak $(cat "$d/memory.peak" 2>/dev/null || echo -)"; done
+          echo "the group above: cap $(cat "$up/memory.max"), now $(cat "$up/memory.current"), peak $(peak "$up")"
+          delta "$RUNNER_TEMP/memory.events.parent.before" "$up/memory.events" "the group above, in this job"
+          n=0
+          for d in "$up"/*/; do
+            if [ "$d" -ef "$cg" ] || [ ! -f "$d/memory.current" ]; then continue; fi
+            n=$((n + 1)); echo "another group in it $n: now $(cat "$d/memory.current"), peak $(peak "$d")"
+          done

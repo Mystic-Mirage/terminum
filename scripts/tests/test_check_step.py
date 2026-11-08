@@ -140,8 +140,7 @@ class Stubborn(unittest.TestCase):
         spec.loader.exec_module(check_changed)
         root = Path(GUARD).parents[1]
         try:
-            said = io.StringIO()   # its FAIL line is this test's expected outcome, not a failure of the run
-            with contextlib.redirect_stdout(said):
+            with contextlib.redirect_stdout(io.StringIO()) as said:   # its FAIL line is this test's outcome
                 self.assertEqual(check_changed.run([("guard-probe", 'touch "$TMPDIR/left"')], root=root), ["guard-probe"])
             self.assertIn("FAIL guard-probe", said.getvalue())
             self.assertIn("LEFT left", (root / ".checks" / "changed.guard-probe.log").read_text())

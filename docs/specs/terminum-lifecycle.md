@@ -446,6 +446,19 @@ Scenario: AC-104 edge — a session hears of a changed pipeline
   When the session's prompt hook runs in that tree
   Then it says "origin/main changed the checks or the landing (scripts/land.py): read it there and merge it (CLAUDE.md §9)"
 
+Scenario: AC-104 edge — the landing says GitHub CI's last run on main
+  Given GitHub CI's last run on main failed on origin/main's head 8f3c2a1d0
+  When make land runs
+  Then its first line is "CI on main: failure on 8f3c2a1d0: https://github.com/extractumio/terminum/actions/runs/42436430099"
+  And the same line is printed again last, landed or not, and the landing goes on as with a green run
+  And without gh, or with no answer in 10 seconds, the line is "CI on main: unknown (<why>)" and the landing goes on
+
+Scenario: AC-104 edge — a Rust source that names no case
+  Given a tree changed terminumd/src/redaction.rs, whose first 6 lines name no AC-nn
+  When python3 scripts/check_changed.py runs
+  Then it prints "note: terminumd/src/redaction.rs names no case at its top: the e2e scripts of its area are not known"
+  And it runs that module's cargo tests; a source naming cases there also runs the scripts/e2e_*.py citing them
+
 Scenario: AC-104 edge — uncommitted work
   Given the worktree holds an uncommitted file
   When make land runs
@@ -604,22 +617,22 @@ Scenario Outline: AC-104 edge — only failing tests block a release
 
 ```gherkin
 Scenario: AC-146 happy path — a quiet machine starts at once
-  Given the load average is 3.2 on 16 cores, the limit being 8 (half the cores; TM_GATE_LOAD sets another)
+  Given the load average is 3.2 on 16 cores, the limit being 16 (the cores' count; TM_GATE_LOAD sets another)
   When make release or make rehearse reaches its full run
-  Then it prints "gate: load 3.2, at most 8: starting" and the full run starts
+  Then it prints "gate: load 3.2, at most 16: starting" and the full run starts
 
 Scenario: AC-146 edge — a busy machine is waited for
   Given the load average is 40.2
   When make release reaches its full run
-  Then it prints "gate: load 40.2 over 8: waiting, a look each minute, 15 minutes at most" and runs no test
+  Then it prints "gate: load 40.2 over 16: waiting, a look each minute, 15 minutes at most" and runs no test
   And it looks at the load once a minute, printing each look
-  And once the load is at most 8 it waits 3 minutes more, still looking each minute, a look over 8 starting those 3 minutes again
-  And then it prints "gate: load 5.1, at most 8 for 3 minutes: starting" and the full run starts
+  And once the load is at most 16 it waits 3 minutes more, still looking each minute, a look over 16 starting those 3 minutes again
+  And then it prints "gate: load 5.1, at most 16 for 3 minutes: starting" and the full run starts
 
 Scenario: AC-146 failure — the machine stays busy
-  Given the load average stays over 8 for 15 minutes
+  Given the load average stays over 16 for 15 minutes
   When make release waits at its gate
-  Then it ends with "release: the build server is not available for a release: load 31.0 over 8 for 15 minutes: nothing is public", having run no test
+  Then it ends with "release: the build server is not available for a release: load 31.0 over 16 for 15 minutes: nothing is public", having run no test
 
 Scenario: AC-146 edge — one full run at a time
   Given a rehearsal's full run is running in another tree
@@ -636,7 +649,7 @@ Scenario Outline: AC-146 edge — a task's timed checks
   Given <why>
   When a task's targeted checks reach their first timed step: the page's checks, the Panel's, an e2e script or the real page
   Then they wait the same way, printing each look
-  And after 15 minutes they run anyway, printing "gate: running under load 31.0 over 8: a timing failure may be the load's", and never fail for the wait
+  And after 15 minutes they run anyway, printing "gate: running under load 31.0 over 16: a timing failure may be the load's", and never fail for the wait
   And a landing's smoke set, which holds no timed check, never waits
 
   Examples:
@@ -645,9 +658,9 @@ Scenario Outline: AC-146 edge — a task's timed checks
     | a release is running (its mark is held) |
 
 Scenario: AC-146 edge — make check by hand
-  Given the load average stays over 8 for 15 minutes
+  Given the load average stays over 16 for 15 minutes
   When someone runs make check
-  Then it ends with exit 75: "check: the machine is busy: load 31.0 over 8 for 15 minutes: nothing ran"
+  Then it ends with exit 75: "check: the machine is busy: load 31.0 over 16 for 15 minutes: nothing ran"
 ```
 
 ## 6. Flow and sequence diagrams
@@ -738,7 +751,7 @@ Last lines `state/lastlines/local@terminum/6db00afe9596fc57_3.json` (AC-96; `…
 | `TM_PORT_WAIT_S` | `9` | `1` | seconds terminumd waits before exiting when it has no port |
 | `TM_RELEASE_URL` | the GitHub releases page | `file:///tmp/rel` | where `upgrade` and `install.sh` download |
 | `TM_BOOT_ID` | the machine's boot | `b2` | plays another boot (tests) |
-| `TM_GATE_LOAD` | half the cores | `12` | the load average at most which a full run starts and a task's timed checks run (AC-146); half the cores is a guess, not measured |
+| `TM_GATE_LOAD` | the cores' count | `12` | the load average at most which a full run starts and a task's timed checks run (AC-146); a day's load on a 16-core Mac with 4-5 sessions: 9-13 while working, 100-260 under builds and Spotlight's indexing |
 | `TM_NO_OPEN`, `TM_WEB_PASSWORD`, `NO_COLOR` | unset | `1`, `…`, `1` | no browser after install; the password for `terminum password` without a prompt; no colors |
 | `TM_CODESIGN_IDENTITY` | unset (ad hoc) | a Developer ID | what `scripts/package.py` signs with (AC-08) |
 

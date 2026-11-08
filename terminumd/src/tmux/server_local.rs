@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The local tmux server asked by processes of their own: no control client runs yet or any more.
+//! The local tmux server asked by processes of their own: no control client runs yet or any more:
+//! its first start (AC-01), the sessions the user's tmux offers to attach (AC-89).
 
 use super::{plain, Link, Server, HOST_SESSION, NO_TMUX};
 

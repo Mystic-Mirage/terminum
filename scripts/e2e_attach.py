@@ -12,7 +12,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -100,9 +99,14 @@ def main():
         check("AC-89 its view's new size follows", "100x32 manual" in size_of(own, "work:"), size_of(own, "work:"))
         check("AC-89 the private server's window with the same id keeps its own size", size_of(tmux, "main:").startswith("80x24 "), size_of(tmux, "main:"))
         mate = own("split-window", "-h", "-d", "-t", "work:", "-P", "-F", "#{pane_id}").strip()
-        time.sleep(1.5)
+        # terminumd has the split in its list; the view's next size is where it would zoom and say
+        # "sized", which it never sends for the user's layout: five times the 1-second slot (sizing.rs EVERY)
+        split = wait_layout(ws, lambda gs: (x := group(gs, "work")) and any(i["id"].endswith(":" + mate) for i in x["items"]), 8)
+        ws.send({"t": "size", "cols": 100, "rows": 30, "typing": False})
+        sized = ws.until(lambda m: m["t"] == "sized", 5)
         zoomed = own("display", "-p", "-t", "work:", "#{window_zoomed_flag} #{window_panes}").strip()
-        check("AC-13 a split window of the user's tmux keeps its layout: never zoomed", zoomed == "0 2", zoomed)
+        check("AC-13 a split window of the user's tmux keeps its layout: never zoomed or sized",
+              split and not sized and zoomed == "0 2", [bool(split), sized, zoomed])
         own("kill-pane", "-t", mate)
 
         ws.send({"t": "new", "group": f"local:{OWN}/work"})
@@ -118,7 +122,9 @@ def main():
         ws.until(lambda m: m["t"] == "marked", 5)
         ws.send({"t": "detachtmux", "server": f"local:{OWN}", "session": "work"})
         groups = wait_layout(ws, lambda gs: not group(gs, "work"))
-        time.sleep(1.5)  # a list read after the detach
+        # a list of that server read after the detach, which orphans what it judges closed (projects::seen)
+        own("new-window", "-d", "-t", "later:")
+        check("a list of that server read after the detach", wait_layout(ws, lambda gs: (x := group(gs, "later")) and len(x["items"]) == 2, 8))
         marks = json.load(open(os.path.join(t.app, "web-bookmarks.json")))["items"]
         check("AC-33 a session detached keeps its bookmark, not orphaned (its pane still runs)", len(marks) == 1 and not marks[0].get("orphaned"), marks)
         check("AC-89 detaching forgets the session and leaves it running", not group(groups, "work") and "work" in own("ls"), own("ls"))

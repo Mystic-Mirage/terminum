@@ -34,6 +34,21 @@ class Plan(unittest.TestCase):
             self.assertIn(critical, got["cargo"])
         self.assertIn("critical", got)
 
+    def test_a_rust_source_naming_cases_at_its_top_brings_the_e2e_scripts_citing_them(self):  # AC-104
+        cases = check_changed.touched_cases(["terminumd/src/tmux/server_local.rs"], "HEAD", cwd=REPO)
+        self.assertLessEqual({"01", "89"}, cases)
+        self.assertIn("scripts/e2e_attach.py", check_changed.citing(cases, REPO))
+
+    def test_a_rust_source_naming_no_case_is_said(self):  # AC-104
+        with tempfile.TemporaryDirectory() as root:
+            src = Path(root, "terminumd/src")
+            src.mkdir(parents=True)
+            (src / "plain.rs").write_text("//! A helper.\n" + "\n" * 6 + "// AC-07 too far down to count\n")
+            (src / "named.rs").write_text("//! Sizing (AC-13).\n")
+            (src / "plain_tests.rs").write_text("")
+            files = ["terminumd/src/plain.rs", "terminumd/src/named.rs", "terminumd/src/plain_tests.rs", "terminumd/src/cli/tests/mod.rs", "terminumd/src/gone.rs", "web/static/a.js"]
+            self.assertEqual(check_changed.caseless(files, Path(root)), ["terminumd/src/plain.rs"])
+
     def test_the_module_of_a_file(self):
         self.assertEqual(check_changed.module_of("terminumd/src/cli/install_tests.rs"), "cli::install")
         self.assertEqual(check_changed.module_of("terminumd/src/cli/tests/mod.rs"), "cli::tests")

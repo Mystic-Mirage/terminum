@@ -22,8 +22,9 @@ KILL_AFTER_S = 2   # a leftover still there this long after SIGTERM gets SIGKILL
 
 def own_processes(folder, group):
     """(pid, command) of each process of `group` or whose environment names `folder`."""
-    flag = "-E" if sys.platform == "darwin" else "e"
-    listed = subprocess.run(["ps", "-ax", flag, "-ww", "-o", "pid=,pgid=,stat=,command="], capture_output=True, text=True, errors="replace").stdout
+    # Linux's procps refuses `-ax` mixed with BSD's `e`; a failed ps fails the step, never "nothing left"
+    flags = ["-ax", "-E", "-ww"] if sys.platform == "darwin" else ["axeww"]
+    listed = subprocess.run(["ps", *flags, "-o", "pid=,pgid=,stat=,command="], capture_output=True, text=True, errors="replace", check=True).stdout
     found = []
     for line in listed.splitlines():
         fields = line.split(None, 3)

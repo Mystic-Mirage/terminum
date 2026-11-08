@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<meta name="build" content="__BUILD__">
+<base href="/">
+<title>Message history · terminum</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="controls.css">
+<link rel="stylesheet" href="motion.css">
+<link rel="stylesheet" href="grain.css">
+<link rel="stylesheet" href="msgpage.css">
+<link rel="stylesheet" href="history.css">
+<style id="customcss"></style>
+</head>
+<body class="msg-page">
+<main id="mpage">
+  <!-- the shared head of the Message history and the Dashboard (dashboard.html holds the same) -->
+  <header id="bar" class="wavebar">
+    <a id="barsessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
+    <h1 class="mtitle">Message history</h1>
+    <nav class="seg mpages" aria-label="Pages">
+      <a href="/history/" aria-current="page"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg><span>History</span></a>
+      <a href="/dashboard/"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg><span>Dashboard</span></a>
+    </nav>
+    <span class="mgrow"></span>
+    <a id="barkanban" class="icon" href="/kanban/" title="Kanban: tasks and their sessions" aria-label="Kanban"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg></a>
+  </header>
+  <!-- /the shared head -->
+  <div id="htools">
+    <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+      <input id="q" type="search" placeholder="Search what you sent" aria-label="Search what you sent" aria-controls="results" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+      <kbd class="wide-only" title="Press / to search">/</kbd>
+    </label>
+    <button id="hhelp" class="icon" type="button" aria-expanded="false" aria-controls="hhelpbox" title="How words are looked for" aria-label="How words are looked for"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
+    <button id="hfilters" class="textkey" type="button" aria-expanded="false" aria-controls="hpicks">Filters</button>
+    <div id="hpicks">
+      <details id="fwhen" class="pick" name="hpick"><summary class="textkey" title="When it was sent">All kept</summary>
+        <div class="box menurows" role="group" aria-label="When">
+          <div class="rows"></div>
+          <div class="hrange"><label>From <input id="hfrom" type="date" class="field"></label><label>To <input id="hto" type="date" class="field"></label><button id="hrangego" class="textkey primary" type="button">Show</button></div>
+        </div></details>
+      <details id="fproject" class="pick" name="hpick"><summary class="textkey" title="The session list's project">All projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
+      <details id="fsender" class="pick" name="hpick"><summary class="textkey" title="Who sent it">You and Dispatcher</summary><div class="box menurows" role="group" aria-label="From"></div></details>
+      <details id="fkind" class="pick" name="hpick"><summary class="textkey" title="A coding agent's prompt or a shell's command">Agents and shells</summary><div class="box menurows" role="group" aria-label="Where"></div></details>
+      <div id="hsort" class="seg" role="group" aria-label="Order">
+        <button type="button" data-sort="best" title="The best matches first (BM25)">Best match</button>
+        <button type="button" data-sort="new" title="The newest first">Newest</button>
+      </div>
+    </div>
+  </div>
+  <div id="hhelpbox" class="box" hidden>
+    <p><code>page history</code>: both words, each also as the start of a longer one.</p>
+    <p><code>"jump to message"</code>: those words together.</p>
+    <p><code>-codex</code>: without that word. Other signs are plain text.</p>
+    <p>Words are matched whole or by their start, not by their forms: <code>поиск</code> finds <code>поиска</code>, not <code>искать</code>.</p>
+  </div>
+  <figure id="strip" class="strip">
+    <figcaption class="striphead"><span id="stripsay" aria-live="polite"></span><button id="stripclear" class="textkey" type="button" hidden>Clear dates</button></figcaption>
+    <div id="stripplot" class="stripplot" tabindex="0" role="group" aria-label="Messages a day: ← and → choose a day, Enter shows it"></div>
+  </figure>
+  <p id="hsum" class="msum" role="status"></p>
+  <p id="herr" class="merr" role="alert" hidden></p>
+  <div id="results" role="listbox" aria-label="Messages"></div>
+  <div id="hfoot"><button id="more" class="textkey" type="button" hidden>Show more</button></div>
+</main>
+<script type="module" src="grain.js"></script>
+<script type="module" src="history.js"></script>
+</body>
+</html>

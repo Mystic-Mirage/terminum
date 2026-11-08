@@ -1,0 +1,71 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The Message history (terminum.md AC-151): its tools, the day strip, the rows. A row is the session list's kind:
+   its project's bar, the agent's mark, the session's title; what was sent under it in the terminal's font. */
+#mpage { --strip-ink: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg)); }
+#htools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--gutter) 0; }
+#htools .search { flex: 1 1 260px; max-width: 560px; height: var(--key-h); }
+#htools .search input { font-size: var(--fs-body); }
+#hpicks { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+#htools #hfilters { display: none; }   /* over the keys' display (controls.css) */
+#hsort { flex: none; }
+#hsort button:disabled { opacity: .45; }
+#fproject summary { max-width: 220px; }
+#fproject .box { min-width: min(300px, calc(100vw - var(--sp-6) * 2)); }
+.pick summary .pname, .menurows .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menurows button[aria-checked="true"] { color: var(--accent); }
+.hrange { display: flex; flex-wrap: wrap; align-items: end; gap: var(--sp-2); padding: var(--sp-2) 10px var(--sp-1); }
+.hrange label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-label); color: var(--muted-text); height: auto; padding: 0; }
+.hrange input { height: 30px; padding: 0 var(--sp-1); font: inherit; font-size: var(--fs-small); }
+#hhelpbox { margin: var(--sp-2) var(--gutter) 0; padding: var(--sp-2) var(--sp-3); max-width: 560px; border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); font-size: var(--fs-small); }
+#hhelpbox p { margin: 2px 0; }
+#hhelpbox code { font-family: var(--term-font, ui-monospace); }
+
+/* the day strip: when, at a glance; a day pressed shows it */
+.strip { margin: var(--sp-2) var(--gutter) 0; padding: var(--sp-2) var(--sp-3) var(--sp-1); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); }
+.striphead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 24px; font-size: var(--fs-meta); color: var(--muted-text); font-variant-numeric: tabular-nums; }
+#stripsay { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stripplot { margin-top: var(--sp-1); }
+#hsum, #herr { padding: var(--sp-2) var(--gutter) 0; }
+
+/* the rows */
+#results { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-1) var(--gutter) var(--sp-2); }
+#results.stale { opacity: .5; }
+.dayhead { position: sticky; top: var(--h-bar); z-index: 2; padding: var(--sp-2) 0 var(--sp-1); font-size: var(--fs-label); font-weight: 600; color: var(--muted-text); background: var(--surface-0); font-variant-numeric: tabular-nums; }
+.msg { position: relative; display: flex; flex-direction: column; gap: 3px; padding: var(--sp-2) var(--sp-3) var(--sp-2) calc(var(--sp-3) + 8px); border-radius: var(--r-md); cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 84px; }
+.msg::before { content: ""; position: absolute; left: 6px; top: 8px; bottom: 8px; width: 4px; border-radius: 2px; background: var(--dot, var(--faint)); opacity: .6; }   /* the list's .pbar */
+@media (hover: hover) { .msg:hover { background: color-mix(in srgb, var(--t-fg) 6%, transparent); } }
+.msg[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 14%, var(--chrome)); }
+.msg.open { background: var(--surface-1); box-shadow: var(--m-edge); cursor: auto; }
+.mhead { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-row); }
+.mtitle2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.mproj { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 40%; padding: 1px 8px; border-radius: var(--r-pill); background: var(--surface-2); font-size: var(--fs-label); color: var(--muted-text); }
+.mbot { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 1px 6px; border-radius: var(--r-xs); background: var(--surface-3); clip-path: var(--chamfer); font-size: var(--fs-micro); font-weight: 600; color: var(--t-fg); }
+.mtime { margin-left: auto; flex: none; font-size: var(--fs-meta); color: var(--muted-text); font-variant-numeric: tabular-nums; }
+.mtext { font-family: var(--term-font, ui-monospace, Menlo, monospace); font-size: var(--fs-small); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.mtext.shell::before { content: "$ "; color: var(--muted-text); }
+.msg.open .mtext { display: block; max-height: 40vh; overflow: auto; -webkit-line-clamp: unset; }
+.mtext mark.hit { color: var(--t-fg); background: color-mix(in srgb, var(--accent) 32%, transparent); border-radius: var(--r-xs); padding: 0 1px; }
+.mmeta { font-size: var(--fs-meta); color: var(--muted-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.mmeta.gone { opacity: .8; }
+.macts { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-1); }
+.macts a { text-decoration: none; display: inline-flex; align-items: center; }
+.macts a[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.ctx { display: flex; flex-direction: column; gap: 2px; margin-top: var(--sp-1); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); background: var(--surface-2); }
+.ctxrow { display: flex; gap: var(--sp-2); font-size: var(--fs-small); color: var(--muted-text); min-width: 0; }
+.ctxrow.self { color: var(--t-fg); font-weight: 500; }
+.ctxtime { flex: none; font-variant-numeric: tabular-nums; }
+.ctxtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--term-font, ui-monospace); }
+#hfoot { display: flex; justify-content: center; padding: var(--sp-2) 0 var(--sp-6); }
+
+@media (max-width: 860px), (pointer: coarse) {
+  #htools .search { flex-basis: 100%; max-width: none; }
+  #htools .search input { font-size: 16px; }        /* iOS does not zoom */
+  #htools #hfilters { display: inline-flex; }
+  #hpicks { flex-basis: 100%; }
+  #hpicks:not(.open) { display: none; }
+  .msg { min-height: 60px; }
+  .macts :is(a, button) { min-height: 44px; }
+  .dayhead { top: 0; position: static; }
+  .mproj { max-width: 35%; }
+}

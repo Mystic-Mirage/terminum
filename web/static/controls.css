@@ -132,3 +132,14 @@ input[type="checkbox"]:not([role="switch"]) { appearance: none; -webkit-appearan
 .dropdown-option.active { background: var(--surface-4); }
 .dropdown-option[aria-disabled="true"] { opacity: var(--key-disabled); }
 .dropdown-option[aria-selected="true"]::before { content: ""; position: absolute; left: 11px; top: 50%; width: 9px; height: 5px; margin-top: -5px; border: solid var(--t-fg); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
+
+/* a filter (the board, the Message history, the Dashboard): a key with its arrow, its plate of ticks under it; a filter on says how many (as todobem's select and list) */
+.pick { position: relative; --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.pick summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--sp-1); }
+.pick summary::-webkit-details-marker { display: none; }
+.pick summary::after { content: ""; flex: none; width: 10px; height: 6px; margin-left: var(--sp-1); background: currentColor; opacity: .7; transition: transform var(--dur-pop, .15s);
+  -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; }
+.pick[open] summary::after { transform: rotate(180deg); }
+.pick > .box { position: absolute; z-index: 20; top: calc(100% + var(--sp-1)); left: 0; min-width: 190px; max-height: 50dvh; overflow: auto; box-shadow: var(--shadow-far); }
+/* a project's color as a dot */
+.pdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--proj); }

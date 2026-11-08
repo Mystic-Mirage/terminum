@@ -110,3 +110,5 @@ button.stbox { cursor: pointer; border: 0; }
 .sublist .subname { color: var(--t-fg); text-decoration: none; font-size: var(--fs-body); }
 @media (hover: hover) { .sublist .subname:hover { text-decoration: underline; } }
 .tpwhy { padding: var(--sp-2); color: var(--danger-text); }
+#convertbox .fieldrow { font-size: inherit; }
+#convertbox :is(input, select) { font: inherit; }   /* the session page's windows: the terminal's type, as its other fields */

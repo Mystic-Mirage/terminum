@@ -287,9 +287,7 @@ pub async fn respawn(app: &Shared, server: &Arc<Server>, pane: &str, old: &str, 
     if let Some(w) = app.dispatcher.watch.lock().get_mut(&server.key(pane)) {
         w.subs.clear();                                // a new agent: none of the last one's
     }
-    let done = server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"));
-    crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", new, &[], ""), "launch", server, pane, command, done.as_ref().err().cloned(), None);
-    done
+    server.run(format!("respawn-pane -k -t {pane} {}", window_command(folder, command, &tmux_of(server)))).await.map(drop).map_err(|e| format!("tmux did not start it: {e}"))
 }
 
 #[cfg(test)]

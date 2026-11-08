@@ -231,7 +231,9 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
     }
     let line = start::resume_command(r).unwrap_or_else(|_| r.command.clone());
     let new = next_run(app, r, t, again).await?;
-    start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await?;
+    let done = start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await;
+    crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", &new, &r.ids, &r.agent_id), "launch", server, pane, &line, done.as_ref().err().cloned(), None);
+    done?;
     let (a, key, n) = (app.clone(), server.key(pane), new.clone());
     app.dispatcher.panes.lock().insert(key.clone());    // its agent's first hooks
     store(app, move |tx| a.dispatcher.pane_opened(tx, &n, &key).map(drop)).await?;

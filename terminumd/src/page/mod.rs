@@ -61,7 +61,7 @@ pub struct Page {
     /// its part of the latency trace (AC-38)
     pub tracer: Mutex<trace::Tracer>,
     /// its browser and address, for the input log (AC-147)
-    pub client: Mutex<crate::inputs::Client>,
+    pub client: crate::inputs::Client,
 }
 
 impl Page {
@@ -121,7 +121,8 @@ pub struct Pages {
 
 impl Pages {
     /// A new page and the receiving end of its queue, or None when there are too many.
-    pub fn add(&self, web: bool, recorder: Arc<trace::Recorder>) -> Option<(Arc<Page>, mpsc::Receiver<String>)> {
+    pub fn add(&self, client: crate::inputs::Client, recorder: Arc<trace::Recorder>) -> Option<(Arc<Page>, mpsc::Receiver<String>)> {
+        let web = client.web;
         let mut list = self.list.lock();
         list.retain(|_, p| !p.is_closed());
         if list.len() >= MAX_PAGES {
@@ -129,7 +130,7 @@ impl Pages {
         }
         let (tx, rx) = mpsc::channel(BACKLOG);
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        let page = Arc::new(Page { id, web, tx, closed: AtomicBool::new(false), woke: Default::default(), reads: Default::default(), state: Mutex::new(client::State::default()), tracer: Mutex::new(trace::Tracer::new(recorder)), client: Mutex::new(crate::inputs::Client { web, ..Default::default() }) });
+        let page = Arc::new(Page { id, web, tx, closed: AtomicBool::new(false), woke: Default::default(), reads: Default::default(), state: Mutex::new(client::State::default()), tracer: Mutex::new(trace::Tracer::new(recorder)), client });
         list.insert(id, page.clone());
         Some((page, rx))
     }

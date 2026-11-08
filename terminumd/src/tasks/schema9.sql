@@ -29,4 +29,3 @@ CREATE TABLE inputs (
   error TEXT
 );
 CREATE INDEX inputs_at ON inputs (at);
-CREATE INDEX inputs_pane ON inputs (pane, at);

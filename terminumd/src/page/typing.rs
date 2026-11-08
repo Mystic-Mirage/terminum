@@ -13,7 +13,7 @@ use std::sync::Arc;
 use super::client::error;
 use super::Page;
 use crate::app::Shared;
-pub use crate::tmux::keys::{PASTE_END, PASTE_START};
+use crate::tmux::keys::{PASTE_END, PASTE_START};
 use crate::tmux::server::OnCopy;
 use crate::tmux::{args, keys, Server};
 
@@ -217,12 +217,12 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
         if keys {
             app.dispatcher.touched(&key);
         }
+        let mut logged = Vec::new();                   // for the input log, once the lock is let go (AC-147)
         for run in runs(&batch) {
             result = match run {
                 Run::Keys(data) => {
                     let sent = send(&app, &client, &server, &pane, &data).await;
-                    let who = crate::inputs::Who::user("page", Some(page.id), &page.client.lock());
-                    crate::inputs::typed(&app, who, &server, &pane, &key, &data, sent.as_ref().err().map(String::as_str));
+                    logged.push((data, sent.as_ref().err().cloned()));
                     sent
                 }
                 Run::Mouse(bytes) => client.run(mouse_line(&pane, &bytes)).await.map(drop).map_err(|e| format!("Mouse event not sent: {e}")),
@@ -233,6 +233,9 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
         }
         drop(held);
         super::timing::typed(&page, ks, "keys");
+        for (data, error) in logged {
+            crate::inputs::typed(&app, &page, &server, &pane, &key, &data, error.as_deref());
+        }
         if let Err(e) = result {
             error(&page, e, Some(&key));
             continue;

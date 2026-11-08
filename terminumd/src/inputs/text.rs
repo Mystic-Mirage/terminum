@@ -16,31 +16,26 @@ pub fn rendered(data: &str) -> String {
     for p in parts(data) {
         match p {
             Part::Text(t) => out.push_str(&t),
-            Part::Keys(names) => {
-                for n in names {
-                    out.push('<');
-                    out.push_str(&n);
-                    out.push('>');
-                }
-            }
+            Part::Keys(names) => names.iter().for_each(|n| out.push_str(&format!("<{n}>"))),
         }
     }
     out
 }
 
-/// Why a row's text is not kept, or None: a program that reads a secret runs (`program`), the
+/// A typed row whose first text is a space: a shell's "keep out of history", as the sent history (AC-90).
+pub const LEADING_SPACE: &str = "[not kept: leading space]";
+/// A pane that did not say what it shows is not judged.
+pub const NO_ANSWER: &str = "[not kept: the pane did not answer]";
+
+/// Why a row's text is not kept, or None: a program that reads a secret runs (`program`), or the
 /// cursor's line asks for one (`line`: "Password:", "[sudo] password for alex:", "Enter
-/// passphrase for key …:"), or the first text of a typed row is a space (`spaced`: a shell's
-/// "keep out of history", as the sent history does, AC-90).
-pub fn not_kept(program: &str, line: &str, spaced: bool) -> Option<String> {
+/// passphrase for key …:").
+pub fn not_kept(program: &str, line: &str) -> Option<String> {
     let program = program.trim().trim_start_matches('-');
     if SECRET_PROGRAMS.contains(&program) {
         return Some(format!("[not kept: {program}]"));
     }
-    if asks_secret(line) {
-        return Some("[not kept: hidden input]".into());
-    }
-    spaced.then(|| "[not kept: leading space]".into())
+    asks_secret(line).then(|| "[not kept: hidden input]".into())
 }
 
 /// Whether a screen line ends in a prompt for a secret: one of SECRET_WORDS as a word of its
@@ -64,12 +59,11 @@ pub fn browser(agent: &str) -> String {
     if agent.trim().is_empty() {
         return String::new();
     }
-    let device = [("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Macintosh", "Mac"), ("Windows", "Windows"), ("Linux", "Linux")]
-        .iter().find(|(k, _)| agent.contains(k)).map_or("", |(_, v)| *v);
+    let device = ["iPhone", "iPad", "Android", "Macintosh", "Windows", "Linux"].into_iter().find(|k| agent.contains(k)).map_or("", |k| if k == "Macintosh" { "Mac" } else { k });
     let version = |tag: &str| agent.split(tag).nth(1).map(|v| v.split(['.', ' ', ';']).next().unwrap_or("").to_string());
     let name = [("Edg/", "Edge"), ("EdgiOS/", "Edge"), ("CriOS/", "Chrome"), ("FxiOS/", "Firefox"), ("Firefox/", "Firefox"), ("Chrome/", "Chrome")]
         .iter().find_map(|(tag, n)| version(tag).map(|v| format!("{n} {v}")))
-        .or_else(|| agent.contains("Safari/").then(|| format!("Safari {}", version("Version/").unwrap_or_default()).trim_end().to_string()))
+        .or_else(|| agent.contains("Safari/").then(|| version("Version/").map_or("Safari".into(), |v| format!("Safari {v}"))))
         .unwrap_or_else(|| agent.split_whitespace().next().unwrap_or("").chars().take(40).collect());
     if device.is_empty() { name } else { format!("{name} · {device}") }
 }
@@ -83,9 +77,6 @@ pub fn first_text(data: &str) -> Option<char> {
 }
 
 /// `text` cut to `most` characters.
-pub fn cut(text: &str, most: usize) -> String {
-    match text.char_indices().nth(most) {
-        Some((i, _)) => text[..i].to_string(),
-        None => text.to_string(),
-    }
+pub fn cut(text: &str, most: usize) -> &str {
+    text.char_indices().nth(most).map_or(text, |(i, _)| &text[..i])
 }

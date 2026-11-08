@@ -22,31 +22,33 @@ const TRIM_EVERY: Duration = Duration::from_secs(3600);
 
 /// Writes what `rx` brings until every sender is gone; `dropped` counts rows the store refused.
 pub fn run(store: Arc<Store>, rx: Receiver<Row>, dropped: Arc<AtomicU64>) {
-    let mut trimmed: Option<Instant> = None;
+    let mut next_trim = Instant::now();
     loop {
-        let first = match rx.recv_timeout(TRIM_EVERY) {
-            Ok(r) => Some(r),
-            Err(RecvTimeoutError::Timeout) => None,
+        let mut batch = Vec::new();
+        match rx.recv_timeout(TRIM_EVERY) {
+            Ok(r) => batch.push(r),
+            Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
-        };
-        let mut batch: Vec<Row> = first.into_iter().collect();
-        let until = Instant::now() + GATHER;
-        while let Some(left) = until.checked_duration_since(Instant::now()).filter(|_| !batch.is_empty()) {
-            match rx.recv_timeout(left) {
-                Ok(r) => batch.push(r),
-                Err(_) => break,
+        }
+        if !batch.is_empty() {
+            let until = Instant::now() + GATHER;
+            while let Some(left) = until.checked_duration_since(Instant::now()) {
+                match rx.recv_timeout(left) {
+                    Ok(r) => batch.push(r),
+                    Err(_) => break,
+                }
             }
         }
-        let trim = trimmed.is_none_or(|t| t.elapsed() >= TRIM_EVERY);
+        let due = Instant::now() >= next_trim;
         let n = batch.len();
         match store.with(|tx| {
             insert(tx, &batch)?;
-            if trim {
-                self::trim(tx, super::now_ms(), KEEP_ROWS)?;
+            if due {
+                trim(tx, super::now_ms(), KEEP_ROWS)?;
             }
             Ok(())
         }) {
-            Ok(()) if trim => trimmed = Some(Instant::now()),
+            Ok(()) if due => next_trim = Instant::now() + TRIM_EVERY,
             Ok(()) => {}
             Err(e) => {
                 let lost = dropped.fetch_add(n as u64, Ordering::Relaxed) + n as u64;

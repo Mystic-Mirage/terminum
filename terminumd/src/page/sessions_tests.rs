@@ -43,7 +43,7 @@ async fn ac132_a_new_window_goes_beside_the_pane_shown_when_it_was_asked() {
     let (root, app) = testutil::app("new-beside");
     let server = app.tmux.attached_or(&s.socket, || server_on(&s, "local"));
     server.sync_clients(&["main".to_string()]).unwrap();
-    let (page, mut rx) = Pages::default().add(true, trace::Recorder::new(root.join("trace"))).unwrap();
+    let (page, mut rx) = Pages::default().add(crate::inputs::Client { web: true, ..Default::default() }, trace::Recorder::new(root.join("trace"))).unwrap();
     let group = format!("local:{}/main", s.socket);
     let first = panes_in_order(&s, "main")[0].clone();
     let asked = window(&s, &s.dir);
@@ -82,7 +82,7 @@ async fn ac92_a_projects_window_opens_in_its_session_and_joins_it() {
     let server = server_on(&s, "devbox");
     app.tmux.add_host(server.clone());
     server.sync_clients(&["main".to_string()]).unwrap();
-    let (page, mut rx) = Pages::default().add(true, trace::Recorder::new(root.join("trace"))).unwrap();
+    let (page, mut rx) = Pages::default().add(crate::inputs::Client { web: true, ..Default::default() }, trace::Recorder::new(root.join("trace"))).unwrap();
     let id = app.projects.lock().create("My.App:1", Some("devbox".into()), String::new()).unwrap();
     let members = || app.projects.lock().by_id(&id).unwrap().members.clone();
 

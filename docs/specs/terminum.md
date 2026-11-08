@@ -1025,7 +1025,7 @@ The other budgets are in AC-20's scenarios; a large folder's in `terminum-files.
 | Control command answer | 10 s | the client is ended and started again (terminum-lifecycle.md AC-14) |
 | Theme, settings and hot keys files | 64 KB each | refused with a toast |
 | Window and session names | 100 characters, no control characters | refused inline: "A name is at most 100 characters." |
-| Input log (AC-147) | 180 days, 500,000 rows; a row's text 20,000 characters, a paste's 4,000 (`bytes` the whole); 10,000 rows waiting for the writer | older rows go hourly; a longer text is cut; more waiting rows are dropped, counted in the log |
+| Input log (AC-147) | 180 days, 500,000 rows; a row's text 20,000 characters, a paste's 4,000 (`bytes` the whole); 1,000 rows waiting for the writer | older rows go hourly; a longer text is cut; more waiting rows are dropped, counted in the log |
 | Input log's open rows | a page's typed row until Enter or 2 s | rows still open when terminumd stops are lost; a password typed ahead of its prompt (before the program shows it or starts) is kept: the check reads the screen when the row begins |
 
 Limits told in their cases: a set-buffer command (AC-03), a pane's grid and resizes (AC-13), new sessions, windows and splits (AC-07), sign-ins (AC-09), project names (AC-92), attached sessions (AC-89).

@@ -7,7 +7,7 @@ use crate::tasks::store::Store;
 
 fn row(at: i64, text: &str) -> Row {
     Row { at, ended: at, who: Who { sender: crate::tasks::store::HUMAN, component: "page", ..Default::default() }, kind: "typed", text: text.into(), bytes: text.len(),
-          pane: "tmux:local:t:%1".into(), place: Place::default(), error: None, spaced: false }
+          pane: "tmux:local:t:%1".into(), ..Default::default() }
 }
 
 #[test]
@@ -19,18 +19,17 @@ fn ac147_typed_keys_read_as_the_keys_sent() {
 
 #[test]
 fn ac147_a_secret_s_text_is_not_kept() {
-    assert_eq!(not_kept("sudo", "", false).as_deref(), Some("[not kept: sudo]"));
-    assert_eq!(not_kept("-ssh-add", "", false).as_deref(), Some("[not kept: ssh-add]"));
+    assert_eq!(not_kept("sudo", "").as_deref(), Some("[not kept: sudo]"));
+    assert_eq!(not_kept("-ssh-add", "").as_deref(), Some("[not kept: ssh-add]"));
     for line in ["Password:", "[sudo] password for alex: ", "Enter passphrase for key '/Users/alex/.ssh/id_ed25519':", "PIN: ", "alex@devbox.example's password:"] {
-        assert_eq!(not_kept("make", line, false).as_deref(), Some("[not kept: hidden input]"), "{line}");
+        assert_eq!(not_kept("make", line).as_deref(), Some("[not kept: hidden input]"), "{line}");
     }
-    assert_eq!(not_kept("zsh", "", true).as_deref(), Some("[not kept: leading space]"));
     assert_eq!(super::text::first_text("\x15\x1b[A export TOKEN=1"), Some(' '), "past Ctrl-U and an arrow");
     for line in ["$ ", "Spinning:", "password reset done", "the password: is set below: ok"] {
-        assert_eq!(not_kept("zsh", line, false), None, "{line}");
+        assert_eq!(not_kept("zsh", line), None, "{line}");
     }
     // ssh itself is kept: a remote shell's whole session would be lost
-    assert_eq!(not_kept("ssh", "alex@devbox:~$ ", false), None);
+    assert_eq!(not_kept("ssh", "alex@devbox:~$ "), None);
 }
 
 #[test]
@@ -43,7 +42,7 @@ fn ac147_the_browser_in_a_few_words() {
 
 #[test]
 fn ac147_a_paste_in_typed_data_is_a_segment_of_its_own() {
-    use crate::page::typing::{PASTE_END, PASTE_START};
+    use crate::tmux::keys::{PASTE_END, PASTE_START};
     let data = format!("ab{PASTE_START}pasted\ntext{PASTE_END}\r");
     assert_eq!(segments(&data), vec![Seg::Keys("ab"), Seg::Paste("pasted\ntext"), Seg::Keys("\r")]);
     assert_eq!(segments("plain"), vec![Seg::Keys("plain")]);

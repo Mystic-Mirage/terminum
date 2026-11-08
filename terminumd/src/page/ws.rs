@@ -33,10 +33,9 @@ pub struct FromWeb(pub bool);
 
 pub async fn socket(State(app): State<Shared>, ConnectInfo(peer): ConnectInfo<std::net::SocketAddr>, headers: HeaderMap, from: Option<axum::Extension<FromWeb>>, ws: WebSocketUpgrade) -> Response {
     let web = from.is_some_and(|f| f.0.0);
-    let Some((page, rx)) = app.pages.add(web, app.recorder.clone()) else {
+    let Some((page, rx)) = app.pages.add(crate::webaccess::client(&headers, peer, web), app.recorder.clone()) else {
         return err(StatusCode::SERVICE_UNAVAILABLE, "too_many_pages", "Too many pages");
     };
-    *page.client.lock() = crate::webaccess::client(&headers, peer, web);
     let offered = headers.get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("");
     let ws = if offered.split(',').any(|p| p.trim() == "tm") { ws.protocols(["tm"]) } else { ws };
     ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(app, page, rx, s)).into_response()

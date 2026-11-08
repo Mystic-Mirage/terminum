@@ -14,11 +14,11 @@ import os
 import sqlite3
 import sys
 import tempfile
-import time
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import BIN, Terminumd, check, summary, tmux_on, wait_for, wait_layout  # noqa: E402
+from e2e_core import screen_with  # noqa: E402
 from e2e_remote import api  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 
@@ -31,23 +31,14 @@ SAFARI = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605
 
 def rows(t, until_n, timeout=10):
     """The log's rows, oldest first, once there are `until_n` (or after `timeout` s)."""
-    end, got = time.time() + timeout, []
-    while time.time() < end:
+    def read():
         try:
             with sqlite3.connect(f"file:{os.path.join(t.app, 'kanban.sqlite')}?mode=ro", uri=True) as db:
                 db.row_factory = sqlite3.Row
-                got = [dict(r) for r in db.execute("SELECT * FROM inputs ORDER BY id")]
+                return [dict(r) for r in db.execute("SELECT * FROM inputs ORDER BY id")]
         except sqlite3.Error:
-            got = []
-        if len(got) >= until_n:
-            return got
-        time.sleep(0.2)
-    return got
-
-
-def screen_says(ws, needle, timeout=5):
-    text = lambda m: "\n".join("".join(r[0] if isinstance(r[0], str) else "".join(r[0]) for r in line["r"]) for _, line in m.get("ch", []))
-    return ws.until(lambda m: m["t"] == "screen" and needle in text(m), timeout)
+            return []
+    return wait_for(read, lambda got: len(got) >= until_n, timeout, 0.2, last=True)
 
 
 def main():
@@ -63,12 +54,12 @@ def main():
         for ch in "echo hi":                       # a key a message, as a page sends them
             ws.send({"t": "in", "data": ch})
         ws.send({"t": "in", "data": "\r"})
-        screen_says(ws, "hi\n")
+        screen_with(ws, "hi\n")
         ws.send({"t": "paste", "data": "pasted words", "bracket": True})
         ws.send({"t": "in", "data": "\x15"})       # Ctrl-U: the pasted line goes
         ws.send({"t": "in", "data": " echo private\r"})
         ws.send({"t": "in", "data": "sudo -k true\r"})
-        asked = screen_says(ws, "assword", 10)
+        asked = screen_with(ws, "assword", 10)
         ws.send({"t": "in", "data": "hunter2"})    # never entered: the row ends by itself, then Ctrl-C
         got = rows(t, 4, 10)
         ws.send({"t": "in", "data": "\x03"})

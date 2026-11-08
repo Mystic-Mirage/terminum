@@ -3,7 +3,7 @@
 """A worktree's targeted checks (spec AC-104): the tests of what changed, the tests that cite the
 acceptance cases it touches, and the critical functions; a pass is kept per content
 (.checks/changed-<id>.ok), so the same content runs once. Before its first timed step it waits for a
-quiet machine (scripts/load_gate.py, AC-140). --land: a landing's smoke set on its merged result, the
+quiet machine (scripts/load_gate.py, AC-146). --land: a landing's smoke set on its merged result, the
 basics on one platform, no timed check. The full run is the release's gate, not this (`make check`).
 
   check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
@@ -177,7 +177,7 @@ def land_plan(files):
 
 
 def timed(name):
-    """A step whose checks measure time, which a busy machine fails (AC-140)."""
+    """A step whose checks measure time, which a busy machine fails (AC-146)."""
     return name in ("panel", "page", "critical") or name.startswith("e2e_")
 
 

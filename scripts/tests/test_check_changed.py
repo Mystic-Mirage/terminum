@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""Which checks a change gets (spec AC-104, AC-140); nothing is run."""
+"""Which checks a change gets (spec AC-104, AC-146); nothing is run."""
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -106,7 +106,7 @@ class Land(unittest.TestCase):
             for name in ("debug-build", "cargo"):
                 self.assertIn("nice -n 10 cargo", got[name])
 
-    def test_only_timed_steps_wait_for_a_quiet_machine(self):  # AC-140
+    def test_only_timed_steps_wait_for_a_quiet_machine(self):  # AC-146
         self.assertEqual([n for n in ("security", "cargo", "panel", "page", "critical", "e2e_hooks", "smoke") if check_changed.timed(n)],
                          ["panel", "page", "critical", "e2e_hooks"])
 
@@ -125,11 +125,11 @@ class Run(unittest.TestCase):
                 mock.patch.object(check_changed, "for_task", lambda _: self.events.append("gate")):
             return check_changed.run(steps, root=self.root, **kw)
 
-    def test_the_first_timed_step_waits_once_for_a_quiet_machine(self):  # AC-140
+    def test_the_first_timed_step_waits_once_for_a_quiet_machine(self):  # AC-146
         self.run_steps([("cargo", "true"), ("page", "true"), ("e2e_hooks", "true")])
         self.assertEqual([e if e == "gate" else e[-1] for e in self.events], ["true", "gate", "true", "true"])
 
-    def test_a_landings_steps_never_wait_and_yield_during_a_release(self):  # AC-104, AC-140
+    def test_a_landings_steps_never_wait_and_yield_during_a_release(self):  # AC-104, AC-146
         self.run_steps([("e2e_core", "true")], gate=False, nice=True)
         self.assertEqual(self.events[0][:3], ["nice", "-n", "10"])
         self.assertNotIn("gate", self.events)

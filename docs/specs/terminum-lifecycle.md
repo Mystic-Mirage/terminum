@@ -25,7 +25,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 In scope:
 - One-line install, launchd and systemd, signed packages, the upgrade, rollback, restart and uninstall commands, `terminum status`, `terminum folders`.
 - What survives: terminumd's restart (AC-14), a reboot or a killed tmux (AC-15, AC-96), an upgrade or rollback (AC-16).
-- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-140).
+- The update notice (AC-17). Tidying before a release (AC-102, AC-103). Landing a worktree (AC-104); a release's full run on a quiet machine (AC-146).
 
 Out of scope (explicit):
 - A native app (AC-11 dropped; terminum.md OQ-04). No notarization and no hardened runtime (`docs/RELEASING.md`).
@@ -67,7 +67,7 @@ Open questions: none open. Which clients exist (AC-11's drop) is terminum.md OQ-
 | AC-102 | [SHOULD / P1] | A release starts from a machine with no leftovers of old test runs: the one test helper that outlives its test is ended, dead tmux sockets and test folders are removed, and what may be someone's work is only named; a test run itself leaves nothing, and a step of `make check` that leaves something fails. |
 | AC-103 | [SHOULD / P1] | The docs keep their shape on every `make test`, and a review of what changed since the last release removes duplicates and superseded requirements before a minor release. |
 | AC-104 | [SHOULD / P1] | A finished worktree lands by itself: its targeted checks green on its own work, then a short smoke set of the basics on one platform, with no timed check, on its merge with what others landed; pushed, the primary checkout brought up to it and the tree deleted; the full test run is the release's gate, and only failing tests block a release. |
-| AC-140 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way and then run, saying so. |
+| AC-146 | [SHOULD / P1] | A release's full run starts only on a quiet machine: it queues behind another full run, waits for the load to stay low for 3 minutes, says each minute that it waits, and after 15 minutes ends the release with "the build server is not available"; a task's timed checks wait the same way and then run, saying so. |
 
 ## 5. BDD scenarios
 
@@ -513,7 +513,7 @@ Scenario Outline: AC-104 — what a change is checked with
 
 Scenario: AC-104 happy path — the full run is the release's gate
   When the maintainer runs make release TAG=v0.32.0
-  Then on a quiet machine (AC-140) the full check runs, once per tree: make test, clippy, the Panel, the live page, every e2e script, Docker's, the install, the page's browser checks, the security scan
+  Then on a quiet machine (AC-146) the full check runs, once per tree: make test, clippy, the Panel, the live page, every e2e script, Docker's, the install, the page's browser checks, the security scan
   And then the Mac test runner's checks, when TM_MAC_RUNNER is set
   And a failing test in any of them stops the release
 
@@ -600,15 +600,15 @@ Scenario Outline: AC-104 edge — only failing tests block a release
     | a leftover of an old test run that stays      |
 ```
 
-### AC-140 — A release's full run on a quiet machine [SHOULD / P1]
+### AC-146 — A release's full run on a quiet machine [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-140 happy path — a quiet machine starts at once
+Scenario: AC-146 happy path — a quiet machine starts at once
   Given the load average is 3.2 on 16 cores, the limit being 8 (half the cores; TM_GATE_LOAD sets another)
   When make release or make rehearse reaches its full run
   Then it prints "gate: load 3.2, at most 8: starting" and the full run starts
 
-Scenario: AC-140 edge — a busy machine is waited for
+Scenario: AC-146 edge — a busy machine is waited for
   Given the load average is 40.2
   When make release reaches its full run
   Then it prints "gate: load 40.2 over 8: waiting, a look each minute, 15 minutes at most" and runs no test
@@ -616,23 +616,23 @@ Scenario: AC-140 edge — a busy machine is waited for
   And once the load is at most 8 it waits 3 minutes more, still looking each minute, a look over 8 starting those 3 minutes again
   And then it prints "gate: load 5.1, at most 8 for 3 minutes: starting" and the full run starts
 
-Scenario: AC-140 failure — the machine stays busy
+Scenario: AC-146 failure — the machine stays busy
   Given the load average stays over 8 for 15 minutes
   When make release waits at its gate
   Then it ends with "release: the build server is not available for a release: load 31.0 over 8 for 15 minutes: nothing is public", having run no test
 
-Scenario: AC-140 edge — one full run at a time
+Scenario: AC-146 edge — one full run at a time
   Given a rehearsal's full run is running in another tree
   When make release reaches its full run
   Then it waits in line, saying so each minute, and that wait counts in its 15 minutes
   And a rehearsal started during a release is refused at once (AC-104)
 
-Scenario: AC-140 edge — a tree that passed already
+Scenario: AC-146 edge — a tree that passed already
   Given the tree's full run passed on its content
   When make release runs
   Then it waits for nothing: the full run says it passed already and runs nothing
 
-Scenario Outline: AC-140 edge — a task's timed checks
+Scenario Outline: AC-146 edge — a task's timed checks
   Given <why>
   When a task's targeted checks reach their first timed step: the page's checks, the Panel's, an e2e script or the real page
   Then they wait the same way, printing each look
@@ -644,7 +644,7 @@ Scenario Outline: AC-140 edge — a task's timed checks
     | the load average is over the limit      |
     | a release is running (its mark is held) |
 
-Scenario: AC-140 edge — make check by hand
+Scenario: AC-146 edge — make check by hand
   Given the load average stays over 8 for 15 minutes
   When someone runs make check
   Then it ends with exit 75: "check: the machine is busy: load 31.0 over 8 for 15 minutes: nothing ran"
@@ -738,7 +738,7 @@ Last lines `state/lastlines/local@terminum/6db00afe9596fc57_3.json` (AC-96; `…
 | `TM_PORT_WAIT_S` | `9` | `1` | seconds terminumd waits before exiting when it has no port |
 | `TM_RELEASE_URL` | the GitHub releases page | `file:///tmp/rel` | where `upgrade` and `install.sh` download |
 | `TM_BOOT_ID` | the machine's boot | `b2` | plays another boot (tests) |
-| `TM_GATE_LOAD` | half the cores | `12` | the load average at most which a full run starts and a task's timed checks run (AC-140); half the cores is a guess, not measured |
+| `TM_GATE_LOAD` | half the cores | `12` | the load average at most which a full run starts and a task's timed checks run (AC-146); half the cores is a guess, not measured |
 | `TM_NO_OPEN`, `TM_WEB_PASSWORD`, `NO_COLOR` | unset | `1`, `…`, `1` | no browser after install; the password for `terminum password` without a prompt; no colors |
 | `TM_CODESIGN_IDENTITY` | unset (ad hoc) | a Developer ID | what `scripts/package.py` signs with (AC-08) |
 
@@ -796,5 +796,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines`; `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
-- [x] AC-140 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
+- [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

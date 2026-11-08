@@ -78,7 +78,7 @@ class Chain(unittest.TestCase):
         self.assertFalse(self.mark.exists())
         self.notes.assert_called_once()
 
-    def test_a_busy_build_server_ends_the_release_before_any_test(self):  # AC-140
+    def test_a_busy_build_server_ends_the_release_before_any_test(self):  # AC-146
         self.busy = "load 31 over 8"
         with mock.patch("sys.stderr") as err:
             self.assertEqual(self.run_chain(["v1.0.0"]), 1)
@@ -88,11 +88,11 @@ class Chain(unittest.TestCase):
         self.assertEqual(self.released, [])
         self.assertFalse(self.mark.exists())
 
-    def test_the_full_run_after_the_gate_does_not_wait_again(self):  # AC-140
+    def test_the_full_run_after_the_gate_does_not_wait_again(self):  # AC-146
         self.assertEqual(self.run_chain(["v1.0.0"]), 0)
         self.assertTrue(self.gate_skipped)
 
-    def test_a_tree_that_passed_already_waits_for_nothing(self):  # AC-140
+    def test_a_tree_that_passed_already_waits_for_nothing(self):  # AC-146
         self.passed_before, self.busy = True, "load 31 over 8"
         self.assertEqual(self.run_chain(["v1.0.0"]), 0)
         self.assertEqual(len(self.released), 1)

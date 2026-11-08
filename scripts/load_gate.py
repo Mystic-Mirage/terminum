@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""A full run on a quiet machine (spec AC-140). Before a release's full run, and before a task's first
+"""A full run on a quiet machine (spec AC-146). Before a release's full run, and before a task's first
 timed check, the load average is looked at: over the limit it waits, a look each minute, and once the
 load is low it starts 3 minutes later, those minutes looked at too. After 15 minutes a release gives up;
 a task's checks run anyway, saying so. TM_GATE_LOAD sets the limit (half the cores: a guess).

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""scripts/check_all.sh's start (spec AC-140): the gate before any step, skipped after a release's own,
+"""scripts/check_all.sh's start (spec AC-146): the gate before any step, skipped after a release's own,
 and --passed. Run in a copy with stand-in scripts, so no check of the real tree runs."""
 import os
 from pathlib import Path
@@ -36,21 +36,21 @@ class Start(unittest.TestCase):
         path = self.root / name
         return path.read_text() if path.exists() else ""
 
-    def test_a_busy_machine_ends_it_before_any_step(self):  # AC-140
+    def test_a_busy_machine_ends_it_before_any_step(self):  # AC-146
         self.assertEqual(self.check(GATE_EXIT="75").returncode, 75)
         self.assertEqual((self.read("gate.log"), self.read("steps.log")), ("gate\n", ""))
 
-    def test_a_quiet_machine_runs_the_steps(self):  # AC-140
+    def test_a_quiet_machine_runs_the_steps(self):  # AC-146
         self.check()
         self.assertEqual(self.read("gate.log"), "gate\n")
         self.assertTrue(self.read("steps.log").startswith("make test"), self.read("steps.log"))
 
-    def test_after_a_releases_own_gate_it_does_not_wait_again(self):  # AC-140
+    def test_after_a_releases_own_gate_it_does_not_wait_again(self):  # AC-146
         self.check(TM_GATE_PASSED="1")
         self.assertEqual(self.read("gate.log"), "")
         self.assertIn("make test", self.read("steps.log"))
 
-    def test_a_pass_waits_for_nothing_and_passed_says_so(self):  # AC-140
+    def test_a_pass_waits_for_nothing_and_passed_says_so(self):  # AC-146
         self.assertEqual(self.check("--passed").returncode, 1)
         (self.root / ".checks").mkdir(exist_ok=True)
         (self.root / ".checks/0123456789abcdef.ok").write_text("2026-11-07 12:00\n")

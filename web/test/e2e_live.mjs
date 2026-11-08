@@ -191,6 +191,8 @@ async function wide(browser, name) {
   await page.keyboard.type(`cd ${WORK} && echo live-$((6*7))`);
   await page.keyboard.press("Enter");
   await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("live-42"), null, { timeout: 5000 }));
+  // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
+  const byhandName = `byhand-${name}`;
   if (!SMOKE) {
     await livePaste(page, { home: HOME, name });
     // a drop's own paths come from Finder's drag pasteboard (dragged.rs): macOS only, elsewhere terminumd says so
@@ -200,8 +202,6 @@ async function wide(browser, name) {
     check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
     await liveQuick(page, { tmux, work: WORK });
     await liveSplit(page, { tmux, work: WORK, socket: SOCKET });
-    // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
-    const byhandName = `byhand-${name}`;
     tmux("new-window", "-d", "-n", byhandName);
     await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction((n) => document.getElementById("sessions").innerText.includes(n), byhandName, { timeout: 3000 }));
   }

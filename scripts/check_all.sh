@@ -5,7 +5,7 @@
 # file (not the commit: committing a checked tree keeps its pass). Started again on the same
 # tree it says when it passed and runs nothing (--force runs again), so a follow-up never pays
 # for a run the tree already had. A tree changed during the run (another session, an edit)
-# records no pass. It starts on a quiet machine (scripts/load_gate.py, AC-140): exit 75 when the
+# records no pass. It starts on a quiet machine (scripts/load_gate.py, AC-146): exit 75 when the
 # load stays high for 15 minutes; TM_GATE_PASSED=1 (make release, which waited already) skips that.
 # While iterating, run only the changed area's checks (cargo test <module>, node web/test/e2e_all.mjs <check…>).
 #

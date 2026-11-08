@@ -4,7 +4,7 @@
 runs, landings still push but leave the primary checkout where it is, so a release is never stopped by
 a tree changing under it. Failing tests, here or on the Mac test runner, are what stops a release; a
 problem clearing leftovers, or a runner that could not run them, is said. The full run starts on a quiet
-machine, one at a time (scripts/load_gate.py, AC-140); still busy after 15 minutes, the release ends
+machine, one at a time (scripts/load_gate.py, AC-146); still busy after 15 minutes, the release ends
 before any test. `--rehearse` (`make rehearse`) runs the same chain with no mark and stops before
 anything is signed or public."""
 import os

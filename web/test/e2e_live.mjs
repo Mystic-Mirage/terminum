@@ -148,14 +148,22 @@ async function wide(browser, name) {
     else errors.push(said);
   };
   let ctx, page;
-  /** A signed-in page in a context of its own, the last one closed: with one page through the whole
-   *  run, Linux WebKit's web process reached 1.6 GB under CI's 2 GiB and was killed for memory */
+  /** A page in a context of its own, signed in with the last one's storage, the last one closed: with one
+   *  page through the whole run, Linux WebKit's web process reached 1.6 GB under CI's 2 GiB and was killed */
   const renew = async () => {
+    const storageState = await ctx?.storageState();
     await ctx?.close();
-    ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
+    ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce", storageState });
     page = await ctx.newPage();
     page.on("pageerror", onError);
-    await signIn(page);
+    if (!storageState) return signIn(page);
+    await page.goto(`${BASE}/`);
+    await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 30000 });
+  };
+  const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
+  /** The board's suites, each on a page of its own */
+  const boards = async (suites = [liveBoard, liveBoardEdge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveDispatcher]) => {
+    for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
   if (process.env.TM_TEST_REAL_AGENTS) {
@@ -163,22 +171,16 @@ async function wide(browser, name) {
     return ctx;
   }
   if (POOL_ALONE) {
-    await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-    await renew(); await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
+    await boards([liveBoardAgents, liveDispatcher]);
     return ctx;
   }
   if (TASKS_ALONE) {
-    await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await boards([liveBoardTasks]);
     return ctx;
   }
   if (BOARD_ALONE) {
-    await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-    await renew(); await liveBoard(page, { base: BASE, tmux, work: WORK, shots: process.env.TM_TEST_SHOTS });
-    await renew(); await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
-    await renew(); await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
-    await renew(); await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS });
-    await renew(); await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-    await renew(); await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS });
+    await liveNotes(page, live);
+    await boards();
     return ctx;
   }
   check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/sessions/" && !new URL(page.url()).search);
@@ -244,12 +246,7 @@ async function wide(browser, name) {
   await livePrograms(page, { tmux, work: WORK });
   await livePlans(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, signIn, name });
   await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-  await renew(); await liveBoard(page, { base: BASE, tmux, work: WORK });
-  await renew(); await liveBoardEdge(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
-  await renew(); await liveBoardSessions(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-  await renew(); await liveBoardAgents(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-  await renew(); await liveBoardTasks(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
-  await renew(); await liveDispatcher(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
+  await boards();
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");

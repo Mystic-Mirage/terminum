@@ -14,7 +14,7 @@ fn missing_or_empty_gives_every_default_and_no_message() {
     assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.restore), (48080, "terminum", 12000, true));
     assert_eq!(s.themes.default, "local");
     assert_eq!(s.themes.hosts.get("*").map(String::as_str), Some("remote"));
-    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "lastLines": 300, "widgets": true, "folds": true, "colorScheme": null, "followAgent": true, "messages": []}));
+    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "lastLines": 300, "widgets": true, "folds": true, "colorScheme": null, "followAgent": true, "agentExitDays": 0, "messages": []}));
     let (s, m) = load(Path::new("/nonexistent/terminum/settings.json"));
     assert_eq!((s, m), (Settings::default(), vec![]));
 }
@@ -227,4 +227,30 @@ fn a_hosts_attached_sessions_are_checked() {
     assert!(s.hosts["b"].get("attach").is_none() && s.hosts["c"].get("attach").is_none() && s.hosts["c"]["ssh"] == json!(["c"]));
     assert_eq!(m, vec!["settings.json: hosts.b.attach must be a list of tmux session names (not terminum)".to_string(),
         "settings.json: hosts.c.attach must be a list of tmux session names (not terminum)".to_string()]);
+}
+
+#[test]
+fn ac153_agent_exit_days_off_by_default_under_one_off_a_wrong_value_said() {
+    assert_eq!(parse("").0.agent_exit_days, 0, "off by default");
+    let (s, m) = parse(r#"{"agentExitDays": 3}"#);
+    assert!(m.is_empty() && s.agent_exit_days == 3 && s.page_json()["agentExitDays"] == 3, "{m:?}");
+    for off in ["0", "-2"] {
+        let (s, m) = parse(&format!(r#"{{"agentExitDays": {off}}}"#));
+        assert!(m.is_empty() && s.agent_exit_days == 0, "{off}: less than a day is off: {m:?}");
+    }
+    for bad in ["1.5", "\"3\"", "true", "3651"] {
+        let (s, m) = parse(&format!(r#"{{"agentExitDays": {bad}}}"#));
+        assert!(s.agent_exit_days == 0 && m.iter().any(|t| t.contains("agentExitDays must be")), "{bad}: the default kept, said: {m:?}");
+    }
+}
+
+#[test]
+fn ac153_the_menus_days_are_saved_as_one_top_level_key_the_rest_kept() {
+    let p = tmp("agentexit");
+    std::fs::write(&p, "{\n  \"port\": 47901\n}\n").unwrap();
+    save_value(&p, "agentExitDays", json!(7)).unwrap();
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "{\n  \"port\": 47901,\n  \"agentExitDays\": 7\n}\n");
+    save_value(&p, "agentExitDays", json!(0)).unwrap();
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "{\n  \"port\": 47901,\n  \"agentExitDays\": 0\n}\n", "replaced in place");
+    assert_eq!(load(&p).0.agent_exit_days, 0);
 }

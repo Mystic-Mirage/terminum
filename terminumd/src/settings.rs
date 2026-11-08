@@ -3,8 +3,8 @@
 //! optional with its documented default. A wrong value keeps the default for that key and says
 //! so in a message the page shows as a toast; an unknown key is reported once; a file that does
 //! not parse keeps every default. Writes (settings_save.rs) replace only the text of one key's
-//! value, so the user's order, spacing and other keys stay as written. Also the JSON locator
-//! the theme and hot keys files use to name the line of a bad value.
+//! value, so the user's order, spacing and other keys stay as written. The JSON locator
+//! (settings_locate.rs) also names the line of a bad value in the theme and hot keys files.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -14,13 +14,18 @@ use serde_json::{Map, Value, json};
 
 #[path = "settings_save.rs"]
 mod save;
-pub use save::{save_hosts, save_object, write_atomic};
+pub use save::{save_hosts, save_object, save_value, write_atomic};
+#[path = "settings_locate.rs"]
+mod locator;
+pub use locator::{line_of, locate, Seg};
 
 /// Theme, settings and hot keys files larger than this are refused (spec: limits).
 pub const MAX_BYTES: usize = 64 * 1024;
 /// The page's port on 127.0.0.1: not iterm-enhancer's 8765, which people run beside it.
 pub const DEFAULT_PORT: u16 = 48080;
 const FILE: &str = "settings.json";
+/// The most days of agentExitDays (AC-153): ten years.
+pub const MAX_EXIT_DAYS: i64 = 3650;
 
 /// What settings.json of an earlier version may hold that no longer does anything (AC-04).
 const NO_LONGER: &str = "size, page.lines and page.screenMode are no longer used: the active page sizes the pane";
@@ -66,6 +71,8 @@ pub struct Settings {
     pub memory_end_gib: f64,
     /// The General MIDI SoundFont MIDI files are rendered with (AC-64); None: ~/.terminum/soundfont.sf2.
     pub midi_soundfont: Option<String>,
+    /// Days a coding agent's pane may stay unopened before its agent is asked to exit (AC-153); 0: off.
+    pub agent_exit_days: u32,
     /// The messages of the last parse, for the page (`page_json`).
     pub messages: Vec<String>,
 }
@@ -89,6 +96,7 @@ impl Default for Settings {
             memory_warn_gib: 4.0,
             memory_end_gib: 8.0,
             midi_soundfont: None,
+            agent_exit_days: 0,
             messages: Vec::new(),
         }
     }
@@ -99,7 +107,8 @@ impl Settings {
     pub fn page_json(&self) -> Value {
         let p = &self.page;
         json!({"textSize": p.text_size, "markdownSize": p.markdown_size, "history": self.tmux_history, "lastLines": if self.restore { self.last_lines } else { 0 },
-               "widgets": p.widgets, "folds": p.folds, "colorScheme": p.color_scheme, "followAgent": p.follow_agent, "messages": self.messages})
+               "widgets": p.widgets, "folds": p.folds, "colorScheme": p.color_scheme, "followAgent": p.follow_agent,
+               "agentExitDays": self.agent_exit_days, "messages": self.messages})
     }
 }
 
@@ -245,6 +254,11 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
                 (s.memory_warn_gib, s.memory_end_gib) = (warn, end);
             }
         }
+        // less than a day turns it off, as the menu's 0 does (AC-153)
+        "agentExitDays" => match v.as_i64() {
+            Some(n @ ..=MAX_EXIT_DAYS) => s.agent_exit_days = n.max(0) as u32,
+            _ => m.bad(format!("agentExitDays must be a whole number of days up to {MAX_EXIT_DAYS}, 0 for off")),
+        },
         "lastLines" => match v.as_u64() {
             Some(n @ 0..=2000) => s.last_lines = n as u32,
             _ => m.bad("lastLines must be 0–2000"),
@@ -338,154 +352,6 @@ pub fn load(path: &Path) -> (Settings, Vec<String>) {
             let s = Settings { messages: vec![format!("{FILE}: {why}")], ..Settings::default() };
             let m = s.messages.clone();
             (s, m)
-        }
-    }
-}
-
-/// A step of a path into a JSON document.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Seg<'a> {
-    Key(&'a str),
-    Index(usize),
-}
-
-/// Where a value sits in the text: byte range and 1-based line of its first byte.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-    pub line: usize,
-}
-
-/// The value at `path` in a JSON text that parses (the first of duplicate keys), or None.
-pub fn locate(text: &str, path: &[Seg]) -> Option<Span> {
-    let mut sc = Scan { t: text, i: 0 };
-    let (start, end) = sc.find(path)?;
-    Some(Span { start, end, line: 1 + text.as_bytes()[..start].iter().filter(|&&b| b == b'\n').count() })
-}
-
-/// The line of the value at `path`, or 1 when it cannot be found.
-pub fn line_of(text: &str, path: &[Seg]) -> usize {
-    locate(text, path).map_or(1, |s| s.line)
-}
-
-struct Scan<'t> {
-    t: &'t str,
-    i: usize,
-}
-
-impl Scan<'_> {
-    fn peek(&self) -> Option<u8> {
-        self.t.as_bytes().get(self.i).copied()
-    }
-
-    fn ws(&mut self) {
-        while matches!(self.peek(), Some(b' ' | b'\t' | b'\r' | b'\n')) {
-            self.i += 1;
-        }
-    }
-
-    fn eat(&mut self, b: u8) -> Option<()> {
-        self.ws();
-        (self.peek()? == b).then(|| self.i += 1)
-    }
-
-    /// A string token starting here, decoded.
-    fn string(&mut self) -> Option<String> {
-        self.ws();
-        let start = self.i;
-        if self.peek()? != b'"' {
-            return None;
-        }
-        self.i += 1;
-        loop {
-            match self.peek()? {
-                b'\\' => self.i += 2,
-                b'"' => break,
-                _ => self.i += 1,
-            }
-        }
-        self.i += 1;
-        serde_json::from_str(&self.t[start..self.i]).ok()
-    }
-
-    /// Skips one value; its byte range.
-    fn skip(&mut self) -> Option<(usize, usize)> {
-        self.ws();
-        let start = self.i;
-        match self.peek()? {
-            b'"' => {
-                self.string()?;
-            }
-            b'{' | b'[' => {
-                let mut depth = 0usize;
-                loop {
-                    match self.peek()? {
-                        b'"' => {
-                            self.string()?;
-                            continue;
-                        }
-                        b'{' | b'[' => depth += 1,
-                        b'}' | b']' => depth -= 1,
-                        _ => {}
-                    }
-                    self.i += 1;
-                    if depth == 0 {
-                        break;
-                    }
-                }
-            }
-            _ => {
-                while !matches!(self.peek(), None | Some(b',' | b'}' | b']' | b' ' | b'\t' | b'\r' | b'\n')) {
-                    self.i += 1;
-                }
-            }
-        }
-        Some((start, self.i))
-    }
-
-    fn find(&mut self, path: &[Seg]) -> Option<(usize, usize)> {
-        let Some((seg, rest)) = path.split_first() else { return self.skip() };
-        self.ws();
-        match (seg, self.peek()?) {
-            (Seg::Key(want), b'{') => {
-                self.i += 1;
-                loop {
-                    self.ws();
-                    if self.peek()? == b'}' {
-                        return None;
-                    }
-                    let key = self.string()?;
-                    self.eat(b':')?;
-                    if key == *want {
-                        return self.find(rest);
-                    }
-                    self.skip()?;
-                    self.ws();
-                    if self.peek()? == b',' {
-                        self.i += 1;
-                    }
-                }
-            }
-            (Seg::Index(want), b'[') => {
-                self.i += 1;
-                for n in 0.. {
-                    self.ws();
-                    if self.peek()? == b']' {
-                        return None;
-                    }
-                    if n == *want {
-                        return self.find(rest);
-                    }
-                    self.skip()?;
-                    self.ws();
-                    if self.peek()? == b',' {
-                        self.i += 1;
-                    }
-                }
-                None
-            }
-            _ => None,
         }
     }
 }

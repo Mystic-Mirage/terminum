@@ -39,6 +39,28 @@ export async function webHeader(browser, name) {
       };
       const at = await underButton();
       check("AC-07 the settings button is a cog, its menu opens right under it, inside the window", at.cog && at.gap === 6 && at.overlaps && at.inside, JSON.stringify(at));
+      // AC-07: 420 px wide; Kanban a row like the others, never a link's blue or visited purple (AC-153's field there)
+      await page.click("#menubtn");
+      await pause(page, 500);
+      const look = await page.evaluate(() => {
+        const css = (s) => getComputedStyle(document.querySelector(s));
+        return { width: Math.round(document.getElementById("menu").getBoundingClientRect().width), kanban: css('#menu a.row').color, row: css("#planmenu").color,
+          line: css('#menu a.row').textDecorationLine, small: css('#menu a.row small').color, rowSmall: css("#menu label.row small").color };
+      });
+      check("AC-07 the settings menu is 420 px wide; Kanban wears a row's colors, not underlined",
+        look.width === 420 && look.kanban === look.row && look.small === look.rowSmall && look.line === "none", JSON.stringify(look));
+      f.say({ t: "settings", page: { agentExitDays: 5 } });
+      await pause(page, 200);
+      const shown = await page.inputValue("#agentexit");
+      await page.fill("#agentexit", "-3");
+      await page.dispatchEvent("#agentexit", "change");
+      await page.fill("#agentexit", "2");
+      await page.dispatchEvent("#agentexit", "change");
+      await pause(page, 200);
+      const said = f.sent.filter((m) => m.t === "agentexit").map((m) => m.days);
+      check("AC-153 the menu shows settings.json's days and sends the ones typed, under 1 as 0 (off)", shown === "5" && JSON.stringify(said) === "[0,2]", JSON.stringify({ shown, said }));
+      await page.keyboard.press("Escape");
+      await pause(page, 300);
       await page.click('#views [data-view="files"]');
       await pause(page, 400);
       const docked = await underButton();

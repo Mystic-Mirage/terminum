@@ -26,6 +26,7 @@ mod folders;
 mod hosts;
 mod hotkeys;
 mod http;
+mod idle_exit;
 mod inputs;
 mod listing;
 mod lists;
@@ -264,6 +265,7 @@ async fn serve() {
     webaccess::apply(&app);
     tokio::spawn(manager::run(app.clone()));
     tokio::spawn(dispatcher::walking(app.clone()));
+    tokio::spawn(idle_exit::run(app.clone()));   // idle agents' exit (AC-153)
     tokio::spawn(inputs::ticking(app.clone()));
     tokio::spawn(dispatcher::hearing(app.clone()));
     tokio::spawn(looks::follow(app.clone()));

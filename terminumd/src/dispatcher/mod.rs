@@ -30,7 +30,7 @@ use crate::tasks::ops;
 use crate::tasks::store::DISPATCHER;
 
 pub use hooks::{heard, hearing};
-pub use walk::run as walking;
+pub use walk::{is_shell, run as walking};
 
 /// The walk's beat; a gap over GAP adds nothing to a clock (AC-131).
 const BEAT: Duration = Duration::from_secs(30);

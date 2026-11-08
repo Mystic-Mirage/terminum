@@ -23,11 +23,16 @@ struct Row {
     strong: String,
 }
 
-/// Whether every escape in `row` is a color: anything else is a screen it does not know.
+/// Whether every escape in `row` is a color or a link (OSC 8, its text the row's: Claude Code links a
+/// notice's address): anything else is a screen it does not know.
 fn only_colors(row: &str) -> bool {
     let mut parts = row.split('\u{1b}');
     parts.next();
-    parts.all(|p| p.strip_prefix('[').is_some_and(|rest| rest.find('m').is_some_and(|m| rest[..m].chars().all(|c| c.is_ascii_digit() || c == ';' || c == ':'))))
+    parts.all(|p| {
+        let color = p.strip_prefix('[').is_some_and(|rest| rest.find('m').is_some_and(|m| rest[..m].chars().all(|c| c.is_ascii_digit() || c == ';' || c == ':')));
+        let link = p.strip_prefix("]8;").is_some_and(|rest| !rest.contains('\u{7}')) || p.starts_with('\\');   // its ST: ESC \\
+        color || link
+    })
 }
 
 fn row_of(raw: &str) -> Row {

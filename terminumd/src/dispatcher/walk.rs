@@ -37,7 +37,7 @@ async fn panes_of(server: &Server) -> Option<HashMap<String, Pane>> {
     }).collect())
 }
 
-pub(super) fn is_shell(name: &str) -> bool {
+pub fn is_shell(name: &str) -> bool {
     let name = crate::termtext::shell_name(name);
     name == "login" || crate::tmux::titles::SHELLS.contains(&name)
 }

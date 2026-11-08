@@ -201,6 +201,19 @@ pub fn set_history(app: &Shared, page: &Page, msg: &Value) {
     }
 }
 
+/// `agentexit {days}` from the page's menu: kept in settings.json as agentExitDays, which the
+/// idle agents' exit reads at its next look (AC-153); under 1: off.
+pub fn set_agent_exit(app: &Shared, page: &Page, msg: &Value) {
+    let max = crate::settings::MAX_EXIT_DAYS;
+    let Some(n) = msg["days"].as_i64().filter(|n| *n <= max) else {
+        return crate::page::client::error(page, format!("Days must be a whole number up to {max}, 0 for off"), None);
+    };
+    let path = app.looks.home.join("settings.json");
+    if let Err(e) = crate::settings::save_value(&path, "agentExitDays", json!(n.max(0))) {
+        crate::page::client::error(page, e, None);
+    }
+}
+
 /// `scheme {name}` from the page's Colors: one color scheme for every browser, kept in
 /// settings.json as page.colorScheme (none: the themes' own colors), told to every page (AC-12).
 pub fn set_scheme(app: &Shared, page: &Page, msg: &Value) {

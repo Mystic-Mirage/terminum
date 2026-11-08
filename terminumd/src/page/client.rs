@@ -118,6 +118,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "sent" | "sentget" | "sentmarks" | "askno" | "asked" | "askedmarks" => action(app, page, msg, |a, p, m, at| async move { super::sent::handle(&a, &p, &m, at).await }),
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
+        "agentexit" => crate::looks::set_agent_exit(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),
         "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
         "lastlines" => {
@@ -220,6 +221,7 @@ pub fn subscribe(app: &Shared, page: &Arc<Page>, key: &str) {
     drop(st);
     if active {
         super::unread::read(app, key);
+        crate::idle_exit::opened(app, key);
     }
 }
 
@@ -249,6 +251,7 @@ fn resume(app: &Shared, page: &Arc<Page>) {
     let shown = page.state.lock().shown.as_ref().map(|s| s.key.clone());
     if let Some(k) = shown {
         super::unread::read(app, &k);
+        crate::idle_exit::opened(app, &k);
     }
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
     super::sizing::activated(app, page);           // the active page sizes its pane (AC-13)

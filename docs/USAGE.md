@@ -431,7 +431,7 @@ Everything is in `~/.terminum/` and is read again within a second of a change:
 
 | File | What |
 |---|---|
-| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `restore`, `lastLines`, `themes` rules (by host and session), `page` defaults (`textSize`, `markdownSize`, `colorScheme`, `widgets`, `folds`, `followAgent`), `midi.soundfont` (the .sf2 MIDI files play with), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
+| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `restore`, `lastLines`, `agentExitDays` (idle agents' exit, also in Settings), `themes` rules (by host and session), `page` defaults (`textSize`, `markdownSize`, `colorScheme`, `widgets`, `folds`, `followAgent`), `midi.soundfont` (the .sf2 MIDI files play with), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
 | `themes/*.json` | colors, ANSI palette, font; `local.json` and `remote.json` ship as defaults |
 | `hotkeys.json` | the hot keys panel's rows (`"F5"`, `"C-r"`, `"text:git status"`, `"Paste"`) |
 | `custom.css` | your stylesheet, loaded after the page's own |

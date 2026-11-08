@@ -26,6 +26,18 @@ fn as125_claude_its_suggestion_in_dim_is_no_one_s_words() {
 }
 
 #[test]
+fn as125_ac153_a_link_on_the_screen_is_text_another_escape_is_not_known() {
+    // as measured on Claude Code 2.1.319: a notice's address is an OSC 8 link
+    let mut screen = claude_box("\u{1b}[39m❯\u{a0}\u{1b}[7m \u{1b}[0m");
+    screen.insert(1, "\u{1b}]8;id=awv1;https://example.com/docs\u{1b}\\https://example.com/docs\u{1b}]8;;\u{1b}\\".into());
+    assert_eq!(read("claude", &screen), Screen::Empty);
+    screen.insert(1, "\u{1b}[2Jcleared".into());
+    assert_eq!(read("claude", &screen), Screen::Unknown, "fails closed on anything else");
+    let held = claude_box("\u{1b}[39m❯\u{a0}\u{1b}]8;;https://example.com\u{1b}\\see this\u{1b}]8;;\u{1b}\\");
+    assert_eq!(read("claude", &held), Screen::Holds("see this".into()), "a link typed in the box is a draft");
+}
+
+#[test]
 fn as125_claude_a_draft_is_not_empty() {
     assert_eq!(read("claude", &claude_box("\u{1b}[39m❯\u{a0}a draft not sent\u{1b}[7m \u{1b}[0m")), Screen::Holds("a draft not sent".into()));
     assert_eq!(read("claude", &claude_box("\u{1b}[39m❯\u{a0}/")), Screen::Holds("/".into()));

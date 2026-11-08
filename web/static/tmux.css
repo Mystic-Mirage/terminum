@@ -100,4 +100,4 @@ body.embed #app { grid-template-columns: 1fr; }
 #schemes .swatch.theme { background: var(--surface-2); color: var(--t-fg); font: 500 10px var(--ui); letter-spacing: -.02em; }
 #schemes .swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--accent); }
 @media (hover: none) { #schemes .swatch { height: 40px; } }
-#histlines { width: 104px; height: 32px; padding: 0 8px; text-align: right; border: 0; border-radius: var(--r-sm); background: var(--surface-2); color: var(--t-fg); font: inherit; }
+:is(#histlines, #agentexit) { width: 104px; height: 32px; padding: 0 8px; text-align: right; border: 0; border-radius: var(--r-sm); background: var(--surface-2); color: var(--t-fg); font: inherit; }

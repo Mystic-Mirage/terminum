@@ -14,10 +14,28 @@ pub fn save_hosts(path: &Path, f: impl FnOnce(&mut Map<String, Value>)) -> Resul
     save_object(path, "hosts", f)
 }
 
-/// Changes the top-level object `key` with `f` and writes the file atomically, replacing only
-/// the text of that value (or adding the key): the rest of the file stays byte for byte. A
-/// file that does not parse is left alone: its line is reported for the user to fix first.
+/// Changes the top-level object `key` with `f` (see `save_key`).
 pub fn save_object(path: &Path, key: &str, f: impl FnOnce(&mut Map<String, Value>)) -> Result<(), String> {
+    save_key(path, key, |old| {
+        let mut value = match old {
+            Some(Value::Object(h)) => h.clone(),
+            None | Some(Value::Null) => Map::new(),
+            Some(_) => return Err(format!("{FILE}: {key} must be an object")),
+        };
+        f(&mut value);
+        Ok(Value::Object(value))
+    })
+}
+
+/// Sets the top-level `key` to `value` (see `save_key`).
+pub fn save_value(path: &Path, key: &str, value: Value) -> Result<(), String> {
+    save_key(path, key, |_| Ok(value))
+}
+
+/// Sets the top-level `key` to what `f` makes of its value and writes the file atomically,
+/// replacing only the text of that value (or adding the key): the rest of the file stays byte for
+/// byte. A file that does not parse is left alone: its line is reported for the user to fix first.
+fn save_key(path: &Path, key: &str, f: impl FnOnce(Option<&Value>) -> Result<Value, String>) -> Result<(), String> {
     // one write at a time: "Add host" and "Attach tmux sessions" at once must not lose either
     static WRITING: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
@@ -36,13 +54,8 @@ pub fn save_object(path: &Path, key: &str, f: impl FnOnce(&mut Map<String, Value
             .map_err(|e| format!("{FILE}: line {}: {}; fix it first", e.line().max(1), syntax_message(&e)))?
     };
     let Some(obj) = top.as_object() else { return Err(format!("{FILE}: expected an object")) };
-    let mut value = match obj.get(key) {
-        Some(Value::Object(h)) => h.clone(),
-        None | Some(Value::Null) => Map::new(),
-        Some(_) => return Err(format!("{FILE}: {key} must be an object")),
-    };
-    f(&mut value);
-    let rendered = serde_json::to_string_pretty(&Value::Object(value)).map_err(|e| e.to_string())?.replace('\n', "\n  ");
+    let value = f(obj.get(key))?;
+    let rendered = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?.replace('\n', "\n  ");
     let out = if text.trim().is_empty() {
         format!("{{\n  \"{key}\": {rendered}\n}}\n")
     } else if let Some(sp) = locate(&text, &[Seg::Key(key)]) {

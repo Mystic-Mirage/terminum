@@ -1,6 +1,6 @@
 # terminum — Specification (coding agents)
 
-Sibling of `terminum.md` (the core). This spec holds coding agents in terminum: their states in the list, unread, plans and progress, and the bookmarks and reminders they keep for the user. A host's agents are in `terminum-remote.md` AC-99. Cases are numbered across the specs.
+Sibling of `terminum.md` (the core). This spec holds coding agents in terminum: their states in the list, unread, plans and progress, the bookmarks and reminders they keep for the user, and the exit of agents left idle. A host's agents are in `terminum-remote.md` AC-99. Cases are numbered across the specs.
 
 ## 0. Metadata
 
@@ -26,6 +26,7 @@ In scope:
 - Reading agents' states from their screens and hooks; subagents; reminders of a waiting or failed agent; unread.
 - `terminum hooks`, `terminum hook`, `terminum mcp`, and the installation of hooks and MCP server into Claude Code and Codex.
 - Plans, progress and the stale reminder; agents' records kept from before tasks.
+- Asking an agent left idle and unopened for days to exit (AC-153).
 
 Out of scope (explicit):
 - A host's agents: `terminum-remote.md` AC-99.
@@ -33,7 +34,7 @@ Out of scope (explicit):
 - Sent history: `terminum-terminal.md` AC-90.
 - States for other agents: OpenCode gets only a mark (`terminum.md` AC-01).
 - Tasks and agents' task tools: `terminum-kanban.md`.
-- Typing into a pane for an agent's hook or tool: a hook only observes, a reminder reaches the agent as context. What types: `terminum-kanban.md` AC-114, `terminum-dispatcher.md`.
+- Typing into a pane for an agent's hook or tool: a hook only observes, a reminder reaches the agent as context. What types: this spec's AC-153 (fixed keys only), `terminum-kanban.md` AC-114 and `terminum-dispatcher.md`.
 
 ## 3. Assumptions, dependencies, open questions
 
@@ -64,6 +65,7 @@ Open questions: none.
 | AC-93 | [SHOULD / P1] | A session whose coding agent finished a turn while no page in sight showed it is marked unread until a page shows it. |
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
 | AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
+| AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay. |
 
 ## 5. BDD scenarios
 
@@ -294,6 +296,44 @@ Scenario: AC-98 edge — an agent of an older session
   Then it is answered: "This tool is gone. Use create_task for what must not get lost. If your tools do not list it, this session started before the upgrade: say so and put the text in your report; the user's /mcp reconnect or a new session brings it." and nothing is kept
 ```
 
+### AC-153 — Idle agents exit [SHOULD / P1]
+
+```gherkin
+Scenario: AC-153 happy path — an agent nobody opened for days ends
+  Given the user set "Exit idle agents after, days" in Settings to 3 (settings.json `"agentExitDays": 3`)
+  And Claude Code runs in %3 under the pane's shell, idle (not working, no subagents running, not waiting mid-turn), its input box shown empty
+  And no page in sight (as AC-93: a page in front, focused on a computer) has shown %3 for 3 days, nor has a page on another display shown it while open there
+  When terminumd looks (every 10 minutes)
+  Then it sends Ctrl+C to %3, after 1 s Ctrl+C again, and the agent ends
+  And the pane's shell is in front again; the window and the tmux session stay
+  And each key is in the input log (terminum.md AC-147) as Dispatcher's (terminum's system user), component `idleexit`
+  When Codex runs in a pane instead
+  Then the same goes
+
+Scenario: AC-153 happy path — /exit when Ctrl+C does not end it
+  Given the agent still runs 10 s after the second Ctrl+C, its box still shown empty, the same program in front
+  Then terminumd types `/exit` and Enter, and the agent ends
+  And when it still runs 10 s later the pane is left as it is, `idleexit.stayed` is logged with why, and it is tried again only after another 3 days unopened
+
+Scenario: AC-153 failure path — nothing the user left is typed over
+  Given the box holds a draft, or the agent asks a question (a permission, a choice), or its screen reads as neither (an unknown screen is not empty, as at Dispatcher's typing gate)
+  Or the agent is working, waiting mid-turn or its subagents run; or the pane is in a tmux mode (copy mode)
+  Or a page shows the pane meanwhile; or another program is in front
+  Then no key is sent, or no further key: each is sent only after all of this is read again just before it
+  And the pane's days are not restarted by it: the next look tries again
+
+Scenario: AC-153 edge — what is never ended, and when nothing ends
+  Given "agentExitDays" is 0 (the default), or any number under 1
+  Then nothing is ended; the days of each pane are counted all the same, so a later setting acts on the days already passed
+  Given a pane terminumd has never stamped (an older terminumd, a pane just made, a tmux server started anew)
+  Then its days start when terminumd first sees it: nothing ends at once on an upgrade
+  Given terminumd started, or its looks stood still over 20 minutes (the Mac slept)
+  Then nothing is ended for the next hour: the user's pages come back and show what they showed
+  Given the agent is the pane's own program (tmux started the pane with `claude`, not a shell), or Dispatcher started the pane (its run ends it)
+  Then that pane is skipped: its exit would close the pane, or the run is Dispatcher's
+  And what the agent ran in the background (a dev server, a shell it started) ends with it; its conversation can be resumed (`claude --resume`, `codex resume`)
+```
+
 ## 6. Flow and sequence diagrams
 
 ### An agent's state (AC-39)
@@ -388,7 +428,11 @@ MCP tools:
 
 ### Configuration
 
-No setting of its own. `CODEX_HOME` (default `~/.codex`), `TMUX`, `TMUX_PANE` and `TM_APP_DIR` are read.
+| Key (settings.json) | Default | Example | Effect |
+|---|---|---|---|
+| `agentExitDays` | `0` (off) | `3` | days an idle agent's row may stay unopened before it is asked to exit (AC-153); a whole number up to 3650, under 1 is off; the menu's field writes it (WebSocket `agentexit {days}`) |
+
+The time a page last showed a pane is the tmux pane option `@terminum-seen` (Unix seconds by terminumd's clock, on a remote host's tmux too). `CODEX_HOME` (default `~/.codex`), `TMUX`, `TMUX_PANE` and `TM_APP_DIR` are read.
 
 ### Limits
 
@@ -409,6 +453,7 @@ Limits a scenario states are not repeated.
 - Hooks: `terminum hook` sends only to terminumd's private socket (0600 in a 0700 folder: only the user's own processes reach it), or a Mac's link on a host. What a made-up event can do: `SECURITY.md`.
 - The installer writes only terminum's plugin folder, Codex's `hooks.json` and `config.toml` and its own marker.
 - Plan items, the current step, titles and records are model-written text: cleaned and shown as AC-97 and AC-98 say, never run. `SECURITY.md` has the threat.
+- The idle exit (AC-153) types only Ctrl+C, `/exit` and Enter, fixed by terminumd, and only as that scenario allows; it is off until the user sets the days.
 
 ### Compatibility
 
@@ -416,7 +461,7 @@ An older Codex SessionEnd entry: AC-39.
 
 ### Logging and observability
 
-`hook.turn_end {key, by}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`.
+`hook.turn_end {key, by}`, `idleexit.ended {key, kind, days}`, `idleexit.stayed {key, kind, why}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`.
 
 ## 10. Delivery stages
 
@@ -428,3 +473,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-93 — `cargo test page::unread`, `cargo test page::turns`, `scripts/e2e_hooks.py`, `web/test/e2e_projects.mjs`
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`
+- [x] AC-153 — `cargo test idle_exit` (keys on a private tmux with a stand-in agent), `cargo test settings`, `web/test/e2e_header.mjs`

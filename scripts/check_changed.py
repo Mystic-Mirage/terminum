@@ -3,7 +3,8 @@
 """A worktree's targeted checks (spec AC-104): the tests of what changed, the tests that cite the
 acceptance cases it touches, and the critical functions; a pass is kept per content
 (.checks/changed-<id>.ok), so the same content runs once. Before its first timed step it waits for a
-quiet machine (scripts/load_gate.py, AC-146). --land: a landing's smoke set on its merged result, the
+quiet machine (scripts/load_gate.py, AC-146); still busy after 15 minutes, the timed steps are skipped and
+said in red last, here and by make land (.checks/skipped). --land: a landing's smoke set on its merged result, the
 basics on one platform, no timed check. The full run is the release's gate, not this (`make check`).
 
   check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
@@ -19,7 +20,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
-from load_gate import for_task  # noqa: E402
+from load_gate import for_task, MINUTES  # noqa: E402
 from worktree import releasing  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -197,15 +198,32 @@ def timed(name):
     return name in ("panel", "page", "critical") or name.startswith("e2e_")
 
 
+def red(text, stream=sys.stdout):
+    return f"\033[31m{text}\033[0m" if stream.isatty() else text
+
+
+def skipped_note(root):
+    """The line a run that skipped timed steps left in root, said last by make land, or None."""
+    try:
+        return (root / ".checks" / "skipped").read_text().strip() or None
+    except FileNotFoundError:
+        return None
+
+
 def run(steps, root=REPO, gate=True, nice=False):
-    """gate: a quiet machine is waited for before the first timed step; nice: every step yields (a release runs)."""
+    """Returns the steps failed. gate: a quiet machine is waited for before the first timed step, and the timed
+    steps are skipped when it stays busy (AC-146); nice: every step yields (a release runs)."""
     logs = root / ".checks"
     logs.mkdir(exist_ok=True)
-    failed = []
+    failed, skipped, busy = [], [], None
     for name, command in steps:
         if gate and timed(name):
-            for_task(root)
+            busy = for_task(root)
             gate = False
+        if busy and timed(name):
+            print(red(f"SKIP {name}: {busy} {MINUTES}"), flush=True)
+            skipped.append(name)
+            continue
         optional = command.startswith("-")
         started = time.monotonic()
         log = logs / f"changed.{name}.log"
@@ -220,6 +238,11 @@ def run(steps, root=REPO, gate=True, nice=False):
             print(f"FAIL {name} ({seconds} s): {log}", flush=True)
             print("".join(f"     {line}\n" for line in log.read_text(errors="replace").splitlines()[-15:]), end="", flush=True)
             failed.append(name)
+    note = logs / "skipped"
+    if skipped:
+        note.write_text(f"targeted: SKIPPED timed checks, the machine busy {MINUTES}: {' '.join(skipped)}\n")
+    elif busy is None and any(timed(n) for n, _ in steps):
+        note.unlink(missing_ok=True)   # this run's timed checks ran
     return failed
 
 
@@ -263,6 +286,9 @@ def main(argv):
         return 0
     failed = run(steps)
     print(f"targeted: FAIL {' '.join(failed)}" if failed else "targeted: PASS")
+    skipped = skipped_note(REPO)
+    if skipped:
+        print(red(skipped), flush=True)
     if not failed and tree_id() == ident:   # changed during the run: no pass recorded
         passed.write_text(time.strftime("%Y-%m-%d %H:%M\n"))
     return 1 if failed else 0

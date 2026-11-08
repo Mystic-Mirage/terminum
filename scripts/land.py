@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_changed import is_doc  # noqa: E402
+from check_changed import is_doc, red, skipped_note  # noqa: E402
 from worktree import primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
 
 BASE = "origin/main"
@@ -203,6 +203,9 @@ def main(argv):
     print(f"landed {commit[:9]} on {BASE}")
     if not green:
         print(ci)
+    skipped = skipped_note(tree)
+    if skipped:
+        print(red(skipped))   # its timed checks never ran: the report says so
     os.chdir(primary)
     if not tree.is_dir():
         return 0

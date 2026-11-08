@@ -296,3 +296,22 @@ class Landing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Said(unittest.TestCase):
+    def test_timed_checks_a_busy_machine_skipped_are_said_after_landed(self):  # AC-146
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            primary = Path(tmp)
+            tree = primary / ".worktrees" / "x"
+            (tree / ".checks").mkdir(parents=True)
+            (tree / ".checks" / "skipped").write_text("targeted: SKIPPED timed checks, the machine busy for 15 minutes: page\n")
+            out = []
+            with mock.patch.object(land, "primary_of", return_value=primary), mock.patch.object(land, "git"), \
+                    mock.patch.object(land, "ci_status", return_value="CI on main: success on 0123456789: u"), \
+                    mock.patch.object(land, "land", return_value="abcdef0123456789"), \
+                    mock.patch.object(land, "after_push"), mock.patch.object(land.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)), \
+                    mock.patch.object(land.os, "chdir"), mock.patch("builtins.print", lambda *a, **_: out.append(" ".join(map(str, a)))):
+                self.assertEqual(land.main(["x"]), 0)
+        self.assertEqual(out[-2:], ["landed abcdef012 on origin/main",
+                                    "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page"])

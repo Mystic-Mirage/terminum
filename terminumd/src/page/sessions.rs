@@ -192,10 +192,7 @@ async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, proje
     args::check_text(&dir)?;
     // a host that does not answer gets the window: tmux says what it can
     if crate::dispatcher::procs::is_folder(app, &server, &dir).await == Some(false) {
-        return Err(match &host {
-            Some(h) => format!("The folder {dir} does not exist on {h}."),
-            None => format!("The folder {dir} does not exist."),
-        });
+        return Err(if server.is_local() { format!("The folder {dir} does not exist.") } else { format!("The folder {dir} does not exist on {}.", server.name) });
     }
     let session = if server.is_local() { args::project_session(&name)? } else { HOST_SESSION.to_string() };
     let exists = server.run(format!("has-session -t {}", args::quote(&format!("={session}")))).await.is_ok();

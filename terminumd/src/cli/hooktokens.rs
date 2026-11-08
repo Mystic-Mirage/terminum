@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The tokens of a turn's session (`terminum-dispatcher.md` AC-129), summed beside the transcript on
-//! its own machine within `terminum hook`'s time. Four integers and a model's name leave it: no path, no text.
+//! its own machine within `terminum hook`'s time. Integers and models' names leave it, the whole and each
+//! model's: no path, no text.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, Seek, SeekFrom};
 use std::time::{Duration, Instant};
 
@@ -22,6 +23,8 @@ struct Sum {
     tokens: Totals,
     /// the last message's
     model: Option<String>,
+    /// each model's, `""` for none named
+    models: BTreeMap<String, Totals>,
 }
 
 fn int(v: &Value, key: &str) -> i64 {
@@ -65,23 +68,43 @@ struct ClaudeUsage {
     output_tokens: Option<u64>,
     cache_read_input_tokens: Option<u64>,
     cache_creation_input_tokens: Option<u64>,
+    cache_creation: Option<CacheCreation>,
 }
 
-/// Claude Code's lines: `message.usage` per message; a message comes in several lines, the last stands.
+/// Of `cache_creation_input_tokens`, those kept an hour.
+#[derive(Deserialize)]
+struct CacheCreation {
+    ephemeral_1h_input_tokens: Option<u64>,
+}
+
+/// Claude Code's lines: `message.usage` per message, priced by its own model; a message comes in several lines,
+/// the last stands.
 fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
-    let mut by_message: HashMap<String, Totals> = HashMap::new();
+    let mut by_message: HashMap<String, (String, Totals)> = HashMap::new();
     let mut model = None;
     each_line(reader, until, "\"usage\"", |at, line: ClaudeLine| {
         if let Some(u) = line.message.usage {
             let n = |v: Option<u64>| v.map_or(0, |n| n.min(i64::MAX as u64) as i64);
-            by_message.insert(line.message.id.unwrap_or_else(|| at.to_string()), Totals { input: n(u.input_tokens), output: n(u.output_tokens),
-                cache_write: n(u.cache_creation_input_tokens), cache_read: n(u.cache_read_input_tokens) });
-            if let Some(m) = line.message.model {
-                model = Some(m.chars().take(MOST_MODEL).collect());
+            let name: Option<String> = line.message.model.map(|m| m.chars().take(MOST_MODEL).collect());
+            let cache_write = n(u.cache_creation_input_tokens);
+            let hour = n(u.cache_creation.and_then(|c| c.ephemeral_1h_input_tokens)).min(cache_write);
+            by_message.insert(line.message.id.unwrap_or_else(|| at.to_string()), (name.clone().unwrap_or_default(), Totals { input: n(u.input_tokens),
+                output: n(u.output_tokens), cache_write, cache_write_1h: hour, cache_read: n(u.cache_read_input_tokens) }));
+            if name.is_some() {
+                model = name;
             }
         }
     })?;
-    (!by_message.is_empty()).then(|| Sum { tokens: by_message.into_values().fold(Totals::default(), |a, t| a + t), model })
+    if by_message.is_empty() {
+        return None;
+    }
+    let mut sum = Sum { model, ..Sum::default() };
+    for (m, t) in by_message.into_values() {
+        sum.tokens = sum.tokens + t;
+        let of = sum.models.entry(m).or_default();
+        *of = *of + t;
+    }
+    Some(sum)
 }
 
 /// Codex's lines: a `token_count` event holds the session's total; the last stands.
@@ -89,14 +112,15 @@ fn codex(reader: impl BufRead, until: Instant) -> Option<Sum> {
     let mut last = None;
     each_line(reader, until, "token_count", |_, v: Value| {
         if let Some(u) = v.pointer("/payload/info/total_token_usage") {
-            last = Some(Sum { tokens: Totals { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cache_read: int(u, "cached_input_tokens"), cache_write: 0 }, model: None });
+            let tokens = Totals { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cache_read: int(u, "cached_input_tokens"), ..Totals::default() };
+            last = Some(Sum { tokens, model: None, models: BTreeMap::from([(String::new(), tokens)]) });
         }
     })?;
     last
 }
 
-/// What goes with a turn's end: the four numbers and the model, or `null` when they are not known (a new agent
-/// version's format, a file gone, too long a read); nothing when the event names no transcript.
+/// What goes with a turn's end: the numbers, the last model, and each model's numbers, or `null` when they are not
+/// known (a new agent version's format, a file gone, too long a read); nothing when the event names no transcript.
 pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
     let path = input.get("transcript_path").and_then(Value::as_str)?;
     let until = Instant::now() + MOST_TIME;
@@ -119,6 +143,11 @@ pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
     Some(read().map_or(Value::Null, |s| {
         let mut v = s.tokens.json();
         v["model"] = json!(s.model);
+        v["models"] = s.models.iter().map(|(m, t)| {
+            let mut e = t.json();
+            e["model"] = json!((!m.is_empty()).then_some(m));
+            e
+        }).collect();
         v
     }))
 }
@@ -141,7 +170,13 @@ mod tests {
             r#"{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"output_tokens":7,"cache_read_input_tokens":5,"cache_creation_input_tokens":2}}}"#, "\n",
             r#"{"type":"assistant","message":{"id":"m2","usage":{"input_tokens":3,"output_tokens":4}}}"#, "\n"));
         let got = of_event("claude", &json!({"transcript_path": p})).unwrap();
-        assert_eq!(got, json!({"input": 13, "output": 11, "cache_write": 2, "cache_read": 5, "model": null}), "four integers: no text, no path");
+        let whole = json!({"input": 13, "output": 11, "cache_write": 2, "cache_write_1h": 0, "cache_read": 5});
+        let mut one = whole.clone();
+        one["model"] = Value::Null;
+        let mut said = whole;
+        said["model"] = Value::Null;
+        said["models"] = json!([one]);
+        assert_eq!(got, said, "integers only: no text, no path");
     }
 
     #[test]
@@ -152,7 +187,7 @@ mod tests {
             r#"{"message":{"content":[{"type":"text","text":"long"}],"usage":{"input_tokens":2,"output_tokens":1,"cache_read_input_tokens":null,"cache_creation":{"ephemeral_5m_input_tokens":9}}}}"#, "\n",
             r#"{"message":{"usage":{"input_tokens":3,"output_tokens":1}}}"#, "\n"));
         let got = of_event("claude", &json!({"transcript_path": p})).unwrap();
-        assert_eq!(got, json!({"input": 5, "output": 2, "cache_write": 0, "cache_read": 0, "model": null}), "no id: each line its own; no usage: not counted");
+        assert_eq!((got["input"].as_i64(), got["output"].as_i64(), got["cache_write"].as_i64()), (Some(5), Some(2), Some(0)), "no id: each line its own; no usage: not counted");
     }
 
     #[test]
@@ -161,7 +196,9 @@ mod tests {
             r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5,"cached_input_tokens":1,"output_tokens":2}}}}"#, "\n",
             r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#, "\n",
             r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"cached_input_tokens":3,"output_tokens":4}}}}"#, "\n"));
-        assert_eq!(of_event("codex", &json!({"transcript_path": p})).unwrap(), json!({"input": 9, "output": 4, "cache_write": 0, "cache_read": 3, "model": null}));
+        let got = of_event("codex", &json!({"transcript_path": p})).unwrap();
+        assert_eq!((got["input"].as_i64(), got["output"].as_i64(), got["cache_read"].as_i64(), &got["model"]), (Some(9), Some(4), Some(3), &Value::Null));
+        assert_eq!(got["models"], json!([{"model": null, "input": 9, "output": 4, "cache_write": 0, "cache_write_1h": 0, "cache_read": 3}]), "its model is not read");
     }
 
     #[test]
@@ -179,5 +216,18 @@ mod tests {
         let p = written("tokens-model", concat!(
             r#"{"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":10,"output_tokens":1}}}"#, "\n"));
         assert_eq!(of_event("claude", &json!({"transcript_path": p})).unwrap()["model"], "claude-opus-5-5");
+    }
+
+    #[test]
+    fn ac129_claude_each_model_and_its_hour_s_cache_apart() {
+        let p = written("tokens-models", concat!(
+            r#"{"message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":10,"output_tokens":1,"cache_creation_input_tokens":30,"cache_creation":{"ephemeral_5m_input_tokens":10,"ephemeral_1h_input_tokens":20}}}}"#, "\n",
+            r#"{"message":{"id":"m2","model":"claude-haiku-5-5","usage":{"input_tokens":3,"output_tokens":2}}}"#, "\n",
+            r#"{"message":{"id":"m3","model":"claude-opus-5-5","usage":{"input_tokens":5,"output_tokens":1}}}"#, "\n"));
+        let got = of_event("claude", &json!({"transcript_path": p})).unwrap();
+        assert_eq!((got["input"].as_i64(), got["cache_write_1h"].as_i64(), &got["model"]), (Some(18), Some(20), &json!("claude-opus-5-5")), "the whole, and the last model");
+        assert_eq!(got["models"], json!([
+            {"model": "claude-haiku-5-5", "input": 3, "output": 2, "cache_write": 0, "cache_write_1h": 0, "cache_read": 0},
+            {"model": "claude-opus-5-5", "input": 15, "output": 2, "cache_write": 30, "cache_write_1h": 20, "cache_read": 0}]));
     }
 }

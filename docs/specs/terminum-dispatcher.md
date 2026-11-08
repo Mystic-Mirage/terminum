@@ -458,7 +458,7 @@ Scenario: AC-128 failure — refused or not read
 ```gherkin
 Scenario: AC-129 happy path
   Given a turn ends in T-12's session
-  Then `terminum hook`, beside the transcript on that machine, sums its input, output, cache-write and cache-read tokens and sends those four integers and the model's name, shape-checked, with the event; the card shows them
+  Then `terminum hook`, beside the transcript on that machine, sums its input, output, cache-write (of them, those kept for an hour) and cache-read tokens, in all and for each model the session's answers named, and sends those integers and the models' names, shape-checked, with the event; the card shows the whole
   And no path and no text of the transcript reaches terminumd
   And what grew since the last report is written to the store: it is there after any restart
 
@@ -470,6 +470,12 @@ Scenario: AC-129 happy path — on a finished task
   Given a price it does not know, as for Codex
   Then the card says only "50k"
 
+Scenario: AC-129 edge — priced by what each answer was
+  Given T-12's session answered 1,000,000 output tokens on claude-opus-5-5, then after /model 1,000,000 on claude-haiku-5-5
+  Then its dollars are 20.00 + 0.50 = 20.50, not twice either price
+  Given 1,000,000 cache-write tokens on claude-opus-5-5, 400,000 of them kept for an hour
+  Then they are priced 600,000 at 1.25 times input and 400,000 at 2 times: 3.00 + 3.20 = 6.20 dollars
+
 Scenario: AC-129 edge — counted once
   When a Stop and a SessionEnd report the same total, or a report comes twice
   Then nothing is added
@@ -477,6 +483,8 @@ Scenario: AC-129 edge — counted once
   Then only what grew since its last run is added
   When a total falls, after a /clear
   Then the whole new total is added
+  When a report says no models, as an older terminum's hook
+  Then its total counts as one model's, the one it names
 
 Scenario: AC-129 edge — not readable
   When the format is unknown (a new agent version), the file is gone, or the sum would overrun the hook's time
@@ -572,6 +580,8 @@ Scenario: AC-138 edge — an agent deleted
 Scenario: AC-138 failure — effort
   When an agent's effort is not one of its kind's, or its command holds ; | & or #
   Then its window says "codex has no effort max." or "An effort goes on one program's command: this one has ; | & or #. Write it in the command."
+  When an effort is chosen and the command names one too, as `claude --effort high` or `codex -c model_reasoning_effort=high`
+  Then its window says "The command names an effort already: choose Its own setting, or take it out of the command." and nothing is kept
 ```
 
 ### AC-140 — A project's place [MUST / P0]
@@ -839,7 +849,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
-| AC-129 | Codex's model is not read, so its sessions show tokens only; Claude Code's 1-hour cache writes are priced as 5-minute ones; a session that changed model is priced at its last one. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
+| AC-129 | Codex's model is not read, so its sessions show tokens only. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -904,10 +914,20 @@ GET /api/tasks/meta → {"agents": [{"id": "a81f", "name": "Opus reviewer", "kin
 
 ```sql
 CREATE TABLE usage (run TEXT NOT NULL REFERENCES runs, agent_id TEXT NOT NULL, at INTEGER NOT NULL, input INTEGER NOT NULL, output INTEGER NOT NULL,
-  cache_write INTEGER NOT NULL, cache_read INTEGER NOT NULL, model TEXT);
+  cache_write INTEGER NOT NULL, cache_read INTEGER NOT NULL, model TEXT, cache_write_1h INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE run_seen (run TEXT NOT NULL REFERENCES runs, model TEXT NOT NULL, input INTEGER NOT NULL, output INTEGER NOT NULL,
+  cache_write INTEGER NOT NULL, cache_write_1h INTEGER NOT NULL, cache_read INTEGER NOT NULL, PRIMARY KEY (run, model));
 ```
 
-A run keeps the last totals it heard, copied to the run that goes on from it; a row holds what grew, or the whole total if it fell. Dollars are worked out when shown, from a table of list prices in terminumd, so a corrected price corrects old rows.
+A hook's report, the whole and each model's (`""`: not named; 16 models at most):
+
+```json
+{"input": 1500, "output": 120, "cache_write": 50, "cache_write_1h": 20, "cache_read": 6000, "model": "claude-haiku-5-5",
+ "models": [{"model": "claude-opus-5-5", "input": 1000, "output": 100, "cache_write": 50, "cache_write_1h": 20, "cache_read": 5000},
+            {"model": "claude-haiku-5-5", "input": 500, "output": 20, "cache_write": 0, "cache_write_1h": 0, "cache_read": 1000}]}
+```
+
+A run keeps the last totals it heard of each model, copied to the run that goes on from it; a row holds what grew of one model, or, when the whole fell, each model's whole. Dollars are worked out when shown, from a table of list prices in terminumd, so a corrected price corrects old rows: a cache write is 1.25 times input, 2 times for one kept an hour.
 
 **Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, in zsh, bash, fish or sh (csh's `-lic` is not taken: its run fails loud): `/bin/sh` runs with job control (`set -m`, so the terminal comes back to it however the agent ended) and survives the agent's Ctrl-C (`trap : INT`), goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, drops what the tty still holds so nothing meant for the agent reaches the shell, then stays as that shell. tmux gets each word apart and runs no shell of its own:
 

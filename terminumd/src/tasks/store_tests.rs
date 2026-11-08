@@ -256,3 +256,21 @@ fn ac144_a_run_keeps_its_project_and_order_and_a_new_one_may_have_no_task() {
     conn.execute("INSERT INTO runs (id, agent_id, kind, command, folder, state, project) VALUES ('r3', 'a', 'claude', 'claude', '/w', 'starting', 'api')", []).unwrap();
     assert!(conn.execute("INSERT INTO run_tasks (run, task) VALUES ('r3', 'gone')", []).is_err(), "run_tasks' foreign key still holds");
 }
+
+#[test]
+fn ac129_what_a_run_heard_stands_as_its_last_model_s() {
+    let path = crate::testutil::fresh_dir("store-schema10").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..9]).unwrap();
+    conn.execute_batch("INSERT INTO runs (id, agent_id, kind, command, folder, state, project, seen_input, seen_output, seen_write, seen_read)
+          VALUES ('r1', 'a', 'claude', 'claude', '/w', 'working', 'default', 100, 10, 5, 50), ('r2', 'a', 'codex', 'codex', '/w', 'working', 'default', 7, 1, 0, 0),
+                 ('r3', 'a', 'claude', 'claude', '/w', 'starting', 'default', 0, 0, 0, 0);
+        INSERT INTO usage (run, agent_id, at, input, output, cache_write, cache_read, model) VALUES ('r1', 'a', 1, 60, 6, 5, 50, 'claude-opus-5-5'), ('r1', 'a', 2, 40, 4, 0, 0, 'claude-haiku-5-5'),
+          ('r2', 'a', 1, 7, 1, 0, 0, NULL);").unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    let seen: Vec<(String, String, i64, i64)> = conn.prepare("SELECT run, model, input, cache_write_1h FROM run_seen ORDER BY run").unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).unwrap().collect::<Result<_, _>>().unwrap();
+    assert_eq!(seen, [("r1".into(), "claude-haiku-5-5".into(), 100, 0), ("r2".into(), String::new(), 7, 0)], "the last model's, none named, nothing heard: no row");
+    let hour: i64 = conn.query_row("SELECT sum(cache_write_1h) FROM usage", [], |r| r.get(0)).unwrap();
+    assert_eq!(hour, 0, "rows before it: all 5-minute writes");
+}

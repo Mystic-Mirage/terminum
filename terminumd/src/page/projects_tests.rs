@@ -139,6 +139,28 @@ fn ac119_projects_are_never_written_over_a_store_that_could_not_be_read() {
 }
 
 #[test]
+fn ac119_the_first_change_after_an_unread_store_comes_back_keeps_its_projects() {
+    use std::os::unix::fs::PermissionsExt;
+    let (store, json) = stored("projects-unread-change");
+    let mut ps = reloaded(&store, &json);
+    ps.add_new(A, Some("Keep me"), None, "/a".into()).unwrap();
+    let path = json.with_file_name("kanban.sqlite");
+    drop(ps);
+    drop(store);
+    let mode = |m| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o000);
+    let store = Arc::new(Store::open(path.clone()));
+    let mut failed = reloaded(&store, &json);
+    mode(0o600);
+    assert!(failed.list().is_empty() && store.problem().is_some(), "it could not be read");
+    failed.add_new(B, Some("New"), None, "/b".into()).unwrap();
+    failed.add_new(C, Some("Newer"), None, "/c".into()).unwrap();
+    let names = |ps: &Projects| ps.list().iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&failed), ["Keep me", "New", "Newer"], "the store's read first, the changes on top");
+    assert_eq!(names(&reloaded(&store, &json)), ["Keep me", "New", "Newer"], "and the store holds all three");
+}
+
+#[test]
 fn ac119_a_change_the_store_refuses_stays_out_of_memory() {
     let (store, json) = stored("projects-refused-change");
     let mut ps = reloaded(&store, &json);

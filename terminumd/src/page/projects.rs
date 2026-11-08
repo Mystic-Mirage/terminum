@@ -109,8 +109,13 @@ impl Projects {
         Ok(())
     }
 
-    /// `change` holds only if the store took it; refused, nothing changed (AC-119).
+    /// `change` holds only if the store took it; refused, nothing changed (AC-119). A store that
+    /// could not be read before is read first, so the change and its undo apply to what it holds,
+    /// never to the empty memory of the failed read, which the next write would make the store's.
     fn kept<T>(&mut self, change: impl FnOnce(&mut Self) -> Result<T, String>) -> Result<T, String> {
+        if !self.loaded {
+            self.reload()?;
+        }
         let before = self.saved();
         let done = change(self).and_then(|v| self.save().map(|()| v));
         if done.is_err() {

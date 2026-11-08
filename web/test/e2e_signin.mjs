@@ -107,6 +107,25 @@ export async function webSignin(browser) {
     await said(gone.page) === "Signed out: sign in again." && after.kept && after.stored === null, JSON.stringify(after));
   await gone.close();
 
+  // a Sign out terminumd could not save: the sign-in ends here all the same, and the form says what it answered
+  const unsaved = await openPage(browser, { stored: SECRET, secret: SECRET, auth: 204 });
+  await drawn(unsaved.page);
+  const why503 = "Signed out, but signins.json could not be written (disk full): until terminum signout succeeds on the Mac, a restart of terminumd would let this sign-in back.";
+  await unsaved.page.route("**/auth/logout", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "signout_unsaved", message: why503 }) }));
+  await unsaved.page.evaluate(() => document.getElementById("signout").click());
+  await unsaved.page.waitForSelector("#login:not([hidden])", { timeout: 3000 }).catch(() => {});
+  check("AC-09 sign-in: a Sign out terminumd could not save forgets the sign-in and says terminumd's message in the form",
+    await said(unsaved.page) === why503 && await unsaved.page.evaluate(() => localStorage.getItem("tm.session")) === null, await said(unsaved.page));
+  await unsaved.close();
+  const unheard = await openPage(browser, { stored: SECRET, secret: SECRET, auth: 204 });
+  await drawn(unheard.page);
+  await unheard.page.route("**/auth/logout", (route) => route.abort());
+  await unheard.page.evaluate(() => document.getElementById("signout").click());
+  await unheard.page.waitForSelector("#login:not([hidden])", { timeout: 3000 }).catch(() => {});
+  check("AC-09 sign-in: a Sign out terminumd never heard forgets the sign-in and says it may still be live, and how to end it",
+    (await said(unheard.page)).includes("run: terminum signout") && await unheard.page.evaluate(() => localStorage.getItem("tm.session")) === null, await said(unheard.page));
+  await unheard.close();
+
   // no password set yet: the form says how to set one and waits
   const none = await openPage(browser, { secret: SECRET, auth: { login: "none", message: "No password is set yet. On the Mac, run: terminum password" } });
   await none.page.waitForSelector("#login:not([hidden])", { timeout: 5000 });

@@ -119,11 +119,14 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
     showLogin(why + (m.retry ? ` Try again in ${m.retry} s.` : ""));
   });
 
+  // The sign-in ends here whatever terminumd answers; what it could not do is said on the form.
   async function signOut() {
     const was = ws; ws = null; was?.close();
-    await fetch("/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+    const r = await fetch("/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
+    const failed = r && !r.ok && r.status !== 401 ? await r.json().catch(() => ({})) : null;
     signin.forget();
-    showLogin();
+    if (!r) return showLogin("terminum's server did not answer, so this sign-in may still be live: on the Mac, run: terminum signout");
+    showLogin(failed ? failed.message || `Sign-out failed (${r.status}).` : "");
   }
 
   // A page Safari brings back from memory connects again, and so learns the current build.

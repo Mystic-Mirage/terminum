@@ -23,7 +23,6 @@ fn files_api(app: &Shared) -> Router<Shared> {
     use crate::panel_api as p;
     Router::new()
         .route("/api/state", get(p::get_state))
-        .route("/api/events", get(p::events))
         .route("/api/ws", get(crate::panel_ws::socket))
         .route("/api/ls", get(ls))
         .route("/api/file", get(file).put(save_file).layer(DefaultBodyLimit::max(save_body_limit(app.cfg.text_max))))
@@ -78,6 +77,9 @@ pub fn pages(app: Shared) -> Router {
 /// An agent's routes on its Unix socket: the Files API at the root, the token decides.
 pub fn agent(app: Shared) -> Router {
     files_api(&app)
+        // the agent's events for the Mac's relay: never on the page's listener, where a stream
+        // would outlive the sign-in it was opened with (AC-09)
+        .route("/api/events", get(crate::panel_api::events))
         .route("/api/paste", post(crate::remote::agent_paste).layer(DefaultBodyLimit::max(crate::page::upload::MAX_BYTES)))
         .layer(middleware::from_fn_with_state(app.clone(), agent_guard))
         .with_state(app)

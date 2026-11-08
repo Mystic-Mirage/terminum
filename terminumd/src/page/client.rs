@@ -315,7 +315,7 @@ mod tests {
         let link = crate::tmux::server::Link::Ssh { ssh: "unused".into(), args: Vec::new() };
         let host = Server::new("devbox", "default", link, app.changed.clone());
         app.tmux.add_host(host.clone());
-        let (page, mut rx) = Pages::default().add(crate::inputs::Client { web: true, ..Default::default() }, trace::Recorder::new(root.join("trace"))).unwrap();
+        let (page, mut rx) = Pages::default().add(crate::inputs::Client { web: true, ..Default::default() }, String::new(), trace::Recorder::new(root.join("trace"))).unwrap();
         let _ctl = shown(&page, "tm-test-row-lanes");
         let hung = shown_lane(&page);
         let key = host.key("%1");
@@ -336,7 +336,7 @@ mod tests {
     #[tokio::test]
     async fn a_hidden_terminal_stops_screens_only_and_showing_it_wakes_the_stream() {
         let dir = crate::testutil::temp_root().join(format!("tm-screens-{}", std::process::id()));
-        let (page, _rx) = Pages::default().add(crate::inputs::Client { web: true, ..Default::default() }, trace::Recorder::new(dir)).unwrap();
+        let (page, _rx) = Pages::default().add(crate::inputs::Client { web: true, ..Default::default() }, String::new(), trace::Recorder::new(dir)).unwrap();
         screens(&page, true);                                // nothing shown yet: only the state
         assert!(!page.state.lock().screens_off);
         let ctl = shown(&page, "tm-test-screens");
@@ -354,7 +354,7 @@ mod tests {
     async fn a_page_out_of_focus_keeps_its_stream_and_only_a_hidden_one_pauses_it() {
         let dir = crate::testutil::temp_root().join(format!("tm-pause-{}", std::process::id()));
         let pages = Pages::default();
-        let (page, _rx) = pages.add(crate::inputs::Client { web: true, ..Default::default() }, trace::Recorder::new(dir)).unwrap();
+        let (page, _rx) = pages.add(crate::inputs::Client { web: true, ..Default::default() }, String::new(), trace::Recorder::new(dir)).unwrap();
         let ctl = shown(&page, "tm-test-pause");
         let state = || {
             let active = page.state.lock().active();

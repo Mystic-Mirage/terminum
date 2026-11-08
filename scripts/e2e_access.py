@@ -147,10 +147,29 @@ def main():
         # sign-out: one browser, every browser, a new password
         st, other = login("correct horse")
         other = other["secret"]
-        st, _, _ = raw(PORT, "POST", "/auth/logout", {**sess, "Content-Type": "application/json", "Origin": f"http://{host}"}, b"{}")
+        mine, mine2, theirs = t.page(secret), t.page(secret), t.page(other)
+        out = {"Content-Type": "application/json", "Origin": f"http://{host}"}
+        st, _, _ = raw(PORT, "POST", "/auth/logout", {**sess, **out}, b"{}")
         st1, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", sess)
         st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": other})
         check("AC-09 Sign out ends that browser's sign-in only", st == 204 and st1 == 401 and st2 == 200, (st, st1, st2))
+        check("AC-09 Sign out closes every page of that sign-in at once (another tab, another device), no other sign-in's",
+              closed(mine) and closed(mine2) and not closed(theirs, 1))
+        theirs.close()
+        st, _, _ = raw(PORT, "GET", "/fb/api/events", {"Host": host, "X-TM-Session": other})
+        check("AC-09 an agent's event stream is not served on the page's listener", st == 404, st)
+        st, fourth = login("correct horse")
+        fourth = fourth["secret"]
+        page4 = t.page(fourth)
+        os.chmod(t.app, 0o500)                         # signins.json cannot be written
+        try:
+            st, body, _ = raw(PORT, "POST", "/auth/logout", {"Host": host, "X-TM-Session": fourth, **out}, b"{}")
+        finally:
+            os.chmod(t.app, 0o700)
+        st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": fourth})
+        check("AC-09 a Sign out signins.json cannot keep still ends the sign-in and its pages, and says what a restart would do",
+              st == 503 and body.get("error") == "signout_unsaved" and "terminum signout" in body.get("message", "") and st2 == 401
+              and closed(page4), (st, body, st2))
         ws = t.page(other)
         panel = WS(PORT, path="/fb/api/ws", protocols=["tm", other])
         panel.recv()                                   # its first frame, the state

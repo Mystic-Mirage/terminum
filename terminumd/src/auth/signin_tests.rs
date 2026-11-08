@@ -136,6 +136,29 @@ fn a_file_that_cannot_be_written_makes_no_sign_in() {
 }
 
 #[test]
+fn a_sign_out_the_file_cannot_keep_still_ends_the_sign_in_here() {
+    let dir = fresh_dir("signin-unsaved");
+    let s = Signins::load(&dir);
+    let (a, b, c) = (s.create("a").unwrap(), s.create("b").unwrap(), s.create("c").unwrap());
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).unwrap();
+    let one = s.revoke(&a);
+    let all_but = (s.check(&b, false), s.check(&c, false));
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(one.is_err() && !s.check(&a, false), "not saved, yet no page uses it a moment longer");
+    assert_eq!(all_but, (true, true), "the others stay");
+    assert!(Signins::load(&dir).check(&a, false), "the file still holds it: a restart would bring it back");
+    let d = s.create("d").unwrap();
+    let again = Signins::load(&dir);
+    assert!(!again.check(&a, false) && again.check(&b, false) && again.check(&d, false), "the next write leaves it out");
+
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).unwrap();
+    let all = s.revoke_all();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(all.is_err() && s.count() == 0 && !s.check(&b, false) && !s.check(&d, false), "terminum signout, a new password: all gone here");
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn the_page_and_terminumd_compute_the_same_proof() {
     // the vector the page's unit test checks too (computed independently with Python's hmac)
     // secret "00" * 32, n "00112233445566778899aabbccddeeff"

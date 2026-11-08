@@ -191,7 +191,8 @@ impl Signins {
 
     /// The page signs out: the sign-in it presents (its credential or secret) goes, in memory at
     /// once and in the file; false when it presents none kept here (a credential of another boot).
-    /// Err: the file still holds it, and so does memory.
+    /// Err: gone from memory all the same (no page uses it a moment longer), still in the file,
+    /// which a restart would read back; the next write of the file (any sign-in) leaves it out.
     pub fn revoke(&self, credential: &str) -> io::Result<bool> {
         let digest = self.signin_of(credential);
         let _writing = self.writer.lock();
@@ -200,18 +201,16 @@ impl Signins {
         if next.len() == items.len() {
             return Ok(false);
         }
-        self.save(&next)?;
-        *self.items.lock() = next;
-        Ok(true)
+        *self.items.lock() = next.clone();
+        self.save(&next).map(|()| true)
     }
 
-    /// `terminum signout`, a new password: every page signs in again. Err: the file still holds them, and so
-    /// does memory (a restart would bring them back otherwise).
+    /// `terminum signout`, a new password: every page signs in again. Err: gone from memory all
+    /// the same, still in the file, as for `revoke`.
     pub fn revoke_all(&self) -> io::Result<()> {
         let _writing = self.writer.lock();
-        self.save(&[])?;
         self.items.lock().clear();
-        Ok(())
+        self.save(&[])
     }
 
     pub fn count(&self) -> usize {

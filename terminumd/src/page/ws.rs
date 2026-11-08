@@ -5,7 +5,8 @@
 //! AC-16), then the list, its bookmarks and settings. Messages are handled in order; nothing here
 //! waits on tmux or ssh: reads and actions run beside the loop, in a lane per server (`reads`,
 //! AC-132). A closed page ends the reader, the writer, the stream and its reads at once
-//! (`Page::closed`); its actions finish.
+//! (`Page::closed`); its actions finish. The page lives only as long as the sign-in it presented
+//! (AC-09): one that expired or was revoked ends it at the next ping at the latest.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,7 +34,9 @@ pub struct FromWeb(pub bool);
 
 pub async fn socket(State(app): State<Shared>, ConnectInfo(peer): ConnectInfo<std::net::SocketAddr>, headers: HeaderMap, from: Option<axum::Extension<FromWeb>>, ws: WebSocketUpgrade) -> Response {
     let web = from.is_some_and(|f| f.0.0);
-    let Some((page, rx)) = app.pages.add(crate::webaccess::client(&headers, peer, web), app.recorder.clone()) else {
+    let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let credential = crate::auth::checks::signin_credential(header).unwrap_or_default();
+    let Some((page, rx)) = app.pages.add(crate::webaccess::client(&headers, peer, web), credential, app.recorder.clone()) else {
         return err(StatusCode::SERVICE_UNAVAILABLE, "too_many_pages", "Too many pages");
     };
     let offered = headers.get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("");
@@ -44,9 +47,12 @@ pub async fn socket(State(app): State<Shared>, ConnectInfo(peer): ConnectInfo<st
 async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver<String>, ws: WebSocket) {
     tracing::info!(event = "page.open", page = page.id, web = page.web, pages = app.pages.count());
     app.dirty.notify_one();                      // the list every 2 s from now on, not at the end of a wait for no page
+    if !page.signed_in(&app.signins) {
+        page.close();                            // signed out between the guard and here: ends at once
+    }
     let (mut tx, mut incoming) = ws.split();
     let writer = {
-        let page = page.clone();
+        let (app, page) = (app.clone(), page.clone());
         tokio::spawn(async move {
             let mut ping = tokio::time::interval(PING);
             ping.tick().await;
@@ -55,7 +61,14 @@ async fn serve(app: Shared, page: Arc<Page>, mut rx: tokio::sync::mpsc::Receiver
             loop {
                 let msg = tokio::select! {
                     m = rx.recv() => match m { Some(text) => Message::Text(text.into()), None => break },
-                    _ = ping.tick() => Message::Ping(Default::default()),
+                    _ = ping.tick() => {
+                        // a sign-in that expired, or went by a path that closed no page, ends it here
+                        if !page.signed_in(&app.signins) {
+                            tracing::info!(event = "page.signed_out", page = page.id);
+                            break;
+                        }
+                        Message::Ping(Default::default())
+                    }
                     _ = &mut closed => break,
                 };
                 if page.is_closed() {

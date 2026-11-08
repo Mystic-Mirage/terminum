@@ -71,7 +71,6 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, agentsBusy }) {
     const meta = getMeta(), project = $("newproj").value, all = meta.agents.filter((a) => a.project === project), now = agentsBusy();
     const busy = (a) => now[a.id]?.tasks;
     fillAgents($("newagent"), all, busy, [chose, meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
-    if (chose === "") $("newagent").value = "";
   }
 
   function open(given = {}) {

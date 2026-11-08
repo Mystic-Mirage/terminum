@@ -89,7 +89,7 @@ def main():
         check("AC-92 its folder there: the window opens in it", where == os.path.realpath(folder), where)
         held = shown(made.get("id", "").rsplit(":", 1)[-1], "#{session_name}") if made.get("t") == "created" else made
         check("AC-92 on a host it opens in the session terminumd holds there", held == "terminum", held)
-        ws.s.close()
+        ws.close()
 
         # hooks missing there: said, nothing starts
         off = task("no hooks yet")

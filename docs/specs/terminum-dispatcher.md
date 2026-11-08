@@ -458,7 +458,7 @@ Scenario: AC-128 failure — refused or not read
 ```gherkin
 Scenario: AC-129 happy path
   Given a turn ends in T-12's session
-  Then `terminum hook`, beside the transcript on that machine, sums its input, output, cache-write (of them, those kept for an hour) and cache-read tokens, in all and for each model the session's answers named, and sends those integers and the models' names, shape-checked, with the event; the card shows the whole
+  Then `terminum hook`, beside the transcript on that machine, sums its input, output, cache-write (of them, those kept for an hour) and cache-read tokens, in all and for each model the session's answers named, and sends those integers and the models' names, shape-checked, with the event (an older terminum's hook: the whole and its last model); the card shows the whole
   And no path and no text of the transcript reaches terminumd
   And what grew since the last report is written to the store: it is there after any restart
 
@@ -922,7 +922,7 @@ CREATE TABLE run_seen (run TEXT NOT NULL REFERENCES runs, model TEXT NOT NULL, i
 A hook's report, the whole and each model's (`""`: not named; 16 models at most):
 
 ```json
-{"input": 1500, "output": 120, "cache_write": 50, "cache_write_1h": 20, "cache_read": 6000, "model": "claude-haiku-5-5",
+{"input": 1500, "output": 120, "cache_write": 50, "cache_write_1h": 20, "cache_read": 6000,
  "models": [{"model": "claude-opus-5-5", "input": 1000, "output": 100, "cache_write": 50, "cache_write_1h": 20, "cache_read": 5000},
             {"model": "claude-haiku-5-5", "input": 500, "output": 20, "cache_write": 0, "cache_write_1h": 0, "cache_read": 1000}]}
 ```

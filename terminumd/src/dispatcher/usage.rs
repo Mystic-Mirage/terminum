@@ -3,7 +3,7 @@
 //! model's apart, the store keeps what grew of each, counted once; a task shows its sessions' sum, an agent
 //! its last 7 and 30 days. Dollars are worked out when shown, so a corrected price corrects every row.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use rusqlite::Transaction;
 use serde_json::{json, Value};
@@ -37,19 +37,20 @@ fn good_model(m: &str) -> bool {
 
 /// Each model's totals of a hook's report, `""` for none named; `None` when its whole is not known. A report
 /// that says no models, as an older terminum's hook, is one model's: the one it names.
-pub fn by_model(t: &Value) -> Option<Vec<(String, Totals)>> {
+pub fn by_model(t: &Value) -> Option<Models> {
     let whole = Totals::of(t)?;
     let name = |v: &Value| v["model"].as_str().filter(|m| good_model(m)).unwrap_or_default().to_string();
-    let Some(models) = t["models"].as_array() else { return Some(vec![(name(t), whole)]) };
-    let mut out: Vec<(String, Totals)> = Vec::new();
+    let Some(models) = t["models"].as_array() else { return Some(BTreeMap::from([(name(t), whole)])) };
+    let mut out = Models::new();
     for (m, n) in models.iter().take(MOST_MODELS).filter_map(|v| Some((name(v), Totals::of(v)?))) {
-        match out.iter_mut().find(|(k, _)| *k == m) {
-            Some((_, sum)) => *sum = *sum + n,
-            None => out.push((m, n)),
-        }
+        let sum = out.entry(m).or_default();
+        *sum = *sum + n;
     }
     Some(out)
 }
+
+/// Each model's totals, `""` for none named.
+pub type Models = BTreeMap<String, Totals>;
 
 impl Totals {
     /// A hook's numbers; `None` when one is missing.
@@ -114,30 +115,28 @@ fn totals_at(r: &rusqlite::Row, i: usize) -> rusqlite::Result<Totals> {
 }
 
 /// A report of run `run`, each model's totals: what grew of each is kept, and the run remembers what it has
-/// heard. When the whole fell (a /clear), each model's whole is new.
-pub fn heard(tx: &Transaction, run: &str, agent: &str, now: &[(String, Totals)], at: i64) -> Result<(), String> {
-    let seen: Vec<(String, Totals)> = rows(tx, &format!("SELECT model, {TOTALS} FROM run_seen WHERE run = ?1"), [run], |r| Ok((r.get(0)?, totals_at(r, 1)?)))?;
-    let sum = |of: &[(String, Totals)]| of.iter().fold(Totals::default(), |a, (_, t)| a + *t);
+/// heard. When the whole fell (a /clear), each model's whole is new and what it heard before goes.
+pub fn heard(tx: &Transaction, run: &str, agent: &str, now: &Models, at: i64) -> Result<(), String> {
+    let seen: Models = rows(tx, &format!("SELECT model, {TOTALS} FROM run_seen WHERE run = ?1"), [run], |r| Ok((r.get(0)?, totals_at(r, 1)?)))?.into_iter().collect();
+    let sum = |of: &Models| of.values().fold(Totals::default(), |a, t| a + *t);
     let anew = fell(sum(&seen), sum(now));
-    for (model, t) in now {
-        let before = if anew { Totals::default() } else { seen.iter().find(|(m, _)| m == model).map_or_else(Totals::default, |(_, s)| *s) };
-        let d = grown(before, *t);
-        if d != Totals::default() {
-            tx.execute(&format!("INSERT INTO usage (run, agent_id, at, model, {TOTALS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"),
-                       rusqlite::params![run, agent, at, (!model.is_empty()).then_some(model), d.input, d.output, d.cache_write, d.cache_write_1h, d.cache_read]).map_err(sql)?;
-        }
+    let grew: Vec<(&String, Totals, Totals)> = now.iter()
+        .map(|(m, t)| (m, *t, grown(if anew { Totals::default() } else { seen.get(m).copied().unwrap_or_default() }, *t)))
+        .filter(|(.., d)| *d != Totals::default()).collect();
+    if anew {
+        tx.execute("DELETE FROM run_seen WHERE run = ?1", [run]).map_err(sql)?;
     }
-    tx.execute("DELETE FROM run_seen WHERE run = ?1", [run]).map_err(sql)?;
-    for (model, t) in now {
-        tx.execute(&format!("INSERT INTO run_seen (run, model, {TOTALS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"),
-                   rusqlite::params![run, model, t.input, t.output, t.cache_write, t.cache_write_1h, t.cache_read]).map_err(sql)?;
+    let mut add = tx.prepare_cached(&format!("INSERT INTO usage (run, agent_id, at, model, {TOTALS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")).map_err(sql)?;
+    let mut keep = tx.prepare_cached(&format!("INSERT OR REPLACE INTO run_seen (run, model, {TOTALS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")).map_err(sql)?;
+    for (model, t, d) in grew {
+        add.execute(rusqlite::params![run, agent, at, (!model.is_empty()).then_some(model), d.input, d.output, d.cache_write, d.cache_write_1h, d.cache_read]).map_err(sql)?;
+        keep.execute(rusqlite::params![run, model, t.input, t.output, t.cache_write, t.cache_write_1h, t.cache_read]).map_err(sql)?;
     }
     Ok(())
 }
 
-/// A run going on from `from` in the same conversation has heard what it had heard (AC-122).
+/// A run going on from `from` in the same conversation has heard what it had heard (AC-122): `to` is new.
 pub fn carry(tx: &Transaction, from: &str, to: &str) -> Result<(), String> {
-    tx.execute("DELETE FROM run_seen WHERE run = ?1", [to]).map_err(sql)?;
     tx.execute(&format!("INSERT INTO run_seen (run, model, {TOTALS}) SELECT ?2, model, {TOTALS} FROM run_seen WHERE run = ?1"), (from, to)).map(drop).map_err(sql)
 }
 
@@ -214,8 +213,8 @@ mod tests {
     }
 
     /// One model's report, or none named.
-    fn one(model: Option<&str>, t: Totals) -> Vec<(String, Totals)> {
-        vec![(model.unwrap_or_default().to_string(), t)]
+    fn one(model: Option<&str>, t: Totals) -> Models {
+        Models::from([(model.unwrap_or_default().to_string(), t)])
     }
 
     fn run_of(tx: &Transaction, agent: &str, tasks: &[String]) -> String {
@@ -289,14 +288,14 @@ mod tests {
             let r = run_of(tx, "a", std::slice::from_ref(&task.key));
             heard(tx, &r, "a", &one(Some("claude-opus-5-5"), t(0, 1_000_000, 0, 0)), 10)?;
             // after /model: opus's total stands, haiku's grows
-            heard(tx, &r, "a", &[("claude-opus-5-5".into(), t(0, 1_000_000, 0, 0)), ("claude-haiku-5-5".into(), t(0, 1_000_000, 0, 0))], 11)?;
+            heard(tx, &r, "a", &Models::from([("claude-opus-5-5".into(), t(0, 1_000_000, 0, 0)), ("claude-haiku-5-5".into(), t(0, 1_000_000, 0, 0))]), 11)?;
             let spent = &of_tasks(tx, &[task.key.as_str()])?[&task.key];
             assert_eq!(spent["output"], 2_000_000);
             assert!((spent["usd"].as_f64().unwrap() - 20.5).abs() < 1e-9, "not twice either price: {spent}");
             // a /clear: the whole fell, each model's whole is new, and opus's is heard no more
             heard(tx, &r, "a", &one(Some("claude-haiku-5-5"), t(0, 1_000, 0, 0)), 12)?;
             assert_eq!(of_tasks(tx, &[task.key.as_str()])?[&task.key]["output"], 2_001_000);
-            heard(tx, &r, "a", &[("claude-opus-5-5".into(), t(0, 500, 0, 0)), ("claude-haiku-5-5".into(), t(0, 1_000, 0, 0))], 13)?;
+            heard(tx, &r, "a", &Models::from([("claude-opus-5-5".into(), t(0, 500, 0, 0)), ("claude-haiku-5-5".into(), t(0, 1_000, 0, 0))]), 13)?;
             assert_eq!(of_tasks(tx, &[task.key.as_str()])?[&task.key]["output"], 2_001_500, "opus anew after the /clear: only its 500");
             Ok(())
         }).unwrap();
@@ -313,14 +312,14 @@ mod tests {
     #[test]
     fn ac129_a_report_says_each_model_or_is_one_model_s() {
         let old = json!({"input": 5, "output": 1, "cache_read": 0, "model": "claude-opus-5-5"});
-        assert_eq!(by_model(&old), Some(vec![("claude-opus-5-5".into(), t(5, 1, 0, 0))]), "an older hook's: the one it names");
+        assert_eq!(by_model(&old), Some(one(Some("claude-opus-5-5"), t(5, 1, 0, 0))), "an older hook's: the one it names");
         let new = json!({"input": 9, "output": 3, "cache_read": 0, "model": "claude-haiku-5-5", "models": [
             {"model": "claude-opus-5-5", "input": 5, "output": 1, "cache_read": 0},
             {"model": "$(rm -rf /)", "input": 1, "output": 1, "cache_read": 0},
             {"model": null, "input": 1, "output": 0, "cache_read": 0},
             {"model": "claude-opus-5-5", "input": 2, "output": 1, "cache_read": 0},
             {"model": "claude-haiku-5-5", "output": 1}]});
-        assert_eq!(by_model(&new), Some(vec![("claude-opus-5-5".into(), t(7, 2, 0, 0)), (String::new(), t(2, 1, 0, 0))]),
+        assert_eq!(by_model(&new), Some(Models::from([("claude-opus-5-5".into(), t(7, 2, 0, 0)), (String::new(), t(2, 1, 0, 0))])),
                    "a bad name is none named; one twice is summed; one without its numbers is not kept");
         let many: Vec<Value> = (0..20).map(|i| json!({"model": format!("m{i}"), "input": 1, "output": 0, "cache_read": 0})).collect();
         assert_eq!(by_model(&json!({"input": 20, "output": 0, "cache_read": 0, "models": many})).unwrap().len(), MOST_MODELS);

@@ -18,14 +18,8 @@ const MOST_BYTES: u64 = 256 << 20;
 const MOST_TIME: Duration = Duration::from_millis(1500);
 const CODEX_TAIL: u64 = 1 << 20;
 
-#[derive(Default)]
-struct Sum {
-    tokens: Totals,
-    /// the last message's
-    model: Option<String>,
-    /// each model's, `""` for none named
-    models: BTreeMap<String, Totals>,
-}
+/// Each model's totals, `""` for none named.
+type Sum = BTreeMap<String, Totals>;
 
 fn int(v: &Value, key: &str) -> i64 {
     v[key].as_u64().map_or(0, |n| n.min(i64::MAX as u64) as i64)
@@ -81,27 +75,21 @@ struct CacheCreation {
 /// the last stands.
 fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
     let mut by_message: HashMap<String, (String, Totals)> = HashMap::new();
-    let mut model = None;
     each_line(reader, until, "\"usage\"", |at, line: ClaudeLine| {
         if let Some(u) = line.message.usage {
             let n = |v: Option<u64>| v.map_or(0, |n| n.min(i64::MAX as u64) as i64);
-            let name: Option<String> = line.message.model.map(|m| m.chars().take(MOST_MODEL).collect());
             let cache_write = n(u.cache_creation_input_tokens);
             let hour = n(u.cache_creation.and_then(|c| c.ephemeral_1h_input_tokens)).min(cache_write);
-            by_message.insert(line.message.id.unwrap_or_else(|| at.to_string()), (name.clone().unwrap_or_default(), Totals { input: n(u.input_tokens),
-                output: n(u.output_tokens), cache_write, cache_write_1h: hour, cache_read: n(u.cache_read_input_tokens) }));
-            if name.is_some() {
-                model = name;
-            }
+            by_message.insert(line.message.id.unwrap_or_else(|| at.to_string()), (line.message.model.map(|m| m.chars().take(MOST_MODEL).collect()).unwrap_or_default(),
+                Totals { input: n(u.input_tokens), output: n(u.output_tokens), cache_write, cache_write_1h: hour, cache_read: n(u.cache_read_input_tokens) }));
         }
     })?;
     if by_message.is_empty() {
         return None;
     }
-    let mut sum = Sum { model, ..Sum::default() };
+    let mut sum = Sum::new();
     for (m, t) in by_message.into_values() {
-        sum.tokens = sum.tokens + t;
-        let of = sum.models.entry(m).or_default();
+        let of = sum.entry(m).or_default();
         *of = *of + t;
     }
     Some(sum)
@@ -113,14 +101,14 @@ fn codex(reader: impl BufRead, until: Instant) -> Option<Sum> {
     each_line(reader, until, "token_count", |_, v: Value| {
         if let Some(u) = v.pointer("/payload/info/total_token_usage") {
             let tokens = Totals { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cache_read: int(u, "cached_input_tokens"), ..Totals::default() };
-            last = Some(Sum { tokens, model: None, models: BTreeMap::from([(String::new(), tokens)]) });
+            last = Some(Sum::from([(String::new(), tokens)]));
         }
     })?;
     last
 }
 
-/// What goes with a turn's end: the numbers, the last model, and each model's numbers, or `null` when they are not
-/// known (a new agent version's format, a file gone, too long a read); nothing when the event names no transcript.
+/// What goes with a turn's end: the whole and each model's numbers, or `null` when they are not known (a new
+/// agent version's format, a file gone, too long a read); nothing when the event names no transcript.
 pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
     let path = input.get("transcript_path").and_then(Value::as_str)?;
     let until = Instant::now() + MOST_TIME;
@@ -141,9 +129,8 @@ pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
         claude(std::io::BufReader::new(file), until)
     };
     Some(read().map_or(Value::Null, |s| {
-        let mut v = s.tokens.json();
-        v["model"] = json!(s.model);
-        v["models"] = s.models.iter().map(|(m, t)| {
+        let mut v = s.values().fold(Totals::default(), |a, t| a + *t).json();
+        v["models"] = s.iter().map(|(m, t)| {
             let mut e = t.json();
             e["model"] = json!((!m.is_empty()).then_some(m));
             e
@@ -174,7 +161,6 @@ mod tests {
         let mut one = whole.clone();
         one["model"] = Value::Null;
         let mut said = whole;
-        said["model"] = Value::Null;
         said["models"] = json!([one]);
         assert_eq!(got, said, "integers only: no text, no path");
     }
@@ -197,7 +183,7 @@ mod tests {
             r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#, "\n",
             r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"cached_input_tokens":3,"output_tokens":4}}}}"#, "\n"));
         let got = of_event("codex", &json!({"transcript_path": p})).unwrap();
-        assert_eq!((got["input"].as_i64(), got["output"].as_i64(), got["cache_read"].as_i64(), &got["model"]), (Some(9), Some(4), Some(3), &Value::Null));
+        assert_eq!((got["input"].as_i64(), got["output"].as_i64(), got["cache_read"].as_i64()), (Some(9), Some(4), Some(3)));
         assert_eq!(got["models"], json!([{"model": null, "input": 9, "output": 4, "cache_write": 0, "cache_write_1h": 0, "cache_read": 3}]), "its model is not read");
     }
 
@@ -215,7 +201,7 @@ mod tests {
     fn ac129_claude_its_model_goes_with_the_numbers() {
         let p = written("tokens-model", concat!(
             r#"{"type":"assistant","message":{"id":"m1","model":"claude-opus-5-5","usage":{"input_tokens":10,"output_tokens":1}}}"#, "\n"));
-        assert_eq!(of_event("claude", &json!({"transcript_path": p})).unwrap()["model"], "claude-opus-5-5");
+        assert_eq!(of_event("claude", &json!({"transcript_path": p})).unwrap()["models"][0]["model"], "claude-opus-5-5");
     }
 
     #[test]
@@ -225,7 +211,7 @@ mod tests {
             r#"{"message":{"id":"m2","model":"claude-haiku-5-5","usage":{"input_tokens":3,"output_tokens":2}}}"#, "\n",
             r#"{"message":{"id":"m3","model":"claude-opus-5-5","usage":{"input_tokens":5,"output_tokens":1}}}"#, "\n"));
         let got = of_event("claude", &json!({"transcript_path": p})).unwrap();
-        assert_eq!((got["input"].as_i64(), got["cache_write_1h"].as_i64(), &got["model"]), (Some(18), Some(20), &json!("claude-opus-5-5")), "the whole, and the last model");
+        assert_eq!((got["input"].as_i64(), got["cache_write_1h"].as_i64()), (Some(18), Some(20)), "the whole");
         assert_eq!(got["models"], json!([
             {"model": "claude-haiku-5-5", "input": 3, "output": 2, "cache_write": 0, "cache_write_1h": 0, "cache_read": 0},
             {"model": "claude-opus-5-5", "input": 15, "output": 2, "cache_write": 30, "cache_write_1h": 20, "cache_read": 0}]));

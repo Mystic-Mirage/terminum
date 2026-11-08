@@ -43,11 +43,16 @@ pub struct Agent {
 /// The effort a kind takes, as its command line names it; empty goes by the agent's own setting.
 pub const EFFORTS: [(&str, &[&str]); 2] = [("claude", &["low", "medium", "high", "xhigh", "max"]), ("codex", &["low", "medium", "high", "xhigh"])];
 
+/// How a kind's command line names an effort.
+fn effort_flag(kind: &str) -> &'static str {
+    if kind == "codex" { "model_reasoning_effort" } else { "--effort" }
+}
+
 fn command_line(kind: &str, command: &str, effort: &str) -> String {
     match (kind, effort) {
         (_, "") => command.to_string(),
-        ("codex", e) => format!("{command} -c model_reasoning_effort={e}"),
-        (_, e) => format!("{command} --effort {e}"),
+        ("codex", e) => format!("{command} -c {}={e}", effort_flag(kind)),
+        (_, e) => format!("{command} {} {e}", effort_flag(kind)),
     }
 }
 
@@ -112,7 +117,7 @@ impl Given {
                 return Err("An effort goes on one program's command: this one has ; | & or #. Write it in the command.".into());
             }
             // twice on one line, which one the program takes is its own affair
-            if ["--effort", "model_reasoning_effort"].iter().any(|f| self.command.contains(f)) {
+            if self.command.contains(effort_flag(&self.kind)) {
                 return Err("The command names an effort already: choose Its own setting, or take it out of the command.".into());
             }
         }

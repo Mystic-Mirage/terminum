@@ -326,6 +326,10 @@ export async function liveDispatcherReal(page, opts) {
   check("AC-128 real Claude Code: the card shows CPU, memory and running time", await until(async () => /CPU \d+% · [\d.]+ GiB · \d+ min/.test(await page.textContent(`${card(t)} .cusage`).catch(() => "")), 60000), await page.textContent(card(t)));
   // the installed `terminum hook` is what a real agent runs: this holds once this build is installed
   if (process.env.TM_TEST_REAL_TOKENS) check("AC-129 real Claude Code: and the tokens of its transcript", await until(async () => /[\d,]+ tokens/.test(await page.textContent(`${card(t)} .cusage`).catch(() => "")), 60000), await page.textContent(card(t)));
+  if (process.env.TM_TEST_REAL_TOKENS) {
+    let spent;
+    check("AC-129 real Claude Code: its finished task is priced by each answer's model", await until(async () => (spent = (await j(`/api/tasks?id=${t}`)).tasks?.[0]?.spent)?.usd > 0, 30000), JSON.stringify(spent));
+  }
   // its own /exit: the exit code; then RUN goes on by the resume, in the same pane
   const pane = await paneOf(t);
   opts.tmux("send-keys", "-t", pane, "-l", "/exit");

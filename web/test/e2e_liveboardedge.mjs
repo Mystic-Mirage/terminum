@@ -311,7 +311,7 @@ ${"z".repeat(400)}
       check("a column's scroll stays when another task changes", top >= 300, String(top));
     },
     async made_under_filter() {
-      await page.goto(`${base}/kanban/?severity=P0`); await page.waitForSelector("#board .col"); await nap(200);
+      await open("?severity=P0");
       await page.click("#newtask"); await page.fill("#newtitle", "hidden by the filter"); await page.selectOption("#newsev", "P3"); await page.click("#newcreate"); await nap(600);
       check("a task a filter hides is said when made", /filter/i.test(await page.textContent("#toast")), await page.textContent("#toast"));
     },

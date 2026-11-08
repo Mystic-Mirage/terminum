@@ -4,7 +4,7 @@
 // by itself; a project's own Archived, with Find and Return.
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { boardKit } from "./boardkit.mjs";
+import { boardKit, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const card = (id) => `.card[data-id="${id}"]`;
@@ -49,8 +49,14 @@ export async function liveBoardTasks(page, opts) {
   await page.click(card(kid));
   await page.waitForSelector("#taskbox[open]");
   check("AC-112 a subtask's window says its parent and offers no New subtask", await until(() => page.isVisible("#taskbody .subof")) && !(await page.$("#taskbody .subtasks")));
+  // the subtask's window reading itself again, slowly, as its parent opens: its answer draws nothing over the parent
+  await page.route(`**/api/tasks/${kid}`, async (r) => { await nap(1000); await r.continue(); });
+  await j(`/api/tasks/${kid}`, "PATCH", { text: "read again" });
+  await nap(300);
   await page.click("#taskbody .subof button");
-  check("AC-112 its parent opens from there", await until(async () => (await page.textContent("#tasktitle")).startsWith(parent)));
+  await nap(1200);
+  await page.unroute(`**/api/tasks/${kid}`);
+  check("AC-112 its parent opens from there", await until(async () => (await page.textContent("#tasktitle")).startsWith(parent)), await page.textContent("#tasktitle"));
   await page.click("#taskclose");
   await page.click("#fsubtasks");
   const refused = await page.evaluate(async (up) => (await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "second level", parent: up }) })).status, kid);

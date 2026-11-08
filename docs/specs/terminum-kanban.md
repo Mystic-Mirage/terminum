@@ -300,6 +300,8 @@ Scenario: AC-112 edge — the parent
   Then T-13 stays open and T-12's card still shows "0/1"; the parent's status never changes by itself, nor a subtask's by its parent's
   When T-12 moves to another project
   Then its subtasks move with it in one transaction
+  When "Subtask of T-12" is pressed while T-13's window still reads T-13 again
+  Then T-12's window stays: T-13's late answer draws nothing over it
 
 Scenario: AC-112 failure — a second level
   When New subtask is asked of a subtask

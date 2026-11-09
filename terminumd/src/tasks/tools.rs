@@ -57,7 +57,7 @@ fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
 
 fn visible(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = ops::get(tx, id)?;
-    if query::within_reach(tx, ops::number_of(id)?, &who.key, who.project.as_deref())? { Ok(t) } else { Err(format!("{id} is outside this session's project.")) }
+    if query::within_reach(tx, ops::number_of(tx, id)?, &who.key, who.project.as_deref())? { Ok(t) } else { Err(format!("{id} is outside this session's project.")) }
 }
 
 fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
@@ -103,6 +103,8 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 if let Some(same) = super::query::repeat_of(tx, &project, &title)? {
                     return Err(format!("Not kept: {same} already says this. Read it with get_task, and comment if you have more."));
                 }
+                let text = args["text"].as_str().map(rules::clean).unwrap_or_default();
+                super::template::check(&text, &super::template::of_project(tx, &project)?)?;
                 let parent = args["parent"].as_str().map(str::to_string);
                 if let Some(p) = &parent {
                     visible(tx, who, p)?;
@@ -110,7 +112,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let me = me()?;
                 let t = ops::create(tx, &me, NewTask {
                     title,
-                    text: args["text"].as_str().map(rules::clean).unwrap_or_default(),
+                    text,
                     project: Some(project),
                     parent,
                     severity: args["severity"].as_str().map(str::to_string),

@@ -88,7 +88,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     const a = await mcp([
       ...mcpOpening, rpc(2, "tools/list"),
       call(3, "update_session_plan", { items: [{ text: "one", status: "completed" }, { text: "two", status: "pending" }], doing: "Checking the live page", eta_minutes: 30 }),
-      call(4, "create_task", { title: "Bug: Parser drops a BOM", severity: "P2", text: "<b>parser</b> drops a BOM in `src/parse.rs`" }),
+      call(4, "create_task", { title: "Bug: Parser drops a BOM", severity: "P2", text: "## Problem or goal\n<b>parser</b> drops a BOM in `src/parse.rs`\n## Context\nx\n## Expected result\ny\n## Prerequisites\nNone" }),
       call(5, "get_session_plan", {})]);
     const etas = [hhmm(before + 1800), hhmm(Math.floor(Date.now() / 1000) + 1800)];
     check("AC-97 initialize answers terminum's server, the version asked, and its instructions",
@@ -98,7 +98,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     const t3 = textOf(a[3]), eta = /ETA ~(\d\d:\d\d)\.$/.exec(t3)?.[1];
     check("AC-97 update_session_plan with a built-in plan keeps doing and the ETA (now + 30 min), not its items",
       a[3]?.result?.isError === false && /^Doing and ETA stored; items follow your own plan tool \(1 of 3 completed\), so the items sent were not taken, ETA ~\d\d:\d\d\.$/.test(t3) && etas.includes(eta), `${t3} ${etas}`);
-    check("AC-115 (terminum-kanban.md) create_task answers the task's id, in TODO", a[4]?.result?.isError === false && /^Kept as T-\d+, in TODO\.$/.test(textOf(a[4])), textOf(a[4]));
+    check("AC-115 (terminum-kanban.md) create_task answers the task's id, in TODO", a[4]?.result?.isError === false && /^Kept as [A-Z][A-Z0-9]*-\d+, in TODO\.$/.test(textOf(a[4])), textOf(a[4]));
     check("AC-97 get_session_plan answers the stored plan as [x] [>] [ ] lines, doing and ETA",
       textOf(a[5]).startsWith(`[x] alpha\n[>] beta\n[ ] gamma\nDoing: Checking the live page\nETA: ~${eta}\n`), textOf(a[5]));
     await within("AC-97 the Plan button's hover shows the agent's ETA: 1 of 3 · ETA ~hh:mm", () => until(() => page.evaluate(() => document.getElementById("curplan").title), (t) => (t ?? "").startsWith(`Plan: 1 of 3 · ETA ~${eta} · updated just now`)));

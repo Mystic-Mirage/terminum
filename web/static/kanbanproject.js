@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A project's window (terminum-kanban.md AC-139): a new empty one, or one to change: its name, server,
-// folder (typed, or chosen in its picker) and memory limits, the pool's keys beside them. terminumd checks what is
+// folder (typed, or chosen in its picker), the letters of its tasks' IDs (AC-148), the template its agents write
+// tasks by (AC-145) and memory limits, the pool's keys beside them. terminumd checks what is
 // kept and says what is wrong.
 import { folderPicker } from "./kanbanfolder.js";
 import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
@@ -11,6 +12,8 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   let shown = null;
 
   const say = (text) => { $("projecterror").textContent = text; $("projecterror").hidden = !text; };
+  /** The template its agents write tasks by: its own, else the default (AC-145). */
+  const templateOf = (p) => p?.template ?? getMeta().task_template ?? "";
   /** A number field: empty is none. */
   const numberOrNull = (id) => ($(id).value === "" ? null : Number($(id).value));
 
@@ -53,6 +56,8 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("projectname").value = p?.name ?? "";
     $("projectdir").value = p?.dir ?? "";
     $("projectatonce").value = p?.agent_limit ?? "";
+    $("projectprefix").value = p?.prefix ?? "";
+    $("projecttemplate").value = templateOf(p);
     $("projecthead").textContent = p ? p.name : "New project";
     $("projectok").textContent = p ? "Done" : "Create";
     $("projectfields").hidden = !real;
@@ -67,30 +72,46 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   }
 
   /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. */
+  /** Its letters and template, only those changed: a refusal says why and keeps the window. */
+  function ownSettings(p) {
+    const prefix = $("projectprefix").value.trim().toUpperCase(), template = $("projecttemplate").value;
+    const body = {};
+    if (prefix && prefix !== (p?.prefix ?? "")) body.prefix = prefix;
+    if (template !== templateOf(p)) body.template = template;
+    return body;
+  }
+
   async function keep() {
     const name = $("projectname").value, dir = $("projectdir").value, host = $("projecthost").value;
     const atOnce = { limit: numberOrNull("projectatonce") };
     try {
       if (shown) {
         await api(`/api/task-projects/${shown.id}/agents-at-once`, { method: "PUT", body: atOnce });   // refused first: nothing else changes
-        if (shown.id !== DEFAULT) await api(`/api/task-projects/${shown.id}`, { method: "PATCH", body: { name, dir } });   // the board hears of it
+        if (shown.id !== DEFAULT) await api(`/api/task-projects/${shown.id}`, { method: "PATCH", body: { name, dir, ...ownSettings(shown) } });   // the board hears of it
         return box.close();
       }
       // made first, its limit then: refused, the window stays on the new project, saying why
+      const own = ownSettings(null);
       const { id } = await api("/api/task-projects", { method: "POST", body: { name, dir, host } });
       await reload();
       chosen(id);
       open(getMeta().projects.find((p) => p.id === id));
       await api(`/api/task-projects/${id}/agents-at-once`, { method: "PUT", body: atOnce });
+      if (Object.keys(own).length) {
+        await api(`/api/task-projects/${id}`, { method: "PATCH", body: own });
+        await reload();
+        open(getMeta().projects.find((p) => p.id === id));
+      }
     } catch (e) { say(e.message); }
   }
 
   $("projectok").addEventListener("click", keep);
   box.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.isComposing && e.target.matches("input, textarea")) { e.preventDefault(); keep(); }   // a folder is one line
+    if (e.key === "Enter" && !e.isComposing && e.target.matches("input, #projectdir")) { e.preventDefault(); keep(); }   // a folder is one line; the template has many
   });
   $("projectpick").addEventListener("click", () => picker.open($("projecthost").value, $("projectdir").value, (path) => { $("projectdir").value = path; fit(); }));
   $("projectaddagent").addEventListener("click", () => agents.add());
+  $("projecttemplatereset").addEventListener("click", () => { $("projecttemplate").value = templateOf(null); });
   $("projectlimits").addEventListener("click", () => openLimits(shown.id));
   $("projectarchived").addEventListener("click", () => archived.open(shown));
   $("projectdelete").addEventListener("click", () => { box.close(); deleteProject(shown.id); });

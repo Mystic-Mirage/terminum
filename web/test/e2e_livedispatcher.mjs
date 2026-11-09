@@ -46,7 +46,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-121 it shows the command in full", (await page.textContent("#runcommand")).includes("fake_agent.py"), await page.textContent("#runcommand"));
   check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
-  check("AC-121 and the text that will be sent, in its order", /^The human ran task T-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nWhen it is done, call finish_task/.test(prompt), prompt);
+  check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nWhen it is done, call finish_task/.test(prompt), prompt);
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
   await page.click("#rungo");
   check("AC-121 the window closes on the press", await until(async () => !(await page.$("#runbox[open]"))));
@@ -132,7 +132,7 @@ export async function liveDispatcher(page, opts) {
   const waits = await task("asks ASKS");
   await run(waits);
   check("AC-124 a question for 2 minutes: WAIT FOR HUMAN, with what it asks", await hasStatus(waits, "WAIT FOR HUMAN", 15000) && await said(waits, "Approve Bash"), await history(waits));
-  check("AC-124 and a line says so on the page", await until(async () => /T-\d+ waits for you/.test(await page.textContent("#asks"))), await page.textContent("#asks"));
+  check("AC-124 and a line says so on the page", await until(async () => /[A-Z][A-Z0-9]*-\d+ waits for you/.test(await page.textContent("#asks"))), await page.textContent("#asks"));
   if (shots) await page.screenshot({ path: path.join(shots, "needs-line.png") });
 
   // AC-122 running again: a live agent, a shell, a closed session

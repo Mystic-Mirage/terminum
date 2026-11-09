@@ -274,3 +274,26 @@ fn ac129_what_a_run_heard_stands_as_its_last_model_s() {
     let hour: i64 = conn.query_row("SELECT sum(cache_write_1h) FROM usage", [], |r| r.get(0)).unwrap();
     assert_eq!(hour, 0, "rows before it: all 5-minute writes");
 }
+
+#[test]
+fn ac148_an_older_store_s_tasks_keep_their_numbers_under_their_project_s_letters() {
+    let path = crate::testutil::fresh_dir("store-schema11").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..10]).unwrap();
+    conn.execute_batch("INSERT INTO projects (id, name, color, dir, place) VALUES ('t', 'Terminum', 0, '/Users/alex/work/terminum', 0), ('t2', 'Fork', 1, '/Users/alex/fork/terminum', 1);
+        INSERT INTO tasks (id, number, project, status, severity, rank, owner, updated_at, title, body) VALUES
+          ('k1', 1, 'default', 'TODO', 'P2', 1, 'human', 50, 'a', ''), ('k2', 2, 't', 'TODO', 'P2', 1, 'human', 60, 'b', ''), ('k3', 3, 't', 'DONE', 'P2', 1, 'human', 70, 'c', ''), ('k4', 4, 't2', 'TODO', 'P2', 1, 'human', 80, 'd', '');
+        INSERT INTO events (id, task, at, author, kind, text) VALUES ('e1', 'k2', 55, 'human', 'made', 'x');").unwrap();
+    drop(conn);
+    let s = Store::open(path);
+    let slugs: Vec<(String, String)> = s.with(|tx| crate::tasks::ops::rows(tx, "SELECT id, slug FROM tasks ORDER BY number", [], |r| Ok((r.get(0)?, r.get(1)?)))).unwrap();
+    assert_eq!(slugs, [("k1".into(), "TASK-1".into()), ("k2".into(), "TERM-2".into()), ("k3".into(), "TERM-3".into()), ("k4".into(), "TERA-4".into())],
+               "a number stays, under letters of its project's folder; a second terminum folder changes the last letter");
+    let found = |id: &str| s.with(|tx| crate::tasks::ops::get(tx, id)).map(|t| t.id);
+    assert_eq!(found("T-3").unwrap(), "TERM-3", "what was T-3 still finds it");
+    assert_eq!(found("term-3").unwrap(), "TERM-3");
+    let made: Vec<i64> = s.with(|tx| crate::tasks::ops::rows(tx, "SELECT created_at FROM tasks ORDER BY number", [], |r| r.get(0))).unwrap();
+    assert_eq!(made, [50, 55, 70, 80], "made when its first line was, else when it last changed");
+    let next = s.with(|tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "e".into(), project: Some("t".into()), ..Default::default() }, 90)).unwrap();
+    assert_eq!(next.id, "TERM-4", "the project counts on from its highest");
+}

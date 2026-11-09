@@ -3,12 +3,11 @@
 import { read, write } from "./listparts.js";
 
 const SELECTION = "tm.taskselection";
-const RECORD = "tm.taskrecord";
 
 export const taskUrl = (id) => `/kanban/${id}`;
 
-/** The board's new-task window, for a session and its project (AC-106). */
-export const newTaskUrl = (session, project) => `/kanban/?new=1&session=${encodeURIComponent(session)}${project ? `&for=${encodeURIComponent(project)}` : ""}`;
+/** The board's new-task window, for a session and its project (AC-106), a subtask of `parent` (AC-112). */
+export const newTaskUrl = (session, project, parent) => `/kanban/?new=1&session=${encodeURIComponent(session)}${project ? `&for=${encodeURIComponent(project)}` : ""}${parent ? `&parent=${encodeURIComponent(parent)}` : ""}`;
 
 /** A session's own address on its page: `#/<key>/`, as readable as a key can stay (AC-134). */
 export const sessionHash = (key) => `#/${encodeURIComponent(key).replaceAll("%3A", ":")}/`;
@@ -29,13 +28,4 @@ export function takeSelection() {
   const text = read(SELECTION) ?? "";
   write(SELECTION, null);
   return text;
-}
-
-/** A bookmark or reminder to make a task of (terminum-kanban.md AC-116): its id, title and text. */
-export const leaveRecord = (record) => write(RECORD, record);
-
-export function takeRecord() {
-  const record = read(RECORD);
-  write(RECORD, null);
-  return record;
 }

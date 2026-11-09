@@ -3,13 +3,10 @@
 //! AC-107, AC-108, AC-113). The rules are here for humans and agents alike; who may ask is the
 //! caller's (`tools.rs` for agents).
 
-use std::collections::HashMap;
-
 use rusqlite::{OptionalExtension, Params, Row, Transaction};
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use super::files::File;
 use super::store::{DEFAULT_PROJECT, HUMAN};
 
 pub const COLUMNS: [&str; 5] = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
@@ -30,6 +27,7 @@ pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: imp
 }
 
 pub use super::users::{agent_user, pool_user, pool_user_id};
+pub use super::comments::{change_comment, comment, history, last_comment_is};
 pub(crate) use super::users::user_name;
 
 pub fn now() -> i64 {
@@ -57,6 +55,10 @@ pub struct Task {
     pub budget_seconds: Option<i64>,
     /// off the board since then (AC-118)
     pub archived_at: Option<i64>,
+    /// its key's start: what names it whatever its ID becomes (AC-148)
+    pub uid: String,
+    pub created_at: i64,
+    pub updated_at: i64,
     /// the row's key and place in its column: the rules', never shown
     #[serde(skip)]
     pub(crate) key: String,
@@ -64,16 +66,16 @@ pub struct Task {
     rank: f64,
 }
 
-pub(super) const TASK: &str = "SELECT t.number, t.project, (SELECT 'T-' || p.number FROM tasks p WHERE p.id = t.parent), t.title, t.status, t.severity,
+pub(super) const TASK: &str = "SELECT t.slug, t.project, (SELECT p.slug FROM tasks p WHERE p.id = t.parent), t.title, t.status, t.severity,
     t.owner, u.name, u.kind, t.by_agent, t.session_key,
     (SELECT count(*) FROM files f WHERE f.task = t.id),
-    (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.status = 'DONE'),
-    (SELECT count(*) FROM tasks s WHERE s.parent = t.id), t.id, t.rank, t.budget_seconds, t.archived_at
+    (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.status = 'DONE' AND s.archived_at IS NULL),
+    (SELECT count(*) FROM tasks s WHERE s.parent = t.id AND s.archived_at IS NULL), t.id, t.rank, t.budget_seconds, t.archived_at, t.created_at, t.updated_at
     FROM tasks t JOIN users u ON u.id = t.owner";
 
 pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
     Ok(Task {
-        id: format!("T-{}", r.get::<_, i64>(0)?),
+        id: r.get(0)?,
         project: r.get(1)?,
         parent: r.get(2)?,
         title: r.get(3)?,
@@ -88,19 +90,22 @@ pub(super) fn task_of(r: &Row) -> rusqlite::Result<Task> {
         subtasks_done: r.get(12)?,
         subtasks: r.get(13)?,
         budget_seconds: r.get(16)?, archived_at: r.get(17)?,
+        uid: r.get::<_, String>(14)?.chars().take(super::slugs::UID_LEN).collect(),
+        created_at: r.get(18)?,
+        updated_at: r.get(19)?,
         key: r.get(14)?,
         rank: r.get(15)?,
     })
 }
 
-/// "T-12" to its number.
-pub fn number_of(id: &str) -> Result<i64, String> {
-    id.strip_prefix("T-").and_then(|n| n.parse().ok()).filter(|n| *n > 0).ok_or_else(|| format!("No task {id}"))
+/// A task's number, the store's order, from its ID, one it had or its key's start (AC-148).
+pub fn number_of(tx: &Transaction, id: &str) -> Result<i64, String> {
+    super::slugs::resolve(tx, id)?.ok_or_else(|| format!("No task {id}"))
 }
 
 /// What `query` reads of task `id`.
 fn of_task<T>(tx: &Transaction, id: &str, query: &str, f: impl FnOnce(&Row) -> rusqlite::Result<T>) -> Result<T, String> {
-    tx.query_row(query, [number_of(id)?], f).optional().map_err(sql)?.ok_or_else(|| format!("No task {id}"))
+    tx.query_row(query, [number_of(tx, id)?], f).optional().map_err(sql)?.ok_or_else(|| format!("No task {id}"))
 }
 
 /// The row's key of task `id`.
@@ -124,7 +129,7 @@ pub fn log(tx: &Transaction, task_key: &str, author: &str, kind: &str, text: &st
     Ok(id)
 }
 
-fn touch(tx: &Transaction, key: &str, at: i64) -> Result<(), String> {
+pub(super) fn touch(tx: &Transaction, key: &str, at: i64) -> Result<(), String> {
     tx.execute("UPDATE tasks SET updated_at = ?1 WHERE id = ?2", (at, key)).map(|_| ()).map_err(sql)
 }
 
@@ -148,7 +153,7 @@ fn check_text(text: &str) -> Result<(), String> {
     if text.len() > TEXT_MOST { Err("Text: at most 1 MiB".into()) } else { Ok(()) }
 }
 
-fn check_comment(text: &str) -> Result<(), String> {
+pub(super) fn check_comment(text: &str) -> Result<(), String> {
     if text.len() > COMMENT_MOST { Err("Comment: at most 256 KiB".into()) } else { Ok(()) }
 }
 
@@ -203,18 +208,19 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     let rank = top_rank(tx, "TODO", &severity)?;
     let number: i64 = tx.query_row("SELECT coalesce(max(number), 0) + 1 FROM tasks", [], |r| r.get(0)).map_err(sql)?;
     let key = crate::auth::crypto::random_hex::<16>();
-    tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'TODO', ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+    tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at, created_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'TODO', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
                rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, new.made_in, at]).map_err(sql)?;
+    let slug = super::slugs::assign(tx, &key, &project)?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
-    get(tx, &format!("T-{number}"))
+    get(tx, &slug)
 }
 
 /// A session works on one task at a time (AC-113), but for those one run gave it together (terminum-dispatcher.md
 /// AC-138): refused while another than `but` stands in IN PROGRESS.
 fn check_free(tx: &Transaction, session: &str, but: &str) -> Result<(), String> {
     let still = crate::dispatcher::runs::STILL;
-    let other: Option<String> = tx.query_row(&format!("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL
+    let other: Option<String> = tx.query_row(&format!("SELECT slug FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL
          AND NOT EXISTS (SELECT 1 FROM run_tasks a JOIN run_tasks b ON a.run = b.run JOIN runs r ON r.id = a.run WHERE a.task = tasks.id AND b.task = ?2 AND {still})"), (session, but), |r| r.get(0))
         .optional().map_err(sql)?;
     match other {
@@ -356,13 +362,6 @@ pub enum ProjectMove {
     Ask,
 }
 
-/// Whether a human's last comment on it says just this: a press tried again keeps it once.
-pub fn last_comment_is(tx: &Transaction, id: &str, text: &str) -> Result<bool, String> {
-    let key = key_of(tx, id)?;
-    let last: Option<String> = tx.query_row("SELECT text FROM events WHERE task = ?1 AND kind = 'comment' ORDER BY at DESC, rowid DESC LIMIT 1", [&key], |r| r.get(0)).optional().map_err(sql)?;
-    Ok(last.as_deref() == Some(text))
-}
-
 /// Takes a task off the board, or brings it back to where it stood (AC-118).
 pub fn archive(tx: &Transaction, author: &str, id: &str, on: bool, at: i64) -> Result<(), String> {
     let key = key_of(tx, id)?;
@@ -385,7 +384,7 @@ pub fn change_project(tx: &Transaction, author: &str, id: &str, project: &str, c
     match choice {
         None => Ok(ProjectMove::Ask),
         Some("move") => {
-            let other: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE session_key = ?1 AND id <> ?2 AND status <> 'DONE' AND archived_at IS NULL", (&session, &task.key), |r| r.get(0))
+            let other: Option<String> = tx.query_row("SELECT slug FROM tasks WHERE session_key = ?1 AND id <> ?2 AND status <> 'DONE' AND archived_at IS NULL", (&session, &task.key), |r| r.get(0))
                 .optional().map_err(sql)?;
             if let Some(other) = other {
                 return Err(format!("This session also holds {other}: unlink it, or move {other} first."));
@@ -408,47 +407,17 @@ fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, at: i64)
     let who = user_name(tx, author)?;
     let (name, _, _) = project_place(tx, project)?;
     let kids: Vec<String> = rows(tx, "SELECT id FROM tasks WHERE parent = ?1", [&key], |r| r.get(0))?;
-    let held: Option<String> = tx.query_row("SELECT 'T-' || number FROM tasks WHERE parent = ?1 AND session_key IS NOT NULL", [&key], |r| r.get(0)).optional().map_err(sql)?;
+    let held: Option<String> = tx.query_row("SELECT slug FROM tasks WHERE parent = ?1 AND session_key IS NOT NULL", [&key], |r| r.get(0)).optional().map_err(sql)?;
     if let Some(kid) = held {
         return Err(format!("{kid} has a session of its own: unlink it first."));
     }
-    for k in kids.iter().chain(std::iter::once(&key)) {
+    for k in std::iter::once(&key).chain(kids.iter()) {
         tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE id = ?3", (project, at, k)).map_err(sql)?;
-        log(tx, k, author, "project", &format!("{who} moved it to {name}"), None, at)?;
+        // it takes the project's next ID; the one it had still finds it (AC-148)
+        let slug = super::slugs::assign(tx, k, project)?;
+        log(tx, k, author, "project", &format!("{who} moved it to {name}, as {slug}"), None, at)?;
     }
     Ok(())
-}
-
-/// A comment (AC-108): the event's id.
-pub fn comment(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
-    check_comment(text)?;
-    let key = key_of(tx, id)?;
-    touch(tx, &key, at)?;
-    log(tx, &key, author, "comment", text, None, at)
-}
-
-/// A human's own comment changed or deleted: a new event holds it, and the old text leaves the
-/// shown history (AC-108). Those of agents and Dispatcher stay as written.
-pub fn change_comment(tx: &Transaction, author: &str, id: &str, event: &str, text: Option<&str>, at: i64) -> Result<(), String> {
-    let key = key_of(tx, id)?;
-    let (kind, by): (String, String) = tx.query_row("SELECT kind, author FROM events WHERE id = ?1 AND task = ?2", (event, &key), |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional().map_err(sql)?.ok_or("That comment is gone.")?;
-    if kind != "comment" || by != author {
-        return Err("Only its human author can change a comment.".into());
-    }
-    check_comment(text.unwrap_or(""))?;
-    let who = user_name(tx, author)?;
-    match text {
-        Some(t) => {
-            tx.execute("UPDATE events SET text = ?1 WHERE id = ?2", (t, event)).map_err(sql)?;
-            log(tx, &key, author, "edit", &format!("{who} changed a comment"), None, at)?;
-        }
-        None => {
-            tx.execute("UPDATE events SET kind = 'deleted', text = '' WHERE id = ?1", [event]).map_err(sql)?;
-            log(tx, &key, author, "edit", &format!("{who} deleted a comment"), None, at)?;
-        }
-    }
-    touch(tx, &key, at)
 }
 
 /// A human wipes the task's text for good, a secret pasted by mistake (AC-109).
@@ -457,23 +426,6 @@ pub fn purge_text(tx: &Transaction, author: &str, id: &str, at: i64) -> Result<(
     tx.execute("UPDATE tasks SET body = '', updated_at = ?1 WHERE id = ?2", (at, &key)).map_err(sql)?;
     let who = user_name(tx, author)?;
     log(tx, &key, author, "edit", &format!("{who} purged its text"), None, at).map(|_| ())
-}
-
-/// A task's comments and history, oldest first, with its files by event.
-pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
-    let key = key_of(tx, id)?;
-    let mut files: HashMap<String, Vec<File>> = HashMap::new();
-    for (event, file) in rows(tx, "SELECT event, id, name, bytes, mime FROM files WHERE task = ?1 AND event IS NOT NULL", [&key], |r| Ok((r.get(0)?, File::of_row(r, 1)?)))? {
-        files.entry(event).or_default().push(file);
-    }
-    let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
-        let event: String = r.get(0)?;
-        let attached = files.remove(&event).unwrap_or_default();
-        Ok(json!({"id": event, "at": r.get::<_, i64>(1)?, "author": r.get::<_, String>(2)?,
-            "author_name": r.get::<_, String>(3)?, "author_kind": r.get::<_, String>(4)?,
-            "kind": r.get::<_, String>(5)?, "text": r.get::<_, Option<String>>(6)?, "files": attached}))
-    })?;
-    Ok(Value::Array(out))
 }
 
 #[cfg(test)]

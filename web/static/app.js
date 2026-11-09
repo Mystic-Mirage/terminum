@@ -13,6 +13,7 @@ import { pageHeader } from "./header.js";
 import { banner } from "./banners.js";
 import { sessionDrawer } from "./drawer.js";
 import { sentHistory } from "./sent.js";
+import { sessionTasks } from "./sessiontasks.js";
 import { colorSchemes } from "./schemes.js";
 import { menuPrefs } from "./prefs.js";
 import { markDoc } from "./markdoc.js";
@@ -195,7 +196,8 @@ let paneList = [null, []];
 const panes = () => (paneList[0] === st.groups ? paneList[1] : (paneList = [st.groups, st.groups.flatMap((g) => g.items)])[1]);
 const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive, panes, projects: () => st.projects,
   openAll: (items, title) => doc.open(items, title), pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); rail?.draw(); }, copy: (text) => input.copySelection(text, true),
-  toChat: (text) => { input.paste(text); focusTerminal(); }, store });
+  toChat: (text) => { input.paste(text); focusTerminal(); }, store, toTask: (item) => madeHere.convert(item) });
+const madeHere = sessionTasks({ sid: () => st.sid, name: alive, toast, placed: () => bookmarks.placeFab(), panes, projects: () => st.projects });
 trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => (!sizing.fullscreen() ? ($("term").classList.contains("reflow") ? "wrap" : "rows") : view.tooWide() ? "scaled" : "grid"), copy: (text) => input.copySelection(text) });
 let kbdFrame = 0;
 $("term").addEventListener("scroll", () => { if (!kbdFrame) kbdFrame = requestAnimationFrame(() => { kbdFrame = 0; placeKbd(); }); }, { passive: true });
@@ -297,6 +299,7 @@ function onMessage(m) {
     case "trace": trace.onMessage(m); break;
     case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
+    case "taskchange": madeHere.heard(m); break;   // the tasks made in the session shown (terminum-kanban.md AC-150)
     case "projects": st.projects = Array.isArray(m.items) ? m.items : []; st.listOrder = Array.isArray(m.order) ? m.order : []; place.note(); bookmarks.changed(); break;   // the list, and the projects the list below it names
     case "taskmarks": setTaskMarks(m); bookmarks.changed(); tasks.marks(m); break;   // the rows' marks, the Plan button (terminum-kanban.md AC-113)
     case "created": if (!m.stay) pick(m.id); if (m.note) toast(m.note, 6000); break;
@@ -384,7 +387,7 @@ function select(id, force = false) {
   send({ t: "sub", id, ...sizing.grid() });        // with this view's grid: its first frame comes at it (AC-04)
   views.sessionChanged(id);                        // after "sub": the server answers "files" for the subscribed pane
   sizing.opened();                                 // this view's size
-  sent.shown();
+  sent.shown(); madeHere.changed();
   drawNav(); syncControls();
 }
 

@@ -18,7 +18,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Expected outcome.** `/kanban/` shows tasks in TODO, IN PROGRESS, WAIT FOR HUMAN, FAILED and DONE, filtered by several projects, severity and owner. A task has a Markdown text, comments, files, an owner, a severity P0…P3, a project and at most one session. Humans and agents move tasks; a human's move reaches the task's session. Tasks live in one local database file with no service to run.
 
-**Scenario.** Alex drops a screenshot into the new-task window, writes "Fix the retry loop", picks P1 and presses Create: T-12 stands on top of the P1 cards in TODO. RUN (`terminum-dispatcher.md` AC-121) starts an agent on it. An hour later the board's tab counts one card in WAIT FOR HUMAN; Alex comments and presses RUN, and the agent goes on.
+**Scenario.** Alex drops a screenshot into the new-task window, writes "Fix the retry loop", picks P1 and presses Create: API-12 stands on top of the P1 cards in TODO. RUN (`terminum-dispatcher.md` AC-121) starts an agent on it. An hour later the board's tab counts one card in WAIT FOR HUMAN; Alex comments and presses RUN, and the agent goes on.
 
 ## 2. Scope and non-goals
 
@@ -61,12 +61,12 @@ Open questions: none.
 | AC-109 | [MUST / P0] | Files up to 100 MB each stay with their task: images shown, other files downloaded, nothing run; a human can purge a file or a text. |
 | AC-110 | [MUST / P0] | The session list and the board share projects; a project needs no session, its last session closing leaves it; Default holds what has no project and is no real project; deleting a project moves its sessions and tasks to Default. |
 | AC-111 | [SHOULD / P1] | Filters by severity, owner and text, and the projects chosen (AC-135), kept in the URL. |
-| AC-112 | [SHOULD / P1] | One level of subtasks, each a full task; the parent shows their progress. |
+| AC-112 | [SHOULD / P1] | One level of subtasks, each a full task with a parent: made, put under another task, taken out; the parent's card shows each as a box of its ID in its status's color. |
 | AC-113 | [MUST / P0] | A task has at most one session, a session one IN PROGRESS task at most; moving a task across projects asks about its session; a closed session is said on the card. |
 | AC-114 | [MUST / P0] | [DROPPED — a human no longer moves a task across the board: AC-107] |
 | AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks: all on the agent's own, read and comment on the project's others, a free task can be taken. |
-| AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity and what is needed to act on it. |
-| AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task through the new-task window; the record goes once the task is kept. |
+| AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
+| AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
@@ -76,6 +76,9 @@ Open questions: none.
 | AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot; it hides and shows; a press opens a session. |
 | AC-139 | [MUST / P0] | + Project makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil opens the same window, with the pool's keys beside. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
+| AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
+| AC-149 | [MUST / P0] | A task's window sets the task apart from its subtasks and from its comments and history; tasks, subtasks and comments say when they were made and changed; comments come newest first, a key turns the order. |
+| AC-150 | [SHOULD / P1] | The session page counts the tasks made in the shown session, says new ones as reminders are said, lists them and opens the board's own task window. |
 
 ## 5. BDD scenarios
 
@@ -87,16 +90,16 @@ Scenario: AC-105 happy path — the two pages
   Then it is redirected to "/sessions/", the session list and terminal of terminum.md AC-01
   When the user presses Kanban in the page's head
   Then "/kanban/" loads in the same tab, the signed-in browser staying signed in, and the terminals keep running in tmux
-  And Sessions in its head loads "/sessions/" again; "/kanban/T-12" opens the board with T-12's window open
+  And Sessions in its head loads "/sessions/" again; "/kanban/API-12" opens the board with API-12's window open
 
 Scenario: AC-105 happy path — columns and order
-  Given P1 tasks T-3 and T-7 in TODO, T-7 dragged above T-3, and P0 task T-9 in TODO
-  Then TODO reads T-9, T-7, T-3 and each column's head shows its count
-  When a new P1 task T-12 is made
-  Then TODO reads T-9, T-12, T-7, T-3
-  When the user drags T-3 above T-7
+  Given P1 tasks API-3 and API-7 in TODO, API-7 dragged above API-3, and P0 task API-9 in TODO
+  Then TODO reads API-9, API-7, API-3 and each column's head shows its count
+  When a new P1 task API-12 is made
+  Then TODO reads API-9, API-12, API-7, API-3
+  When the user drags API-3 above API-7
   Then that order is kept for every page within 2 s
-  When the user drops T-3 among P0 cards
+  When the user drops API-3 among P0 cards
   Then it stays P1 and returns to the top of the P1 cards; severity changes only in the task's window or its menu
 
 Scenario: AC-105 happy path — a card
@@ -129,16 +132,16 @@ Scenario: AC-106 happy path — the window
   When the user presses New task
   Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else Default), Severity P2, Owner the user, Session none, Parent none, Budget none
   When the user types "Fix the retry loop", drops shot.png and presses Create
-  Then T-12 stands in TODO with shot.png, every page shows it within 2 s and the window closes
+  Then API-12 stands in TODO with shot.png, every page shows it within 2 s and the window closes
   And a file dropped or pasted into the text puts a link to it at the cursor, an image as an image
   And the text's edge says it takes files at rest and lights under a drag; the text of an open task takes them the same way, its editor opening as they drop
 
 Scenario: AC-106 happy path — Run
   Given Billing has a free agent, the one Run last started in it picked in the window's Agent field
   When the user types a title and presses Run
-  Then T-12 is kept and starts on that agent at once, no other window opening (terminum-dispatcher.md AC-138)
+  Then API-12 is kept and starts on that agent at once, no other window opening (terminum-dispatcher.md AC-138)
   Given no agent, none free, or a folder it lacks
-  Then T-12 is kept and RUN's window opens saying what stands in the way
+  Then API-12 is kept and RUN's window opens saying what stands in the way
   And the agent the user picked in the window, or none, stays picked while it is open, as sessions, windows and agents change
 
 Scenario: AC-106 happy path — the rest folded
@@ -165,13 +168,13 @@ Scenario: AC-106 failure — refused
 
 ```gherkin
 Scenario: AC-107 happy path — a task moves by running
-  When the user runs T-12 (terminum-dispatcher.md AC-121, AC-138)
+  When the user runs API-12 (terminum-dispatcher.md AC-121, AC-138)
   Then Dispatcher moves it as its agent goes, every page shows it within 2 s and its history adds "Dispatcher moved it from TODO to IN PROGRESS" with the time
   And a drag to another column does nothing: the column does not light and the card stays
   And the human's way to take a task off the board is Archive (AC-118); within its column they may still set its place (AC-105)
 
 Scenario: AC-107 failure — a route with a column
-  When a page sends PATCH /api/tasks/T-12 {"status": "DONE"}
+  When a page sends PATCH /api/tasks/API-12 {"status": "DONE"}
   Then the answer is 400 "A task moves by running it: drop it on an agent, or press Run." and nothing moves
 
 Scenario: AC-107 happy path — who did what
@@ -186,7 +189,7 @@ Scenario: AC-107 failure — refused
 
 ```gherkin
 Scenario: AC-108 happy path — a human's comment
-  Given T-12 with the window open
+  Given API-12 with the window open
   When the user writes Markdown under Comment, drops log.txt and presses CLOSE
   Then the comment and file are kept, the status does not change and the session is told nothing
   When the user writes "Use the v2 API" and presses RUN
@@ -209,11 +212,11 @@ Scenario: AC-108 failure — too long
 
 ```gherkin
 Scenario: AC-109 happy path — kept and shown
-  Given shot.png, shot.svg, report.pdf and page.html on T-12
+  Given shot.png, shot.svg, report.pdf and page.html on API-12
   Then shot.png shows in the task; shot.svg, report.pdf and page.html are links that download with their names, never opened on the page's origin
 
 Scenario: AC-109 happy path — an agent's file
-  When an agent calls attach_file {task: "T-12", path: "/Users/alex/work/api/out.log"}
+  When an agent calls attach_file {task: "API-12", path: "/Users/alex/work/api/out.log"}
   Then the file is copied to the task, its author the agent; a path outside the session's folder on resolved paths is refused
   When the agent is on a host
   Then it gives {task, name, text} of at most 60 KB (the link's limit, terminum-remote.md §9), kept as a text file; a longer one is refused with that limit
@@ -223,7 +226,7 @@ Scenario: AC-109 happy path — a secret pasted by mistake
   Then it asks, then its bytes leave the store and the folder for good, and the history keeps who did it when and the file's name
 
 Scenario: AC-109 edge — files stay with the task
-  When T-12 moves to another project or the archive
+  When API-12 moves to another project or the archive
   Then its files stay with it
 
 Scenario: AC-109 failure — too large
@@ -294,73 +297,100 @@ Scenario: AC-111 edge — a narrow board
 
 ```gherkin
 Scenario: AC-112 happy path — one level
-  When the user presses New subtask in T-12's window
-  Then the new-task window says "New subtask of T-12", its project fixed, with a draft of its own
-  And T-13 is a full task of T-12's project with its own status, owner, severity and session, and T-12's card shows "0/1"
-  And T-12's window lists its subtasks, a press opening each, and T-13's says "Subtask of T-12"
-  And Show subtasks in the head makes subtasks cards of their own, each saying "in T-12"; off, they show only in their parent's window
+  When the user presses New subtask in API-12's window
+  Then the new-task window says "New subtask of API-12", its project fixed, with a draft of its own
+  And API-13 is a full task of API-12's project with its own status, owner, severity and session, and API-12's card shows "0/1"
+  And API-12's window lists its subtasks, a press opening each, and API-13's says "Subtask of API-12"
+  And Show subtasks in the head makes subtasks cards of their own, each saying "in API-12"; off, they show only in their parent's window
 
 Scenario: AC-112 edge — the parent
-  When T-12 ends in DONE with T-13 open
-  Then T-13 stays open and T-12's card still shows "0/1"; the parent's status never changes by itself, nor a subtask's by its parent's
-  When T-12 moves to another project
+  When API-12 ends in DONE with API-13 open
+  Then API-13 stays open and API-12's card still shows "0/1"; the parent's status never changes by itself, nor a subtask's by its parent's
+  When API-12 moves to another project
   Then its subtasks move with it in one transaction
-  When "Subtask of T-12" is pressed while T-13's window still reads T-13 again
-  Then T-12's window stays: T-13's late answer draws nothing over it
+  When "Subtask of API-12" is pressed while API-13's window still reads API-13 again
+  Then API-12's window stays: API-13's late answer draws nothing over it
 
-Scenario: AC-112 failure — a second level
-  When New subtask is asked of a subtask
-  Then it is refused: "A subtask cannot have subtasks"
+Scenario: AC-112 happy path — boxes on the card
+  Given API-12 with subtasks API-13 in TODO, API-14 IN PROGRESS, API-15 WAIT FOR HUMAN, API-16 FAILED and API-17 DONE
+  Then API-12's card shows "1/5" and a box for each, its ID on gray, yellow, amber, red and green, in the order they were made
+  And each box says its ID, status and title in words to a pointer and a screen reader; a press opens that subtask's window
+
+Scenario: AC-112 happy path — put under, moved, taken out
+  When the user presses Add existing in API-12's window and types API-20, a task of api with no subtasks
+  Then API-20 is a subtask of API-12, both histories say so, and API-12's card shows its box
+  When the user presses Make it a subtask in API-21's window and types API-12
+  Then API-21 is a subtask of API-12
+  When the user presses × on API-20's line in API-12's window, or Take out in API-20's
+  Then API-20 is a task of its own again, its ID kept
+  And a subtask's line in its parent's window says its ID in its status's box, its title, status, owner, when it was made and changed
+
+Scenario: AC-112 edge — gone from the board
+  When a subtask is archived (AC-118), the way a subtask is removed
+  Then its box and its count leave its parent's card; its parent's window still lists it, "archived"
+
+Scenario: AC-112 edge — run on its own
+  Then RUN works on a subtask as on any task (terminum-dispatcher.md AC-121): its parent is named in the prompt and does not run with it
+
+Scenario Outline: AC-112 failure — refused, said in the dialog
+  When the user puts <task> under <parent>
+  Then it is refused, "<words>", and nothing changes
+  Examples:
+    | task | parent | words |
+    | API-22 | API-13, a subtask | A subtask cannot have subtasks |
+    | API-12, a parent | API-22 | API-12 has subtasks of its own: it cannot become a subtask. |
+    | API-22 | API-12 itself | A task cannot be its own subtask. |
+    | API-22 | WEB-3 of project web | WEB-3 is in another project: move API-22 there first. |
 ```
 
 ### AC-113 — A task's session [MUST / P0]
 
 ```gherkin
 Scenario: AC-113 happy path — linking
-  When the user picks Session → api on T-12
-  Then T-12 is linked to that pane and its row in the session list shows a task mark that opens T-12
+  When the user picks Session → api on API-12
+  Then API-12 is linked to that pane and its row in the session list shows a task mark that opens API-12
   And the link keeps its pane through a restore (terminum.md AC-92) and the agent's session ID from its hooks
   And a server started anew, its `@terminum-id` changed, drops the link: its pane IDs name other panes, and the task says so
 
 Scenario: AC-113 failure — one in progress
-  Given session api with T-3 IN PROGRESS
-  When T-12 of api moves to IN PROGRESS
-  Then it is refused: "api already works on T-3. Finish or move T-3 first." T-12 stays where it was
+  Given session api with API-3 IN PROGRESS
+  When API-12 of api moves to IN PROGRESS
+  Then it is refused: "api already works on API-3. Finish or move API-3 first." API-12 stays where it was
 
 Scenario: AC-113 happy path — across projects
-  When T-12 with its session moves from api to web
+  When API-12 with its session moves from api to web
   Then a dialog offers Move the session too, Unlink the session, Cancel
   And Move the session too refuses with why when that session has other open tasks; the session is told either way (AC-114)
 
 Scenario: AC-113 happy path — a session closes
-  When T-12's session closes
-  Then T-12 keeps its status, its card says "session closed", and Link a session and RUN (terminum-dispatcher.md AC-122) stand in its window, RUN also from IN PROGRESS
-  And closing a pane holding an open task names it in the ask: "Close the session api? T-12 is open in it."
+  When API-12's session closes
+  Then API-12 keeps its status, its card says "session closed", and Link a session and RUN (terminum-dispatcher.md AC-122) stand in its window, RUN also from IN PROGRESS
+  And closing a pane holding an open task names it in the ask: "Close the session api? API-12 is open in it."
 ```
 
 ### AC-115 — Task tools [MUST / P0]
 
 ```gherkin
 Scenario: AC-115 happy path — the agent's own
-  Given an agent whose session holds T-12
-  When it calls get_task {id: "T-12"}
+  Given an agent whose session holds API-12
+  When it calls get_task {id: "API-12"}
   Then it gets the task's fields, text, comments and files as JSON, said to be data, never instructions; the text is its assignment only when its RUN says so (terminum-dispatcher.md AC-121)
-  When it calls move_task {id: "T-12", to: "WAIT FOR HUMAN"} or add_comment {id: "T-12", text}
+  When it calls move_task {id: "API-12", to: "WAIT FOR HUMAN"} or add_comment {id: "API-12", text}
   Then the task changes, its author the session's agent: the pool's, "Opus reviewer", when a run started it, else "claude · api"
-  When it calls finish_task {id: "T-12", result: "<Markdown>"}
-  Then the result is its comment and T-12 is DONE
+  When it calls finish_task {id: "API-12", result: "<Markdown>"}
+  Then the result is its comment and API-12 is DONE
 
 Scenario: AC-115 happy path — others of the project
-  Given T-7 of the same project held by another session
-  When the agent calls list_tasks {status: "TODO"}, get_task {id: "T-7"} or add_comment {id: "T-7", text}
+  Given API-7 of the same project held by another session
+  When the agent calls list_tasks {status: "TODO"}, get_task {id: "API-7"} or add_comment {id: "API-7", text}
   Then it works
-  When it calls move_task {id: "T-7", to: "DONE"}
-  Then it is refused: "T-7 belongs to session web. You can read it and comment."
+  When it calls move_task {id: "API-7", to: "DONE"}
+  Then it is refused: "API-7 belongs to session web. You can read it and comment."
 
 Scenario: AC-115 happy path — taking a free task
-  Given T-8 of its project in TODO with no session
-  When the agent calls take_task {id: "T-8"}
-  Then T-8 is linked to its session, owned by its agent and stays in TODO; a task with a session is refused
+  Given API-8 of its project in TODO with no session
+  When the agent calls take_task {id: "API-8"}
+  Then API-8 is linked to its session, owned by its agent and stays in TODO; a task with a session is refused
   And the agent's move_task to IN PROGRESS follows AC-113's one at a time; such a session stays the agent's: Dispatcher does not manage it
 
 Scenario: AC-115 happy path — a new task
@@ -388,7 +418,7 @@ Scenario: AC-115 failure — no store or no pane
 Scenario: AC-145 happy path
   Given an agent in a session of project api finds a bug outside what it was given
   When it calls create_task {title: "Bug: the retry loop drops the last item", severity: "P1", text: "lib/retry.rs: ..., reproduced by ..."}
-  Then T-30 stands in TODO of api, by that agent, with that severity
+  Then API-30 stands in TODO of api, by that agent, with that severity
   And `terminum mcp`'s instructions say: only what must be done, fixed or finished, no progress and no findings of no consequence, each with what is needed to act on it
 
 Scenario Outline: AC-145 failure — refused with what to do
@@ -399,24 +429,43 @@ Scenario Outline: AC-145 failure — refused with what to do
     | a title with no such word | Start the title with Bug:, Feat: or Debt:. |
     | no severity | Give it a severity: P0, P1, P2 or P3. |
 
+Scenario: AC-145 happy path — the project's template
+  Given project api with no template of its own
+  When an agent calls create_task with a text holding "## Problem or goal", "## Context", "## Expected result" and "## Prerequisites"
+  Then it is kept; "## Steps to reproduce (optional)" may be left out, and a heading counts whatever its case and spaces
+  When its text lacks one of them
+  Then it is refused, "Not kept: the text lacks the sections …", the template quoted whole, and nothing is kept
+  When the user writes a template of their own in api's window (AC-139) and presses Done
+  Then api's agents are held to its "## " headings that do not say "(optional)"; one with no such heading asks for none; Default puts the default back
+  And create_task's description says the default's sections and that a refusal quotes the project's
+
+Scenario: AC-145 failure — a template too long
+  When a template is over 8 KiB
+  Then the window says "Template: at most 8 KiB" and keeps it
+
 Scenario: AC-145 edge — a human's
-  When a human makes a task in the new-task window
-  Then neither rule applies
+  When a human makes a task in the new-task window or converts a record (AC-116)
+  Then no rule of this case applies
 ```
 
 ### AC-116 — A record becomes a task [SHOULD / P1]
 
 ```gherkin
 Scenario: AC-116 happy path
-  Given a reminder or bookmark with the note "Check the cache", its text and its line in session api
-  When the user picks Make a task in its row
-  Then the new-task window opens with that title, its text, a link to the line, project and session filled
+  Given a reminder or bookmark with the note "Check the cache", its text and its line in session api, which is shown
+  When the user presses Convert to task: in the reminders' or bookmarks' pane, on the bar of one brought into view, or in the list below the sessions
+  Then a small window offers its title, Severity P2, Project api's (the shown session's), Session the shown one
   When the user presses Create
-  Then the task stands in TODO, kept first; then the record goes
+  Then the task stands in TODO of that project, linked to that session, its text the note and the record quoted, then "From api, line 812", a Markdown link to that session on the session page
+  And it counts as made in the record's session (AC-150); the board does not open; "API-31 is in TODO: Check the cache" is said
+  And the record goes once the task is kept
 
 Scenario: AC-116 edge — cancelled
-  When the user closes the window with Discard
-  Then the record stays
+  When the user closes the window with Cancel or Esc
+  Then the record stays and nothing is kept
+
+Scenario: AC-116 edge — a record of a closed session
+  Then its text has no link and the task counts as made in the session shown
 
 Scenario: AC-116 failure — not kept
   When the store refuses the task
@@ -427,8 +476,8 @@ Scenario: AC-116 failure — not kept
 
 ```gherkin
 Scenario: AC-117 happy path — banner and count
-  When T-12 moves to WAIT FOR HUMAN or FAILED by an agent or Dispatcher
-  Then a line as terminum-agents.md AC-39's reminder says "T-12 waits for you" or "T-12 failed: <reason>" and opens its window, on both pages
+  When API-12 moves to WAIT FOR HUMAN or FAILED by an agent or Dispatcher
+  Then a line as terminum-agents.md AC-39's reminder says "API-12 waits for you" or "API-12 failed: <reason>" and opens its window, on both pages
   And Kanban in the page's head counts those tasks
 
 Scenario: AC-117 edge — closed and seen
@@ -480,7 +529,7 @@ Scenario: AC-119 happy path — one file
   And each change is one transaction, its history in it, run off the async workers
 
 Scenario: AC-119 happy path — ready for a central store
-  Then every author and owner names a row of users, each user has a kind (human, agent, system) and a role, and tasks, comments and files have UUIDs apart from their T-numbers
+  Then every author and owner names a row of users, each user has a kind (human, agent, system) and a role, and tasks, comments and files have keys apart from their IDs (AC-148)
   And today's single sign-in acts as the one human, an admin; no screen lists users or roles
 
 Scenario: AC-119 edge — an older or newer store
@@ -510,14 +559,14 @@ Scenario: AC-119 edge — backups
 
 ```gherkin
 Scenario: AC-136 failure — out of limits
-  Given T-12 IN PROGRESS, linked to a session its human started
+  Given API-12 IN PROGRESS, linked to a session its human started
   When StopFailure comes with "rate_limit" (a subscription's limit, billing, an API error)
   Then its card says "failed: rate limit" at once
   And its history says "The agent stopped: rate_limit", by Dispatcher
-  And T-12 stays IN PROGRESS: only what Dispatcher started moves by itself (terminum-dispatcher.md AC-123)
+  And API-12 stays IN PROGRESS: only what Dispatcher started moves by itself (terminum-dispatcher.md AC-123)
 
 Scenario: AC-136 failure — it stopped with the task open
-  When a Stop comes and the last message asks nothing, T-12 still IN PROGRESS
+  When a Stop comes and the last message asks nothing, API-12 still IN PROGRESS
   Then its card says "stopped, task open" and its history "The agent stopped with this task open", once in a row
   When the agent works again
   Then the words go and its row's bar pulses (AC-134)
@@ -529,8 +578,8 @@ Scenario: AC-136 failure — it died or left
   Then its card says "session closed" (AC-113)
 
 Scenario: AC-136 edge — no more than a move
-  Given T-12 in TODO, or a subagent's Stop, or a question at a turn's end
-  Then nothing is said on T-12
+  Given API-12 in TODO, or a subagent's Stop, or a question at a turn's end
+  Then nothing is said on API-12
 ```
 
 ### AC-133 — A flow that holds [MUST / P0]
@@ -563,7 +612,7 @@ Scenario: AC-133 edge — nothing typed is lost by a slip
   Then it waits for the file
 
 Scenario: AC-133 failure — another changed the text meanwhile
-  Given Alex editing T-12's text
+  Given Alex editing API-12's text
   When its text changes elsewhere and Alex presses Save
   Then it asks "The text changed meanwhile. Put yours over it?"; Cancel keeps Alex's writing, nothing is overwritten unasked
 
@@ -574,8 +623,8 @@ Scenario: AC-133 failure — what was picked is gone
 Scenario: AC-133 edge — odd paths and odd text
   When a file is dropped outside a text
   Then the page stays: on the board it starts a new task
-  When /kanban/T-999 does not exist, or Back is pressed with a window open
-  Then "No task T-999" is said and the address returns to the board; Back closes the window and stays on the board
+  When /kanban/API-999 does not exist, or Back is pressed with a window open
+  Then "No task API-999" is said and the address returns to the board; Back closes the window and stays on the board
   When a filter hides the task just made
   Then the toast says so
   When a title, text or comment holds HTML, hidden or reordering characters, or a long word
@@ -589,11 +638,11 @@ Scenario: AC-133 edge — odd paths and odd text
 ```gherkin
 Scenario: AC-120 happy path — a whole project
   Given project api with panes on this Mac and on devbox.example, and an agent on devbox.example
-  When the agent calls list_tasks {} or get_task {id: "T-7"} for a task of a pane on this Mac
+  When the agent calls list_tasks {} or get_task {id: "API-7"} for a task of a pane on this Mac
   Then it answers as AC-115 does, over the host's link (terminum-remote.md AC-99), within the link's limit: a request of 64 KB at most, refused with that limit; a long get_task comes in pages
 
 Scenario: AC-120 happy path — a file
-  When it calls get_file {task: "T-7", name: "log.txt"}
+  When it calls get_file {task: "API-7", name: "log.txt"}
   Then the file is put in the host's ~/.terminum/tmp, as a paste's file is, and the answer gives that path
 
 Scenario: AC-120 failure — no way to write there
@@ -605,7 +654,7 @@ Scenario: AC-120 failure — no way to write there
 
 ```gherkin
 Scenario: AC-134 happy path — the session's own row
-  Given T-12 in project Billing, linked to a live session, in any column
+  Given API-12 in project Billing, linked to a live session, in any column
   Then its card carries that session's row as the session list draws it: a bar in Billing's color, the agent's mark, the title, the plan's percent and track, subagents, the state's mark with what it waits for or runs, unread's hatching
   And under it what the agent's plan says it does now
   And a task in Default has its bar in the folder's color, as a session in no project does
@@ -617,9 +666,9 @@ Scenario: AC-134 happy path — it follows the session
   Then the percent and the track say so within 2 s; the rest of the card and the column stay as they are
 
 Scenario: AC-134 happy path — a press opens it
-  When the user presses the row on T-12's card
+  When the user presses the row on API-12's card
   Then "/sessions/#/tmux:local:terminum:%257/" loads and shows that session
-  And T-12's window does not open, and Back returns to the board
+  And API-12's window does not open, and Back returns to the board
 
 Scenario: AC-134 failure — gone by the time it opens
   Given the session closed after the board last heard
@@ -627,9 +676,9 @@ Scenario: AC-134 failure — gone by the time it opens
   Then a toast says "That session has ended." and the list shows what it would show after any closing
 
 Scenario: AC-134 edge — nothing to open
-  Given T-12's session closed
+  Given API-12's session closed
   Then its card says "session closed" in words and has no row (AC-113)
-  Given T-13 with no session
+  Given API-13 with no session
   Then its card has neither
 
 Scenario: AC-134 happy path — every session has its address
@@ -638,7 +687,7 @@ Scenario: AC-134 happy path — every session has its address
   And a reload shows that session, and the session's header keeps the Kanban key at every width but a phone's, where its list's sheet and the settings menu hold it
 
 Scenario: AC-134 edge — a drag by the row
-  When the user drags T-12's card by its row and drops it on an agent
+  When the user drags API-12's card by its row and drops it on an agent
   Then the run window opens and no session opens
 ```
 
@@ -753,6 +802,92 @@ Scenario: AC-139 edge — deleting it
   Then the session list's question asks, naming its sessions and tasks (AC-110)
 ```
 
+### AC-148 — A task's ID [MUST / P0]
+
+```gherkin
+Scenario: AC-148 happy path — by project
+  Given projects terminum (folder /Users/alex/work/terminum) and iquantize (folder ~/iquantize)
+  Then their tasks are named TERM-1, TERM-2… and IQUA-1, IQUA-2…, each project counting its own; Default's are TASK-1…
+  And a card, a window, the session list's marks, Dispatcher's words and the tools' answers say that ID; the row's key never changes
+  And a task's window says its key's first 8 hex characters, "abfed14f", beside when it was made: /kanban/abfed14f and get_task {id: "abfed14f"} find it whatever its ID becomes
+
+Scenario: AC-148 happy path — letters taken or set
+  Given a second project whose folder is /Users/alex/fork/terminum
+  Then its letters are TERA: the last letter changes, A to Z, then 2 to 9, until free
+  When the user sets "trm" as Task ID letters in its window (AC-139)
+  Then its tasks are TRM-1, TRM-2… with their numbers kept, and TERA-2 still finds TRM-2
+  And letters are 1 to 8 of A–Z and 0–9, a letter first, lower case taken as upper; a folder with no Latin letter takes the project's name's, else PROJ
+
+Scenario: AC-148 happy path — an older store
+  Given a store whose tasks were T-1 in Default and T-2, T-3 in terminum
+  Then they become TASK-1, TERM-2, TERM-3, each number kept, so an old mention and the new ID name one task; T-3 still finds TERM-3
+  And terminum's next task is TERM-4
+
+Scenario: AC-148 edge — a task moves to another project
+  When TERM-2 moves to iquantize
+  Then it is IQUA-<that project's next>; TERM-2 still finds it and is never given to another task; its subtasks move and are renamed with it
+
+Scenario Outline: AC-148 failure — letters refused
+  When the user sets <letters> on terminum
+  Then the window says "<words>" and nothing changes
+  Examples:
+    | letters | words |
+    | IQUA | IQUA names another project's tasks. |
+    | letters another task's former ID uses, as TERM-3 of a task now elsewhere | TERM-3 already names another task: choose other letters. |
+    | T-1 | ID letters: 1–8 of A–Z and 0–9, a letter first |
+
+Scenario: AC-148 failure — a name of nothing
+  When /kanban/TERM-999 or get_task {id: "TERM-999"} names no task, or 8 hex characters name two
+  Then "No task TERM-999" is said, as for any task that is not there (AC-133)
+```
+
+### AC-149 — A task's window in parts [MUST / P0]
+
+```gherkin
+Scenario: AC-149 happy path — three parts
+  When the user opens API-12's window
+  Then the task itself stands first in a framed part: "abfed14f · made Nov 7, 2026, 4:39 PM · changed Nov 8, 2026, 9:01 PM", Status (read only, with the agent on it), Severity, Owner, Project, Session, Budget, its text and files
+  And under it SUBTASKS with its keys (AC-112), then COMMENTS · HISTORY with its own heading, the comment field and the window's keys last
+  And a comment is a card marked at its left edge, with its author, when it was written and "edited <when>" once changed (AC-108); a line of history is muted
+
+Scenario: AC-149 happy path — the order
+  Then comments and history come newest first
+  When the user presses Newest first
+  Then they come oldest first and the key says Oldest first; this browser keeps the choice for every task
+
+Scenario: AC-149 edge — a subtask's window
+  Then its subtasks part says "Subtask of API-12" with Take out, and no keys that make a second level
+```
+
+### AC-150 — The tasks a session made [SHOULD / P1]
+
+```gherkin
+Scenario: AC-150 happy path — counted
+  Given session api, shown, whose agent made API-30 and API-31 by create_task and whose reminder became API-32 (AC-116)
+  Then a round button under the sent history's says 3 in cornflower blue; with none made there it is not shown
+  When another task is made there
+  Then the count becomes 4 within 2 s and "api: 4 tasks made here, 1 new: API-33 Bug: …" is said at the terminal's top, as reminders are (terminum-terminal.md AC-91)
+  And on a phone it folds under ⟨…⟩ with the other buttons (terminum.md AC-18)
+
+Scenario: AC-150 happy path — listed and opened
+  When the user presses it
+  Then its pane lists API-30…API-33, each its ID in its status's box and its title cut at 80 characters
+  When the user presses API-31
+  Then the board's own task window opens over the session page: the same parts, keys, RUN and its window; New subtask goes to the board's new-task window
+
+Scenario: AC-150 edge — told once
+  Given this browser said API-30 when session api was shown
+  When api is shown again
+  Then nothing is said of API-30; a task this browser has not said is said once, by its key, whatever its ID becomes
+
+Scenario: AC-150 failure — not read
+  When the store cannot answer
+  Then the button says "!" in place of the count, its pane and its label terminumd's message; nothing else is said, so the reminders' line stays theirs
+
+Scenario: AC-150 edge — archived, or the pane gone
+  Then an archived task leaves the count; a tmux server started anew forgets which of its panes made what (AC-113), so a new pane of an old number counts none of them
+```
+
 ## 6. Flow and sequence diagrams
 
 ```mermaid
@@ -761,7 +896,7 @@ sequenceDiagram
   participant T as terminumd
   participant DB as kanban.sqlite
   participant S as Session's agent
-  H->>T: move T-12 to FAILED (AC-107)
+  H->>T: move API-12 to FAILED (AC-107)
   T->>DB: one transaction: status, history
   T-->>H: every page: taskchange
   alt agent works
@@ -814,33 +949,37 @@ The board is a second page (`web/static/kanban.html`), plain JavaScript, using t
 
 ```sql
 CREATE TABLE users (id TEXT PRIMARY KEY, kind TEXT CHECK (kind IN ('human','agent','system')), name TEXT NOT NULL, role TEXT NOT NULL);
-CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, color INTEGER NOT NULL, host TEXT, dir TEXT NOT NULL, place INTEGER NOT NULL, is_default INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, color INTEGER NOT NULL, host TEXT, dir TEXT NOT NULL, place INTEGER NOT NULL, is_default INTEGER NOT NULL DEFAULT 0,
+  prefix TEXT UNIQUE, next_seq INTEGER NOT NULL DEFAULT 1, task_template TEXT);   -- AC-148's letters and count, AC-145's template (none: the default)
 CREATE TABLE list_order (place INTEGER PRIMARY KEY, part TEXT NOT NULL);  -- projects and tmux groups, "g:<group>"
 CREATE TABLE servers (start TEXT PRIMARY KEY, terminum_id TEXT NOT NULL);  -- each server's identity by its keys' start
 CREATE TABLE project_members (project TEXT REFERENCES projects, pane_key TEXT UNIQUE, place INTEGER);
 CREATE TABLE tasks (id TEXT PRIMARY KEY, number INTEGER UNIQUE NOT NULL, project TEXT REFERENCES projects, parent TEXT REFERENCES tasks,
   status TEXT NOT NULL, severity TEXT NOT NULL, rank REAL NOT NULL, owner TEXT REFERENCES users,
   by_agent INTEGER NOT NULL, session_key TEXT, made_in TEXT, agent_session TEXT, budget_seconds INTEGER, archived_at INTEGER, updated_at INTEGER NOT NULL,
+  slug TEXT UNIQUE, created_at INTEGER NOT NULL,   -- slug: its ID now (AC-148); number: the store's order only
   title TEXT NOT NULL, body TEXT NOT NULL);   -- the long columns last: a scan of the others never walks a text's pages
 CREATE INDEX tasks_board ON tasks (archived_at, status, severity, rank);
 CREATE INDEX tasks_project ON tasks (project, archived_at);
 CREATE INDEX tasks_session ON tasks (session_key, status, archived_at, number);
 CREATE INDEX tasks_parent ON tasks (parent, status);
-CREATE TABLE events (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, at INTEGER NOT NULL, author TEXT REFERENCES users, kind TEXT NOT NULL, text TEXT, data TEXT);
+CREATE TABLE task_slugs (slug TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks) WITHOUT ROWID;   -- every ID a task had, its own too
+CREATE TABLE events (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, at INTEGER NOT NULL, author TEXT REFERENCES users, kind TEXT NOT NULL, text TEXT, data TEXT, edited_at INTEGER);
 CREATE INDEX events_task ON events (task, at);
 CREATE TABLE files (id TEXT PRIMARY KEY, task TEXT REFERENCES tasks, event TEXT REFERENCES events, name TEXT NOT NULL, bytes INTEGER NOT NULL, mime TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE INDEX files_task ON files (task);
 ```
 
-Sample event: `{"task":"T-12","at":1792003600,"author":"Dispatcher","kind":"comment","text":"Session started: claude in window api:4, on this Mac."}`
+Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"comment","text":"Session started: claude in window api:4, on this Mac."}`
 
 **Routes**, behind sign-in with terminumd's Host, Origin and Content-Type checks:
 
 | Route | Does |
 |---|---|
-| `GET /`, `/sessions/`, `/kanban/`, `/kanban/T-12` | redirect keeping the query (`?trace=1`); the session page; the board |
-| `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&after=&limit=&counts=1` | a page of 200 at most; with `counts=1`, each column's count under the same filters; with `id=T-12`, whether they show that task |
-| `POST /api/tasks`, `PATCH /api/tasks/T-12`, `POST /api/tasks/T-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}` |
+| `GET /`, `/sessions/`, `/kanban/`, `/kanban/API-12` | redirect keeping the query (`?trace=1`); the session page; the board |
+| `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&made_in=&after=&limit=&counts=1` | a page of 200 at most, each card with its subtasks' `boxes` (AC-112); with `counts=1`, each column's count under the same filters; with `id=API-12`, whether they show that task; with `made_in=<key>`, the tasks made in that pane, subtasks too (AC-150) |
+| `POST /api/tasks`, `PATCH /api/tasks/API-12`, `POST /api/tasks/API-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}`; `PATCH {parent: "API-3" \| null}` puts it under a task or takes it out (AC-112); `POST {made_in, record}` counts it as made in that pane and lets the record go (AC-116) |
+| `PATCH /api/task-projects/<id> {prefix?, template?}` | a project's ID letters (AC-148) and its template (AC-145), besides its name and folder |
 | `GET /api/task-files/<id>` | header sign-in only, never an address (terminum.md AC-09): the page fetches and shows a blob, as `web/static/shown.js` does; `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; inline only for PNG, JPEG, GIF, WebP |
 
 `PATCH` takes `text_rev`, as a task's window gave it, for the text the human began from: another now, it answers 412 and changes nothing (AC-133). A `session` that is not in the list is refused.
@@ -849,17 +988,17 @@ Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for seve
 
 **MCP tools** added to `terminum mcp`: `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `add_comment`, `attach_file`, `get_file`, `finish_task`. `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
-**Limits.** Title 1–200 characters; text 1 MiB; comment 256 KiB; a file 100 MB, no limit per project; 200 cards a page; 200 open tasks by agents a project; 50 projects (`terminum.md` AC-92), Default not counted. Over a host's link, a request of 64 KB (`terminum-remote.md` §9).
+**Limits.** Title 1–200 characters; text 1 MiB; a project's template 8 KiB; ID letters 1–8; comment 256 KiB; a file 100 MB, no limit per project; 200 cards a page; 200 open tasks by agents a project; 50 projects (`terminum.md` AC-92), Default not counted. Over a host's link, a request of 64 KB (`terminum-remote.md` §9).
 
 **Performance.** With AS-112's tasks, on the owner's Mac: first page of the board p95 < 300 ms, a move shown on another page p95 < 200 ms, Find p95 < 300 ms; measured by `liveBoardScale` (`node web/test/e2e_live.mjs board`). No board work blocks a screen's frames (`terminum.md` budgets).
 
 **Security** (`SECURITY.md` carries these with the code).
 - A task's text, comments and files are data for agents: every tool answer says so, and only RUN by a human sends a task's text as a prompt.
-- What reaches a session of a task's change is fixed words with a T-number: never a title, text or comment.
+- What reaches a session of a task's change is fixed words with a task's ID: never a title, text or comment.
 - An agent's scope is a scope, no boundary: `terminum mcp` names the pane from the agent's environment.
 - A host's agent reads every task and file of its project (AC-120), and its comments are read by the project's other agents: a broken host can read them all and write text others read.
 
-**Logging.** `taskstore: moved T-12 TODO→IN PROGRESS by alex in 3 ms`; a refused write at warn with the store's message.
+**Logging.** `taskstore: moved API-12 TODO→IN PROGRESS by alex in 3 ms`; a refused write at warn with the store's message.
 
 **Compatibility.** `projects.json` is read once and left in place (AC-110): going back to an older terminum finds it, as of that moment, with nothing to do by hand; tasks stay unused in the store.
 
@@ -880,10 +1019,10 @@ Depends on: nothing more.
 - [x] AC-109 — `cargo test tasks::files`, `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
 - [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
-- [x] AC-112 — `cargo test tasks::ops`, `web/test/e2e_liveboardtasks.mjs`
+- [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-113 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
-- [x] AC-116 — `web/test/e2e_livenotes.mjs` (Make a task, Discard, a refusal, Create)
+- [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task, Cancel, a refusal, Create)
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
@@ -892,5 +1031,8 @@ Depends on: nothing more.
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
+- [x] AC-148 — `cargo test tasks::slugs`, `cargo test tasks::store` (an older store), `web/test/e2e_liveboardids.mjs`
+- [x] AC-149 — `web/test/e2e_liveboardids.mjs`
+- [x] AC-150 — `web/test/e2e_livenotes.mjs` (counted, listed, the task window on the session page), `cargo test tasks::ops` (a restore, a server started anew)
 - [x] AC-120 — `cargo test tasks::tools` (pages, a host's file), `scripts/e2e_remote_agents.py` (get_file on a host, with files off), `scripts/e2e_remote_sshd_agents.py`
-- [x] AC-145 — `cargo test tasks::tools` (refused with what to do), `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
+- [x] AC-145 — `cargo test tasks::tools` (refused with what to do, the template), `cargo test tasks::template`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`

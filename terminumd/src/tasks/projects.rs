@@ -72,7 +72,7 @@ pub fn write(tx: &Transaction, saved: &Saved) -> Result<(), String> {
     for (place, part) in saved.order.iter().enumerate() {
         tx.execute("INSERT INTO list_order (place, part) VALUES (?1, ?2)", (place as i64, part)).map_err(sql)?;
     }
-    Ok(())
+    super::slugs::fill(tx)    // a new project's ID letters (AC-148)
 }
 
 /// A deleted project's tasks stand in Default, each one's history saying so (AC-110). How many.
@@ -82,6 +82,9 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
         log(tx, task, HUMAN, "project", &format!("Project {name} was deleted: moved to Default"), None, now)?;
     }
     tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE project = ?3", (DEFAULT_PROJECT, now, project)).map_err(sql)?;
+    for task in &tasks {
+        super::slugs::assign(tx, task, DEFAULT_PROJECT)?;   // TASK-n; the ID it had still finds it (AC-148)
+    }
     tx.execute("UPDATE runs SET project = ?1 WHERE project = ?2", (DEFAULT_PROJECT, project)).map_err(sql)?;   // they go with their tasks
     Ok(tasks.len())
 }
@@ -89,7 +92,13 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
 /// A server was restored (`panes`: old id, new id): its tasks' links take the new panes' keys; one not
 /// made again drops, said on its task (AC-113).
 pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)], now: i64) -> Result<usize, String> {
-    let linked = linked_on(tx, prefix)?;
+    // where a task was made follows its pane too, so a new pane of an old number counts none of them (AC-150)
+    for (task, key) in on_server(tx, "made_in", prefix)? {
+        let old = key.strip_prefix(prefix).unwrap_or(&key);
+        let new = panes.iter().find(|(o, _)| o == old).map(|(_, n)| format!("{prefix}{n}"));
+        tx.execute("UPDATE tasks SET made_in = ?1 WHERE id = ?2", (new, &task)).map_err(sql)?;
+    }
+    let linked = on_server(tx, "session_key", prefix)?;
     let mut changed = 0;
     for (task, key) in linked {
         let old = key.strip_prefix(prefix).unwrap_or(&key);
@@ -111,16 +120,20 @@ pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)]
 /// A server started anew without a restore: its pane IDs name other panes now, so its tasks' links
 /// drop, said on each task (AC-113). How many.
 pub fn links_dropped(tx: &Transaction, prefix: &str, now: i64) -> Result<usize, String> {
-    let linked = linked_on(tx, prefix)?;
+    for (task, _) in on_server(tx, "made_in", prefix)? {
+        tx.execute("UPDATE tasks SET made_in = NULL WHERE id = ?1", [&task]).map_err(sql)?;
+    }
+    let linked = on_server(tx, "session_key", prefix)?;
     for (task, _) in &linked {
         drop_link(tx, task, now)?;
     }
     Ok(linked.len())
 }
 
-fn linked_on(tx: &Transaction, prefix: &str) -> Result<Vec<(String, String)>, String> {
+/// Tasks whose `column` (`session_key` or `made_in`) names a pane of the server whose keys start with `prefix`.
+fn on_server(tx: &Transaction, column: &str, prefix: &str) -> Result<Vec<(String, String)>, String> {
     let like = format!("{}%", super::query::like_escaped(prefix));
-    rows(tx, "SELECT id, session_key FROM tasks WHERE session_key LIKE ?1 ESCAPE '\\'", [like], |r| Ok((r.get(0)?, r.get(1)?)))
+    rows(tx, &format!("SELECT id, {column} FROM tasks WHERE {column} LIKE ?1 ESCAPE '\\'"), [like], |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
 fn drop_link(tx: &Transaction, task: &str, now: i64) -> Result<(), String> {

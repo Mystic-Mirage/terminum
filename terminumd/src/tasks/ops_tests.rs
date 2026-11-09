@@ -28,10 +28,10 @@ fn moved(s: &Store, id: &str, to: &str) -> Result<Task, String> {
 fn ac106_a_new_task_stands_in_todo_with_its_defaults() {
     let s = store("t-new");
     let t = s.with(|tx| create(tx, HUMAN, NewTask { title: "  Fix the retry loop ".into(), text: "**why**".into(), ..Default::default() }, 100)).unwrap();
-    assert_eq!((t.id.as_str(), t.title.as_str(), t.status.as_str(), t.severity.as_str(), t.project.as_str()), ("T-1", "Fix the retry loop", "TODO", "P2", "default"));
+    assert_eq!((t.id.as_str(), t.title.as_str(), t.status.as_str(), t.severity.as_str(), t.project.as_str()), ("TASK-1", "Fix the retry loop", "TODO", "P2", "default"));
     assert_eq!(t.owner, HUMAN);
-    assert_eq!(s.with(|tx| text_of(tx, "T-1")).unwrap(), "**why**");
-    assert_eq!(new(&s, "next", "P1").id, "T-2", "numbers run on");
+    assert_eq!(s.with(|tx| text_of(tx, "TASK-1")).unwrap(), "**why**");
+    assert_eq!(new(&s, "next", "P1").id, "TASK-2", "numbers run on");
 }
 
 #[test]
@@ -243,4 +243,19 @@ fn ac113_a_link_follows_a_restore_and_drops_when_the_server_starts_anew() {
     assert_eq!(s.with(|tx| links_dropped(tx, prefix, 3)).unwrap(), 1);
     assert_eq!(session(&a), None);
     assert_eq!(session(&c).as_deref(), Some("tmux:devbox:default:%1"));
+}
+
+#[test]
+fn ac150_where_a_task_was_made_follows_a_restore_and_is_forgotten_when_the_server_starts_anew() {
+    use crate::tasks::projects::{links_dropped, links_restored};
+    use crate::tasks::query::{list, Query};
+    let s = store("t-made-in");
+    let made = |pane: &str| s.with(|tx| create(tx, HUMAN, NewTask { title: format!("made in {pane}"), made_in: Some(format!("tmux:local:terminum:{pane}")), ..Default::default() }, 1)).unwrap().id;
+    let (a, _) = (made("%1"), made("%2"));
+    let of = |pane: &str| s.with(|tx| list(tx, &Query { made_in: Some(format!("tmux:local:terminum:{pane}")), with_subtasks: true, ..Default::default() })).unwrap().into_iter().map(|t| t.id).collect::<Vec<_>>();
+    assert_eq!(of("%1"), std::slice::from_ref(&a));
+    s.with(|tx| links_restored(tx, "tmux:local:terminum:", &[("%1".into(), "%7".into())], 2)).unwrap();
+    assert_eq!((of("%7"), of("%1"), of("%2")), (vec![a.clone()], vec![], vec![]), "the restored pane's; one not made again forgets");
+    s.with(|tx| links_dropped(tx, "tmux:local:terminum:", 3)).unwrap();
+    assert!(of("%7").is_empty(), "a new pane of an old number counts none of them");
 }

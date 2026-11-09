@@ -251,7 +251,7 @@ ${"z".repeat(400)}
       check("a session that is gone cannot be linked", r.code >= 400 && /session/i.test(r.error ?? ""), JSON.stringify(r).slice(0, 160));
     },
     async deep_link_missing() {
-      await page.goto(`${base}/kanban/T-99999`); await page.waitForSelector("#board .col"); await nap(500);
+      await page.goto(`${base}/kanban/TASK-99999`); await page.waitForSelector("#board .col"); await nap(500);
       check("a task that does not exist is said, and the address goes back to the board", await until(async () => /No task/.test(await page.textContent("#toast")) && new URL(page.url()).pathname === "/kanban/", 4000), `${await page.textContent("#toast")} ${page.url()}`);
     },
     async back_closes_window() {

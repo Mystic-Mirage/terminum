@@ -10,18 +10,22 @@ SEVERITIES = ["P0", "P1", "P2", "P3"]
 NOW = 1700000000
 
 
-def rows(start):
+def rows(start, seq):
+    """Default's tasks, each with its ID TASK-<n> from Default's own count (terminum-kanban.md AC-148)."""
     for i in range(5000):
-        yield (secrets.token_hex(16), start + i + 1, "default", COLUMNS[i % 5], SEVERITIES[i % 4], float(i), "human", NOW, None, f"load task {i}", "b" * 2000)
+        yield (secrets.token_hex(16), start + i + 1, f"TASK-{seq + i}", "default", COLUMNS[i % 5], SEVERITIES[i % 4], float(i), "human", NOW, NOW, None, f"load task {i}", "b" * 2000)
     for i in range(100000):
-        yield (secrets.token_hex(16), start + 5001 + i, "default", "DONE", "P2", float(i), "human", NOW, NOW, f"archived {i}", "b" * 500)
+        yield (secrets.token_hex(16), start + 5001 + i, f"TASK-{seq + 5000 + i}", "default", "DONE", "P2", float(i), "human", NOW, NOW, NOW, f"archived {i}", "b" * 500)
 
 
 def main():
     store = sqlite3.connect(sys.argv[1])
     store.execute("PRAGMA busy_timeout=8000")
     start = store.execute("SELECT coalesce(max(number), 0) FROM tasks").fetchone()[0]
-    store.executemany("INSERT INTO tasks (id, number, project, status, severity, rank, owner, updated_at, archived_at, title, body) VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows(start))
+    seq = store.execute("SELECT next_seq FROM projects WHERE id = 'default'").fetchone()[0]
+    store.executemany("INSERT INTO tasks (id, number, slug, project, status, severity, rank, owner, created_at, updated_at, archived_at, title, body) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", rows(start, seq))
+    store.execute("INSERT INTO task_slugs (slug, task) SELECT slug, id FROM tasks WHERE number > ?", (start,))
+    store.execute("UPDATE projects SET next_seq = ? WHERE id = 'default'", (seq + 105000,))
     store.commit()
 
 

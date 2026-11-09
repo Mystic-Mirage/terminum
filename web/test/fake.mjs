@@ -79,6 +79,8 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     if (sign && !knows(sign)) return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "bad_session" }) });
     if (p === "/custom.css") return route.fulfill({ contentType: "text/css", body: typeof css === "function" ? css() : css });
     if (p.startsWith("/fb/")) return route.fulfill({ status: 404, body: "" });
+    // the tasks made in the session shown (terminum-kanban.md AC-150): none here
+    if (p === "/api/tasks" && u.searchParams.has("made_in")) return route.fulfill({ contentType: "application/json", body: JSON.stringify({ tasks: [] }) });
     const f = path.join(STATIC, p === "/" ? "index.html" : path.normalize(p));
     if (!f.startsWith(STATIC) || !fs.existsSync(f)) return route.fulfill({ status: 404, body: "" });
     let body = fs.readFileSync(f);

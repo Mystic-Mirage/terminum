@@ -28,6 +28,7 @@
 <link rel="stylesheet" href="peek.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="markdown.css">
+<link rel="stylesheet" href="taskwin.css">
 <link rel="stylesheet" href="panewin.css">
 <link rel="stylesheet" href="sheets.css">
 <link rel="stylesheet" href="motion.css">
@@ -209,6 +210,12 @@
     <button id="attachfab" type="button" hidden title="Attach files: upload them and type their paths" aria-label="Attach files"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></svg></button>
     <!-- Sent history (AC-90): what was sent in this folder, under the split. -->
     <button id="sentfab" type="button" hidden title="Sent in this folder" aria-label="Sent in this folder" aria-expanded="false" aria-controls="sentpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg></button>
+    <!-- The tasks made in this session (terminum-kanban.md AC-150): their count, under the sent history's; its pane lists them. -->
+    <button id="tasksfab" type="button" hidden data-off title="Tasks made in this session" aria-label="Tasks made in this session" aria-expanded="false" aria-controls="taskspane"><span id="tasksfabn"></span></button>
+    <div id="taskspane" class="box" role="region" aria-label="Tasks made in this session" tabindex="-1" hidden>
+      <div class="pwhead"><span class="pwtitle">Tasks made in this session</span><button id="tpclose" class="icon" type="button" title="Close" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+      <ul id="tplist" class="pwbody"></ul>
+    </div>
     <!-- Ask (AC-37): while text is selected; on a wide window under the sent history's button, else above the selection's Copy. -->
     <button id="askfab" type="button" hidden title="Ask about the selected text" aria-label="Ask about the selected text"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
     <div id="sentpane" class="box" role="region" aria-label="Sent in this folder" tabindex="-1" hidden>
@@ -238,7 +245,7 @@
     <div id="findrail" aria-label="Matches in this session" hidden></div>
     <div id="markbar" class="box" role="region" aria-label="Bookmark" hidden>
       <div class="mbhead"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span id="mbnote"></span>
-        <span class="mbnav"><button id="mbprev" class="icon" type="button" title="The bookmark above" aria-label="The bookmark above"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m18 15-6-6-6 6"/></svg></button><span id="mbpos"></span><button id="mbnext" class="icon" type="button" title="The bookmark below" aria-label="The bookmark below"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m6 9 6 6 6-6"/></svg></button></span><span class="mbacts"><button id="mbdone" type="button">Resolve</button><button id="mbsend" class="tochat" type="button" title="Quote in chat: paste the note and the text quoted into the input, no Enter">Quote<span class="more"> in chat</span></button><button id="mbedit" type="button">Edit</button><button id="mbdel" type="button">Delete</button></span>
+        <span class="mbnav"><button id="mbprev" class="icon" type="button" title="The bookmark above" aria-label="The bookmark above"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m18 15-6-6-6 6"/></svg></button><span id="mbpos"></span><button id="mbnext" class="icon" type="button" title="The bookmark below" aria-label="The bookmark below"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m6 9 6 6 6-6"/></svg></button></span><span class="mbacts"><button id="mbdone" type="button">Resolve</button><button id="mbtask" type="button" title="Convert to task: a TODO task on the project's board, the record goes once it is kept">To task</button><button id="mbsend" class="tochat" type="button" title="Quote in chat: paste the note and the text quoted into the input, no Enter">Quote<span class="more"> in chat</span></button><button id="mbedit" type="button">Edit</button><button id="mbdel" type="button">Delete</button></span>
         <button id="mbclose" class="icon" type="button" aria-label="Close the bookmark"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <p id="mbwhy" hidden></p>
@@ -411,9 +418,28 @@
   <form method="dialog">
     <div class="dhead"><h2 id="nametext"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" spellcheck="false">
+    <p id="nameerror" role="alert" hidden></p>
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="nameok" value="ok" type="submit" class="primary">Rename</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Convert to task (terminum-kanban.md AC-116): a bookmark or reminder made a TODO task, the board not opened. -->
+<dialog id="convertbox" class="box dlg" aria-labelledby="converthead">
+  <form method="dialog">
+    <div class="dhead"><h2 id="converthead">Convert to task</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <label class="fieldrow">Title <input id="converttitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
+    <div class="fieldgrid three">
+      <label class="fieldrow">Severity <select id="convertsev" class="field"></select></label>
+      <label class="fieldrow">Project <select id="convertproj" class="field"></select></label>
+      <label class="fieldrow">Session <select id="convertsession" class="field"></select></label>
+    </div>
+    <p id="converterror" role="alert" hidden></p>
+    <div class="actions">
+      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="convertok" type="button" class="primary">Create</button>
     </div>
   </form>
 </dialog>

@@ -105,6 +105,8 @@ impl Item {
 }
 
 /// The sign-ins, in memory and in `<app dir>/signins.json`, and this process's boot.
+/// `revoked` ticks whenever sign-ins leave memory (revoked, expired, the oldest beyond 20): every
+/// socket rechecks its credential then.
 /// `create`, `revoke` and `revoke_all` write the file (blocking: an async caller runs them off
 /// its workers); `check` and `hello` read memory only, never waiting for a write (`writer`
 /// serializes the writes; `items` is held only to read or swap).
@@ -113,6 +115,7 @@ pub struct Signins {
     items: Mutex<Vec<Item>>,
     writer: Mutex<()>,
     boot: String,
+    revoked: tokio::sync::watch::Sender<u64>,
 }
 
 impl Signins {
@@ -133,7 +136,7 @@ impl Signins {
         let now = store::unix_now();
         let mut items: Vec<Item> = items.unwrap_or_default().into_iter().filter(|i| i.well_formed() && i.expires > now).collect();
         keep_newest(&mut items, MAX_SIGNINS);
-        Signins { path, items: Mutex::new(items), writer: Mutex::new(()), boot: random_hex::<32>() }
+        Signins { path, items: Mutex::new(items), writer: Mutex::new(()), boot: random_hex::<32>(), revoked: tokio::sync::watch::channel(0).0 }
     }
 
     /// A new sign-in made by `by`: its secret (256 random bits, hex), which only the page keeps.
@@ -152,11 +155,16 @@ impl Signins {
             by: by.chars().filter(|c| !c.is_control()).take(100).collect(),
         };
         let _writing = self.writer.lock();
-        let mut next: Vec<Item> = self.items.lock().iter().filter(|i| i.expires > now).cloned().collect();
+        let had = self.items.lock().clone();
+        let mut next: Vec<Item> = had.iter().filter(|i| i.expires > now).cloned().collect();
         next.push(item);
         keep_newest(&mut next, MAX_SIGNINS);
         self.save(&next)?;
+        let dropped = next.len() <= had.len();           // an expired one, or the oldest beyond 20, left
         *self.items.lock() = next;
+        if dropped {
+            self.revoked.send_modify(|n| *n += 1);
+        }
         Ok(secret)
     }
 
@@ -191,7 +199,8 @@ impl Signins {
 
     /// The page signs out: the sign-in it presents (its credential or secret) goes, in memory at
     /// once and in the file; false when it presents none kept here (a credential of another boot).
-    /// Err: the file still holds it, and so does memory.
+    /// Err: gone from memory all the same (no page uses it a moment longer), still in the file,
+    /// which a restart would read back; the next write of the file (any sign-in) leaves it out.
     pub fn revoke(&self, credential: &str) -> io::Result<bool> {
         let digest = self.signin_of(credential);
         let _writing = self.writer.lock();
@@ -200,18 +209,24 @@ impl Signins {
         if next.len() == items.len() {
             return Ok(false);
         }
-        self.save(&next)?;
-        *self.items.lock() = next;
-        Ok(true)
+        *self.items.lock() = next.clone();
+        self.revoked.send_modify(|n| *n += 1);
+        self.save(&next).map(|()| true)
     }
 
-    /// `terminum signout`, a new password: every page signs in again. Err: the file still holds them, and so
-    /// does memory (a restart would bring them back otherwise).
+    /// `terminum signout`, a new password: every page signs in again. Err: gone from memory all
+    /// the same, still in the file, as for `revoke`.
     pub fn revoke_all(&self) -> io::Result<()> {
         let _writing = self.writer.lock();
-        self.save(&[])?;
         self.items.lock().clear();
-        Ok(())
+        self.revoked.send_modify(|n| *n += 1);
+        self.save(&[])
+    }
+
+    /// Ticks when sign-ins are revoked: a socket taken before it rechecks its credential at each
+    /// tick, so it closes at once (AC-09).
+    pub fn revocations(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.revoked.subscribe()
     }
 
     pub fn count(&self) -> usize {

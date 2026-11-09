@@ -62,6 +62,8 @@ pub struct Page {
     pub tracer: Mutex<trace::Tracer>,
     /// its browser and address, for the input log (AC-147)
     pub client: crate::inputs::Client,
+    /// the sign-in it presented at the upgrade: the page ends with it (AC-09), never in a log
+    credential: String,
 }
 
 impl Page {
@@ -111,6 +113,11 @@ impl Page {
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::Relaxed) || self.tx.is_closed()
     }
+
+    /// Its sign-in is still live: not revoked (Sign out elsewhere), not expired (AC-09).
+    pub fn signed_in(&self, signins: &crate::auth::signin::Signins) -> bool {
+        signins.check(&self.credential, false)
+    }
 }
 
 #[derive(Default)]
@@ -121,7 +128,7 @@ pub struct Pages {
 
 impl Pages {
     /// A new page and the receiving end of its queue, or None when there are too many.
-    pub fn add(&self, client: crate::inputs::Client, recorder: Arc<trace::Recorder>) -> Option<(Arc<Page>, mpsc::Receiver<String>)> {
+    pub fn add(&self, client: crate::inputs::Client, credential: String, recorder: Arc<trace::Recorder>) -> Option<(Arc<Page>, mpsc::Receiver<String>)> {
         let web = client.web;
         let mut list = self.list.lock();
         list.retain(|_, p| !p.is_closed());
@@ -130,7 +137,7 @@ impl Pages {
         }
         let (tx, rx) = mpsc::channel(BACKLOG);
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        let page = Arc::new(Page { id, web, tx, closed: AtomicBool::new(false), woke: Default::default(), reads: Default::default(), state: Mutex::new(client::State::default()), tracer: Mutex::new(trace::Tracer::new(recorder)), client });
+        let page = Arc::new(Page { id, web, tx, closed: AtomicBool::new(false), woke: Default::default(), reads: Default::default(), state: Mutex::new(client::State::default()), tracer: Mutex::new(trace::Tracer::new(recorder)), client, credential });
         list.insert(id, page.clone());
         Some((page, rx))
     }
@@ -159,10 +166,4 @@ impl Pages {
         }
     }
 
-    /// Every page closes: their browsers sign in again (a new password, `terminum signout`).
-    pub fn close_all(&self) {
-        for p in self.all() {
-            p.close();
-        }
-    }
 }

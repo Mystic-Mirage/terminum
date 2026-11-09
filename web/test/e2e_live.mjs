@@ -39,6 +39,7 @@ import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
 import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
+import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 
@@ -164,7 +165,7 @@ async function wide(browser, name) {
   };
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
-  const boards = async (suites = [liveBoard, liveBoardEdge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveDispatcher, liveHistory]) => {
+  const boards = async (suites = [liveBoard, liveBoardEdge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -181,7 +182,7 @@ async function wide(browser, name) {
     return ctx;
   }
   if (TASKS_ALONE) {
-    await boards([liveBoardTasks]);
+    await boards([liveBoardTasks, liveBoardIds]);
     return ctx;
   }
   if (BOARD_ALONE) {

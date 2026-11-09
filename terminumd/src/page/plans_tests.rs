@@ -53,8 +53,8 @@ fn reply_with_plan_has_the_contract_fields() {
 fn plannew_reaches_every_page_once_per_key() {
     let pages = super::super::Pages::default();
     let dir = crate::testutil::temp_root().join(format!("tm-plans-{}", std::process::id()));
-    let (_a, mut ra) = pages.add(Default::default(), crate::page::trace::Recorder::new(dir.clone())).unwrap();
-    let (_b, mut rb) = pages.add(crate::inputs::Client { web: true, ..Default::default() }, crate::page::trace::Recorder::new(dir)).unwrap();
+    let (_a, mut ra) = pages.add(Default::default(), String::new(), crate::page::trace::Recorder::new(dir.clone())).unwrap();
+    let (_b, mut rb) = pages.add(crate::inputs::Client { web: true, ..Default::default() }, String::new(), crate::page::trace::Recorder::new(dir)).unwrap();
     tell(&pages, &[K.into(), "tmux:local:terminum:%2".into()]);
     for rx in [&mut ra, &mut rb] {
         let got: Vec<Value> = std::iter::from_fn(|| rx.try_recv().ok()).map(|t| serde_json::from_str(&t).unwrap()).collect();

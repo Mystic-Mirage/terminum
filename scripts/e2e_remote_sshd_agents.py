@@ -154,7 +154,7 @@ RPC = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolV
        {"jsonrpc": "2.0", "method": "notifications/initialized"},
        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "update_session_plan", "arguments": {
            "items": [{"text": "one", "status": "completed"}], "doing": "Checking the host", "eta_minutes": 30}}},
-       {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "create_task", "arguments": {"title": "Feat: host task", "severity": "P2", "text": "A host task."}}},
+       {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "create_task", "arguments": {"title": "Feat: host task", "severity": "P2", "text": "## Problem or goal\nA host task.\n## Context\nx\n## Expected result\ny\n## Prerequisites\nNone"}}},
        {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "get_session_plan", "arguments": {}}}]
 
 

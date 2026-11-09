@@ -231,6 +231,11 @@ pub fn signin_credential(header: impl Fn(&str) -> Option<String>) -> Option<Stri
     None
 }
 
+/// The sign-in a request presents (`signin_credential` over its headers).
+pub fn credential_of(headers: &axum::http::HeaderMap) -> Option<String> {
+    signin_credential(|n| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string))
+}
+
 #[cfg(test)]
 #[path = "checks_tests.rs"]
 mod tests;

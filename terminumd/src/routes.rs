@@ -23,7 +23,6 @@ fn files_api(app: &Shared) -> Router<Shared> {
     use crate::panel_api as p;
     Router::new()
         .route("/api/state", get(p::get_state))
-        .route("/api/events", get(p::events))
         .route("/api/ws", get(crate::panel_ws::socket))
         .route("/api/ls", get(ls))
         .route("/api/file", get(file).put(save_file).layer(DefaultBodyLimit::max(save_body_limit(app.cfg.text_max))))
@@ -83,6 +82,9 @@ pub fn pages(app: Shared) -> Router {
 /// An agent's routes on its Unix socket: the Files API at the root, the token decides.
 pub fn agent(app: Shared) -> Router {
     files_api(&app)
+        // the agent's events for the Mac's relay: never on the page's listener, where a stream
+        // would outlive the sign-in it was opened with (AC-09)
+        .route("/api/events", get(crate::panel_api::events))
         .route("/api/paste", post(crate::remote::agent_paste).layer(DefaultBodyLimit::max(crate::page::upload::MAX_BYTES)))
         .layer(middleware::from_fn_with_state(app.clone(), agent_guard))
         .with_state(app)
@@ -90,12 +92,10 @@ pub fn agent(app: Shared) -> Router {
 
 /// Whether a request carries a valid sign-in.
 fn signed_in(app: &Shared, req: &Request) -> bool {
-    let h = req.headers();
-    let header = |n: &str| h.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
     // a browser sends Sec-Fetch-Site (Node's fetch sends only Sec-Fetch-Mode): it may present
     // only a credential, never the secret (AC-09)
-    let browser = h.contains_key("sec-fetch-site");
-    checks::signin_credential(header).is_some_and(|c| app.signins.check(&c, browser))
+    let browser = req.headers().contains_key("sec-fetch-site");
+    checks::credential_of(req.headers()).is_some_and(|c| app.signins.check(&c, browser))
 }
 
 async fn guard(State(app): State<Shared>, mut req: Request, next: Next) -> Response {

@@ -27,8 +27,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks", get(board).post(make))
         .route("/api/tasks/meta", get(meta))
         .route("/api/tasks/start-empty", post(start_empty))
-        .route("/api/task-projects", post(new_project))
-        .route("/api/task-projects/{id}", patch(edit_project))
+        .merge(super::projectapi::routes())
         .merge(super::agents::routes())
         .merge(super::limits::routes())
         .merge(super::folder::routes())
@@ -102,7 +101,7 @@ pub fn told(app: &Shared, task: &str) {
 /// A link only to a session that is there: a page's picker can be older than the list (AC-133).
 fn session_gone(app: &Shared, body: &Value) -> bool {
     let layout = app.layout.read();
-    body["session"].as_str().is_some_and(|key| crate::page::marks::find_item(&layout, key).is_none())
+    ["session", "made_in"].iter().any(|k| body[k].as_str().is_some_and(|key| crate::page::marks::find_item(&layout, key).is_none()))
 }
 
 /// A task with its session: `row` its row in the list, its live state, agent and why it failed or
@@ -139,27 +138,35 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         severities: csv(&q, "severity"),
         statuses: csv(&q, "status"),
         owner: q.get("owner").filter(|o| !o.is_empty()).cloned(),
-        number: q.get("id").and_then(|id| ops::number_of(id).ok()),
+        number: None,
         reach: None,
         text: q.get("q").cloned(),
+        made_in: q.get("made_in").filter(|m| !m.is_empty()).cloned(),
         with_subtasks: q.get("subtasks").is_some_and(|c| c == "1"),
         archived: q.get("archived").is_some_and(|c| c == "1"),
         after: q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0),
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
     };
     let with_counts = q.get("counts").is_some_and(|c| c == "1");
+    let one = q.get("id").cloned();
     let done = store(&app, move |tx| {
+        let mut filter = filter;
+        if let Some(id) = &one {
+            filter.number = Some(super::slugs::resolve(tx, id)?.unwrap_or(-1));   // none such: the filter shows nothing
+        }
         let tasks = query::list(tx, &filter)?;
         let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
         let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
+        let parents: Vec<&str> = tasks.iter().filter(|t| t.subtasks > 0).map(|t| t.key.as_str()).collect();
+        let boxes = super::family::boxes(tx, &parents)?;
         // only a finished task says what it spent (AC-129)
         let finished: Vec<&str> = tasks.iter().filter(|t| crate::dispatcher::plan::finished(&t.status)).map(|t| t.key.as_str()).collect();
         let spent = crate::dispatcher::usage::of_tasks(tx, &finished)?;
         let counts = if with_counts { Some((query::counts(tx, &filter)?, crate::dispatcher::pool::board(tx)?)) } else { None };
-        Ok((tasks, counts, run_marks, on_agents, spent))
+        Ok((tasks, counts, run_marks, on_agents, spent, boxes))
     }).await;
     match done {
-        Ok((tasks, counts, run_marks, on_agents, spent)) => {
+        Ok((tasks, counts, run_marks, on_agents, spent, mut boxes)) => {
             let layout = app.layout.read();
             let linked = tasks.iter().any(|t| t.session.is_some());
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_rows(&layout).filter(|_| linked).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
@@ -173,6 +180,9 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                 }
                 if let Some(agent) = on_agents.get(&t.key) {
                     v["agent"] = agent.clone();
+                }
+                if let Some(kids) = boxes.remove(&t.key) {
+                    v["boxes"] = json!(kids);
                 }
                 v
             }).collect();
@@ -192,15 +202,22 @@ async fn meta(State(app): State<Shared>) -> Response {
     // the store's lock waits out a running query: off the async workers, its state too
     let a = app.clone();
     let (mut projects, users, agents, limits, last_agents, at_once, problem, set_aside) = tokio::task::spawn_blocking(move || {
-        let projects: Vec<Value> = std::iter::once(json!({"id": DEFAULT_PROJECT, "name": "Default", "dir": "~"}))
+        let mut projects: Vec<Value> = std::iter::once(json!({"id": DEFAULT_PROJECT, "name": "Default", "dir": "~"}))
             .chain(a.projects.lock().list().iter().map(|p| json!({"id": p.id, "name": p.name, "color": p.color, "dir": p.dir, "host": p.host}))).collect();
-        let (users, agents, limits, last_agents, at_once) = a.tasks.with(|tx| Ok((
+        let (users, agents, limits, last_agents, at_once, own) = a.tasks.with(|tx| Ok((
             ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
             super::agents::listed(tx, ops::now())?,
             super::limits::limits(tx)?,
             runs::last_agents(tx)?,
             super::limits::agent_limits(tx)?,
+            super::projectapi::settings(tx)?,
         ))).unwrap_or_default();
+        for p in &mut projects {
+            if let Some(v) = p["id"].as_str().and_then(|id| own.get(id)) {
+                p["prefix"] = v["prefix"].clone();
+                p["template"] = v["template"].clone();
+            }
+        }
         (projects, users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
     let global_limits = { let s = app.looks.settings.read(); json!({"warn": s.memory_warn_gib, "end": s.memory_end_gib}) };
@@ -209,7 +226,7 @@ async fn meta(State(app): State<Shared>) -> Response {
             p["agent_limit"] = json!(limit);
         }
     }
-    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "global_limits": global_limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "global_limits": global_limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "task_template": super::template::DEFAULT_TEMPLATE, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {
@@ -226,26 +243,7 @@ async fn start_empty(State(app): State<Shared>) -> Response {
     answer(done.map(|()| json!({"ok": true})))
 }
 
-/// New project on the board: no session yet (AC-110).
-async fn new_project(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
-    let (name, dir, host) = (text(&body, "name").unwrap_or_default(), text(&body, "dir").unwrap_or_default(), text(&body, "host").filter(|h| !h.is_empty()));
-    let a = app.clone();
-    let done = off(move || a.projects.lock().create(&name, host, dir)).await;
-    told_projects(&app, done.map(|id| json!({"id": id})))
-}
-
-/// A project's name and folder from its window (AC-139); its server stays: its sessions are there.
-async fn edit_project(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
-    if id == DEFAULT_PROJECT {
-        return refuse(StatusCode::BAD_REQUEST, "Default is no real project: it has no name or folder to change.");
-    }
-    let (name, dir) = (text(&body, "name"), text(&body, "dir"));
-    let a = app.clone();
-    let done = off(move || a.projects.lock().edit(&id, name.as_deref(), dir)).await;
-    told_projects(&app, done.map(|()| json!({"ok": true})))
-}
-
-fn text(v: &Value, key: &str) -> Option<String> {
+pub(super) fn text(v: &Value, key: &str) -> Option<String> {
     v[key].as_str().map(str::to_string)
 }
 
@@ -262,7 +260,7 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
         owner: text(&body, "owner"),
         session: text(&body, "session"),
         by_agent: false,
-        made_in: None,
+        made_in: text(&body, "made_in"),           // a record's session it was made of (AC-116, AC-150)
     };
     let attached = crate::config::strings(&body["files"]);
     let done = store(&app, move |tx| {
@@ -326,6 +324,8 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     let reorder = before.is_some() || body.get("order_end").is_some();
     let before = before.and_then(Value::as_str).map(str::to_string);
     let session = body.get("session").cloned();
+    let parent = body.get("parent").cloned();       // null: out of its parent (AC-112)
+    let reparented = parent.is_some();
     // only null takes it off: another value is refused, never read as none (AC-126)
     let budget = match body.get("budget_minutes") {
         None => None,
@@ -358,6 +358,9 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         if let Some(s) = &session {
             ops::link(tx, HUMAN, &id, s.as_str(), at)?;
         }
+        if let Some(up) = &parent {
+            super::family::set_parent(tx, HUMAN, &id, up.as_str(), at)?;
+        }
         ops::edit(tx, HUMAN, &id, edit, at)?;
         files::attach(tx, &dropped, &id, None)?;   // what was dropped in its text as it was edited (AC-109)
         if let Some(minutes) = budget {
@@ -383,7 +386,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     if budget.is_some() {
         crate::dispatcher::api::budget_changed(&app, &task);
     }
-    told(&app, &task.id);
+    told(&app, if reparented { "" } else { &task.id });   // reparented: its parents' cards, old and new, count it
     let mut answered = card(&app, &task);
     if let Some(n) = note {
         answered["note"] = json!(format!("The task moved, its session did not: {n}"));

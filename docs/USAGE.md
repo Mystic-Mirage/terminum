@@ -195,7 +195,16 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   bookmark dialog's New task from selection). A task can be linked to a session: its row shows the
   task, and when you move the task its agent hears of it at its next tool call. Agents use
   `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `add_comment`, `attach_file`,
-  `get_file` and `finish_task`: all on their own tasks, read and comment on their project's others.
+  `get_file` and `finish_task`: all on their own tasks, read and comment on their project's others;
+  `create_task`'s text follows the project's template (its window: Template for agents' tasks).
+  A task's ID is its project's letters and number, TERM-7: the letters come from the project's
+  folder and can be changed in its window; an old ID (T-12) and the 8 characters its window shows
+  beside its dates still find it. A task's window shows the task, then its subtasks (New subtask,
+  Add existing, Make it a subtask, × to take one out), then its comments and history, newest first
+  (press Newest first to turn them); a card shows its subtasks as boxes in their status's color.
+  The round button with a blue number under the sent history's counts the tasks made in the shown
+  session, and opens them in the same window; Convert to task on a bookmark or reminder (its pane,
+  its bar, the list below the sessions) makes one in TODO without leaving the session.
   What agents kept for you before tasks stays with your bookmarks and reminders.
 - **The view's menu** has 20 color schemes (one for every browser, kept in settings.json),
   the Markdown text size and the history lines of new terminals. Option or ⌘ with ↑/↓ pages.

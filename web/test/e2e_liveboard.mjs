@@ -63,7 +63,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.waitForSelector("#newbox", { state: "hidden", timeout: 5000 });
   await page.waitForFunction(() => document.querySelector('.col[data-status="TODO"] .card'), null, { timeout: 5000 });
   const first = await idOf("Fix the retry loop");
-  check("AC-106 it stands in TODO with a T-number", /^T-\d+$/.test(first ?? "") && (await inColumn("TODO")).includes(first), first);
+  check("AC-106 it stands in TODO with its project's ID (AC-148)", /^[A-Z][A-Z0-9]*-\d+$/.test(first ?? "") && (await inColumn("TODO")).includes(first), first);
   await page.click("#newtask");
   check("AC-106 the draft went with Create", await page.inputValue("#newtitle") === "");
   await page.click("#newdiscard");

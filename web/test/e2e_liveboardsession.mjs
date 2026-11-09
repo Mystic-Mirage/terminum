@@ -17,8 +17,9 @@ export async function liveBoardSessions(page, opts) {
   await open();
   const a = newPane("cardrow"), b = newPane("cardother"), key = await keyOf(a), other = await keyOf(b);
   const project = (await j("/api/task-projects", "POST", { name: "Billing" })).id;
-  const made = (await j("/api/tasks", "POST", { title: "row on a card", session: key })).id;
-  await j(`/api/tasks/${made}`, "PATCH", { project, session_choice: "move" });   // its session goes with it, into Billing
+  const first = (await j("/api/tasks", "POST", { title: "row on a card", session: key })).id;
+  // its session goes with it, into Billing, where it takes Billing's next ID (terminum-kanban.md AC-148)
+  const made = (await j(`/api/tasks/${first}`, "PATCH", { project, session_choice: "move" })).id;
   const empty = (await j("/api/task-projects", "POST", { name: "Empty" })).id;
   const bare = (await j("/api/tasks", "POST", { title: "no session", project })).id;
   await open();

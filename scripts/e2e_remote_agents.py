@@ -56,7 +56,7 @@ def mcp_lines(n0=1):
     return [{"jsonrpc": "2.0", "id": n0, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             call(n0 + 1, "update_session_plan", {"items": [{"text": "one", "status": "completed"}], "doing": "Checking the host", "eta_minutes": 30}),
-            call(n0 + 2, "create_task", {"title": "Bug: host parser drops a BOM", "severity": "P2", "text": "The host's parser drops a BOM."})]
+            call(n0 + 2, "create_task", {"title": "Bug: host parser drops a BOM", "severity": "P2", "text": "## Problem or goal\nThe host's parser drops a BOM.\n## Context\nx\n## Expected result\ny\n## Prerequisites\nNone"})]
 
 
 def mcp_file(task):
@@ -251,7 +251,7 @@ def main():
 
         # terminum-kanban.md AC-120: a task's file reaches the host's agent as a paste's file does
         made = (next((a for a in answers if a.get("id") == 3), {}).get("result", {}).get("content") or [{}])[0].get("text", "")
-        task = (re.search(r"T-\d+", made) or re.search("$", "")).group(0)
+        task = (re.search(r"[A-Z][A-Z0-9]*-\d+", made) or re.search("$", "")).group(0)
         error, text = file_said(evdir, hb, REMOTE_SOCKET, pane, task)
         there = text.strip().splitlines()[-1] if text.strip() else ""
         check("AC-120 get_file on a host: the file is put in its ~/.terminum/tmp, its path said",

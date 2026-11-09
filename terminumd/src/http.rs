@@ -178,4 +178,18 @@ mod page_tests {
             assert_eq!(part(INDEX, &from, "</dialog>"), part(BOARD, &from, "</dialog>"), "{dialog}");
         }
     }
+
+    /// The Message history and the Dashboard share one head (terminum.md AC-151, AC-152): the same markup but
+    /// their title and the page key pressed.
+    #[test]
+    fn same_message_pages_head() {
+        const HISTORY: &str = include_str!("../../web/static/history.html");
+        const DASHBOARD: &str = include_str!("../../web/static/dashboard.html");
+        let head = |page: &str| {
+            let at = page.find("<!-- the shared head").expect("its head");
+            let end = page.find("<!-- /the shared head -->").expect("its end");
+            page[at..end].replace(" aria-current=\"page\"", "").replace("(dashboard.html holds the same)", "").replace("(history.html holds the same)", "")
+        };
+        assert_eq!(head(HISTORY).replace(">Message history<", ">T<"), head(DASHBOARD).replace(">Dashboard</h1>", ">T</h1>"));
+    }
 }

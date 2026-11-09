@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The input log's one writer (terminum.md AC-147): rows come over a bounded channel and go into
 //! the tasks' store in a transaction a batch, on a thread of its own, never on the async workers
-//! or the typing path; it also drops rows older than KEEP_DAYS and beyond KEEP_ROWS.
+//! or the typing path; it also drops rows older than KEEP_DAYS and beyond KEEP_ROWS, of the message
+//! history too.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
@@ -70,11 +71,11 @@ pub fn insert(tx: &Transaction, rows: &[Row]) -> Result<(), String> {
     Ok(())
 }
 
-/// Rows older than KEEP_DAYS, then the oldest beyond `rows`, go.
+/// Rows older than KEEP_DAYS, then the oldest beyond `rows`, go; messages too.
 pub fn trim(tx: &Transaction, now_ms: i64, rows: i64) -> Result<(), String> {
     tx.execute("DELETE FROM inputs WHERE at < ?1", [now_ms - KEEP_DAYS * 86_400_000]).map_err(sql)?;
     tx.execute("DELETE FROM inputs WHERE id <= (SELECT id FROM inputs ORDER BY id DESC LIMIT 1 OFFSET ?1)", [rows]).map_err(sql)?;
-    Ok(())
+    crate::messages::trim(tx, now_ms, KEEP_DAYS, rows)
 }
 
 fn sql(e: rusqlite::Error) -> String {

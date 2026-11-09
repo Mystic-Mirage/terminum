@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Sent history (AC-90): the messages and commands the user sent, per project (a host and a
-//! folder), in `~/.terminum/sessions/<id>/sent.jsonl` (0600; `meta.json` names the project),
-//! newest last, at most KEEP of them, each with its pane's key and the history line its text
-//! began on (a hint: tmux numbers lines anew). A coding agent's prompt comes exactly from its
-//! hooks (`terminum hook`) and takes the line the page told for the same text (`hint`);
-//! otherwise the page says what stood at the cursor when Enter went. Kept
-//! out: a line starting with a space (a shell's "not in history"), an empty one, the same text
-//! again from the same pane within AGAIN, values of words named like secrets and secrets' known
-//! shapes (replaced by "[redacted]").
+//! What of a sent message is kept (AC-90): the messages themselves are rows of the message
+//! history in the tasks' store (`crate::messages`). A coding agent's prompt comes exactly from
+//! its hooks (`terminum hook`) and takes the line the page told for the same text (`hint`);
+//! otherwise the page says what stood at the cursor when Enter went. Kept out: a line starting
+//! with a space (a shell's "not in history"), an empty one, the same text again from the same
+//! pane within AGAIN, values of words named like secrets and secrets' known shapes (replaced by
+//! "[redacted]"). Beside it, per project (a host and a folder) in
+//! `~/.terminum/sessions/<id>/` (0600; `meta.json` names the project): where the agents' answers
+//! ended (`ends.jsonl`), the quotes' numbers given and the quotes asked about (AC-37).
 
 use std::collections::{HashMap, VecDeque};
 use std::io::Write;
@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
-/// Entries kept per project; the file is cut back to it once it holds TRIM, or to its newest
+/// Answer ends kept per project; the file is cut back to it once it holds TRIM, or to its newest
 /// BYTES / 2 once it is larger than BYTES.
 pub const KEEP: usize = 2000;
 const TRIM: usize = 2500;
@@ -54,13 +54,15 @@ impl Sent {
         Sent { root, last: Mutex::default(), hints: Mutex::default(), write: Mutex::default() }
     }
 
-    fn file(&self, host: &str, path: &str) -> PathBuf {
-        self.root.join(id(host, path)).join("sent.jsonl")
+    /// A project's folder: its answers' ends, quotes and asked quotes.
+    fn dir(&self, host: &str, path: &str) -> PathBuf {
+        self.root.join(id(host, path))
     }
+
 
     /// Where the project's agents' answers ended (page/answers.rs), beside its sent history.
     fn ends_file(&self, host: &str, path: &str) -> PathBuf {
-        self.root.join(id(host, path)).join("ends.jsonl")
+        self.dir(host, path).join("ends.jsonl")
     }
 
     /// Keeps that pane `key`'s agent's answer ended at `line` with `text` (AC-90). Blocking.
@@ -90,39 +92,23 @@ impl Sent {
         Ok(())
     }
 
-    /// Keeps `text` sent in pane `key` of project (`host`, `path`); Ok(false) when it is left
-    /// out (see the module). `info`: {agent, title, via} kept with it. Blocking.
-    pub fn add(&self, host: &str, path: &str, key: &str, text: &str, info: Value) -> Result<bool, String> {
+    /// What of `text` sent in pane `key` is kept (redacted), or None when it is left out (see
+    /// the module): one Enter told by both the page and the hook is kept once.
+    pub fn accept(&self, key: &str, text: &str) -> Option<String> {
         let text: String = text.trim_end().chars().take(TEXT).collect();
-        if text.trim().is_empty() || text.starts_with(' ') || path.is_empty() {
-            return Ok(false);
+        if text.trim().is_empty() || text.starts_with(' ') {
+            return None;
         }
         let text = redact(&text);
-        {
-            let mut last = self.last.lock();
-            if last.get(key).is_some_and(|(t, at)| *t == text && at.elapsed() < AGAIN) {
-                return Ok(false);
-            }
-            if last.len() > 1000 {
-                last.clear();
-            }
-            last.insert(key.to_string(), (text.clone(), Instant::now()));
+        let mut last = self.last.lock();
+        if last.get(key).is_some_and(|(t, at)| *t == text && at.elapsed() < AGAIN) {
+            return None;
         }
-        let mut entry = json!({"at": crate::auth::store::unix_now(), "text": text, "key": key});
-        for k in ["agent", "title", "via"] {
-            if let Some(v) = info[k].as_str().filter(|v| !v.is_empty()) {
-                entry[k] = json!(v);
-            }
+        if last.len() > 1000 {
+            last.clear();
         }
-        if let Some(line) = info["line"].as_i64() {
-            entry["line"] = json!(line);
-        }
-        let _w = self.write.lock();
-        let file = self.file(host, path);
-        self.project_dir(&file, host, path)?;
-        append(&file, &(entry.to_string() + "\n")).map_err(|e| format!("{}: {e}", file.display()))?;
-        trim(&file).map_err(|e| format!("{}: {e}", file.display()))?;
-        Ok(true)
+        last.insert(key.to_string(), (text.clone(), Instant::now()));
+        Some(text)
     }
 
     /// The page saw `text` sent at `line` in hooked pane `key`: its hook's prompt takes the line.
@@ -152,23 +138,13 @@ impl Sent {
         ring.remove(i).map(|(_, line)| line)
     }
 
-    /// The `most` newest entries of a project sent in pane `key` with a line: (text, line, an
-    /// agent's prompt), newest first. Blocking.
-    pub fn of_pane(&self, host: &str, path: &str, key: &str, most: usize) -> Vec<(String, i64, bool)> {
-        of_key(&std::fs::read_to_string(self.file(host, path)).unwrap_or_default(), key, most)
-    }
-
-    /// Pane `key`'s next question number (AC-37 Ask): one more than the highest "Quote #N"
-    /// it sent (kept in its project's history; a paste Claude Code folds into "[Pasted text]"
-    /// is not there without its hooks) or the last given, kept per pane in the project's
-    /// quotes.json so it counts on across terminumd's restarts. Blocking.
-    pub fn next_question(&self, host: &str, path: &str, key: &str) -> Result<u64, String> {
-        let text = std::fs::read_to_string(self.file(host, path)).unwrap_or_default();
-        let sent = text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).filter(|v| v["key"] == key)
-            .flat_map(|v| quote_numbers(v["text"].as_str().unwrap_or("")))
-            .max().unwrap_or(0);
+    /// Pane `key`'s next question number (AC-37 Ask): one more than the highest "Quote #N" it
+    /// sent (`sent`, from the message history; a paste Claude Code folds into "[Pasted text]" is
+    /// not there without its hooks) or the last given, kept per pane in the project's quotes.json
+    /// so it counts on across terminumd's restarts. Blocking.
+    pub fn next_question(&self, host: &str, path: &str, key: &str, sent: u64) -> Result<u64, String> {
         let _w = self.write.lock();
-        let file = self.file(host, path).with_file_name("quotes.json");
+        let file = self.dir(host, path).join("quotes.json");
         let mut given = read_object(&file);
         let n = sent.max(given[key].as_u64().unwrap_or(0)) + 1;
         given[key] = json!(n);
@@ -182,7 +158,7 @@ impl Sent {
     /// cut at ASKED_TEXT characters. Blocking.
     pub fn keep_asked(&self, host: &str, path: &str, key: &str, n: u64, text: &str, line: i64) -> Result<(), String> {
         let _w = self.write.lock();
-        let file = self.file(host, path).with_file_name("asked.json");
+        let file = self.dir(host, path).join("asked.json");
         let mut all = read_object(&file);
         let mut list = all[key].as_array().cloned().unwrap_or_default();
         list.retain(|q| q["n"].as_u64() != Some(n));
@@ -196,15 +172,7 @@ impl Sent {
 
     /// Pane `key`'s quotes asked about, oldest first: [{n, text, line}]. Blocking.
     pub fn asked_of(&self, host: &str, path: &str, key: &str) -> Vec<Value> {
-        read_object(&self.file(host, path).with_file_name("asked.json"))[key].as_array().cloned().unwrap_or_default()
-    }
-
-    /// The `n`-th newest entry of a project (0: the last) and how many there are. Blocking.
-    pub fn get(&self, host: &str, path: &str, n: usize) -> (usize, Option<Value>) {
-        let text = std::fs::read_to_string(self.file(host, path)).unwrap_or_default();
-        let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-        let item = lines.iter().rev().nth(n).and_then(|line| serde_json::from_str(line).ok());
-        (lines.len(), item)
+        read_object(&self.dir(host, path).join("asked.json"))[key].as_array().cloned().unwrap_or_default()
     }
 }
 
@@ -242,7 +210,7 @@ pub fn findable(text: &str) -> String {
 }
 
 /// The numbers N of every "Quote #N" in `text`.
-fn quote_numbers(text: &str) -> Vec<u64> {
+pub fn quote_numbers(text: &str) -> Vec<u64> {
     text.match_indices("Quote #").filter_map(|(i, m)| {
         let digits: String = text[i + m.len()..].chars().take_while(char::is_ascii_digit).take(9).collect();
         digits.parse().ok()
@@ -289,9 +257,7 @@ mod tests {
             assert!(!redacted.contains("alpha") && !redacted.contains("beta"), "{redacted}");
         }
         let (s, dir) = store();
-        s.add("local", "/sandbox", "k", "tool --password 'alpha beta' tail", json!({})).unwrap();
-        let stored = s.get("local", "/sandbox", 0).1.unwrap();
-        assert_eq!(stored["text"], "tool --password [redacted] tail");
+        assert_eq!(s.accept("k", "tool --password 'alpha beta' tail").as_deref(), Some("tool --password [redacted] tail"));
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -301,34 +267,13 @@ mod tests {
     }
 
     #[test]
-    fn kept_per_project_newest_last_and_read_back_by_age() {
-        let (s, dir) = store();
-        let info = json!({"agent": "claude", "via": "hook"});
-        assert!(s.add("local", "/Users/alex/api", "k1", "fix the tests\nand the lint", info.clone()).unwrap());
-        assert!(s.add("local", "/Users/alex/api", "k1", "ls -la", json!({})).unwrap());
-        assert!(s.add("devbox", "/Users/alex/api", "k2", "make", json!({})).unwrap());
-        let (n, last) = s.get("local", "/Users/alex/api", 0);
-        assert_eq!((n, last.unwrap()["text"].as_str()), (2, Some("ls -la")));
-        let first = s.get("local", "/Users/alex/api", 1).1.unwrap();
-        assert_eq!((first["text"].as_str(), first["agent"].as_str()), (Some("fix the tests\nand the lint"), Some("claude")));
-        assert!(s.get("local", "/Users/alex/api", 2).1.is_none());
-        assert_eq!(s.get("devbox", "/Users/alex/api", 0).0, 1, "another host is another project");
-        let f = s.file("local", "/Users/alex/api");
-        use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(&f).unwrap().permissions().mode() & 0o777, 0o600);
-        let meta: Value = serde_json::from_slice(&std::fs::read(f.with_file_name("meta.json")).unwrap()).unwrap();
-        assert_eq!(meta, json!({"host": "local", "path": "/Users/alex/api"}));
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
     fn left_out_a_space_an_empty_line_the_same_again_and_secrets() {
         let (s, dir) = store();
-        assert!(!s.add("local", "/p", "k", " secret command", json!({})).unwrap());
-        assert!(!s.add("local", "/p", "k", "   ", json!({})).unwrap());
-        assert!(s.add("local", "/p", "k", "make test", json!({})).unwrap());
-        assert!(!s.add("local", "/p", "k", "make test", json!({})).unwrap(), "one Enter told by the hook and the page");
-        assert!(s.add("local", "/p", "k2", "make test", json!({})).unwrap(), "another pane");
+        assert_eq!(s.accept("k", " secret command"), None);
+        assert_eq!(s.accept("k", "   "), None);
+        assert_eq!(s.accept("k", "make test  \n").as_deref(), Some("make test"));
+        assert_eq!(s.accept("k", "make test"), None, "one Enter told by the hook and the page");
+        assert!(s.accept("k2", "make test").is_some(), "another pane");
         assert_eq!(redact("export GITHUB_TOKEN=ghp_abc def"), "export GITHUB_TOKEN=[redacted] def");
         assert_eq!(redact("mysql --password hunter2 -u root"), "mysql --password [redacted] -u root");
         let key = format!("sk-{}", "ant-api03-abcdefghijklmnop");          // no secret's shape in the source
@@ -343,18 +288,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Each entry keeps its pane and line; a hooked pane's prompt takes the line the page told
-    /// for the same text, not another one's (an agent's own turn, a queued prompt).
+    /// A hooked pane's prompt takes the line the page told for the same text, not another
+    /// one's (an agent's own turn, a queued prompt).
     #[test]
-    fn a_pane_and_a_line_kept_and_handed_to_the_hooks_prompt_by_its_text() {
+    fn a_line_handed_to_the_hooks_prompt_by_its_text() {
         let (s, dir) = store();
-        assert!(s.add("local", "/p", "k1", "make test", json!({"line": 120})).unwrap());
-        assert!(s.add("local", "/p", "k2", "ls", json!({})).unwrap());
-        assert!(s.add("local", "/p", "k1", "git status", json!({"line": 180})).unwrap());
-        assert_eq!(s.get("local", "/p", 0).1.unwrap()["key"], "k1");
-        assert_eq!(s.of_pane("local", "/p", "k1", 10), [("git status".to_string(), 180, false), ("make test".to_string(), 120, false)]);
-        assert_eq!(s.of_pane("local", "/p", "k1", 1).len(), 1);
-        assert!(s.of_pane("local", "/p", "k2", 10).is_empty(), "no line, no place");
         s.hint("k1", "fix the\nlint", 300);
         s.hint("k1", "Explain   this", 310);
         assert_eq!(s.take_hint("k1", "Background task done: report"), None, "the agent's own turn takes none");
@@ -372,15 +310,13 @@ mod tests {
     #[test]
     fn quote_numbers_count_up_per_pane() {
         let (s, dir) = store();
-        let next = |s: &Sent, k: &str| s.next_question("local", "/p", k).unwrap();
-        assert_eq!(next(&s, "k1"), 1);
-        assert_eq!(next(&s, "k1"), 2, "given, not sent yet");
+        let next = |s: &Sent, k: &str, sent: u64| s.next_question("local", "/p", k, sent).unwrap();
+        assert_eq!(next(&s, "k1", 0), 1);
+        assert_eq!(next(&s, "k1", 0), 2, "given, not sent yet");
         let again = Sent::new(dir.clone());                              // terminumd started anew
-        assert_eq!(next(&again, "k1"), 3, "kept across a restart (a folded paste never reaches the history)");
-        s.add("local", "/p", "k2", "\nQuote #0041:\n - Quote Start ----\nx", json!({})).unwrap();
-        s.add("local", "/p", "k2", "see Quote #7 and Quote #12a", json!({})).unwrap();
-        assert_eq!(next(&s, "k2"), 42, "another pane counts its own");
-        assert_eq!(next(&s, "k1"), 4);
+        assert_eq!(next(&again, "k1", 0), 3, "kept across a restart (a folded paste never reaches the history)");
+        assert_eq!(next(&s, "k2", 41), 42, "another pane counts its own, from what it sent");
+        assert_eq!(next(&s, "k1", 0), 4);
         assert_eq!(quote_numbers("Quote #0007: Quote # 9 Quote #x Question #8"), [7]);
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -402,7 +338,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
-    /// Answer ends (AC-90) are kept beside the sent history, per pane, never in it.
+    /// Answer ends (AC-90) are kept per pane, apart from the message history.
     #[test]
     fn answer_ends_kept_per_pane_apart_from_what_was_sent() {
         let (s, dir) = store();
@@ -410,7 +346,6 @@ mod tests {
         s.add_end("local", "/p", "k2", 7, "Done here.").unwrap();
         s.add_end("local", "/p", "k1", 300, "The essay is written.").unwrap();
         assert_eq!(s.ends_of_pane("local", "/p", "k1", 10), [("The essay is written.".to_string(), 300, false), ("All 42 pass.".to_string(), 120, false)]);
-        assert_eq!(s.get("local", "/p", 0).0, 0, "not in the sent history");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -420,33 +355,5 @@ mod tests {
         assert_eq!(findable("see [Pasted text #3 +12 lines] and fix it"), "see  and fix it");
         assert_eq!(findable("[Image #70] - fix the font"), "[Image #70] - fix the font", "an image's mark is in the transcript too");
         assert_eq!(findable("[Pasted text #1 no end"), "[Pasted text #1 no end");
-    }
-
-    #[test]
-    fn cut_back_to_its_newest() {
-        let (s, dir) = store();
-        let f = s.file("local", "/p");
-        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
-        let many: String = (0..TRIM - 1).map(|i| format!("{{\"at\":1,\"text\":\"c{i}\"}}\n")).collect();
-        std::fs::write(&f, many).unwrap();
-        s.add("local", "/p", "k", "last", json!({})).unwrap();
-        let (n, last) = s.get("local", "/p", 0);
-        assert_eq!((n, last.unwrap()["text"].as_str()), (KEEP, Some("last")));
-        assert_eq!(s.get("local", "/p", KEEP - 1).1.unwrap()["text"], format!("c{}", TRIM - KEEP));
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn an_out_of_range_sent_index_preserves_the_real_count_without_panicking() {
-        let (s, dir) = store();
-        assert_eq!(s.get("local", "/p", usize::MAX), (0, None));
-        s.add("local", "/p", "k1", "first", json!({})).unwrap();
-        s.add("local", "/p", "k1", "second", json!({})).unwrap();
-        for n in [2, 3, usize::MAX - 1, usize::MAX] {
-            assert_eq!(s.get("local", "/p", n), (2, None));
-        }
-        assert_eq!(s.get("local", "/p", 0).1.unwrap()["text"], "second");
-        assert_eq!(s.get("local", "/p", 1).1.unwrap()["text"], "first");
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

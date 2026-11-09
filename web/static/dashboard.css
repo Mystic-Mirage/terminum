@@ -1,0 +1,52 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The Dashboard (terminum.md AC-152): figures in tiles, then cards of charts, the output widget's look (a surface a
+   step over the page, its light edge, no grain: it scrolls). Marks take the theme's colors (msgpage.css). */
+#dperiod, #dproject { flex: none; }
+#dproject summary { max-width: 220px; }
+#dproject .box { min-width: min(280px, calc(100vw - var(--sp-6) * 2)); }
+#dnote { min-height: 0; }
+#derr { padding: var(--sp-2) var(--gutter) 0; }
+#tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--sp-3); padding: var(--sp-3) var(--gutter) 0; }
+.tile { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: var(--sp-3); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); }
+.tlabel { font-size: var(--fs-label); font-weight: 500; color: var(--muted-text); }
+.tvalue { font-size: var(--fs-display); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
+.tsub { font-size: var(--fs-meta); color: var(--muted-text); }
+.tspark { margin-top: auto; padding-top: var(--sp-1); }
+#cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); padding: var(--sp-3) var(--gutter) var(--sp-6); }
+#cards.busy { opacity: .6; }
+.card { margin: 0; min-width: 0; padding: var(--sp-3); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); }
+.card.wide { grid-column: 1 / -1; }
+.chead { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 28px; }
+.chead h2 { margin: 0; font-size: var(--fs-body); font-weight: 600; }
+.chint { font-size: var(--fs-meta); color: var(--muted-text); text-align: right; }
+.readout { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); min-height: 28px; font-size: var(--fs-small); color: var(--muted-text); font-variant-numeric: tabular-nums; }
+.readout > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.readout a { flex: none; text-decoration: none; }
+.legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); margin-bottom: var(--sp-1); }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-label); color: var(--t-fg); text-decoration: none; max-width: 220px; }
+.chip .rnum { color: var(--muted-text); }
+.plot { margin-top: var(--sp-1); }
+.chart .span { stroke: color-mix(in srgb, var(--t-fg) 25%, transparent); stroke-width: 1.5; }
+.chart .stretch { fill: var(--ring); }
+.chart.heat .cell { fill: var(--surface-2); }
+.chart.heat .cell.l1 { fill: color-mix(in srgb, var(--ring) 22%, var(--surface-1)); }
+.chart.heat .cell.l2 { fill: color-mix(in srgb, var(--ring) 42%, var(--surface-1)); }
+.chart.heat .cell.l3 { fill: color-mix(in srgb, var(--ring) 64%, var(--surface-1)); }
+.chart.heat .cell.l4 { fill: color-mix(in srgb, var(--ring) 82%, var(--surface-1)); }
+.chart.heat .cell.l5 { fill: var(--ring); }
+.chart.heat .cell.on { stroke: var(--t-fg); stroke-width: 1.5; }
+.ranked { display: flex; flex-direction: column; gap: 2px; margin-top: var(--sp-2); }
+.rrow { display: grid; grid-template-columns: 8px minmax(60px, 160px) 1fr 40px 56px; align-items: center; gap: var(--sp-2); min-height: 30px; padding: 0 var(--sp-2);
+  border: 0; border-radius: var(--r-sm); background: none; color: var(--t-fg); font: inherit; font-size: var(--fs-small); text-align: left; cursor: pointer; }
+@media (hover: hover) { .rrow:hover { background: color-mix(in srgb, var(--t-fg) 6%, transparent); } }
+.rname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbar { height: 8px; border-radius: 2px; background: linear-gradient(90deg, var(--proj) var(--w), transparent var(--w)); }
+.rnum { font-variant-numeric: tabular-nums; color: var(--muted-text); text-align: right; }
+@media (max-width: 860px), (pointer: coarse) {
+  #tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+  .tvalue { font-size: var(--fs-title); }
+  #cards { grid-template-columns: minmax(0, 1fr); }
+  #dnote { flex-basis: 100%; }
+  .rrow { min-height: 44px; grid-template-columns: 8px minmax(60px, 1fr) 1fr 36px 48px; }
+  .chip { min-height: 32px; }
+}

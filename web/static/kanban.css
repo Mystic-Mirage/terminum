@@ -26,26 +26,17 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 }
 #boardacts { display: flex; gap: var(--sp-2); margin-left: auto; }
 
-/* a filter: a key with its arrow, its plate of ticks under it; a filter on says how many (as todobem's select and list) */
-.pick { position: relative; --chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
-.pick summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: var(--sp-1); }
-.pick summary::-webkit-details-marker { display: none; }
-.pick summary::after { content: ""; flex: none; width: 10px; height: 6px; margin-left: var(--sp-1); background: currentColor; opacity: .7; transition: transform var(--dur-pop, .15s);
-  -webkit-mask: var(--chev) center / contain no-repeat; mask: var(--chev) center / contain no-repeat; }
-.pick[open] summary::after { transform: rotate(180deg); }
 :is(.pick summary, .colhead) .count { font-size: var(--fs-micro); font-weight: var(--fw-body); font-variant-numeric: tabular-nums; }
 #newproject { display: inline-flex; align-items: center; gap: var(--sp-1); }
 /* the project: its key says which, with its color's dot; its menu's name chooses it alone, its tick adds it, its pencil edits it */
 #fproject { flex: none; }
 #fproject summary { max-width: 200px; }
 .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pdot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--proj); }
 #fproject .box { min-width: min(320px, calc(100vw - var(--sp-6) * 2)); }
 .projrow { display: flex; align-items: center; }
 #fproject .projrow .projtick { flex: none; width: auto; padding-right: 0; }
 #fproject .projrow .projname { flex: 1 1 auto; width: auto; min-width: 0; }
 #fproject .projrow :is(.projedit, .projsession) { flex: none; width: var(--icon-key-list); height: var(--icon-key-list); padding: 0; justify-content: center; color: var(--muted); }
-.pick > .box { position: absolute; z-index: 20; top: calc(100% + var(--sp-1)); left: 0; min-width: 190px; max-height: 50dvh; overflow: auto; box-shadow: var(--shadow-far); }
 
 /* the columns: a surface each, their cards a step over it */
 #board { display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: var(--sp-2); flex: 1 1 auto; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); overflow-x: auto; }

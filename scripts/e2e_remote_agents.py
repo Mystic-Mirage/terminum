@@ -39,6 +39,14 @@ exit 0
 """
 
 
+def messages(t, query):
+    """Rows of the message history in the private store (terminum.md AC-147)."""
+    db = sqlite3.connect(f"file:{os.path.join(t.app, 'kanban.sqlite')}?mode=ro", uri=True)
+    try:
+        return db.execute(query).fetchall()
+    finally:
+        db.close()
+
 def events(cwd, session):
     base = {"session_id": session, "cwd": cwd, "prompt_id": "p-host-1", "permission_mode": "default"}
     post = lambda tool, ti, tr, n: {**base, "hook_event_name": "PostToolUse", "tool_name": tool, "tool_input": ti,  # noqa: E731
@@ -244,9 +252,8 @@ def main():
         finally:
             db.close()
         check("AC-99 terminum-kanban.md AC-120 the host agent's task stands in the Mac's store, by an agent", ("Bug: host parser drops a BOM", 1) in tasks, tasks)
-        metas = [json.load(open(m)) | {"_dir": os.path.dirname(m)} for m in glob.glob(os.path.join(t.home, "sessions", "*", "meta.json"))]
-        kept = [m for m in metas if "plan the host check" in open(os.path.join(m["_dir"], "sent.jsonl")).read()] if metas else []
-        check("AC-99 the sent history keeps the prompt under the host, not local", kept and all(m.get("host") == "devbox" for m in kept), metas)
+        kept = messages(t, "SELECT host FROM messages WHERE text = 'plan the host check'")
+        check("AC-99 the message history keeps the prompt under the host, not local", kept and all(h == "devbox" for (h,) in kept), kept)
         tmux_on(REMOTE_SOCKET, "send-keys", "-t", pane, "Enter")   # the agent ends
 
         # terminum-kanban.md AC-120: a task's file reaches the host's agent as a paste's file does
@@ -266,8 +273,8 @@ def main():
         subprocess.run(["tmux", "-S", other, "send-keys", "-t", "x", "-l", f"cd {evdir}; {hb} hook claude < ev-other.json; echo other-done"])
         subprocess.run(["tmux", "-S", other, "send-keys", "-t", "x", "Enter"])
         time.sleep(3)
-        sent = "".join(open(f).read() for f in glob.glob(os.path.join(t.home, "sessions", "*", "sent.jsonl")))
-        check("AC-99 a pane of another tmux with the same socket name is not filed", "foreign tmux prompt" not in sent, sent[-300:])
+        sent = messages(t, "SELECT text FROM messages")
+        check("AC-99 a pane of another tmux with the same socket name is not filed", ("foreign tmux prompt",) not in sent, sent[-5:])
 
         # 5. refused forward
         t.env.update(FAKE_SSH_REFUSE_R="1")

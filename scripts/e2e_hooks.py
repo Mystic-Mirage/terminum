@@ -8,6 +8,7 @@ tools, questions and failures in the list over the screen's reading; no output; 
 """
 import json
 import os
+import sqlite3
 import statistics
 import subprocess
 import sys
@@ -125,8 +126,12 @@ def main():
         ws.send({"t": "sentget", "n": 1})
         older = ws.until(lambda m: m["t"] == "sentone", 5)
         check("AC-90 the one before", older and older["n"] == 1 and older["item"]["agent"] == "claude", older)
-        files = [os.path.join(dp, f) for dp, _, fs in os.walk(os.path.join(t.home, "sessions")) for f in fs]
-        check("AC-90 kept in TM_HOME/sessions/<project>/, 0600", len(files) == 2 and all(os.stat(f).st_mode & 0o077 == 0 for f in files), files)
+        store = os.path.join(t.app, "kanban.sqlite")
+        with sqlite3.connect(f"file:{store}?mode=ro", uri=True) as db:
+            kept = db.execute("SELECT text, sender, via FROM messages ORDER BY at").fetchall()
+        sent_files = [f for _, _, fs in os.walk(os.path.join(t.home, "sessions")) for f in fs if f == "sent.jsonl"]
+        check("AC-147 kept in the tasks' store (0600), the human's, none in a sent.jsonl", ("ls -la", "human", "page") in kept
+              and os.stat(store).st_mode & 0o077 == 0 and not sent_files, (kept, sent_files))
         # where a message was sent (AC-90): a hooked prompt takes the line the page told for its text;
         # terminumd finds it by its text in the pane's history for the strip and for Jump to message
         printed = "for i in $(seq 1 300); do echo out $i; done; echo; echo '> deploy the staging build'; for i in $(seq 1 40); do echo after $i; done; sleep 600"

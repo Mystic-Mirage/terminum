@@ -19,7 +19,7 @@ export const $ = (id) => document.getElementById(id);
  *  there too: terminum-kanban.md AC-150); the board goes to /sessions/, whose form signs in (signInElsewhere). */
 let refused = () => {};
 
-/** The board's: with no sign-in it goes to /sessions/. */
+/** The board's, the Message history's and the Dashboard's: with no sign-in it goes to /sessions/. */
 export function signInElsewhere() {
   refused = () => { location.href = "/sessions/"; };
   signin.onRefused(refused);

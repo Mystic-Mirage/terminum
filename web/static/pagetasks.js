@@ -19,6 +19,8 @@ export function pageTasks({ box, embedded, say, show }) {
       if (!asked || !groups.length) return;
       if (!findItem(groups, asked) && !serverDown(groups, asked)) say("That session has ended.", 4000);
       else if (then === "plan") setTimeout(() => document.dispatchEvent(new Event("planopen")));
+      // the Message history's Open in session (terminum.md AC-151): that message brought into view
+      else if (/^msg:\d+$/.test(then ?? "")) setTimeout(() => document.dispatchEvent(new CustomEvent("sentjump", { detail: Number(then.slice(4)) })));
       then = null;
       asked = null;
     },

@@ -141,7 +141,8 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         crate::tasks::tell::turn_ended(&app, &key);
     }
     if ev["event"] == "UserPromptSubmit" && let (Some(prompt), Some(cwd)) = (ev["prompt"].as_str(), ev["cwd"].as_str()) {
-        let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook"}));
+        let sender = if app.dispatcher.typed_it(&key, prompt) { crate::tasks::store::DISPATCHER } else { crate::tasks::store::HUMAN };
+        let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook", "sender": sender}));
         let (app, key, host) = (app.clone(), key.clone(), server.name.clone());
         tokio::spawn(async move { crate::page::sent::keep(&app, &host, &cwd, &key, &prompt, info).await });
     }

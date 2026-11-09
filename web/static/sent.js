@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Sent history (AC-90): what the user sent in the shown pane's project (its host and folder),
-// kept by terminumd. On Enter the page tells terminumd what stood at the cursor: a coding
+// kept by terminumd in its message history (the Message history at /history/ searches it all). On Enter the page tells terminumd what stood at the cursor: a coding
 // agent's input box (its hooks, when they speak, give the prompt exactly and this is dropped),
 // or a shell's command line after its prompt; nothing in other programs (an editor, less). The
 // button under the split opens the last one as Markdown (a command as a shell block), ↑ older,
@@ -96,6 +96,17 @@ export function sentHistory({ view, send, item, copy, toast, toChat, jump }) {
     say("");
     pane.toggle(false);
   };
+  // the Message history's Open in session (terminum.md AC-151): its message asked by id once this pane is
+  // shown, then found as Jump to message finds it; what cannot be found is said where the page is
+  let wanted = null;
+  document.addEventListener("sentjump", (e) => { wanted = e.detail; send({ t: "sentget", id: wanted }); });
+  async function jumpTo(m) {
+    wanted = null;
+    const it = m.item;
+    if (m.error || !it) return toast(m.error ?? "That message is no longer kept.", 4000);
+    const r = await jump({ text: it.text, n: it.key === item()?.id ? it.line : undefined, prompt: !!it.agent });
+    if (r.why) toast(r.why, 4000);
+  }
   $("sentpane").addEventListener("keydown", (e) => {
     if (e.key === "ArrowUp" && !$("spolder").disabled) { e.preventDefault(); ask(n + 1); }
     else if (e.key === "ArrowDown" && !$("spnewer").disabled) { e.preventDefault(); ask(n - 1); }
@@ -111,7 +122,8 @@ export function sentHistory({ view, send, item, copy, toast, toChat, jump }) {
     },
     onMessage(m) {
       // the answer to the last ask for the pane shown; an older one (a quick ↑, another pane) is dropped
-      if (m.t === "sentone" && pane.open() && (m.error || (m.n === n && m.sid === item()?.id))) void draw(m);
+      if (m.t === "sentone" && m.id !== undefined) { if (m.id === wanted) void jumpTo(m); }
+      else if (m.t === "sentone" && pane.open() && (m.error || (m.n === n && m.sid === item()?.id))) void draw(m);
       else if (m.t === "sentnew" && pane.open() && last && m.host === last.host && m.path === last.path && n === 0) ask(0);
     },
     /** Another pane is shown: its project's history, when open. */

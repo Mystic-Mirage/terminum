@@ -248,6 +248,7 @@ async function wide(browser, name) {
   await livePlans(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, signIn, name });
   await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
   await boards();
+  await renew();   // the board's last page holds as much again as the checks below need
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");

@@ -214,7 +214,7 @@ async fn walk(app: &Shared) {
     let a = app.clone();
     let Ok((all, linked, limits)) = store(app, move |tx| Ok((
         a.dispatcher.read_runs(tx)?,
-        ops::rows(tx, "SELECT 'T-' || number, session_key FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?,
+        ops::rows(tx, "SELECT slug, session_key FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?,
         crate::tasks::limits::limits(tx)?,
     ))).await else { return };
     if all.is_empty() && linked.is_empty() {

@@ -3,9 +3,11 @@
 // tasks and with what message; where is the project's (AC-140), said here; the agent dropped on, or the last
 // chosen, already picked: one press. Several tasks go by their numbers; what each says shows here first.
 import { $, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
+import { taskBoxes } from "./taskboxes.js";
 
 /** `addAgent()` opens the agents' window; `noFolder(project, words)`: terminumd says nothing can start there; `done()` after a run started. */
 export function runWindow({ addAgent, noFolder, done }) {
+  taskBoxes();
   const box = $("runbox");
   let tasks = [], offer = null, attached = [], fresh = false, dropped = null, answer = () => {};
 

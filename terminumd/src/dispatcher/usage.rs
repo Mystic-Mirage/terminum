@@ -179,7 +179,7 @@ pub fn of_tasks(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, Value
         *sum = *sum + t;
         *cost = cost.zip(usd).map(|(a, b)| a + b);
     }
-    let shared: Vec<(String, String)> = rows(tx, "SELECT DISTINCT m.task, 'T-' || x.number, x.number FROM run_tasks m JOIN run_tasks o ON o.run = m.run AND o.task != m.task
+    let shared: Vec<(String, String)> = rows(tx, "SELECT DISTINCT m.task, x.slug, x.number FROM run_tasks m JOIN run_tasks o ON o.run = m.run AND o.task != m.task
         JOIN tasks x ON x.id = o.task WHERE m.task IN (SELECT value FROM json_each(?1)) AND EXISTS (SELECT 1 FROM usage u WHERE u.run = m.run) ORDER BY x.number",
         [&listed], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let mut with: HashMap<String, Vec<String>> = HashMap::new();

@@ -158,7 +158,7 @@ export async function webSent(browser, name) {
       due: document.getElementById("remindfab").classList.contains("due") }));
     check("reminders: pressed, it is marked no more; its pane the bookmarks' navigator (AC-91): the reminder on top, its note without Markdown marks, \"up now\", its text under the line, Show in terminal, Resolve, Quote in chat",
       pane.title === "Reminders of this session" && pane.note === "check the retry" && pane.at === "up now" && pane.text === "reminder text here" && pane.grip
-      && pane.acts.join() === "Show in terminal,Resolve,Quote in chat" && !pane.due, JSON.stringify(pane));
+      && pane.acts.join() === "Show in terminal,Resolve,Convert to task,Quote in chat" && !pane.due, JSON.stringify(pane));
     await page.click("#remindpane .mkvdone");
     const early = sent.some((m) => m.t === "remind" && m.id === "R1");
     await pause(page, 5300);

@@ -39,6 +39,7 @@ import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
 import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
+import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -162,7 +163,7 @@ async function wide(browser, name) {
   };
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
-  const boards = async (suites = [liveBoard, liveBoardEdge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveDispatcher]) => {
+  const boards = async (suites = [liveBoard, liveBoardEdge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveBoardIds, liveDispatcher]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -175,7 +176,7 @@ async function wide(browser, name) {
     return ctx;
   }
   if (TASKS_ALONE) {
-    await boards([liveBoardTasks]);
+    await boards([liveBoardTasks, liveBoardIds]);
     return ctx;
   }
   if (BOARD_ALONE) {
@@ -247,6 +248,7 @@ async function wide(browser, name) {
   await livePlans(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, signIn, name });
   await liveNotes(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP });
   await boards();
+  await renew();   // the board's last page holds as much again as the checks below need
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");

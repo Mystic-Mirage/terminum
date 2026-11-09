@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """The guard of AC-102 on real commands: a clean run passes, what a run leaves fails it and goes,
 and a folder of the temporary folder outside the run never counts."""
+import contextlib
 import importlib.util
+import io
 import os
 from pathlib import Path
 import signal
@@ -138,7 +140,9 @@ class Stubborn(unittest.TestCase):
         spec.loader.exec_module(check_changed)
         root = Path(GUARD).parents[1]
         try:
-            self.assertEqual(check_changed.run([("guard-probe", 'touch "$TMPDIR/left"')], root=root), ["guard-probe"])
+            with contextlib.redirect_stdout(io.StringIO()) as said:   # its FAIL line is this test's outcome
+                self.assertEqual(check_changed.run([("guard-probe", 'touch "$TMPDIR/left"')], root=root), ["guard-probe"])
+            self.assertIn("FAIL guard-probe", said.getvalue())
             self.assertIn("LEFT left", (root / ".checks" / "changed.guard-probe.log").read_text())
         finally:
             (root / ".checks" / "changed.guard-probe.log").unlink(missing_ok=True)

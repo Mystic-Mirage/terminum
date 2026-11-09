@@ -204,6 +204,7 @@ export class MarkNav {
     const item = () => this.entries().find((b) => b.id === this.chosen);
     act("mkvgo", "Show in terminal", () => { const it = item(); if (it) { this.close(); void this.m.jump(it); } }, "Bring it into view in the terminal (Enter)");
     const done = act("mkvdone", "Resolve", () => { const it = item(); if (it) (this.pending.has(it.id) ? this.undo(it.id) : this.done(it)); }, "");
+    act("mkvtask", "Convert to task", () => { const it = item(); if (it) { this.close(); this.m.toTask(it); } }, "A TODO task on the project's board; it goes once the task is kept");
     const quote = act("tochat", INSERT, () => { const it = item(); if (it) { this.close(); this.m.toChat(chatText(it)); } }, "Paste its note and its text quoted into the input, no Enter");
     box.append(head, body, acts);
     return { box, head, body, done, quote };

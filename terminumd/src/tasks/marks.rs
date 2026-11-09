@@ -43,10 +43,10 @@ impl Marks {
         let read = store.with(|tx| {
             let counts = rows(tx, "SELECT project, count(*) FROM tasks WHERE archived_at IS NULL GROUP BY project", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect();
             let mut sessions: BTreeMap<String, Vec<String>> = BTreeMap::new();
-            for (key, id) in rows(tx, "SELECT session_key, 'T-' || number FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number", [], |r| Ok((r.get(0)?, r.get(1)?)))? {
+            for (key, id) in rows(tx, "SELECT session_key, slug FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number", [], |r| Ok((r.get(0)?, r.get(1)?)))? {
                 sessions.entry(key).or_default().push(id);
             }
-            let attention = rows(tx, "SELECT 'T-' || t.number, t.status,
+            let attention = rows(tx, "SELECT t.slug, t.status,
                     COALESCE((SELECT author != 'human' FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1), 0),
                     COALESCE((SELECT text FROM events e WHERE e.task = t.id AND e.kind = 'why' ORDER BY e.at DESC, e.rowid DESC LIMIT 1), '')
                 FROM tasks t WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL ORDER BY t.number DESC", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;

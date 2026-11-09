@@ -11,7 +11,7 @@ const DRAFT = "tm.taskdraft";
  *  `slots()`: who is at a limit, as terminumd counts it. */
 export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const box = $("newbox");
-  let files = [], uploads = 0, offered = "", parent = null, record = null, chose = null;   // chose: the agent the user picked in this window, "" for none
+  let files = [], uploads = 0, offered = "", parent = null, chose = null;   // chose: the agent the user picked in this window, "" for none
   /** Each its own draft: a subtask's never takes a new task's. */
   const draftKey = () => (parent ? `${DRAFT}.${parent}` : DRAFT);
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
@@ -78,7 +78,6 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   /** `given.parent`: a subtask of that task, in its project (AC-112). */
   function open(given = {}) {
     parent = given.parent ?? null;
-    record = given.record ?? null;                    // goes once the task is kept (AC-116)
     const meta = getMeta(), saved = read(draftKey()) ?? {};
     $("newhead").textContent = parent ? `New subtask of ${parent}` : "New task";
     $("newproj").disabled = !!parent;
@@ -105,7 +104,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     const d = draft(), agent = $("newagent").value;
     canCreate(true);
     try {
-      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, session: d.session || undefined, parent: parent ?? undefined, files: files.map((f) => f.id), record: record ?? undefined } });
+      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, session: d.session || undefined, parent: parent ?? undefined, files: files.map((f) => f.id) } });
       write(draftKey(), null);
       files = [];
       box.close();

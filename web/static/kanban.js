@@ -8,8 +8,9 @@ import "./pop.js";
 import { pageColors } from "./contrast.js";
 import { withScheme } from "./schemes.js";
 import { askConfirm } from "./dialogs.js";
-import { sessionUrl, takeRecord, takeSelection } from "./tasklink.js";
+import { sessionUrl, takeSelection } from "./tasklink.js";
 import { taskWindow } from "./kanbanwin.js";
+import { taskAddress } from "./kanbanroute.js";
 import { taskForm } from "./kanbanform.js";
 import { archivedWindow } from "./kanbanarchive.js";
 import { spentLine, usageWords } from "./kanbanspend.js";
@@ -22,7 +23,9 @@ import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
 import { choose } from "./dialogs.js";
 import { el, iconButton, plural, projectInk } from "./listparts.js";
-import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox } from "./kanbanutil.js";
+
+signInElsewhere();                                 // with no sign-in the board goes to /sessions/, whose form signs in
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -152,10 +155,13 @@ function card(t) {
   }
   if (!t.agent) foot.append(el("span", "cowner", t.by_agent ? `by agent · ${t.owner_name}` : t.owner_name));   // on an agent, the agent says who
   if (t.subtasks) foot.append(el("span", "csubs", `${t.subtasks_done}/${t.subtasks}`));
+  // its subtasks as boxes, each its ID on its status's color; a press opens one (AC-112)
+  const boxes = t.boxes?.length ? el("div", "cboxes") : null;
+  boxes?.append(...t.boxes.map((k) => statusBox(k, openTask)));
   if (t.files) foot.append(el("span", "cfiles", plural(t.files, "file")));
   if (t.spent) foot.append(spentLine(t.spent));
   showState(foot, t);
-  c.append(head, el("div", "ctitle", t.title), foot);
+  c.append(...[head, el("div", "ctitle", t.title), boxes, foot].filter(Boolean));
   showUsage(c, t.id);
   showSession(c, t);
   c.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey) pick(t.id, c); else openTask(t.id); });
@@ -352,6 +358,7 @@ const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, a
 $("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
 const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }) });
+const address = taskAddress({ windowed, needs });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, slots: () => slots });
 
 /** Run in the new-task window: at once on its agent; what stands in the way opens RUN's window, saying it. */
@@ -391,32 +398,8 @@ function askFolder(id, words) {
   project.open(projectOf(id));
 }
 
-const addressed = () => /^\/kanban\/(T-\d+)$/.exec(location.pathname)?.[1];
-
-/** Its window has its own address: Back closes it, a task that is not there is said (AC-133). */
-function openTask(id, push = true) {
-  // one step of Back for the window, whichever tasks it showed
-  if (push) history[addressed() ? "replaceState" : "pushState"]({ win: true }, "", `/kanban/${id}${location.search}`);
-  needs.opened(id);
-  windowed.open(id).catch((e) => {
-    say(e.message);
-    history.replaceState(null, "", `/kanban/${location.search}`);
-  });
-}
-
-async function route() {
-  const id = addressed();
-  if (id) { if (!windowed.shows(id)) openTask(id, false); return; }
-  // Back with an edit not saved: asked; kept, the window keeps its address
-  if ($("taskbox").open && !await windowed.tryClose()) history.pushState({ win: true }, "", `/kanban/${windowed.shownId()}${location.search}`);
-}
-addEventListener("popstate", route);
-
-$("taskbox").addEventListener("close", () => {
-  if (!addressed()) return;
-  if (history.state?.win) history.back();
-  else history.replaceState(null, "", `/kanban/${location.search}`);
-});
+/** A press on a task: its window, at its own address (kanbanroute.js). */
+function openTask(id, push = true) { address.openTask(id, push); }
 
 // A file dropped anywhere never takes the page away: on the board it starts a new task (AC-133)
 document.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
@@ -482,11 +465,10 @@ signin.loadCss();
 await loadMeta();
 await load();
 listen();
-route();
+address.route();
 const asked = new URLSearchParams(location.search);
 if (asked.get("new") === "1") {
-  const record = takeRecord();             // a bookmark or reminder made into a task (AC-116)
-  form.open({ session: asked.get("session"), project: asked.get("for"), text: record?.text ?? takeSelection(), title: record?.title, record: record?.id });
-  for (const k of ["new", "session", "for"]) asked.delete(k);
+  form.open({ session: asked.get("session"), project: asked.get("for"), parent: asked.get("parent") ?? undefined, text: takeSelection() });
+  for (const k of ["new", "session", "for", "parent"]) asked.delete(k);
   history.replaceState(null, "", `/kanban/${asked.size ? `?${asked}` : ""}`);
 }

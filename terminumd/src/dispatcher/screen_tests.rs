@@ -33,6 +33,8 @@ fn as125_ac153_a_link_on_the_screen_is_text_another_escape_is_not_known() {
     assert_eq!(read("claude", &screen), Screen::Empty);
     screen.insert(1, "\u{1b}]8;;https://example.com\u{7}ended by BEL\u{1b}]8;;\u{7}".into());
     assert_eq!(read("claude", &screen), Screen::Empty, "a link ended by BEL too");
+    let open = claude_box("\u{1b}[39m❯\u{a0}\u{1b}]8;;https://example.com a draft after a link never closed");
+    assert_eq!(read("claude", &open), Screen::Unknown, "a link never closed hides the rest: not known");
     screen.insert(1, "\u{1b}[2Jcleared".into());
     assert_eq!(read("claude", &screen), Screen::Unknown, "fails closed on anything else");
     let held = claude_box("\u{1b}[39m❯\u{a0}\u{1b}]8;;https://example.com\u{1b}\\see this\u{1b}]8;;\u{1b}\\");

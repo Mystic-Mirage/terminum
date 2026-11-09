@@ -28,6 +28,8 @@ const ENDS_WITHIN: Duration = Duration::from_secs(10);
 const ENDS_WITHIN: Duration = Duration::from_secs(3);
 const DAY: u64 = 86_400;
 const FIELDS: &str = "#{@terminum-seen}\t#{@terminum-run}\t#{pane_in_mode}\t#{pane_current_command}\t#{pane_start_command}";
+/// Between the two Ctrl+C: inside the agents' window for a second press (Claude Code's is under a second).
+const PRESS_GAP: Duration = Duration::from_millis(300);
 /// How long the look waits for a tmux answer: a host that does not answer delays only its own panes.
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -60,11 +62,12 @@ enum Due {
     Go,
 }
 
-/// Whether the pane's own program is a shell (none named: tmux's default, a shell): an agent that is
-/// its own program would take its pane, and maybe its session, with it.
+/// Whether the pane's own program is a bare shell (none named: tmux's default, a shell; flags such
+/// as `-l` only, no command): an agent that is its own program, or a shell's `-c` command, takes its pane, and
+/// maybe its session, with it when it ends.
 fn shell_root(start: &str) -> bool {
-    let first = start.trim().trim_matches('"').split_whitespace().next().unwrap_or("");
-    first.is_empty() || is_shell(first)
+    let mut words = start.trim().trim_matches('"').split_whitespace();
+    words.next().is_none_or(|first| is_shell(first) && words.all(|w| w.starts_with('-')))   // a `-c`'s command is a word
 }
 
 fn due(p: &Pane, now: u64, days: u32) -> Due {
@@ -168,26 +171,28 @@ async fn send(server: &Server, pane: &str, keys: &[&str]) -> Result<(), String> 
 }
 
 /// Ctrl+C, Ctrl+C, then `/exit` and Enter while the agent stays; each key only while `holds` says
-/// none. Whether it ended, or why not.
-async fn end(app: &Shared, server: &Arc<Server>, pane: &str, key: &str, kind: &str, first: &Pane) -> Result<(), String> {
+/// none. Whether it ended, or why not, and how many steps of keys went.
+async fn end(app: &Shared, server: &Arc<Server>, pane: &str, key: &str, kind: &str, first: &Pane) -> (usize, Result<(), String>) {
     let _held = server.typing(pane).lock_owned().await;
     // (as logged, tmux's keys, whether the agent may have ended after them)
     let steps: [(&str, &[&str], bool); 3] = [("<C-c>", &["C-c"], false), ("<C-c>", &["C-c"], true), ("/exit<Enter>", &["-l /exit", "Enter"], true)];
     for (i, (words, keys, may_end)) in steps.into_iter().enumerate() {
         if let Some(why) = holds(app, server, pane, key, kind, first).await {
-            return Err(if i == 0 { why } else { format!("after {i} key(s): {why}") });
+            return (i, Err(if i == 0 { why } else { format!("after {i} key(s): {why}") }));
         }
         let sent = send(server, pane, keys).await;
         let who = crate::inputs::Who { sender: crate::tasks::store::DISPATCHER, component: "idleexit", ..Default::default() };
         crate::inputs::wrote(app, who, "keys", server, pane, words, sent.clone().err(), None);
-        sent?;
+        if let Err(e) = sent {
+            return (i, Err(e));
+        }
         if !may_end {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(PRESS_GAP).await;
         } else if ended(server, pane).await {
-            return Ok(());
+            return (i + 1, Ok(()));
         }
     }
-    Err(format!("{} still runs after Ctrl+C twice and /exit", first.command))
+    (steps.len(), Err(format!("{} still runs after Ctrl+C twice and /exit", first.command)))
 }
 
 /// One look at every listed agent: those due are asked to exit, one after another.
@@ -201,18 +206,23 @@ async fn look(app: &Shared, days: u32, may_end: bool) {
             Due::Wait => {}
             Due::Skip(why) => tracing::debug!(event = "idleexit.skipped", key = %key, why),
             Due::Go if may_end => {
-                match end(app, &server, &pane, &key, &kind, &p).await {
-                    Ok(()) => tracing::info!(event = "idleexit.ended", key = %key, kind = %kind, days),
-                    Err(why) => tracing::warn!(event = "idleexit.stayed", key = %key, kind = %kind, why = %why),
+                let (keys, got) = end(app, &server, &pane, &key, &kind, &p).await;
+                match got {
+                    Ok(()) => tracing::info!(event = "idleexit.ended", key = %key, kind = %kind, days, keys),
+                    Err(why) => tracing::warn!(event = "idleexit.stayed", key = %key, kind = %kind, why = %why, keys),
                 }
-                stamp(&server, &pane, now()).await;       // ended or not: the next try is days away
+                if keys > 0 {
+                    stamp(&server, &pane, now()).await;   // keys went: the next try is days away; none: the next look
+                }
             }
             Due::Go => {}
         }
     }
 }
 
-/// The panes pages in sight show (a page on another screen too; not a hidden tab): their days start again.
+/// The panes pages in sight show (a page on another screen too; not a hidden tab), and those a tmux
+/// client of the user's own shows (`tmux attach` in a terminal; terminumd's are control clients):
+/// their days start again.
 async fn stamp_shown(app: &Shared) {
     let shown: Vec<String> = app.pages.all().iter().filter_map(|p| {
         let st = p.state.lock();
@@ -223,6 +233,17 @@ async fn stamp_shown(app: &Shared) {
             stamp(&server, &pane, now()).await;
         }
     }
+    for server in app.tmux.all() {
+        for pane in attached_panes(&server).await {
+            stamp(&server, &pane, now()).await;
+        }
+    }
+}
+
+/// The panes the tmux clients that are not control clients show.
+async fn attached_panes(server: &Server) -> Vec<String> {
+    let said = ask(server, "list-clients -F '#{client_control_mode}\t#{pane_id}'".into()).await.unwrap_or_default();
+    said.iter().filter_map(|l| l.strip_prefix("0\t")).filter(|p| p.starts_with('%')).map(str::to_string).collect()
 }
 
 /// Looks every EVERY; ends nothing within GRACE of the start or of a gap in its beat (a Mac asleep).

@@ -190,7 +190,8 @@ pub fn only_applied(line: &str) -> bool {
         i = skip_escape(line, at, &mut Style::default(), &mut None);
         let seq = &line[at..i];
         let color = seq.strip_prefix('[').and_then(|s| s.strip_suffix('m')).is_some_and(|p| p.bytes().all(|c| c.is_ascii_digit() || c == b';' || c == b':'));
-        if !color && !seq.starts_with("]8;") {
+        let link = seq.starts_with("]8;") && (seq.ends_with('\u{7}') || seq.ends_with("\u{1b}\\"));   // closed, or the rest is unknown
+        if !color && !link {
             return false;
         }
     }

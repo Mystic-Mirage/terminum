@@ -302,9 +302,9 @@ Scenario: AC-98 edge — an agent of an older session
 Scenario: AC-153 happy path — an agent nobody opened for days ends
   Given the user set "Exit idle agents after, days" in Settings to 3 (settings.json `"agentExitDays": 3`)
   And Claude Code runs in %3 under the pane's shell, idle (not working, no subagents running, not waiting mid-turn), its input box shown empty
-  And no page in sight (as AC-93: a page in front, focused on a computer) has shown %3 for 3 days, nor has a page on another display shown it while open there
+  And no page in sight (as AC-93: a page in front, focused on a computer) has shown %3 for 3 days, nor has a page on another display shown it while open there, nor a tmux client of the user's own (`tmux attach` in a terminal, on terminum's tmux, the user's own servers of AC-89 or a host's)
   When terminumd looks (every 10 minutes)
-  Then it sends Ctrl+C to %3, after 1 s Ctrl+C again, and the agent ends
+  Then it sends Ctrl+C to %3, 300 ms later Ctrl+C again (inside the agent's window for a second press), and the agent ends
   And the pane's shell is in front again; the window and the tmux session stay
   And each key is in the input log (terminum.md AC-147) as Dispatcher's (terminum's system user), component `idleexit`
   When Codex runs in a pane instead
@@ -320,7 +320,7 @@ Scenario: AC-153 failure path — nothing the user left is typed over
   Or the agent is working, waiting mid-turn or its subagents run; or the pane is in a tmux mode (copy mode)
   Or a page shows the pane meanwhile; or another program is in front
   Then no key is sent, or no further key: each is sent only after all of this is read again just before it
-  And the pane's days are not restarted by it: the next look tries again
+  And when no key went, the pane's days are not restarted: the next look tries again; once a key went, the next try is 3 days later
 
 Scenario: AC-153 edge — what is never ended, and when nothing ends
   Given "agentExitDays" is 0 (the default), or any number under 1
@@ -329,8 +329,9 @@ Scenario: AC-153 edge — what is never ended, and when nothing ends
   Then its days start when terminumd first sees it: nothing ends at once on an upgrade
   Given terminumd started, or its looks stood still over 20 minutes (the Mac slept)
   Then nothing is ended for the next hour: the user's pages come back and show what they showed
-  Given the agent is the pane's own program (tmux started the pane with `claude`, not a shell), or Dispatcher started the pane (its run ends it)
+  Given the agent is the pane's own program, or a shell's command (tmux started the pane with `claude` or `zsh -c claude`, not a bare shell), or Dispatcher started the pane (its run ends it)
   Then that pane is skipped: its exit would close the pane, or the run is Dispatcher's
+  And an agent the pane's shell started with `exec` cannot be told apart from tmux: its exit closes the pane
   And what the agent ran in the background (a dev server, a shell it started) ends with it; its conversation can be resumed (`claude --resume`, `codex resume`)
 ```
 

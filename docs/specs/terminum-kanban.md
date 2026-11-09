@@ -548,6 +548,8 @@ Scenario: AC-119 failure — unreadable
   Then it is set aside with its -wal and -shm as kanban.sqlite.bad-<time>, never written over, the board says so with the path, and an empty store is made only when the user presses Start empty
   When it is busy, not permitted, or the disk is full
   Then it stays as it is, terminumd retries, and the banner says terminumd's message
+  When it can be read again and the user changes a project (makes, renames, deletes one, moves a session), a server's list is read or a server is restored
+  Then the store's projects are read first and each change or check goes on top of them: none is lost to the empty list of the failed read, and a name the store holds stays taken
 
 Scenario: AC-119 edge — backups
   Then the store and its files stay inside what Time Machine backs up (terminum-lifecycle.md AC-96 excludes only the last lines' folder)

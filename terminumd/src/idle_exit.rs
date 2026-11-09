@@ -7,10 +7,13 @@
 //! question, no answer to a permission is ever typed over; what is sent is in the input log (AC-147).
 
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use crate::app::Shared;
-use crate::dispatcher::screen::{self, Screen};
+use crate::auth::store::unix_now as now;
+use crate::dispatcher::screen::Screen;
+use crate::page::marks::{find_item, layout_rows};
+use crate::tmux::titles::is_shell;
 use crate::tmux::Server;
 
 /// How often panes are looked at.
@@ -25,13 +28,11 @@ const ENDS_WITHIN: Duration = Duration::from_secs(10);
 const ENDS_WITHIN: Duration = Duration::from_secs(3);
 const DAY: u64 = 86_400;
 const FIELDS: &str = "#{@terminum-seen}\t#{@terminum-run}\t#{pane_in_mode}\t#{pane_current_command}\t#{pane_start_command}";
-
-fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
-}
+/// How long the look waits for a tmux answer: a host that does not answer delays only its own panes.
+const WAIT: Duration = Duration::from_secs(5);
 
 /// What tmux says of a pane (FIELDS).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 struct Pane {
     seen: Option<u64>,
     run: String,
@@ -63,7 +64,7 @@ enum Due {
 /// its own program would take its pane, and maybe its session, with it.
 fn shell_root(start: &str) -> bool {
     let first = start.trim().trim_matches('"').split_whitespace().next().unwrap_or("");
-    first.is_empty() || crate::dispatcher::is_shell(first.rsplit('/').next().unwrap_or(first))
+    first.is_empty() || is_shell(first)
 }
 
 fn due(p: &Pane, now: u64, days: u32) -> Due {
@@ -80,19 +81,24 @@ fn due(p: &Pane, now: u64, days: u32) -> Due {
     if p.in_mode {
         return Due::Skip("the pane is in a tmux mode");
     }
-    if crate::dispatcher::is_shell(&p.command) {
+    if is_shell(&p.command) {
         return Due::Skip("only a shell runs there");
     }
     Due::Go
 }
 
+/// tmux's answer to `line`, within WAIT.
+async fn ask(server: &Server, line: String) -> Result<Vec<String>, String> {
+    tokio::time::timeout(WAIT, server.run(line)).await.unwrap_or_else(|_| Err("tmux does not answer".into()))
+}
+
 async fn read(server: &Server, pane: &str) -> Option<Pane> {
-    let said = server.run(format!("display -p -t {pane} '{FIELDS}'")).await.ok()?;
+    let said = ask(server, format!("display -p -t {pane} '{FIELDS}'")).await.ok()?;
     said.first().map(|l| Pane::parse(l))
 }
 
 async fn stamp(server: &Server, pane: &str, at: u64) {
-    if let Err(e) = server.run(format!("set-option -p -t {pane} @terminum-seen {at}")).await {
+    if let Err(e) = ask(server, format!("set-option -p -t {pane} @terminum-seen {at}")).await {
         tracing::debug!(event = "idleexit.unstamped", pane, error = %e);
     }
 }
@@ -103,41 +109,39 @@ pub fn opened(app: &Shared, key: &str) {
     tokio::spawn(async move { stamp(&server, &pane, now()).await });
 }
 
-/// The list's coding agents not at work: (key, claude or codex).
+/// A list row's coding agent, idle (not working, not waiting mid-turn, no subagents running).
+fn idle_agent(it: &serde_json::Value) -> Option<&str> {
+    it["agent"].as_str().filter(|a| matches!(*a, "claude" | "codex") && !crate::page::turns::busy(it))
+}
+
+/// The list's idle coding agents: (key, claude or codex).
 fn idle_agents(app: &Shared) -> Vec<(String, String)> {
-    let layout = app.layout.read();
-    let items = layout.as_array().into_iter().flatten().flat_map(|g| g["items"].as_array().into_iter().flatten());
-    items.filter(|it| !crate::page::turns::busy(it))
-        .filter_map(|it| Some((it["id"].as_str()?.to_string(), it["agent"].as_str().filter(|a| matches!(*a, "claude" | "codex"))?.to_string())))
-        .collect()
+    layout_rows(&app.layout.read()).filter_map(|it| Some((it["id"].as_str()?.to_string(), idle_agent(it)?.to_string()))).collect()
 }
 
 fn busy(app: &Shared, key: &str) -> bool {
-    app.hooks.working(key) || !idle_agents(app).iter().any(|(k, _)| k == key)
+    app.hooks.working(key) || find_item(&app.layout.read(), key).and_then(idle_agent).is_none()
 }
 
-/// Why the next key may not go, read just before it: None when the agent is still `program`,
-/// idle, unopened since `seen`, its box shown empty.
-async fn holds(app: &Shared, server: &Server, pane: &str, key: &str, kind: &str, program: &str, seen: Option<u64>) -> Option<String> {
+/// Why the next key may not go, read just before it: None when the agent is still `first`'s
+/// program, idle, unopened since then, its box shown empty.
+async fn holds(app: &Shared, server: &Server, pane: &str, key: &str, kind: &str, first: &Pane) -> Option<String> {
     let Some(p) = read(server, pane).await else { return Some("tmux does not answer".into()) };
-    if p.command != program || crate::dispatcher::is_shell(&p.command) {
-        return Some(format!("{program} no longer runs in front"));
+    if p.command != first.command {
+        return Some(format!("{} no longer runs in front", first.command));
     }
-    if p.seen != seen {
+    if p.seen != first.seen {
         return Some("a page showed it meanwhile".into());
     }
     if p.in_mode || !p.run.is_empty() || busy(app, key) {
         return Some("it is at work, or the pane is in a tmux mode".into());
     }
-    let rows = match server.run(format!("capture-pane -e -p -t {pane}")).await {
-        Ok(rows) => rows,
-        Err(e) => return Some(format!("tmux did not give its screen: {e}")),
-    };
-    match screen::read(kind, &rows) {
-        Screen::Empty => None,
-        Screen::Holds(_) => Some("its box holds a draft".into()),
-        Screen::Asks => Some("it asks a question".into()),
-        Screen::Unknown => Some(format!("its screen is not known ({kind})")),
+    match crate::dispatcher::read_screen(server, pane, kind).await {
+        Err(e) => Some(e),
+        Ok(Screen::Empty) => None,
+        Ok(Screen::Holds(_)) => Some("its box holds a draft".into()),
+        Ok(Screen::Asks) => Some("it asks a question".into()),
+        Ok(Screen::Unknown) => Some(format!("its screen is not known ({kind})")),
     }
 }
 
@@ -147,7 +151,7 @@ async fn ended(server: &Server, pane: &str) -> bool {
     loop {
         tokio::time::sleep(Duration::from_millis(500)).await;
         match read(server, pane).await {
-            Some(p) if crate::dispatcher::is_shell(&p.command) => return true,
+            Some(p) if is_shell(&p.command) => return true,
             None => return true,                              // the pane is gone
             _ if tokio::time::Instant::now() >= until => return false,
             _ => {}
@@ -155,35 +159,35 @@ async fn ended(server: &Server, pane: &str) -> bool {
     }
 }
 
+/// `keys` into `pane`, in order.
+async fn send(server: &Server, pane: &str, keys: &[&str]) -> Result<(), String> {
+    for k in keys {
+        ask(server, format!("send-keys -t {pane} {k}")).await.map_err(|e| format!("tmux did not take it: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Ctrl+C, Ctrl+C, then `/exit` and Enter while the agent stays; each key only while `holds` says
 /// none. Whether it ended, or why not.
 async fn end(app: &Shared, server: &Arc<Server>, pane: &str, key: &str, kind: &str, first: &Pane) -> Result<(), String> {
     let _held = server.typing(pane).lock_owned().await;
-    let program = first.command.clone();
-    let steps: [(&str, &[&str]); 3] = [("<C-c>", &["C-c"]), ("<C-c>", &["C-c"]), ("/exit<Enter>", &["-l /exit", "Enter"])];
-    for (i, (words, keys)) in steps.iter().enumerate() {
-        if let Some(why) = holds(app, server, pane, key, kind, &program, first.seen).await {
+    // (as logged, tmux's keys, whether the agent may have ended after them)
+    let steps: [(&str, &[&str], bool); 3] = [("<C-c>", &["C-c"], false), ("<C-c>", &["C-c"], true), ("/exit<Enter>", &["-l /exit", "Enter"], true)];
+    for (i, (words, keys, may_end)) in steps.into_iter().enumerate() {
+        if let Some(why) = holds(app, server, pane, key, kind, first).await {
             return Err(if i == 0 { why } else { format!("after {i} key(s): {why}") });
         }
-        let mut error = None;
-        for k in keys.iter() {
-            if let Err(e) = server.run(format!("send-keys -t {pane} {k}")).await {
-                error = Some(format!("tmux did not take it: {e}"));
-                break;
-            }
-        }
+        let sent = send(server, pane, keys).await;
         let who = crate::inputs::Who { sender: crate::tasks::store::DISPATCHER, component: "idleexit", ..Default::default() };
-        crate::inputs::wrote(app, who, "keys", server, pane, words, error.clone(), None);
-        if let Some(e) = error {
-            return Err(e);
-        }
-        match i {
-            0 => tokio::time::sleep(Duration::from_secs(1)).await,
-            _ if ended(server, pane).await => return Ok(()),
-            _ => {}
+        crate::inputs::wrote(app, who, "keys", server, pane, words, sent.clone().err(), None);
+        sent?;
+        if !may_end {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        } else if ended(server, pane).await {
+            return Ok(());
         }
     }
-    Err(format!("{program} still runs after Ctrl+C twice and /exit"))
+    Err(format!("{} still runs after Ctrl+C twice and /exit", first.command))
 }
 
 /// One look at every listed agent: those due are asked to exit, one after another.
@@ -234,7 +238,7 @@ pub async fn run(app: Shared) {
         last = at;
         stamp_shown(&app).await;
         let days = app.looks.settings.read().agent_exit_days;
-        look(&app, days, days > 0 && tokio::time::Instant::now() >= free_at).await;
+        look(&app, days, tokio::time::Instant::now() >= free_at).await;
     }
 }
 

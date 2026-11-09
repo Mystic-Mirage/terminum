@@ -37,10 +37,6 @@ async fn panes_of(server: &Server) -> Option<HashMap<String, Pane>> {
     }).collect())
 }
 
-pub fn is_shell(name: &str) -> bool {
-    let name = crate::termtext::shell_name(name);
-    name == "login" || crate::tmux::titles::SHELLS.contains(&name)
-}
 
 /// What the list says of a pane: waiting, failed, and its turn ended: an interrupt fires no Stop, its screen says so (AC-123).
 fn listed(app: &Shared, key: &str) -> (Option<String>, Option<String>, bool) {
@@ -264,7 +260,7 @@ async fn walk(app: &Shared) {
         let (waiting, failed, ended) = listed(app, &key);
         // after its agent, what runs in front is a human's: it stays theirs. A job behind the shell keeps
         // the 2 hours from running: a prompt's own helpers come and go, and must not leave it open for good
-        let program = p.filter(|p| p.exit.is_some() && !is_shell(&p.command)).map(|p| p.command.clone());
+        let program = p.filter(|p| p.exit.is_some() && !crate::tmux::titles::is_shell(&p.command)).map(|p| p.command.clone());
         let job = under && p.is_some_and(|p| p.exit.is_some());
         let facts = Facts {
             pane: p.is_some(),

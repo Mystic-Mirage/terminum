@@ -13,6 +13,11 @@ use super::agentstate::{claude_marked, CODEX_ASKS};
 pub const AGENTS: [&str; 2] = ["claude", "codex"];
 /// Shells: a pane at one's prompt may move its cursor on a tap (AC-39 "shell").
 pub const SHELLS: [&str; 10] = ["bash", "zsh", "sh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "xonsh"];
+/// Whether `name` (a path, a login shell's `-zsh`) is a shell or `login`: only a shell is in front.
+pub fn is_shell(name: &str) -> bool {
+    let name = crate::termtext::shell_name(name);
+    name == "login" || SHELLS.contains(&name)
+}
 /// Programs whose name as a title says nothing the program column does not.
 const OTHER_PROGRAMS: [&str; 6] = ["ssh", "mosh", "tmux", "screen", "sudo", "login"];
 

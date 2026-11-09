@@ -42,9 +42,9 @@ export function menuPrefs({ store, send, toast, redraw }) {
     toast(`Terminals opened from now on keep ${n.toLocaleString()} lines`, 4000);
   });
   $("agentexit").addEventListener("change", () => {
-    const n = Number($("agentexit").value);
-    if (!Number.isInteger(n) || n > 3650) return toast("Days must be a whole number up to 3650, 0 for off", 4000);
-    send({ t: "agentexit", days: Math.max(0, n) });
+    const n = Number($("agentexit").value), max = Number($("agentexit").max);
+    if (!Number.isInteger(n) || n > max) return toast(`Days must be a whole number up to ${max}, 0 for off`, 4000);
+    send({ t: "agentexit", days: n });                      // under 1 is off: terminumd keeps 0
     toast(n < 1 ? "Idle agents are not asked to exit" : `Agents idle and not opened for ${n} day${n === 1 ? "" : "s"} are asked to exit`, 4000);
   });
   return {

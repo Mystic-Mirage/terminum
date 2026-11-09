@@ -58,7 +58,7 @@ export async function webHeader(browser, name) {
       await page.dispatchEvent("#agentexit", "change");
       await pause(page, 200);
       const said = f.sent.filter((m) => m.t === "agentexit").map((m) => m.days);
-      check("AC-153 the menu shows settings.json's days and sends the ones typed, under 1 as 0 (off)", shown === "5" && JSON.stringify(said) === "[0,2]", JSON.stringify({ shown, said }));
+      check("AC-153 the menu shows settings.json's days and sends the ones typed (terminumd keeps under 1 as 0, off)", shown === "5" && JSON.stringify(said) === "[-3,2]", JSON.stringify({ shown, said }));
       await page.keyboard.press("Escape");
       await pause(page, 300);
       await page.click('#views [data-view="files"]');

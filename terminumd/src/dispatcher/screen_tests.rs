@@ -31,6 +31,8 @@ fn as125_ac153_a_link_on_the_screen_is_text_another_escape_is_not_known() {
     let mut screen = claude_box("\u{1b}[39m❯\u{a0}\u{1b}[7m \u{1b}[0m");
     screen.insert(1, "\u{1b}]8;id=awv1;https://example.com/docs\u{1b}\\https://example.com/docs\u{1b}]8;;\u{1b}\\".into());
     assert_eq!(read("claude", &screen), Screen::Empty);
+    screen.insert(1, "\u{1b}]8;;https://example.com\u{7}ended by BEL\u{1b}]8;;\u{7}".into());
+    assert_eq!(read("claude", &screen), Screen::Empty, "a link ended by BEL too");
     screen.insert(1, "\u{1b}[2Jcleared".into());
     assert_eq!(read("claude", &screen), Screen::Unknown, "fails closed on anything else");
     let held = claude_box("\u{1b}[39m❯\u{a0}\u{1b}]8;;https://example.com\u{1b}\\see this\u{1b}]8;;\u{1b}\\");

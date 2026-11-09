@@ -220,9 +220,14 @@ pub fn subscribe(app: &Shared, page: &Arc<Page>, key: &str) {
     let active = st.active();
     drop(st);
     if active {
-        super::unread::read(app, key);
-        crate::idle_exit::opened(app, key);
+        looked_at(app, key);
     }
+}
+
+/// A page in sight shows pane `key`: it is read (AC-93) and its idle days start again (AC-153).
+fn looked_at(app: &Shared, key: &str) {
+    super::unread::read(app, key);
+    crate::idle_exit::opened(app, key);
 }
 
 /// The page's new look: only a hidden page's stream pauses (AC-37).
@@ -250,8 +255,7 @@ fn resume(app: &Shared, page: &Arc<Page>) {
     look(page, Look::On);
     let shown = page.state.lock().shown.as_ref().map(|s| s.key.clone());
     if let Some(k) = shown {
-        super::unread::read(app, &k);
-        crate::idle_exit::opened(app, &k);
+        looked_at(app, &k);
     }
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
     super::sizing::activated(app, page);           // the active page sizes its pane (AC-13)

@@ -3,7 +3,7 @@
 //! from `capture-pane -e`, as only the colors tell a placeholder from a draft. It fails closed: what
 //! it does not know is not empty, so a new version's changed screen delays words and never types.
 
-use crate::screen::sgr::{parse_line, Style, FAINT};
+use crate::screen::sgr::{only_applied, parse_line, Style, FAINT};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Screen {
@@ -21,18 +21,6 @@ pub enum Screen {
 struct Row {
     text: String,
     strong: String,
-}
-
-/// Whether every escape in `row` is a color or a link (OSC 8, its text the row's: Claude Code links a
-/// notice's address): anything else is a screen it does not know.
-fn only_colors(row: &str) -> bool {
-    let mut parts = row.split('\u{1b}');
-    parts.next();
-    parts.all(|p| {
-        let color = p.strip_prefix('[').is_some_and(|rest| rest.find('m').is_some_and(|m| rest[..m].chars().all(|c| c.is_ascii_digit() || c == ';' || c == ':')));
-        let link = p.strip_prefix("]8;").is_some_and(|rest| !rest.contains('\u{7}')) || p.starts_with('\\');   // its ST: ESC \\
-        color || link
-    })
 }
 
 fn row_of(raw: &str) -> Row {
@@ -96,7 +84,7 @@ fn codex(rows: &[Row]) -> Screen {
 
 /// The screen of `kind`'s agent, as `capture-pane -e -p` gave it.
 pub fn read(kind: &str, raw: &[String]) -> Screen {
-    if !raw.iter().all(|r| only_colors(r)) {
+    if !raw.iter().all(|r| only_applied(r)) {
         return Screen::Unknown;
     }
     let rows: Vec<Row> = raw.iter().map(|r| row_of(r)).collect();

@@ -181,6 +181,22 @@ pub fn parse_line(line: &str, style: &mut Style, link: &mut Option<Arc<str>>, mu
     }
 }
 
+/// Whether every escape in `line` is one `parse_line` applies: a color (SGR) or a link (OSC 8,
+/// ended by BEL or ST). A screen of only those reads as its text (the agents' box, AS-125).
+pub fn only_applied(line: &str) -> bool {
+    let mut i = 0;
+    while let Some(k) = memchr_esc(&line.as_bytes()[i..]) {
+        let at = i + k + 1;
+        i = skip_escape(line, at, &mut Style::default(), &mut None);
+        let seq = &line[at..i];
+        let color = seq.strip_prefix('[').and_then(|s| s.strip_suffix('m')).is_some_and(|p| p.bytes().all(|c| c.is_ascii_digit() || c == b';' || c == b':'));
+        if !color && !seq.starts_with("]8;") {
+            return false;
+        }
+    }
+    true
+}
+
 fn memchr_esc(b: &[u8]) -> Option<usize> {
     b.iter().position(|&x| x == 0x1b)
 }

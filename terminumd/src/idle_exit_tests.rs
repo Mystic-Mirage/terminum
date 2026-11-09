@@ -68,10 +68,10 @@ impl Stage {
         *app.layout.write() = json!([{"items": [{"id": key, "agent": "claude", "state": "done"}]}]);
         let s = Stage { tm, server, pane, key, app, root };
         let until = tokio::time::Instant::now() + within;
-        while (crate::dispatcher::is_shell(&s.command()) || !s.screen().contains('\u{276f}') || !ready(&s.screen())) && tokio::time::Instant::now() < until {
+        while (is_shell(&s.command()) || !s.screen().contains('\u{276f}') || !ready(&s.screen())) && tokio::time::Instant::now() < until {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        assert!(!crate::dispatcher::is_shell(&s.command()) && ready(&s.screen()), "the agent runs: {}\n{}", s.command(), s.screen());
+        assert!(!is_shell(&s.command()) && ready(&s.screen()), "the agent runs: {}\n{}", s.command(), s.screen());
         s.tm.read(&["set-option", "-p", "-t", &s.pane, "@terminum-seen", "1000"]);
         Some(s)
     }
@@ -99,7 +99,7 @@ impl Drop for Stage {
 async fn ac153_two_ctrl_c_end_the_agent_its_shell_and_session_stay() {
     let Some(s) = Stage::new("idle-cc", "cc", "").await else { return };
     assert_eq!(s.end().await, Ok(()));
-    assert!(crate::dispatcher::is_shell(&s.command()), "its shell is in front again: {}", s.command());
+    assert!(is_shell(&s.command()), "its shell is in front again: {}", s.command());
     assert!(s.tm.read(&["list-sessions", "-F", "#{session_name}"]).contains("main"), "the session stays");
 }
 
@@ -107,7 +107,7 @@ async fn ac153_two_ctrl_c_end_the_agent_its_shell_and_session_stay() {
 async fn ac153_exit_goes_when_ctrl_c_does_not_end_it() {
     let Some(s) = Stage::new("idle-exit", "exit", "").await else { return };
     assert_eq!(s.end().await, Ok(()));
-    assert!(crate::dispatcher::is_shell(&s.command()), "{}", s.command());
+    assert!(is_shell(&s.command()), "{}", s.command());
 }
 
 #[tokio::test]
@@ -152,5 +152,5 @@ async fn ac153_real_claude_code_ends_on_two_ctrl_c() {
     let Some(s) = Stage::with("idle-real", (100, 30), program, |t| t.contains("Safe mode"), Duration::from_secs(40)).await else { return };
     tokio::time::sleep(Duration::from_secs(2)).await;                 // its box drawn whole
     assert_eq!(s.end().await, Ok(()), "{}", s.screen());
-    assert!(crate::dispatcher::is_shell(&s.command()), "{}", s.command());
+    assert!(is_shell(&s.command()), "{}", s.command());
 }

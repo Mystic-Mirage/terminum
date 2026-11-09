@@ -5,7 +5,7 @@
 import * as signin from "./signin.js";
 import { pageColors } from "./contrast.js";
 import { withScheme } from "./schemes.js";
-import { api } from "./kanbanutil.js";
+import { api, signInElsewhere } from "./kanbanutil.js";
 import { el, projectInk } from "./listparts.js";
 
 export { api };
@@ -18,6 +18,7 @@ export async function loadMeta() {
   return meta;
 }
 
+signInElsewhere();                                 // with no sign-in the page goes to /sessions/, whose form signs in
 signin.showKeptCss();
 signin.loadCss();
 

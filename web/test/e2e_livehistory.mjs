@@ -9,6 +9,9 @@ import path from "node:path";
 import { boardKit, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
+/** SQL into the private store beside terminumd, which holds it now and then: the CLI waits for it (as terminumd's
+ *  own connections do), and the FTS triggers need a trusted schema (rusqlite's default, not the CLI's). */
+const intoStore = (app, sql) => execFileSync("sqlite3", ["-cmd", ".timeout 15000", path.join(app, "kanban.sqlite"), `PRAGMA trusted_schema = ON; ${sql}`]);
 const rows = (page) => page.$$eval("#results .msg", (r) => r.map((x) => x.querySelector(".mtext").textContent));
 
 export async function liveHistory(page, opts) {
@@ -19,7 +22,7 @@ export async function liveHistory(page, opts) {
   hook(agent, "UserPromptSubmit", { prompt: "make the board wait for the board selector", prompt_id: "h1" });
   hook(agent, "UserPromptSubmit", { prompt: "Исправь поиск по сообщениям", prompt_id: "h2" });
   // what Dispatcher typed, as its gate keeps it (a real run needs an agent: e2e_livedispatcher.mjs)
-  execFileSync("sqlite3", [path.join(app, "kanban.sqlite"), `PRAGMA trusted_schema = ON; INSERT INTO messages (at, sender, via, agent, pane, host, cwd, text) VALUES (CAST(strftime('%s','now') AS INTEGER) * 1000, 'dispatcher', 'hook', 'claude', '${key}', 'local', '${work}', 'T-0007: the board task for Dispatcher')`]);
+  intoStore(app, `INSERT INTO messages (at, sender, via, agent, pane, host, cwd, text) VALUES (CAST(strftime('%s','now') AS INTEGER) * 1000, 'dispatcher', 'hook', 'claude', '${key}', 'local', '${work}', 'T-0007: the board task for Dispatcher')`);
   // a shell's command, typed in the page: what stood after the prompt, with its line
   await page.goto(`${base}/sessions/`);
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 15000 });
@@ -60,7 +63,8 @@ export async function liveHistory(page, opts) {
   await until(async () => (await rows(page)).length >= 4, 6000);
   await page.click("#fkind summary");
   await page.click('#fkind .pname:text-is("Shells\' commands")');
-  check("AC-151 Where: shells only", await until(async () => JSON.stringify(await rows(page)) === JSON.stringify(["echo history probe words"]), 6000), JSON.stringify(await rows(page)));
+  const shellsOnly = () => page.$$eval("#results .msg", (r) => r.length > 0 && r.every((x) => x.querySelector(".mtext.shell")));
+  check("AC-151 Where: shells only", await until(async () => (await rows(page)).includes("echo history probe words") && await shellsOnly(), 6000), JSON.stringify(await rows(page)));
   if (shots) await page.screenshot({ path: path.join(shots, "history.png") });
 
   // Open in session: the pane, the message brought into view (AC-90's Jump)
@@ -70,23 +74,32 @@ export async function liveHistory(page, opts) {
   check("AC-151 Context: what was sent around it in that pane", await until(() => page.isVisible("#results .ctx .ctxrow.self"), 4000));
   const href = await page.getAttribute("#results .msg.open .macts a", "href");
   check("AC-151 Open in session goes to its pane, at the message", /^\/sessions\/\?then=msg:\d+#\//.test(href ?? ""), href);
+  // the session page's answer to its ask by id (sent.js): proof the hand-off reached it
+  const jumped = [];
+  page.on("websocket", (ws) => ws.on("framereceived", ({ payload }) => {
+    try { const m = JSON.parse(String(payload)); if (m.t === "sentone" && m.id !== undefined) jumped.push(m); } catch { /* not JSON */ }
+  }));
   await page.click("#results .msg.open .macts a");
   await page.waitForURL(/\/sessions\//);
   check("AC-151 the session page opens without its hand-off in the address", await until(() => !page.url().includes("then="), 8000), page.url());
   check("AC-151 the message is brought into view where it was sent", await until(() => page.evaluate(() => [...document.querySelectorAll("#screen .ln")].some((l) => l.textContent.includes("echo history probe words"))), 8000));
+  check("AC-151 the jump asked for the message by its id", jumped.length > 0 && jumped.every((m) => m.item?.text === "echo history probe words"), JSON.stringify(jumped).slice(0, 300));
 
-  // the Dashboard: the human's only
+  // the Dashboard: the human's only (earlier suites in this run sent messages too: counted from the store)
+  const day = await page.evaluate(() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; });
+  const totalOf = (q) => page.evaluate(async (q) => (await (await fetch(`/api/messages?${q}`)).json()).total, q);
+  const human = await totalOf(`from=${day}&to=${day}&sender=human`), all = await totalOf(`from=${day}&to=${day}`);
   await page.goto(`${base}/dashboard/`);
   await page.waitForSelector("#tiles .tile");
   const tile = await page.textContent("#tiles .tile .tvalue");
-  check("AC-152 Messages counts the human's, never Dispatcher's", tile === "3", tile);
+  check("AC-152 Messages counts the human's, never Dispatcher's", tile === human.toLocaleString("en-US") && all > human, { tile, human, all });
   check("AC-152 every card draws", (await page.$$("#perday rect.hit")).length === 30 && (await page.$$("#heat rect.cell")).length === 7 * 24 && await page.isVisible("#projects .rrow"));
   await page.focus("#perday");
   await page.keyboard.press("End");
-  check("AC-152 a day chosen by the keys says its count", /Today so far · 3 messages/.test(await page.textContent("#perdaysay")), await page.textContent("#perdaysay"));
+  check("AC-152 a day chosen by the keys says its count", (await page.textContent("#perdaysay")).startsWith(`Today so far · ${human} messages`), await page.textContent("#perdaysay"));
   await page.keyboard.press("Enter");
   await page.waitForURL(/\/history\/\?/);
-  check("AC-152 a day leads to the history of that day, the human's", await until(async () => /^3 messages/.test(await page.textContent("#hsum")), 6000), await page.textContent("#hsum"));
+  check("AC-152 a day leads to the history of that day, the human's, the same count", await until(async () => (await page.textContent("#hsum")).startsWith(`${human.toLocaleString("en-US")} message`), 6000), await page.textContent("#hsum"));
   await page.goto(`${base}/dashboard/?days=7`);
   check("AC-152 the period is in the address", await until(async () => (await page.$$("#perday rect.hit")).length === 7, 6000));
   if (shots) {
@@ -100,7 +113,7 @@ export async function liveHistory(page, opts) {
         seed.push(`(${at}, 'human', 'hook', ${k % 3 ? "'claude'" : "NULL"}, 'k${k % 5}', 'local', '${work}', ${project ? `'${project}', 'Project ${project}'` : "NULL, NULL"}, 'seeded message ${d} ${k}')`);
       }
     }
-    execFileSync("sqlite3", [path.join(app, "kanban.sqlite"), `PRAGMA trusted_schema = ON; INSERT INTO messages (at, sender, via, agent, pane, host, cwd, project, project_name, text) VALUES ${seed.join(",")}`]);
+    intoStore(app, `INSERT INTO messages (at, sender, via, agent, pane, host, cwd, project, project_name, text) VALUES ${seed.join(",")}`);
     await page.goto(`${base}/dashboard/`);
     await page.waitForSelector("#tiles .tile");
     await nap(500);

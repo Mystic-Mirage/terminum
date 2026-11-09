@@ -649,7 +649,10 @@ Scenario Outline: AC-146 edge — a task's timed checks
   Given <why>
   When a task's targeted checks reach their first timed step: the page's checks, the Panel's, an e2e script or the real page
   Then they wait the same way, printing each look
-  And after 15 minutes they run anyway, printing "gate: running under load 31.0 over 16: a timing failure may be the load's", and never fail for the wait
+  And after 15 minutes the timed steps are skipped, each printing "SKIP page: load 31.0 over 16 for 15 minutes", and never fail for the wait
+  And the other steps run, and the last line, red, is "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page e2e_hooks"
+  And make land says that line again after "landed", and the task's report names those checks under Not verified
+  And the tree's next run whose timed steps run takes the line away
   And a landing's smoke set, which holds no timed check, never waits
 
   Examples:

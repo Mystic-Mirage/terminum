@@ -72,18 +72,24 @@ class Gate(unittest.TestCase):
         with mock.patch.dict(os.environ, {"TM_GATE_LOAD": ""}):
             self.assertEqual(gate.limit(), os.cpu_count() or 2)
 
-    def test_a_tasks_checks_run_after_15_minutes_saying_so(self):  # AC-146
+    def test_a_tasks_timed_checks_are_skipped_after_15_minutes_saying_so(self):  # AC-146
         m = Machine(31)
         with mock.patch.object(gate, "releasing", return_value=False):
-            gate.for_task(load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep)
-        self.assertEqual(m.said[-1], "gate: running under load 31 over 8: a timing failure may be the load's")
+            why = gate.for_task(load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep)
+        self.assertEqual(why, "load 31 over 8")
+        self.assertEqual(m.said[-1], "gate: load 31 over 8 for 15 minutes: the timed checks are skipped")
+
+    def test_a_tasks_timed_checks_run_once_it_is_quiet(self):  # AC-146
+        m = Machine(31, 1)
+        with mock.patch.object(gate, "releasing", return_value=False):
+            self.assertIsNone(gate.for_task(load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep))
 
     def test_a_tasks_checks_wait_while_a_release_runs(self):  # AC-146
         m = Machine(1)
         with mock.patch.object(gate, "releasing", return_value=True):
             gate.for_task(load=m.load, say=m.said.append, clock=lambda: m.now, sleep=m.sleep)
         self.assertIn("a release is running: waiting", m.said[0])
-        self.assertEqual(m.said[-1], "gate: running under a release is running: a timing failure may be the load's")
+        self.assertEqual(m.said[-1], "gate: a release is running for 15 minutes: the timed checks are skipped")
 
     def test_make_check_by_hand_ends_75_when_still_busy(self):  # AC-146
         with mock.patch.object(gate, "wait", return_value="load 31 over 8"), \

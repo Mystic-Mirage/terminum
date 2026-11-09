@@ -9,6 +9,9 @@ import path from "node:path";
 import { boardKit, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
+/** SQL into the private store beside terminumd, which holds it now and then: the CLI waits for it (as terminumd's
+ *  own connections do), and the FTS triggers need a trusted schema (rusqlite's default, not the CLI's). */
+const intoStore = (app, sql) => execFileSync("sqlite3", ["-cmd", ".timeout 15000", path.join(app, "kanban.sqlite"), `PRAGMA trusted_schema = ON; ${sql}`]);
 const rows = (page) => page.$$eval("#results .msg", (r) => r.map((x) => x.querySelector(".mtext").textContent));
 
 export async function liveHistory(page, opts) {
@@ -19,7 +22,7 @@ export async function liveHistory(page, opts) {
   hook(agent, "UserPromptSubmit", { prompt: "make the board wait for the board selector", prompt_id: "h1" });
   hook(agent, "UserPromptSubmit", { prompt: "Исправь поиск по сообщениям", prompt_id: "h2" });
   // what Dispatcher typed, as its gate keeps it (a real run needs an agent: e2e_livedispatcher.mjs)
-  execFileSync("sqlite3", [path.join(app, "kanban.sqlite"), `PRAGMA trusted_schema = ON; INSERT INTO messages (at, sender, via, agent, pane, host, cwd, text) VALUES (CAST(strftime('%s','now') AS INTEGER) * 1000, 'dispatcher', 'hook', 'claude', '${key}', 'local', '${work}', 'T-0007: the board task for Dispatcher')`]);
+  intoStore(app, `INSERT INTO messages (at, sender, via, agent, pane, host, cwd, text) VALUES (CAST(strftime('%s','now') AS INTEGER) * 1000, 'dispatcher', 'hook', 'claude', '${key}', 'local', '${work}', 'T-0007: the board task for Dispatcher')`);
   // a shell's command, typed in the page: what stood after the prompt, with its line
   await page.goto(`${base}/sessions/`);
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 15000 });
@@ -100,7 +103,7 @@ export async function liveHistory(page, opts) {
         seed.push(`(${at}, 'human', 'hook', ${k % 3 ? "'claude'" : "NULL"}, 'k${k % 5}', 'local', '${work}', ${project ? `'${project}', 'Project ${project}'` : "NULL, NULL"}, 'seeded message ${d} ${k}')`);
       }
     }
-    execFileSync("sqlite3", [path.join(app, "kanban.sqlite"), `PRAGMA trusted_schema = ON; INSERT INTO messages (at, sender, via, agent, pane, host, cwd, project, project_name, text) VALUES ${seed.join(",")}`]);
+    intoStore(app, `INSERT INTO messages (at, sender, via, agent, pane, host, cwd, project, project_name, text) VALUES ${seed.join(",")}`);
     await page.goto(`${base}/dashboard/`);
     await page.waitForSelector("#tiles .tile");
     await nap(500);
